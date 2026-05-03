@@ -1,0 +1,69 @@
+import { auth } from "@/auth";
+import { db } from "@/db";
+import { events } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const eventSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  quota: z.number().int().positive().optional(),
+  location: z.string().optional(),
+  pointsAwarded: z.number().int().min(0).default(0),
+});
+
+// GET /api/admin/events — List all events
+export async function GET() {
+  try {
+    const session = await auth();
+    if (!session?.user || (session.user as any).role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const allEvents = await db.query.events.findMany({
+      orderBy: (events, { desc }) => [desc(events.startTime)],
+    });
+
+    return NextResponse.json(allEvents);
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}
+
+// POST /api/admin/events — Create event
+export async function POST(req: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user || (session.user as any).role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const data = eventSchema.parse(body);
+
+    const [newEvent] = await db
+      .insert(events)
+      .values({
+        title: data.title,
+        description: data.description,
+        startTime: new Date(data.startTime),
+        endTime: new Date(data.endTime),
+        quota: data.quota,
+        location: data.location,
+        pointsAwarded: data.pointsAwarded,
+      })
+      .returning();
+
+    return NextResponse.json({ success: true, event: newEvent }, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.issues }, { status: 400 });
+    }
+    console.error(error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

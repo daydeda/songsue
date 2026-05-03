@@ -1,0 +1,32 @@
+import { auth } from "@/auth";
+import { db } from "@/db";
+import { NextResponse } from "next/server";
+
+export async function GET() {
+  try {
+    const session = await auth();
+    if (!session?.user || session.user.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Only fetch non-sensitive data for the general directory
+    const allStudents = await db.query.users.findMany({
+      columns: {
+        id: true,
+        studentId: true,
+        name: true,
+        nickname: true,
+        major: true,
+        phone: true,
+        houseId: true,
+        profileCompleted: true,
+      },
+      with: { house: true },
+    });
+
+    return NextResponse.json(allStudents);
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

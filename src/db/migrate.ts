@@ -1,0 +1,68 @@
+/**
+ * Incremental Migration Script
+ * Adds new columns and tables introduced in this session.
+ * Safe to run on an existing DB — uses IF NOT EXISTS and ADD COLUMN IF NOT EXISTS.
+ */
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+
+const connectionString = process.env.DATABASE_URL!;
+if (!connectionString) {
+  console.error("❌ DATABASE_URL environment variable is not set.");
+  process.exit(1);
+}
+
+async function migrate() {
+  console.log("🔄 Applying incremental migration...");
+  const sql = postgres(connectionString, { max: 1 });
+
+  // 1. Add qr_token column to users (if not exists)
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS qr_token text UNIQUE
+  `;
+  console.log("  ✅ users.qr_token");
+
+  // 2. Add pdpa_consent column to users
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS pdpa_consent boolean DEFAULT false
+  `;
+  console.log("  ✅ users.pdpa_consent");
+
+  // 3. Add color column to houses
+  await sql`
+    ALTER TABLE houses
+    ADD COLUMN IF NOT EXISTS color text DEFAULT '#6366f1'
+  `;
+  console.log("  ✅ houses.color");
+
+  // 4. Add points_awarded column to events
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS points_awarded integer DEFAULT 0
+  `;
+  console.log("  ✅ events.points_awarded");
+
+  // 5. Create score_history table
+  await sql`
+    CREATE TABLE IF NOT EXISTS score_history (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      house_id text NOT NULL REFERENCES houses(id),
+      event_id uuid REFERENCES events(id),
+      delta integer NOT NULL,
+      reason text NOT NULL,
+      timestamp timestamp DEFAULT now()
+    )
+  `;
+  console.log("  ✅ score_history table");
+
+  console.log("✅ Migration complete!");
+  await sql.end();
+  process.exit(0);
+}
+
+migrate().catch((err) => {
+  console.error("❌ Migration failed:", err);
+  process.exit(1);
+});

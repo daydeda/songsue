@@ -1,0 +1,446 @@
+
+"use client";
+
+import { useSession } from "next-auth/react";
+import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
+import { 
+  ArrowLeft, Save, User, Smartphone, BookOpen, 
+  HeartPulse, ShieldAlert, Phone, Camera, Loader2,
+  Maximize, Move
+} from "lucide-react";
+import { useLanguage } from "@/lib/LanguageContext";
+import { useRouter } from "next/navigation";
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+
+type EmergencyContact = { name: string; relationship: string; phone: string };
+
+export default function ProfilePage() {
+  const { data: session, update } = useSession();
+  const { t } = useLanguage();
+  const router = useRouter();
+  
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
+  const [formData, setFormData] = useState({
+    studentId: "",
+    prefix: "นาย",
+    name: "",
+    nickname: "",
+    phone: "",
+    major: "",
+    religion: "",
+    contactChannels: "",
+    image: "",
+    imageTransform: { scale: 1, x: 0, y: 0 },
+    chronicDiseases: "",
+    medicalHistory: "",
+    drugAllergies: "",
+    foodAllergies: "",
+    dietaryRestrictions: "",
+    faintingHistory: false,
+    emergencyContacts: [
+      { name: "", relationship: "", phone: "" },
+      { name: "", relationship: "", phone: "" },
+    ] as EmergencyContact[],
+  });
+
+  useEffect(() => {
+    fetch("/api/profile")
+      .then(r => r.json())
+      .then(user => {
+        if (user) {
+          setFormData({
+            studentId: user.studentId || "",
+            prefix: user.prefix || "นาย",
+            name: user.name || "",
+            nickname: user.nickname || "",
+            phone: user.phone || "",
+            major: user.major || "",
+            religion: user.religion || "",
+            contactChannels: user.contactChannels || "",
+            image: user.image || "",
+            imageTransform: user.imageTransform || { scale: 1, x: 0, y: 0 },
+            chronicDiseases: user.chronicDiseases || "",
+            medicalHistory: user.medicalHistory || "",
+            drugAllergies: user.drugAllergies || "",
+            foodAllergies: user.foodAllergies || "",
+            dietaryRestrictions: user.dietaryRestrictions || "",
+            faintingHistory: !!user.faintingHistory,
+            emergencyContacts: user.emergencyContacts || [
+              { name: "", relationship: "", phone: "" },
+              { name: "", relationship: "", phone: "" },
+            ],
+          });
+          if (user.image) setPreviewUrl(user.image);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
+
+  const set = (key: string, value: any) => setFormData((p) => ({ ...p, [key]: value }));
+  
+  const setEC = (idx: number, key: string, value: string) => {
+    const contacts = [...formData.emergencyContacts] as EmergencyContact[];
+    contacts[idx] = { ...contacts[idx], [key]: value };
+    set("emergencyContacts", contacts);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const localUrl = URL.createObjectURL(file);
+    setPreviewUrl(localUrl);
+    setUploading(true);
+
+    const fd = new FormData();
+    fd.append("file", file);
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: fd
+      });
+      const data = await res.json();
+      if (data.url) {
+        set("image", data.url);
+      } else {
+        setError(data.error || "Upload failed");
+      }
+    } catch (err) {
+      setError("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData)
+      });
+
+      if (res.ok) {
+        setSuccess(true);
+        await update(); // Refresh session
+        router.refresh();
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to update profile");
+      }
+    } catch (err) {
+      setError("Something went wrong");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
+        <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  const labelCls = "label";
+
+  return (
+    <div style={{ background: "var(--bg-base)", minHeight: "100vh", padding: "40px 20px" }}>
+      <div style={{ maxWidth: 800, margin: "0 auto" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 40 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <Link href="/dashboard" className="btn btn-ghost" style={{ width: 48, height: 48, padding: 0, borderRadius: "50%" }}>
+              <ArrowLeft size={24} />
+            </Link>
+            <div>
+              <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 900, letterSpacing: "-0.04em" }}>{t.profileSummary}</h1>
+              <p style={{ color: "var(--text-muted)", fontWeight: 500 }}>Update your profile information and safety settings.</p>
+            </div>
+          </div>
+          <LanguageSwitcher />
+        </div>
+
+        <form onSubmit={handleSubmit} className="animate-fade-in-up">
+          <div style={{ display: "grid", gap: 32 }}>
+            
+            {/* Section: Profile Photo & Adjustments */}
+            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+              <div style={{ position: "relative" }}>
+                <div 
+                  style={{ 
+                    width: 160, 
+                    height: 160, 
+                    borderRadius: "50%", 
+                    backgroundColor: "var(--bg-elevated)",
+                    border: "4px solid white",
+                    boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    position: "relative",
+                    overflow: "hidden"
+                  }}
+                >
+                  {uploading && (
+                    <div style={{ position: "absolute", inset: 0, zIndex: 20, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Loader2 className="animate-spin text-white" size={24} />
+                    </div>
+                  )}
+                  {previewUrl ? (
+                    <img 
+                      src={previewUrl} 
+                      alt="Profile" 
+                      style={{ 
+                        position: "absolute", 
+                        width: "100%", 
+                        height: "100%", 
+                        objectFit: "cover",
+                        transform: `scale(${formData.imageTransform.scale}) translate(${formData.imageTransform.x}%, ${formData.imageTransform.y}%)`,
+                        transition: "transform 0.1s ease-out"
+                      }} 
+                    />
+                  ) : (
+                    <User size={70} className="text-muted opacity-30" />
+                  )}
+                </div>
+                <label 
+                  style={{ 
+                    position: "absolute", 
+                    bottom: 4, 
+                    right: 4, 
+                    width: 44, 
+                    height: 44, 
+                    background: "var(--accent-primary)", 
+                    color: "#fff", 
+                    borderRadius: "50%", 
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center", 
+                    cursor: "pointer",
+                    boxShadow: "0 4px 12px var(--accent-glow)",
+                    border: "3px solid white"
+                  }}
+                >
+                  <Camera size={20} />
+                  <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={uploading} />
+                </label>
+              </div>
+
+              {previewUrl && (
+                <div style={{ width: "100%", maxWidth: 300, display: "flex", flexDirection: "column", gap: 16, padding: "16px 24px", background: "var(--bg-elevated)", borderRadius: 24, border: "1px solid var(--border-subtle)" }}>
+                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Maximize size={12} /> Zoom
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-primary)" }}>{Math.round(formData.imageTransform.scale * 100)}%</span>
+                      </div>
+                      <input 
+                        type="range" min="1" max="3" step="0.05" 
+                        value={formData.imageTransform.scale} 
+                        onChange={(e) => set("imageTransform", { ...formData.imageTransform, scale: parseFloat(e.target.value) })}
+                        style={{ accentColor: "var(--accent-primary)" }}
+                      />
+                   </div>
+
+                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Move size={12} /> Horizontal
+                        </span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min={-(formData.imageTransform.scale - 1) * 50} 
+                        max={(formData.imageTransform.scale - 1) * 50} 
+                        step="1" 
+                        value={formData.imageTransform.x} 
+                        onChange={(e) => set("imageTransform", { ...formData.imageTransform, x: parseInt(e.target.value) })}
+                        style={{ accentColor: "var(--accent-primary)" }}
+                      />
+                   </div>
+
+                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Move size={12} style={{ transform: "rotate(90deg)" }} /> Vertical
+                        </span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min={-(formData.imageTransform.scale - 1) * 50} 
+                        max={(formData.imageTransform.scale - 1) * 50} 
+                        step="1" 
+                        value={formData.imageTransform.y} 
+                        onChange={(e) => set("imageTransform", { ...formData.imageTransform, y: parseInt(e.target.value) })}
+                        style={{ accentColor: "var(--accent-primary)" }}
+                      />
+                   </div>
+                   <button 
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11, marginTop: 4 }}
+                    onClick={() => set("imageTransform", { scale: 1, x: 0, y: 0 })}
+                   >
+                     Reset Framing
+                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Section: Basic Info */}
+            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
+                <User size={20} style={{ color: "var(--accent-primary)" }} />
+                {t.personalInfo}
+              </h2>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                <div className={labelCls} style={{ gridColumn: "span 2" }}>
+                  <label className="label">{t.studentId} (Locked)</label>
+                  <input className="input" disabled value={formData.studentId} style={{ background: "var(--bg-elevated)", cursor: "not-allowed", opacity: 0.7 }} />
+                </div>
+                <div className="field">
+                  <label className="label">{t.prefix}</label>
+                  <select className="input" value={formData.prefix} onChange={(e) => set("prefix", e.target.value)}>
+                    <option value="นาย">นาย (Mr.)</option>
+                    <option value="นางสาว">นางสาว (Ms.)</option>
+                    <option value="นาง">นาง (Mrs.)</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label">{t.fullName}</label>
+                  <input className="input" name="name" required value={formData.name} onChange={(e) => set("name", e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="label">{t.nickname}</label>
+                  <input className="input" name="nickname" value={formData.nickname} onChange={(e) => set("nickname", e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="label">{t.major}</label>
+                  <select className="input" value={formData.major} onChange={(e) => set("major", e.target.value)}>
+                    <option value="ANI">ANI</option>
+                    <option value="DG">DG</option>
+                    <option value="DII">DII</option>
+                    <option value="MMIT">MMIT</option>
+                    <option value="SE">SE</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label">{t.phone}</label>
+                  <input className="input" name="phone" value={formData.phone} onChange={(e) => set("phone", e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="label">{t.religion}</label>
+                  <input className="input" name="religion" value={formData.religion} onChange={(e) => set("religion", e.target.value)} placeholder={t.religionPlaceholder} />
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Parent / Emergency Info */}
+            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
+                <ShieldAlert size={20} style={{ color: "var(--accent-secondary)" }} />
+                {t.emergencyContacts}
+              </h2>
+              <div style={{ display: "grid", gap: 24 }}>
+                {formData.emergencyContacts.map((contact, i) => (
+                  <div key={i} style={{ padding: 20, background: "var(--bg-elevated)", borderRadius: 20, border: "1px solid var(--border-subtle)" }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 16 }}>Contact #{i+1}</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div className="field">
+                        <label className="label">{t.fullName}</label>
+                        <input className="input" value={contact.name} onChange={(e) => setEC(i, "name", e.target.value)} />
+                      </div>
+                      <div className="field">
+                        <label className="label">{t.relationship}</label>
+                        <input className="input" value={contact.relationship} onChange={(e) => setEC(i, "relationship", e.target.value)} />
+                      </div>
+                      <div className="field" style={{ gridColumn: "span 2" }}>
+                        <label className="label">{t.phone}</label>
+                        <input className="input" value={contact.phone} onChange={(e) => setEC(i, "phone", e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Section: Health & Safety */}
+            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
+                <HeartPulse size={20} style={{ color: "#ef4444" }} />
+                {t.medicalInfo}
+              </h2>
+              <div style={{ display: "grid", gap: 20 }}>
+                <div className="field">
+                  <label className="label">{t.medicalHistory} / {t.chronicDiseases}</label>
+                  <textarea className="input" rows={2} value={formData.medicalHistory} onChange={(e) => set("medicalHistory", e.target.value)} style={{ resize: "vertical" }} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                   <div className="field">
+                    <label className="label">{t.drugAllergies}</label>
+                    <input className="input" value={formData.drugAllergies} onChange={(e) => set("drugAllergies", e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label className="label">{t.foodAllergies}</label>
+                    <input className="input" value={formData.foodAllergies} onChange={(e) => set("foodAllergies", e.target.value)} />
+                  </div>
+                </div>
+                <div className="field">
+                  <label className="label">{t.dietaryRestrictions}</label>
+                  <select 
+                    className="input" 
+                    value={formData.dietaryRestrictions} 
+                    onChange={(e) => set("dietaryRestrictions", e.target.value)}
+                  >
+                    <option value="">{t.none}</option>
+                    <option value="Vegetarian">{t.veg}</option>
+                    <option value="Vegan">{t.vegan}</option>
+                    <option value="Halal">{t.halal}</option>
+                    <option value="Kosher">{t.kosher}</option>
+                    <option value="Other">{t.other}</option>
+                  </select>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+                  <input type="checkbox" checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />
+                  <span style={{ fontSize: 14 }}>{t.faintingHistory}</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20, paddingBottom: 60 }}>
+               {error && <p style={{ color: "var(--accent-primary)", fontWeight: 600 }}>⚠️ {error}</p>}
+               {success && <p style={{ color: "#10b981", fontWeight: 600 }}>✓ {t.complete}</p>}
+               {!error && !success && <div />}
+               
+               <button type="submit" disabled={saving || uploading} className="btn btn-primary btn-lg" style={{ minWidth: 200, borderRadius: 99, boxShadow: "0 10px 20px var(--accent-glow)" }}>
+                 {saving ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> {t.continue}</>}
+               </button>
+            </div>
+
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

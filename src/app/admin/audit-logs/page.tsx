@@ -30,7 +30,21 @@ export default function AdminAuditLogsPage() {
           <p className="section-title">Admin Panel</p>
           <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-0.02em" }}>Audit Trails</h1>
         </div>
-        <span className="badge badge-red">🔒 Immutable Logs</span>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <button 
+            className="btn btn-ghost" 
+            style={{ color: "#ef4444", fontSize: 13, fontWeight: 700 }}
+            onClick={async () => {
+              if (confirm("⚠ DANGER: Are you sure you want to PERMANENTLY delete all audit logs? This action cannot be undone.")) {
+                const res = await fetch("/api/admin/audit-logs", { method: "DELETE" });
+                if (res.ok) setLogs([]);
+              }
+            }}
+          >
+            Reset All Logs
+          </button>
+          <span className="badge badge-red">🔒 Immutable Logs</span>
+        </div>
       </div>
 
       <div className="alert alert-info" style={{ marginBottom: 24, fontSize: 13 }}>
@@ -70,16 +84,29 @@ export default function AdminAuditLogsPage() {
                 {logs.map((log) => (
                   <tr key={log.id}>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                        {new Date(log.timestamp).toLocaleDateString("en-US", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
-                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                        {new Date(log.timestamp).toLocaleTimeString("en-US")}
-                      </p>
+                      {(() => {
+                        const date = new Date(log.timestamp);
+                        
+                        return (
+                          <>
+                            <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                              {date.toLocaleDateString("en-GB", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </p>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                              {date.toLocaleTimeString("en-GB", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: false,
+                              })}
+                            </p>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td>
                       <p style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>

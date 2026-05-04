@@ -22,10 +22,11 @@ export async function GET(
       actorId: session.user.id,
       targetId: targetStudentId,
       action: "Viewed Sensitive Medical/Emergency Info",
+      timestamp: new Date(),
       ipAddress:
-        req.headers.get("x-forwarded-for") ||
+        req.headers.get("x-forwarded-for")?.split(",")[0] ||
         req.headers.get("x-real-ip") ||
-        "unknown",
+        "127.0.0.1",
     });
 
     const studentData = await db.query.users.findFirst({

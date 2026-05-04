@@ -24,6 +24,7 @@ export const users = pgTable("users", {
   prefix: text("prefix"),
   nickname: text("nickname"),
   major: text("major"), // ANI, DG, DII, MMIT, SE
+  imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }
   religion: text("religion"),
   phone: text("phone"),
   contactChannels: text("contact_channels"),
@@ -110,24 +111,27 @@ export const events = pgTable("events", {
   quota: integer("quota"),
   location: text("location"),
   pointsAwarded: integer("points_awarded").default(0),
+  imageUrl: text("image_url"),
+  walkInsEnabled: boolean("walk_ins_enabled").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const attendance = pgTable("attendance", {
   id: uuid("id").defaultRandom().primaryKey(),
-  eventId: uuid("event_id").references(() => events.id).notNull(),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
   studentId: text("student_id").references(() => users.id).notNull(),
-  checkInTime: timestamp("check_in_time").defaultNow(),
-  method: text("method"), // 'qr', 'manual', 'walk-in'
+  checkInTime: timestamp("check_in_time"),
+  method: text("method"), // 'qr', 'manual', 'walk-in', 'pre-registered'
+  status: text("status").default("registered"), // 'registered', 'attended'
   scannedBy: text("scanned_by").references(() => users.id),
 });
 
 // Score history log per house per activity (FE-08)
 export const scoreHistory = pgTable("score_history", {
   id: uuid("id").defaultRandom().primaryKey(),
-  houseId: text("house_id").references(() => houses.id).notNull(),
-  eventId: uuid("event_id").references(() => events.id),
+  houseId: text("house_id").references(() => houses.id, { onDelete: "cascade" }).notNull(),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
   delta: integer("delta").notNull(), // positive = gain, negative = loss
   reason: text("reason").notNull(),
   timestamp: timestamp("timestamp").defaultNow(),

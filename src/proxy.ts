@@ -26,9 +26,10 @@ export async function proxy(req: NextRequest) {
   const user = session.user as any;
 
   // Authenticated but profile not complete → force onboarding
-  // (except /onboarding itself and API routes)
+  // (except for admins, the /onboarding page itself, and API routes)
   if (
     !user.profileCompleted &&
+    user.role !== "admin" &&
     pathname !== "/onboarding" &&
     !pathname.startsWith("/api/")
   ) {

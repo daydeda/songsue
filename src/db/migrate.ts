@@ -57,6 +57,20 @@ async function migrate() {
   `;
   console.log("  ✅ score_history table");
 
+  // 6. Add position column to users
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS position text
+  `;
+  console.log("  ✅ users.position");
+
+  // 7. Add image_transform column to users
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS image_transform jsonb
+  `;
+  console.log("  ✅ users.image_transform");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

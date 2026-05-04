@@ -1,19 +1,26 @@
+
 "use client";
 
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Camera, Upload, Loader2, User, Maximize, Move } from "lucide-react";
+import { useLanguage } from "@/lib/LanguageContext";
+
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 
 type EmergencyContact = { name: string; relationship: string; phone: string };
 
-const STEPS = ["Personal Info", "Medical Info", "Emergency Contacts", "Review & Submit"];
-
 export default function OnboardingPage() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
+  const { t } = useLanguage();
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const STEPS = [t.personalInfo, t.medicalInfo, t.emergencyContacts, t.reviewSubmit];
 
   const [formData, setFormData] = useState({
     studentId: "",
@@ -24,6 +31,8 @@ export default function OnboardingPage() {
     religion: "",
     phone: "",
     contactChannels: "",
+    image: "",
+    imageTransform: { scale: 1, x: 0, y: 0 },
     chronicDiseases: "",
     medicalHistory: "",
     drugAllergies: "",
@@ -37,14 +46,6 @@ export default function OnboardingPage() {
     ] as EmergencyContact[],
   });
 
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
-        <div className="spinner" style={{ width: 32, height: 32 }} />
-      </div>
-    );
-  }
-
   const set = (key: string, value: any) => setFormData((p) => ({ ...p, [key]: value }));
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
@@ -52,9 +53,43 @@ export default function OnboardingPage() {
     set("emergencyContacts", contacts);
   };
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Local preview immediately (Blob URL is fastest)
+    const localUrl = URL.createObjectURL(file);
+    setPreviewUrl(localUrl);
+
+    setUploading(true);
+    setError(null);
+
+    const fd = new FormData();
+    fd.append("file", file);
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: fd
+      });
+      const data = await res.json();
+      if (data.url) {
+        set("image", data.url);
+      } else {
+        setError(data.error || "Upload failed");
+      }
+    } catch (err) {
+      setError("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.pdpaConsent) {
-      setError("คุณต้องยินยอมให้เก็บข้อมูลตาม PDPA ก่อน");
+      setError(t.pdpaConsent);
       return;
     }
     setSubmitting(true);
@@ -66,8 +101,9 @@ export default function OnboardingPage() {
         body: JSON.stringify(formData),
       });
       if (res.ok) {
-        router.push("/dashboard");
-        router.refresh();
+        // Refresh session data and force a full page reload to ensure 100% real-time data sync
+        await update(); 
+        window.location.href = "/dashboard";
       } else {
         const d = await res.json();
         setError(Array.isArray(d.error) ? d.error[0]?.message : d.error);
@@ -84,9 +120,15 @@ export default function OnboardingPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center py-12 px-4"
+      className="min-h-screen w-full flex flex-col items-center py-12 px-4 overflow-y-auto"
       style={{ background: "var(--bg-base)" }}
     >
+      <div className="w-full max-w-[640px] flex flex-col items-center">
+        
+      <div className="w-full flex justify-end mb-4 animate-fade-in-up">
+        <LanguageSwitcher />
+      </div>
+
       {/* Header */}
       <div className="mb-8 text-center animate-fade-in-up">
         <div
@@ -99,7 +141,7 @@ export default function OnboardingPage() {
             marginBottom: 8,
           }}
         >
-          Step {step + 1} of {STEPS.length}
+          {t.step} {step + 1} of {STEPS.length}
         </div>
         <h1
           className="gradient-text"
@@ -108,7 +150,7 @@ export default function OnboardingPage() {
           {STEPS[step]}
         </h1>
         <p style={{ color: "var(--text-secondary)", marginTop: 8, fontSize: 14 }}>
-          Complete your profile to join a house and access events.
+          {t.signInSub}
         </p>
       </div>
 
@@ -152,25 +194,129 @@ export default function OnboardingPage() {
         {/* Step 0: Personal Info */}
         {step === 0 && (
           <div className="flex flex-col gap-5">
+            
+            {/* Profile Picture Upload & Adjustment */}
+            <div className="flex flex-col items-center gap-4 mb-4">
+              <div 
+                key={previewUrl ? "has-preview" : "no-preview"}
+                style={{ 
+                  width: 140, 
+                  height: 140, 
+                  borderRadius: "50%", 
+                  backgroundColor: "var(--bg-elevated)",
+                  border: previewUrl ? "2px solid var(--accent-primary)" : "2px dashed var(--border-subtle)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  position: "relative",
+                  overflow: "hidden"
+                }}
+              >
+                {uploading && (
+                  <div style={{ position: "absolute", inset: 0, zIndex: 20, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Loader2 className="animate-spin text-white" size={24} />
+                  </div>
+                )}
+                
+                {previewUrl ? (
+                  <img 
+                    src={previewUrl} 
+                    alt="Preview" 
+                    style={{ 
+                      position: "absolute", 
+                      width: "100%", 
+                      height: "100%", 
+                      objectFit: "cover",
+                      transform: `scale(${formData.imageTransform.scale}) translate(${formData.imageTransform.x}%, ${formData.imageTransform.y}%)`,
+                      transition: "transform 0.1s ease-out",
+                      zIndex: 10,
+                      display: "block"
+                    }}
+                    onError={(e) => console.error("Preview failed:", previewUrl)}
+                  />
+                ) : (
+                  !uploading && <User size={48} className="text-muted opacity-30" />
+                )}
+              </div>
+              <label className="btn btn-ghost btn-sm" style={{ gap: 8, cursor: "pointer", borderRadius: 99 }}>
+                <Camera size={16} />
+                {previewUrl ? t.changePhoto : t.uploadPhoto}
+                <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={uploading} />
+              </label>
+
+              {previewUrl && (
+                <div style={{ width: "100%", maxWidth: 320, display: "flex", flexDirection: "column", gap: 12, padding: "12px 20px", background: "var(--bg-elevated)", borderRadius: 20, border: "1px solid var(--border-subtle)", marginTop: 8 }}>
+                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Maximize size={10} /> Zoom
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent-primary)" }}>{Math.round(formData.imageTransform.scale * 100)}%</span>
+                      </div>
+                      <input 
+                        type="range" min="1" max="3" step="0.05" 
+                        value={formData.imageTransform.scale} 
+                        onChange={(e) => set("imageTransform", { ...formData.imageTransform, scale: parseFloat(e.target.value) })}
+                        style={{ accentColor: "var(--accent-primary)", height: 4 }}
+                      />
+                   </div>
+                   <div style={{ display: "flex", gap: 12 }}>
+                      <div className="flex-1 flex flex-col gap-6">
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                              <Move size={10} /> X
+                            </span>
+                            <input 
+                              type="range" 
+                              min={-(formData.imageTransform.scale - 1) * 50} 
+                              max={(formData.imageTransform.scale - 1) * 50} 
+                              step="1" 
+                              value={formData.imageTransform.x} 
+                              onChange={(e) => set("imageTransform", { ...formData.imageTransform, x: parseInt(e.target.value) })}
+                              style={{ accentColor: "var(--accent-primary)", height: 4 }}
+                            />
+                        </div>
+                      </div>
+                      <div className="flex-1 flex flex-col gap-6">
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                              <Move size={10} style={{ transform: "rotate(90deg)" }} /> Y
+                            </span>
+                            <input 
+                              type="range" 
+                              min={-(formData.imageTransform.scale - 1) * 50} 
+                              max={(formData.imageTransform.scale - 1) * 50} 
+                              step="1" 
+                              value={formData.imageTransform.y} 
+                              onChange={(e) => set("imageTransform", { ...formData.imageTransform, y: parseInt(e.target.value) })}
+                              style={{ accentColor: "var(--accent-primary)", height: 4 }}
+                            />
+                        </div>
+                      </div>
+                   </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-4">
               <div className="field" style={{ width: 140 }}>
-                <label className={labelCls}>Prefix</label>
+                <label className={labelCls}>{t.prefix}</label>
                 <select
                   className={inputCls}
                   value={formData.prefix}
                   onChange={(e) => set("prefix", e.target.value)}
                 >
-                  <option value="นาย">นาย</option>
-                  <option value="นางสาว">นางสาว</option>
-                  <option value="นาง">นาง</option>
+                  <option value="นาย">นาย (Mr.)</option>
+                  <option value="นางสาว">นางสาว (Ms.)</option>
+                  <option value="นาง">นาง (Mrs.)</option>
                 </select>
               </div>
               <div className="field flex-1">
-                <label className={labelCls}>Full Name (Thai)</label>
+                <label className={labelCls}>{t.fullName}</label>
                 <input
                   className={inputCls}
                   required
-                  placeholder="ชื่อ-สกุล"
+                  placeholder="ชื่อ-สกุล / Full Name"
                   value={formData.name}
                   onChange={(e) => set("name", e.target.value)}
                 />
@@ -179,11 +325,11 @@ export default function OnboardingPage() {
 
             <div className="flex gap-4">
               <div className="field flex-1">
-                <label className={labelCls}>Student ID (9 digits)</label>
+                <label className={labelCls}>{t.studentId}</label>
                 <input
                   className={inputCls}
-                  required
-                  minLength={9}
+                  required={session?.user && (session.user as any).role !== "admin"}
+                  minLength={(session?.user && (session.user as any).role === "admin") ? 0 : 9}
                   maxLength={9}
                   placeholder="640510000"
                   value={formData.studentId}
@@ -191,11 +337,11 @@ export default function OnboardingPage() {
                 />
               </div>
               <div className="field flex-1">
-                <label className={labelCls}>Nickname</label>
+                <label className={labelCls}>{t.nickname}</label>
                 <input
                   className={inputCls}
                   required
-                  placeholder="Nickname"
+                  placeholder={t.nickname}
                   value={formData.nickname}
                   onChange={(e) => set("nickname", e.target.value)}
                 />
@@ -204,7 +350,7 @@ export default function OnboardingPage() {
 
             <div className="flex gap-4">
               <div className="field flex-1">
-                <label className={labelCls}>Major</label>
+                <label className={labelCls}>{t.major}</label>
                 <select
                   className={inputCls}
                   value={formData.major}
@@ -212,16 +358,19 @@ export default function OnboardingPage() {
                 >
                   <option value="ANI">ANI — Animation</option>
                   <option value="DG">DG — Digital Game</option>
-                  <option value="DII">DII — Digital Innovation &amp; Industry</option>
+                  <option value="DII">DII — Digital Innovation</option>
                   <option value="MMIT">MMIT — Multimedia &amp; IT</option>
                   <option value="SE">SE — Software Engineering</option>
                 </select>
               </div>
+            </div>
+
+            <div className="flex gap-4">
               <div className="field flex-1">
-                <label className={labelCls}>Religion</label>
+                <label className={labelCls}>{t.religion}</label>
                 <input
                   className={inputCls}
-                  placeholder="พุทธ / คริสต์ / อิสลาม / ..."
+                  placeholder={t.religionPlaceholder}
                   value={formData.religion}
                   onChange={(e) => set("religion", e.target.value)}
                 />
@@ -230,7 +379,7 @@ export default function OnboardingPage() {
 
             <div className="flex gap-4">
               <div className="field flex-1">
-                <label className={labelCls}>Phone Number</label>
+                <label className={labelCls}>{t.phone}</label>
                 <input
                   className={inputCls}
                   required
@@ -240,10 +389,10 @@ export default function OnboardingPage() {
                 />
               </div>
               <div className="field flex-1">
-                <label className={labelCls}>Contact Channels (Line / FB)</label>
+                <label className={labelCls}>{t.contactChannels}</label>
                 <input
                   className={inputCls}
-                  placeholder="Line ID or Facebook"
+                  placeholder="Line ID / Facebook"
                   value={formData.contactChannels}
                   onChange={(e) => set("contactChannels", e.target.value)}
                 />
@@ -260,24 +409,24 @@ export default function OnboardingPage() {
               style={{ fontSize: 13 }}
             >
               <span>🔒</span>
-              <span>Medical information is encrypted and only accessible to admins with explicit access logged in the Audit Trail.</span>
+              <span>{t.medicalInfoDetail}</span>
             </div>
 
             <div className="flex gap-4">
               <div className="field flex-1">
-                <label className={labelCls}>Chronic Diseases</label>
+                <label className={labelCls}>{t.chronicDiseases}</label>
                 <input
                   className={inputCls}
-                  placeholder="e.g. Asthma, Diabetes (or none)"
+                  placeholder={t.none}
                   value={formData.chronicDiseases}
                   onChange={(e) => set("chronicDiseases", e.target.value)}
                 />
               </div>
               <div className="field flex-1">
-                <label className={labelCls}>Medical History (Surgery / Accidents)</label>
+                <label className={labelCls}>{t.medicalHistory}</label>
                 <input
                   className={inputCls}
-                  placeholder="e.g. Appendectomy 2022 (or none)"
+                  placeholder={t.none}
                   value={formData.medicalHistory}
                   onChange={(e) => set("medicalHistory", e.target.value)}
                 />
@@ -286,19 +435,19 @@ export default function OnboardingPage() {
 
             <div className="flex gap-4">
               <div className="field flex-1">
-                <label className={labelCls}>Drug Allergies</label>
+                <label className={labelCls}>{t.drugAllergies}</label>
                 <input
                   className={inputCls}
-                  placeholder="e.g. Penicillin (or none)"
+                  placeholder={t.none}
                   value={formData.drugAllergies}
                   onChange={(e) => set("drugAllergies", e.target.value)}
                 />
               </div>
               <div className="field flex-1">
-                <label className={labelCls}>Food Allergies</label>
+                <label className={labelCls}>{t.foodAllergies}</label>
                 <input
                   className={inputCls}
-                  placeholder="e.g. Shellfish (or none)"
+                  placeholder={t.none}
                   value={formData.foodAllergies}
                   onChange={(e) => set("foodAllergies", e.target.value)}
                 />
@@ -306,18 +455,18 @@ export default function OnboardingPage() {
             </div>
 
             <div className="field">
-              <label className={labelCls}>Dietary Restrictions</label>
+              <label className={labelCls}>{t.dietaryRestrictions}</label>
               <select
                 className={inputCls}
                 value={formData.dietaryRestrictions}
                 onChange={(e) => set("dietaryRestrictions", e.target.value)}
               >
-                <option value="">None</option>
-                <option value="Vegetarian">Vegetarian</option>
-                <option value="Vegan">Vegan</option>
-                <option value="Halal">Halal</option>
-                <option value="Kosher">Kosher</option>
-                <option value="Other">Other</option>
+                <option value="">{t.none}</option>
+                <option value="Vegetarian">{t.veg}</option>
+                <option value="Vegan">{t.vegan}</option>
+                <option value="Halal">{t.halal}</option>
+                <option value="Kosher">{t.kosher}</option>
+                <option value="Other">{t.other}</option>
               </select>
             </div>
 
@@ -340,10 +489,7 @@ export default function OnboardingPage() {
                 onChange={(e) => set("faintingHistory", e.target.checked)}
               />
               <span style={{ fontSize: 14, color: "var(--text-secondary)" }}>
-                I have a{" "}
-                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                  history of fainting
-                </span>
+                {t.faintingHistory}
               </span>
             </label>
           </div>
@@ -372,32 +518,32 @@ export default function OnboardingPage() {
                     marginBottom: 16,
                   }}
                 >
-                  Contact #{i + 1}
+                  {t.emergencyContacts} #{i + 1}
                 </p>
                 <div className="flex flex-col gap-4">
                   <div className="field">
-                    <label className={labelCls}>Full Name</label>
+                    <label className={labelCls}>{t.fullName}</label>
                     <input
                       className={inputCls}
                       required
-                      placeholder="ชื่อ-สกุล"
+                      placeholder={t.fullName}
                       value={formData.emergencyContacts[i].name}
                       onChange={(e) => setEC(i, "name", e.target.value)}
                     />
                   </div>
                   <div className="flex gap-4">
                     <div className="field flex-1">
-                      <label className={labelCls}>Relationship</label>
+                      <label className={labelCls}>{t.relationship}</label>
                       <input
                         className={inputCls}
                         required
-                        placeholder="e.g. Mother / Father"
+                        placeholder={t.relationship}
                         value={formData.emergencyContacts[i].relationship}
                         onChange={(e) => setEC(i, "relationship", e.target.value)}
                       />
                     </div>
                     <div className="field flex-1">
-                      <label className={labelCls}>Phone Number</label>
+                      <label className={labelCls}>{t.phone}</label>
                       <input
                         className={inputCls}
                         required
@@ -434,16 +580,16 @@ export default function OnboardingPage() {
                   marginBottom: 12,
                 }}
               >
-                Profile Summary
+                {t.profileSummary}
               </p>
               <dl style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px" }}>
                 {[
-                  ["Name", `${formData.prefix}${formData.name}`],
-                  ["Nickname", formData.nickname],
-                  ["Student ID", formData.studentId],
-                  ["Major", formData.major],
-                  ["Phone", formData.phone],
-                  ["Religion", formData.religion || "—"],
+                  [t.fullName, `${formData.prefix}${formData.name}`],
+                  [t.nickname, formData.nickname],
+                  [t.studentId, formData.studentId],
+                  [t.major, formData.major],
+                  [t.phone, formData.phone],
+                  [t.religion, formData.religion || "—"],
                 ].map(([k, v]) => (
                   <div key={k}>
                     <dt style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase" }}>{k}</dt>
@@ -477,10 +623,10 @@ export default function OnboardingPage() {
               />
               <div>
                 <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4 }}>
-                  PDPA Data Consent
+                  {t.pdpaConsent}
                 </p>
                 <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                  ฉันยินยอมให้ CAMT เก็บรวบรวม ใช้ และเปิดเผยข้อมูลส่วนบุคคล รวมถึงข้อมูลสุขภาพและข้อมูลผู้ติดต่อฉุกเฉิน เพื่อวัตถุประสงค์ในการจัดกิจกรรมนักศึกษา ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562
+                  {t.pdpaDetail}
                 </p>
               </div>
             </label>
@@ -504,12 +650,12 @@ export default function OnboardingPage() {
               onClick={() => setStep((s) => s - 1)}
               disabled={submitting}
             >
-              ← Back
+              ← {t.back}
             </button>
           )}
           {step < STEPS.length - 1 ? (
             <button className="btn btn-primary" onClick={() => setStep((s) => s + 1)}>
-              Continue →
+              {t.continue} →
             </button>
           ) : (
             <button
@@ -523,10 +669,11 @@ export default function OnboardingPage() {
                   Submitting...
                 </>
               ) : (
-                "Complete Profile & Get Sorted 🏠"
+                t.complete
               )}
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>

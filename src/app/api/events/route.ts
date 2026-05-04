@@ -20,14 +20,15 @@ export async function GET() {
     const userId = session.user.id!;
     const userAttendances = await db.query.attendance.findMany({
       where: eq(attendance.studentId, userId),
-      columns: { eventId: true, checkInTime: true },
+      columns: { eventId: true, checkInTime: true, status: true },
     });
 
-    const attendedEventIds = new Set(userAttendances.map((a) => a.eventId));
+    const attendanceMap = new Map(userAttendances.map((a) => [a.eventId, a.status]));
 
     const enrichedEvents = allEvents.map((event) => ({
       ...event,
-      isRegistered: attendedEventIds.has(event.id),
+      isRegistered: attendanceMap.has(event.id),
+      attendanceStatus: attendanceMap.get(event.id) || null,
     }));
 
     return NextResponse.json(enrichedEvents);

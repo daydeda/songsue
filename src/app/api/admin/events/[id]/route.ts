@@ -13,6 +13,8 @@ const eventUpdateSchema = z.object({
   quota: z.number().int().positive().optional(),
   location: z.string().optional(),
   pointsAwarded: z.number().int().min(0).optional(),
+  imageUrl: z.string().optional().nullable(),
+  walkInsEnabled: z.boolean().optional(),
 });
 
 // PUT /api/admin/events/[id] — Update event
@@ -40,6 +42,8 @@ export async function PUT(
         ...(data.quota !== undefined && { quota: data.quota }),
         ...(data.location !== undefined && { location: data.location }),
         ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
+        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+        ...(data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled }),
         updatedAt: new Date(),
       })
       .where(eq(events.id, id))
@@ -52,7 +56,9 @@ export async function PUT(
     return NextResponse.json({ success: true, event: updated });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues }, { status: 400 });
+      return NextResponse.json({ 
+        error: error.issues.map((e: z.ZodIssue) => `${e.path.join(".")}: ${e.message}`).join(", ") 
+      }, { status: 400 });
     }
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -72,18 +78,30 @@ export async function DELETE(
 
     const { id } = await params;
 
-    const [deleted] = await db
-      .delete(events)
-      .where(eq(events.id, id))
-      .returning({ id: events.id });
-
-    if (!deleted) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
-    }
+    // Delete related records manually to avoid FK constraints if cascade isn't applied
+    await db.transaction(async (tx) => {
+      // 1. Attendance
+      const { attendance, scoreHistory } = await import("@/db/schema");
+      await tx.delete(attendance).where(eq(attendance.eventId, id));
+      // 2. Score History
+      await tx.delete(scoreHistory).where(eq(scoreHistory.eventId, id));
+      // 3. The Event itself
+      const [deleted] = await tx
+        .delete(events)
+        .where(eq(events.id, id))
+        .returning({ id: events.id });
+      
+      if (!deleted) {
+        throw new Error("Event not found");
+      }
+    });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error(error);
+    if (error.message === "Event not found") {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

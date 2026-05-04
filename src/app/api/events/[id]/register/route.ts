@@ -27,10 +27,7 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    // Check event hasn't ended
-    if (new Date() > new Date(event.endTime)) {
-      return NextResponse.json({ error: "Event has already ended" }, { status: 422 });
-    }
+    // (Removed strict end time check to allow late registration if event is still visible)
 
     // Check if already registered
     const existing = await db.query.attendance.findFirst({
@@ -53,11 +50,13 @@ export async function POST(
       }
     }
 
-    // Register (walk-in = false, no QR scan yet)
+    // Register (status = registered, no checkInTime yet)
     await db.insert(attendance).values({
       eventId,
       studentId: userId,
       method: "pre-registered",
+      status: "registered",
+      checkInTime: null,
     });
 
     return NextResponse.json({ success: true }, { status: 201 });
@@ -80,6 +79,26 @@ export async function DELETE(
 
     const { id: eventId } = await params;
     const userId = session.user.id!;
+
+    // Validate registration and check status/time
+    const record = await db.query.attendance.findFirst({
+      where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
+      with: { event: true }
+    });
+
+    if (!record) {
+      return NextResponse.json({ error: "Registration not found" }, { status: 404 });
+    }
+
+    // Rule 1: Cannot un-register if already attended
+    if (record.status === 'attended') {
+      return NextResponse.json({ error: "Cannot cancel registration after check-in" }, { status: 403 });
+    }
+
+    // Rule 2: Cannot un-register if event is past
+    if (record.event && new Date() > new Date(record.event.endTime)) {
+      return NextResponse.json({ error: "Cannot cancel registration for past events" }, { status: 403 });
+    }
 
     await db
       .delete(attendance)

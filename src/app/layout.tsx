@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, IBM_Plex_Sans_Thai } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
+  display: "swap",
+});
+
+const thaiFont = IBM_Plex_Sans_Thai({
+  weight: ["300", "400", "500", "600", "700"],
+  subsets: ["thai", "latin"],
+  variable: "--font-thai",
   display: "swap",
 });
 
@@ -16,6 +23,8 @@ export const metadata: Metadata = {
 };
 
 import { SessionProvider } from "@/components/providers/SessionProvider";
+import { LanguageProvider } from "@/lib/LanguageContext";
+import { LanguageWrapper } from "@/lib/LanguageWrapper";
 
 export default function RootLayout({
   children,
@@ -23,9 +32,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className={`${inter.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} ${thaiFont.variable} h-full`}>
       <body className="min-h-full flex flex-col antialiased">
-        <SessionProvider>{children}</SessionProvider>
+        <LanguageProvider>
+          <LanguageWrapper>
+            <SessionProvider>{children}</SessionProvider>
+          </LanguageWrapper>
+        </LanguageProvider>
       </body>
     </html>
   );

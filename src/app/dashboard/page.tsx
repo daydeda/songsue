@@ -1,8 +1,26 @@
+
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import Link from "next/link";
+import { 
+  LogOut, 
+  MapPin, 
+  Clock, 
+  Calendar, 
+  CheckCircle2, 
+  Zap, 
+  User, 
+  RefreshCw,
+  Trophy,
+  ArrowRight,
+  Settings,
+} from "lucide-react";
+import { parseRichText } from "@/lib/rich-text";
+import { useLanguage } from "@/lib/LanguageContext";
+import { StudentNav } from "@/components/layout/StudentNav";
 
 type Event = {
   id: string;
@@ -13,27 +31,36 @@ type Event = {
   endTime: string;
   quota?: number;
   isRegistered?: boolean;
-};
-
-const HOUSE_COLORS: Record<string, string> = {
-  red: "#ef4444",
-  blue: "#3b82f6",
-  green: "#22c55e",
-  yellow: "#eab308",
+  attendanceStatus?: string | null;
+  imageUrl?: string;
 };
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
+  const { t } = useLanguage();
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [registeringId, setRegisteringId] = useState<string | null>(null);
-  const [brightMode, setBrightMode] = useState(false);
+  const [houses, setHouses] = useState<any[]>([]);
+  const [loadingHouses, setLoadingHouses] = useState(true);
+  
+  const HOUSE_MAP: Record<string, { name: string, color: string }> = {
+    red:    { name: "Lanna",   color: "#ef4444" },
+    green:  { name: "Mengrai", color: "#14b8a6" },
+    yellow: { name: "Kawila",  color: "#f59e0b" },
+    blue:   { name: "Dara",    color: "#6366f1" },
+  };
 
   useEffect(() => {
     fetch("/api/events")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setEvents(d); })
       .finally(() => setLoadingEvents(false));
+
+    fetch("/api/houses")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setHouses(d); })
+      .finally(() => setLoadingHouses(false));
   }, []);
 
   const handleRegister = async (eventId: string, registered: boolean) => {
@@ -44,16 +71,12 @@ export default function DashboardPage() {
       setEvents((evts) =>
         evts.map((e) => (e.id === eventId ? { ...e, isRegistered: !registered } : e))
       );
+    } else {
+      const errorData = await res.json();
+      const errorMsg = errorData.error || t.registrationFailed;
+      alert(`${t.registrationFailed}: ${errorMsg}`);
     }
     setRegisteringId(null);
-  };
-
-  const toggleBrightMode = () => {
-    setBrightMode((b) => !b);
-    // Screen Brightness API (experimental, Chromium only)
-    if ("screen" in window && "brightness" in (window.screen as any)) {
-      try { (window.screen as any).brightness = brightMode ? 0.5 : 1.0; } catch {}
-    }
   };
 
   if (status === "loading") {
@@ -69,314 +92,438 @@ export default function DashboardPage() {
 
   const user = session?.user as any;
   const houseId = user?.houseId ?? null;
-  const houseColor = houseId ? (HOUSE_COLORS[houseId] ?? "var(--accent-primary)") : "var(--text-muted)";
+  const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
   const qrValue = (user as any)?.qrToken ?? user?.id ?? "no-token";
 
   const now = new Date();
-  const upcoming = events.filter((e) => new Date(e.endTime) >= now);
-  const past = events.filter((e) => new Date(e.endTime) < now);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // Events that are either happening today or in the future
+  const upcoming = events.filter((e) => new Date(e.endTime) >= startOfToday);
+  const past = events.filter((e) => new Date(e.endTime) < startOfToday);
+
+  const getEventStatus = (evt: any) => {
+    const dNow = new Date();
+    const start = new Date(evt.startTime);
+    const end = new Date(evt.endTime);
+    
+    // If start and end are same, it's a "point" event, don't show as LIVE
+    if (start.getTime() === end.getTime()) {
+      return dNow > end ? "past" : "upcoming";
+    }
+
+    if (dNow >= start && dNow <= end) return "live";
+    if (dNow > end) return "past";
+    return "upcoming";
+  };
 
   return (
-    <div style={{ background: "var(--bg-base)", minHeight: "100vh" }}>
-      {/* Top Nav */}
-      <nav
-        style={{
-          background: "var(--bg-surface)",
-          borderBottom: "1px solid var(--border-subtle)",
-          padding: "14px 24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-        }}
-      >
-        <div style={{ fontWeight: 800, fontSize: 18, letterSpacing: "-0.02em" }}>
-          <span className="gradient-text">ActiveCAMT</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {user?.image && (
-            <img
-              src={user.image}
-              alt={user.name}
-              style={{ width: 32, height: 32, borderRadius: "50%", border: "2px solid var(--border-medium)" }}
-            />
-          )}
-          <span style={{ fontSize: 14, color: "var(--text-secondary)" }}>
-            {user?.name?.split(" ")[0]}
-          </span>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => signOut({ callbackUrl: "/" })}
-          >
-            Sign Out
-          </button>
-        </div>
-      </nav>
+    <div style={{ background: "var(--bg-base)", minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
+      {/* Decorative Orbs */}
+      <div className="absolute top-[-200px] left-[-100px] w-[600px] h-[600px] rounded-full" 
+           style={{ background: "radial-gradient(circle, rgba(255,107,0,0.03) 0%, transparent 70%)", pointerEvents: "none" }} />
+      
+      <StudentNav />
 
-      <main className="page-container" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-        {/* Hero row */}
-        <section
-          className="animate-fade-in-up"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto",
-            gap: 24,
-            alignItems: "start",
-          }}
-        >
+      <main className="page-container" style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 40 }}>
+        
+        {/* Header Section */}
+        <section className="animate-fade-in-up" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 24 }}>
           <div>
-            <p className="section-title">Welcome back</p>
-            <h1
-              style={{ fontSize: 36, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1.1 }}
-            >
-              {user?.name ?? "Student"}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="badge badge-purple" style={{ background: "rgba(255,107,0,0.08)", color: "var(--accent-primary)", border: "1px solid rgba(255,107,0,0.15)", gap: 6 }}>
+                <Zap size={10} fill="currentColor" />
+                {t.activeStudent}
+              </span>
+            </div>
+            <h1 style={{ fontSize: 48, fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>
+              {t.hey}, <span className="gradient-text">{user?.name?.split(" ")[0] || "Student"}!</span>
             </h1>
-            <p style={{ color: "var(--text-secondary)", marginTop: 8, fontSize: 15 }}>
-              Track your events and house points below.
-            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: 17, fontWeight: 500 }}>
+                {t.upcomingEventsCount.replace("{count}", upcoming.length.toString())}
+              </p>
+              <Link href="/dashboard/profile" className="btn btn-ghost btn-sm" style={{ borderRadius: 99, background: "rgba(0,0,0,0.03)", gap: 6 }}>
+                <Settings size={14} />
+                {t.editProfile}
+              </Link>
+            </div>
           </div>
 
-          {/* House Badge */}
+          {/* House Stats Card */}
           <div
+            className="glass"
             style={{
-              background: "var(--bg-surface)",
-              border: `1px solid ${houseColor}40`,
-              borderRadius: "var(--radius-lg)",
-              padding: "20px 28px",
+              padding: "20px 32px",
               textAlign: "center",
-              boxShadow: `0 0 24px ${houseColor}20`,
-              minWidth: 140,
+              minWidth: 160,
+              boxShadow: `0 10px 30px rgba(0,0,0,0.04), 0 0 0 1px ${houseInfo.color}20`,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              background: "rgba(255,255,255,0.6)"
             }}
           >
-            <p
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: houseColor,
-                marginBottom: 6,
-              }}
-            >
-              Your House
+            <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: houseInfo.color, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <Trophy size={12} />
+              {houseInfo.name} {t.house}
             </p>
-            <p
-              style={{
-                fontSize: 28,
-                fontWeight: 900,
-                textTransform: "uppercase",
-                color: houseColor,
-                letterSpacing: "-0.01em",
-              }}
-            >
-              {houseId ?? "—"}
+            <p style={{ fontSize: 32, fontWeight: 900, color: houseInfo.color, filter: "brightness(0.8)" }}>
+              {houseInfo.name.toUpperCase()}
             </p>
           </div>
         </section>
 
-        {/* Main grid */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "300px 1fr",
-            gap: 24,
-          }}
-        >
-          {/* Digital ID Card */}
-          <div
-            className="stat-card animate-fade-in-up"
-            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}
-          >
-            <p
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                color: "var(--text-muted)",
-                alignSelf: "flex-start",
-              }}
-            >
-              Digital ID Card
-            </p>
-
-            <div
-              style={{
-                background: brightMode ? "#fff" : "var(--bg-elevated)",
-                padding: 20,
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--border-subtle)",
-                transition: "background 0.3s",
-              }}
-            >
-              <QRCodeSVG
-                value={qrValue}
-                size={180}
-                level="H"
-                bgColor={brightMode ? "#ffffff" : "#1a1e2a"}
-                fgColor={brightMode ? "#000000" : "#f0f2f8"}
-              />
+        {/* Dynamic Content Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 32, alignItems: "start" }}>
+          
+          {/* Left Column: Events */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+            
+            {/* Featured Event / Alert */}
+            <div className="alert alert-info" style={{ borderRadius: "var(--radius-lg)", padding: 20, background: "rgba(255,107,0,0.04)", border: "1px solid rgba(255,107,0,0.1)" }}>
+              <div style={{ fontSize: 24, background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}>🚀</div>
+              <div>
+                <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>New Semester Kick-off!</p>
+                <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>Don't forget to register for the Freshy night and check your house points.</p>
+              </div>
             </div>
 
-            <div style={{ textAlign: "center" }}>
-              <p
-                style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: "var(--text-primary)",
-                }}
-              >
-                {user?.name}
-              </p>
-              <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                {user?.studentId ?? user?.email}
-              </p>
-            </div>
-
-            <button
-              id="brightness-toggle-btn"
-              className={`btn btn-sm ${brightMode ? "btn-ghost" : "btn-primary"} btn-full`}
-              onClick={toggleBrightMode}
-            >
-              {brightMode ? "🌙 Normal Mode" : "☀️ Max Brightness Mode"}
-            </button>
-            <p style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
-              Show this QR to admin for attendance check-in
-            </p>
-          </div>
-
-          {/* Events */}
-          <div className="stat-card animate-fade-in-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <p className="section-title" style={{ margin: 0 }}>Upcoming Events</p>
-              <span className="badge badge-purple">{upcoming.length} events</span>
-            </div>
-
-            {loadingEvents ? (
-              <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
-                <div className="spinner" style={{ width: 28, height: 28 }} />
+            <div style={{ marginBottom: 40 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <h2 style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-0.03em" }}>{t.upcomingEvents}</h2>
+                <button 
+                  className="btn btn-ghost btn-sm" 
+                  onClick={() => {
+                    setLoadingEvents(true);
+                    fetch("/api/events")
+                      .then(r => r.json())
+                      .then(d => { if (Array.isArray(d)) setEvents(d); })
+                      .finally(() => setLoadingEvents(false));
+                  }}
+                  style={{ gap: 6 }}
+                >
+                   <RefreshCw size={14} />
+                   {t.refresh}
+                </button>
               </div>
-            ) : upcoming.length === 0 ? (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "40px 0",
-                  color: "var(--text-muted)",
-                  fontSize: 14,
-                }}
-              >
-                No upcoming events right now. Check back soon!
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {upcoming.map((evt) => (
-                  <div
-                    key={evt.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "16px 18px",
-                      background: "var(--bg-elevated)",
-                      borderRadius: "var(--radius-md)",
-                      border: "1px solid var(--border-subtle)",
-                      gap: 16,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 15,
-                          color: "var(--text-primary)",
-                          marginBottom: 4,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {evt.title}
-                      </p>
-                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                        {new Date(evt.startTime).toLocaleDateString("th-TH", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                        {evt.location && ` • ${evt.location}`}
-                      </p>
-                    </div>
-                    {evt.isRegistered ? (
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <span className="badge badge-green">Registered ✓</span>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => handleRegister(evt.id, true)}
-                          disabled={registeringId === evt.id}
-                        >
-                          {registeringId === evt.id ? <div className="spinner" /> : "Cancel"}
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        id={`register-${evt.id}-btn`}
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleRegister(evt.id, false)}
-                        disabled={registeringId === evt.id}
-                      >
-                        {registeringId === evt.id ? <div className="spinner" /> : "1-Click Register"}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
 
-            {/* Past Events */}
-            {past.length > 0 && (
-              <>
-                <div className="divider" style={{ margin: "4px 0" }} />
-                <p className="section-title" style={{ margin: 0 }}>Past Events</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {past.slice(0, 3).map((evt) => (
-                    <div
-                      key={evt.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "12px 16px",
-                        background: "var(--bg-elevated)",
-                        borderRadius: "var(--radius-md)",
+              {loadingEvents ? (
+                <div style={{ padding: 60, display: "flex", justifyContent: "center" }}>
+                  <div className="spinner" style={{ width: 32, height: 32 }} />
+                </div>
+              ) : upcoming.length > 0 ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 32 }}>
+                  {upcoming.map((e) => (
+                    <div 
+                      key={e.id} 
+                      className="glass animate-fade-in-up event-card-ig"
+                      style={{ 
+                        borderRadius: 32,
                         border: "1px solid var(--border-subtle)",
-                        opacity: 0.65,
+                        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                        cursor: "default",
+                        overflow: "hidden",
+                        display: "flex",
+                        flexDirection: "column",
+                        background: "var(--bg-surface)",
+                        boxShadow: "0 10px 40px rgba(0,0,0,0.03)"
                       }}
                     >
-                      <div>
-                        <p style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)" }}>
-                          {evt.title}
-                        </p>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                          {new Date(evt.startTime).toLocaleDateString("th-TH")}
-                        </p>
+                      {/* Poster Area */}
+                      <div style={{ position: "relative", aspectRatio: "1/1", background: "#1a1a1a", overflow: "hidden" }}>
+                         {e.imageUrl ? (
+                           <img 
+                             src={e.imageUrl} 
+                             alt={e.title} 
+                             style={{ width: "100%", height: "100%", objectFit: "contain" }} 
+                           />
+                         ) : (
+                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(45deg, var(--bg-elevated), var(--bg-surface))" }}>
+                             <Calendar size={48} style={{ color: "var(--text-muted)", opacity: 0.2 }} />
+                           </div>
+                         )}
+                         
+                         {/* Date Overlay */}
+                         <div style={{ position: "absolute", top: 16, right: 16 }}>
+                            <div style={{ 
+                               background: "#fff", 
+                               padding: "10px 14px", 
+                               borderRadius: 18, 
+                               boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                               textAlign: "center", 
+                               minWidth: 64,
+                               border: "1px solid rgba(0,0,0,0.05)"
+                            }}>
+                               <p style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+                                 {new Date(e.startTime).toLocaleDateString("en-GB", { month: "short" })}
+                               </p>
+                               <p style={{ fontSize: 22, fontWeight: 900, color: "#111", lineHeight: 1 }}>
+                                 {new Date(e.startTime).getDate()}
+                               </p>
+                            </div>
+                         </div>
+
+                         <div style={{ position: "absolute", top: 16, left: 16 }}>
+                           <span style={{ 
+                             padding: "8px 16px", 
+                             background: getEventStatus(e) === 'live' ? "#ef4444" : "var(--accent-primary)", 
+                             color: "#fff", 
+                             borderRadius: 20, 
+                             fontSize: 12, 
+                             fontWeight: 900, 
+                             textTransform: "uppercase", 
+                             letterSpacing: "0.05em",
+                             boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
+                           }}>
+                             {getEventStatus(e)}
+                           </span>
+                         </div>
                       </div>
-                      {evt.isRegistered ? (
-                        <span className="badge badge-green">Attended ✓</span>
-                      ) : (
-                        <span className="badge" style={{ background: "var(--bg-glass)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}>
-                          Missed
-                        </span>
-                      )}
+
+                      {/* Content Area */}
+                      <div style={{ padding: 24, flex: 1, display: "flex", flexDirection: "column" }}>
+                        <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.03em", marginBottom: 16 }}>{e.title}</h3>
+                        
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                               <Clock size={16} />
+                            </div>
+                            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, lineHeight: 1.4 }}>
+                              {(() => {
+                                const start = new Date(e.startTime);
+                                const end = new Date(e.endTime);
+                                const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' };
+                                const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
+                                
+                                return `${start.toLocaleDateString('en-GB', dateOpts)} ${start.toLocaleTimeString('en-GB', timeOpts)} — ${end.toLocaleDateString('en-GB', dateOpts)} ${end.toLocaleTimeString('en-GB', timeOpts)}`;
+                              })()}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                               <MapPin size={16} />
+                            </div>
+                            {e.location || "CAMT Building"}
+                          </div>
+                        </div>
+
+                        <div 
+                          style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 24, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                          dangerouslySetInnerHTML={{ __html: parseRichText(e.description || "") }}
+                        />
+
+                          {(() => {
+                            const isPastEvent = new Date() > new Date(e.endTime);
+                            const isAttended = e.attendanceStatus === "attended";
+                            const canCancel = !isPastEvent && !isAttended;
+                            const isDisabled = (e.isRegistered && !canCancel) || registeringId === e.id;
+
+                            return (
+                              <button
+                                disabled={isDisabled}
+                                onClick={() => handleRegister(e.id, !!e.isRegistered)}
+                                className={`btn btn-full ${e.isRegistered ? "btn-success-solid" : "btn-primary"}`}
+                                style={{ 
+                                  borderRadius: 16, 
+                                  height: 48, 
+                                  fontWeight: 800,
+                                  background: e.isRegistered ? (canCancel ? "#10b981" : "var(--bg-elevated)") : undefined,
+                                  color: e.isRegistered ? (canCancel ? "#fff" : "var(--text-muted)") : undefined,
+                                  boxShadow: (e.isRegistered && canCancel) ? "0 10px 25px rgba(16,185,129,0.3)" : (e.isRegistered ? "none" : "0 10px 25px var(--accent-glow)"),
+                                  border: e.isRegistered && !canCancel ? "1px solid var(--border-subtle)" : "none",
+                                  cursor: isDisabled && !registeringId ? "not-allowed" : "pointer",
+                                  opacity: e.isRegistered && !canCancel ? 0.8 : 1
+                                }}
+                              >
+                                {registeringId === e.id ? (
+                                  <RefreshCw size={18} className="animate-spin" />
+                                ) : e.isRegistered ? (
+                                  isAttended ? (
+                                    <><CheckCircle2 size={18} /> {t.attended || "Attended"}</>
+                                  ) : isPastEvent ? (
+                                    <><Calendar size={18} /> {t.eventEnded || "Event Ended"}</>
+                                  ) : (
+                                    <><CheckCircle2 size={18} /> {t.registered || "Registered"}</>
+                                  )
+                                ) : (
+                                  t.registerNow || "Register Now"
+                                )}
+                              </button>
+                            );
+                          })()}
+                      </div>
                     </div>
                   ))}
                 </div>
-              </>
-            )}
+              ) : (
+                <div style={{ padding: "80px 40px", textAlign: "center", background: "var(--bg-surface)", borderRadius: 24, border: "2px dashed var(--border-subtle)" }}>
+                   <p style={{ color: "var(--text-muted)", fontWeight: 500 }}>{t.noEvents}</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </main>
-    </div>
-  );
+          {/* Right Column: Sidebar Stats */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              {/* Digital ID Card */}
+              <div
+                className="stat-card animate-fade-in-up"
+                style={{ 
+                  padding: 32, 
+                  background: "var(--bg-surface)",
+                  display: "flex", 
+                  flexDirection: "column", 
+                  alignItems: "center", 
+                  gap: 24,
+                  boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
+                  border: "1px solid var(--border-medium)"
+                }}
+              >
+                <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", letterSpacing: "0.15em", textTransform: "uppercase" }}>{t.digitalId}</p>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#10b981", boxShadow: "0 0 10px #10b981" }} />
+                </div>
+
+                <div
+                  style={{
+                    background: "#fff",
+                    padding: "24px 20px",
+                    borderRadius: 28,
+                    border: "1px solid var(--border-medium)",
+                    boxShadow: "0 0 50px rgba(0,0,0,0.03)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 16
+                  }}
+                >
+                  {user?.image ? (
+                    <div style={{ width: 80, height: 80, borderRadius: 16, overflow: "hidden", border: "1px solid var(--border-subtle)", position: "relative" }}>
+                      <img 
+                        src={user.image} 
+                        alt="" 
+                        style={{ 
+                          position: "absolute",
+                          width: "100%", 
+                          height: "100%", 
+                          objectFit: "cover",
+                          transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
+                        }} 
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ width: 80, height: 80, borderRadius: 16, background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <User size={32} color="var(--text-muted)" />
+                    </div>
+                  )}
+                  <QRCodeSVG
+                    value={qrValue}
+                    size={240}
+                    level="H"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                  />
+                </div>
+
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)" }}>{user?.name}</p>
+                  <p style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 6, fontWeight: 600 }}>ID: {user?.studentId || "212110XXX"}</p>
+                </div>
+              </div>
+
+              {/* Leaderboard Sidebar */}
+              <div className="glass" style={{ padding: 24, borderRadius: 24, background: "rgba(255,255,255,0.6)" }}>
+                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                   <h3 style={{ fontSize: 14, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 8 }}>
+                      <Trophy size={14} className="text-accent" />
+                      {t.leaderboard}
+                   </h3>
+                   <span style={{ fontSize: 10, fontWeight: 900, background: "var(--bg-elevated)", padding: "4px 8px", borderRadius: 8, color: "var(--text-muted)" }}>LIVE</span>
+                 </div>
+                 
+                 {loadingHouses ? (
+                   <div style={{ display: "flex", justifyContent: "center", padding: 20 }}>
+                     <div className="spinner" style={{ width: 24, height: 24 }} />
+                   </div>
+                 ) : (
+                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {houses.map((h, idx) => {
+                        const isUserHouse = h.id === houseId;
+                        const maxPoints = Math.max(...houses.map(x => x.points || 0), 1);
+                        const percentage = Math.min(100, ((h.points || 0) / maxPoints) * 100);
+                        
+                        return (
+                          <div key={h.id} style={{ 
+                            padding: "12px 16px", 
+                            background: isUserHouse ? `${h.color}10` : "var(--bg-elevated)",
+                            borderRadius: 16,
+                            border: `1px solid ${isUserHouse ? `${h.color}30` : "transparent"}`,
+                            position: "relative",
+                            overflow: "hidden"
+                          }}>
+                            {isUserHouse && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: h.color }} />}
+                            
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                 <span style={{ fontSize: 12, fontWeight: 900, color: idx === 0 ? "#fbbf24" : "var(--text-muted)", width: 14 }}>{idx + 1}</span>
+                                 <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>{h.name}</span>
+                                 {isUserHouse && <span style={{ fontSize: 9, fontWeight: 900, background: h.color, color: "#fff", padding: "2px 6px", borderRadius: 6 }}>YOU</span>}
+                              </div>
+                              <span style={{ fontSize: 14, fontWeight: 900, color: h.color }}>{h.points || 0} <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)" }}>PTS</span></span>
+                            </div>
+                            
+                            <div style={{ width: "100%", height: 6, background: "rgba(0,0,0,0.05)", borderRadius: 99 }}>
+                              <div style={{ 
+                                width: `${percentage}%`, 
+                                height: "100%", 
+                                background: h.color, 
+                                borderRadius: 99,
+                                boxShadow: idx === 0 ? `0 0 10px ${h.color}40` : "none",
+                                transition: "width 1s cubic-bezier(0.4, 0, 0.2, 1)"
+                              }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                   </div>
+                 )}
+                 
+                 <Link href="/dashboard/houses" style={{ 
+                   marginTop: 20, 
+                   display: "flex", 
+                   alignItems: "center", 
+                   justifyContent: "center", 
+                   gap: 8, 
+                   fontSize: 12, 
+                   fontWeight: 800, 
+                   color: "var(--accent-primary)",
+                   textDecoration: "none",
+                   padding: "12px",
+                   borderRadius: 16,
+                   background: "rgba(255,107,0,0.05)"
+                 }}>
+                    {t.houseRankings}
+                    <ArrowRight size={14} />
+                 </Link>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        <style jsx global>{`
+          .event-card-ig:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.08) !important;
+            border-color: var(--accent-primary) !important;
+          }
+          .event-card-ig img {
+            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+          .event-card-ig:hover img {
+            transform: scale(1.05);
+          }
+        `}</style>
+      </div>
+    );
 }

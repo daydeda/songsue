@@ -12,10 +12,12 @@ const eventSchema = z.object({
   endTime: z.string().datetime(),
   quota: z.number().int().positive().optional(),
   location: z.string().optional(),
-  pointsAwarded: z.number().int().min(0).default(0),
+  pointsAwarded: z.number().int().min(0).optional(),
+  imageUrl: z.string().optional().nullable(),
+  walkInsEnabled: z.boolean().optional(),
 });
 
-// GET /api/admin/events — List all events
+// GET /api/admin/events — List all events with registration counts
 export async function GET() {
   try {
     const session = await auth();
@@ -23,11 +25,22 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const allEvents = await db.query.events.findMany({
+    const list = await db.query.events.findMany({
       orderBy: (events, { desc }) => [desc(events.startTime)],
+      with: {
+        attendances: true,
+      }
     });
 
-    return NextResponse.json(allEvents);
+    // Map to include count
+    const eventsWithCount = list.map(e => ({
+      ...e,
+      attendeeCount: e.attendances.length,
+      // Remove the full attendances array to keep response small
+      attendances: undefined 
+    }));
+
+    return NextResponse.json(eventsWithCount);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -45,7 +58,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const data = eventSchema.parse(body);
 
-    const [newEvent] = await db
+    const [event] = await db
       .insert(events)
       .values({
         title: data.title,
@@ -54,14 +67,18 @@ export async function POST(req: Request) {
         endTime: new Date(data.endTime),
         quota: data.quota,
         location: data.location,
-        pointsAwarded: data.pointsAwarded,
+        pointsAwarded: data.pointsAwarded ?? 0,
+        imageUrl: data.imageUrl,
+        walkInsEnabled: data.walkInsEnabled ?? false,
       })
       .returning();
 
-    return NextResponse.json({ success: true, event: newEvent }, { status: 201 });
+    return NextResponse.json({ success: true, event: event }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues }, { status: 400 });
+      return NextResponse.json({ 
+        error: error.issues.map((e: z.ZodIssue) => `${e.path.join(".")}: ${e.message}`).join(", ") 
+      }, { status: 400 });
     }
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

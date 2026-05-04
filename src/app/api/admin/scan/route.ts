@@ -6,10 +6,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 const scanSchema = z.object({
-  // FE-13: The QR code now contains a qrToken (UUID), not the raw user ID
   qrToken: z.string().uuid(),
   eventId: z.string().uuid(),
-  isWalkIn: z.boolean().default(false),
+  action: z.enum(["scan", "confirm"]).default("scan"),
 });
 
 export async function POST(req: Request) {
@@ -20,96 +19,132 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const data = scanSchema.parse(body);
+    const { qrToken, eventId, action } = scanSchema.parse(body);
 
-    // Resolve qrToken → student record
+    // 1. Resolve student
     const student = await db.query.users.findFirst({
-      where: eq(users.qrToken, data.qrToken),
+      where: eq(users.qrToken, qrToken),
       with: { house: true },
     });
 
     if (!student) {
       return NextResponse.json(
-        { status: "not_found", error: "QR token is invalid or student not registered in the system." },
+        { status: "not_found", error: "Student not found in the system." },
         { status: 404 }
       );
     }
 
-    // Get event and validate it exists
-    const currentEvent = await db.query.events.findFirst({
-      where: eq(events.id, data.eventId),
+    // 2. Resolve event
+    const event = await db.query.events.findFirst({
+      where: eq(events.id, eventId),
     });
 
-    if (!currentEvent) {
+    if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    // FE-15 Case C: Already checked in?
-    const existingAttendance = await db.query.attendance.findFirst({
-      where: and(
-        eq(attendance.eventId, data.eventId),
-        eq(attendance.studentId, student.id)
-      ),
+    // 3. Check attendance record
+    const record = await db.query.attendance.findFirst({
+      where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, student.id)),
     });
 
-    if (existingAttendance) {
-      return NextResponse.json(
-        {
+    // Case A: Student is already registered for the event
+    if (record) {
+      if (record.status === "attended") {
+        return NextResponse.json({
           status: "already_checked_in",
-          checkedInAt: existingAttendance.checkInTime,
           student: { name: student.name, nickname: student.nickname },
-        },
-        { status: 409 }
-      );
-    }
-
-    // FE-17: Quota check for walk-in (and all registrations)
-    if (currentEvent.quota !== null) {
-      const [{ value: currentCount }] = await db
-        .select({ value: count() })
-        .from(attendance)
-        .where(eq(attendance.eventId, data.eventId));
-
-      if (currentCount >= currentEvent.quota) {
-        return NextResponse.json(
-          { status: "quota_full", error: "Event has reached maximum capacity." },
-          { status: 422 }
-        );
+          checkedInAt: record.checkInTime,
+        }, { status: 409 });
       }
-    }
 
-    // FE-15 Case B: Not registered (walk-in)
-    if (!student.profileCompleted) {
-      return NextResponse.json(
-        {
-          status: "walk_in_required",
-          student: { id: student.id, name: student.name, nickname: student.nickname },
-          error: "Student has not pre-registered for this event.",
+      // Pre-registered but not attended yet
+      if (action === "confirm") {
+        await db.update(attendance)
+          .set({
+            status: "attended",
+            checkInTime: new Date(),
+            scannedBy: session.user.id,
+            // Keep original method (pre-registered)
+          })
+          .where(eq(attendance.id, record.id));
+
+        return NextResponse.json({
+          status: "success",
+          student: {
+            name: student.name,
+            nickname: student.nickname,
+            studentId: student.studentId,
+            house: student.house?.name ?? "UNASSIGNED",
+            houseColor: (student.house as any)?.color ?? "#6366f1",
+          },
+        });
+      }
+
+      // Wait for manual confirmation (Workflow A)
+      return NextResponse.json({
+        status: "pending_confirmation",
+        student: {
+          name: student.name,
+          nickname: student.nickname,
+          studentId: student.studentId,
+          house: student.house?.name ?? "UNASSIGNED",
+          houseColor: (student.house as any)?.color ?? "#6366f1",
         },
-        { status: 200 }
-      );
+      });
     }
 
-    // FE-15 Case A: Check-in confirmed
-    await db.insert(attendance).values({
-      eventId: data.eventId,
-      studentId: student.id,
-      scannedBy: session.user.id,
-      method: data.isWalkIn ? "walk-in" : "qr",
-    });
+    // Case B: Not registered (Walk-in Workflow B)
+    if (event.walkInsEnabled) {
+      // Quota check
+      if (event.quota !== null) {
+        const [{ value: currentCount }] = await db
+          .select({ value: count() })
+          .from(attendance)
+          .where(eq(attendance.eventId, eventId));
 
+        if (currentCount >= event.quota) {
+          return NextResponse.json(
+            { status: "quota_full", error: "Event is full. Walk-ins cannot be accepted." },
+            { status: 422 }
+          );
+        }
+      }
+
+      // Automatically create and mark as attended
+      await db.insert(attendance).values({
+        eventId: eventId,
+        studentId: student.id,
+        scannedBy: session.user.id,
+        method: "walk-in",
+        status: "attended",
+        checkInTime: new Date(),
+      });
+
+      return NextResponse.json({
+        status: "success_walk_in",
+        student: {
+          name: student.name,
+          nickname: student.nickname,
+          studentId: student.studentId,
+          house: student.house?.name ?? "UNASSIGNED",
+          houseColor: (student.house as any)?.color ?? "#6366f1",
+        },
+      });
+    }
+
+    // Walk-ins disabled and not registered
     return NextResponse.json({
-      status: "success",
-      student: {
-        name: student.name,
-        nickname: student.nickname,
-        house: student.house?.name ?? "UNASSIGNED",
-        houseColor: (student.house as any)?.color ?? "#6366f1",
-      },
-    });
+      status: "walk_ins_disabled",
+      student: { name: student.name, nickname: student.nickname },
+      error: "Walk-ins are not enabled for this event and student is not pre-registered.",
+    }, { status: 403 });
+
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues }, { status: 400 });
+      return NextResponse.json({ 
+        error: error.issues.map((e: z.ZodIssue) => `${e.path.join(".")}: ${e.message}`).join(", ") 
+      }, { status: 400 });
     }
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

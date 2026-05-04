@@ -1,14 +1,8 @@
-import Link from "next/link";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-
-const NAV = [
-  { href: "/admin/dashboard", label: "Overview",         icon: "◉" },
-  { href: "/admin/events",    label: "Manage Events",    icon: "📅" },
-  { href: "/admin/scanner",   label: "QR Scanner",       icon: "📷" },
-  { href: "/admin/students",  label: "Student Directory", icon: "👥" },
-  { href: "/admin/audit-logs",label: "Audit Trails",     icon: "🔒" },
-];
+import { User } from "lucide-react";
+import { AdminNav } from "@/components/admin/AdminNav";
+import { LanguageProvider } from "@/lib/LanguageContext";
 
 export default async function AdminLayout({
   children,
@@ -21,41 +15,55 @@ export default async function AdminLayout({
   return (
     <div style={{ display: "flex", height: "100vh", background: "var(--bg-base)", overflow: "hidden" }}>
       {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <span className="gradient-text">ActiveCAMT</span>
+      <aside className="sidebar" style={{ boxShadow: "10px 0 30px rgba(0,0,0,0.02)" }}>
+        <div className="sidebar-logo" style={{ border: "none", marginBottom: 32 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, background: "var(--accent-primary)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 900 }}>A</div>
+            <span className="gradient-text" style={{ fontSize: 22, fontWeight: 900 }}>ActiveCAMT</span>
+          </div>
           <div
             style={{
               fontSize: 11,
-              fontWeight: 600,
+              fontWeight: 700,
               color: "var(--text-muted)",
-              letterSpacing: "0.08em",
+              letterSpacing: "0.15em",
               textTransform: "uppercase",
-              marginTop: 4,
+              marginTop: 6,
+              paddingLeft: 42
             }}
           >
             Admin Panel
           </div>
         </div>
 
-        <nav style={{ flex: 1 }}>
-          <p className="section-title" style={{ paddingLeft: 12 }}>Navigation</p>
-          {NAV.map((item) => (
-            <Link key={item.href} href={item.href} className="nav-link">
-              <span style={{ fontSize: 16 }}>{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <LanguageProvider>
+          <AdminNav />
+        </LanguageProvider>
 
-        <div className="divider" />
-        <div style={{ padding: "0 12px" }}>
-          <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Logged in as{" "}
-            <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
+        <div className="divider" style={{ opacity: 0.5 }} />
+        
+        <div style={{ 
+          background: "var(--bg-elevated)", 
+          padding: "16px", 
+          borderRadius: "var(--radius-lg)",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          border: "1px solid var(--border-subtle)"
+        }}>
+          {session.user.image ? (
+            <img src={session.user.image} style={{ width: 36, height: 36, borderRadius: "50%" }} alt="" />
+          ) : (
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--bg-glass)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <User size={18} color="var(--text-secondary)" />
+            </div>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {session.user.name}
-            </span>
-          </p>
+            </p>
+            <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Administrator</p>
+          </div>
         </div>
       </aside>
 
@@ -64,7 +72,7 @@ export default async function AdminLayout({
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "32px",
+          padding: "40px 48px",
           background: "var(--bg-base)",
         }}
       >

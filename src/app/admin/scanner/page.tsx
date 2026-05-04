@@ -1,13 +1,29 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
+import { 
+  Camera, 
+  Search, 
+  CheckCircle2, 
+  XCircle, 
+  AlertCircle, 
+  UserCheck, 
+  UserMinus,
+  RefreshCcw,
+  Zap,
+  ArrowRight,
+  ShieldCheck,
+  House,
+  RotateCcw,
+  Download
+} from "lucide-react";
 
-type ScanStatus = "success" | "already_checked_in" | "walk_in_required" | "not_found" | "quota_full" | "error";
+type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "error";
 
 type ScanResult = {
   status: ScanStatus;
-  student?: { name: string; nickname: string; house?: string; houseColor?: string };
+  student?: { name: string; nickname: string; studentId?: string; house?: string; houseColor?: string };
   checkedInAt?: string;
   error?: string;
   rawToken?: string;
@@ -19,13 +35,23 @@ export default function QRScannerPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState<string>("");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [scannerReady, setScannerReady] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
   const [confirmingWalkIn, setConfirmingWalkIn] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [manualResults, setManualResults] = useState<any[]>([]);
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+  
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
+  const eventIdRef = useRef<string>("");
+
+  // Update ref whenever state changes
+  useEffect(() => {
+    eventIdRef.current = eventId;
+  }, [eventId]);
 
   // Fetch events for the selector
   useEffect(() => {
@@ -39,58 +65,111 @@ export default function QRScannerPage() {
       });
   }, []);
 
-  // Initialize QR scanner
-  useEffect(() => {
-    if (!eventId) return;
+  const startScanner = async () => {
+    // 1. Clean up any existing instance first
+    if (scannerRef.current) {
+        try {
+            await scannerRef.current.stop();
+        } catch (e) {
+            // ignore
+        }
+        scannerRef.current = null;
+    }
 
-    const scanner = new Html5QrcodeScanner(
-      "qr-reader",
-      { qrbox: { width: 260, height: 260 }, fps: 8 },
-      false
-    );
+    // 2. Ensure container is empty and ready
+    const container = document.getElementById("qr-reader");
+    if (container) container.innerHTML = "";
+
+    // 3. Initialize new instance
+    const scanner = new Html5Qrcode("qr-reader");
     scannerRef.current = scanner;
+    setScannerError(null);
 
-    scanner.render(
-      async (decodedText) => {
-        if (lastTokenRef.current === decodedText) return;
-        lastTokenRef.current = decodedText;
-        scanner.pause();
-
-        const res = await fetch("/api/admin/scan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ qrToken: decodedText, eventId, isWalkIn: false }),
-        });
-        const data = await res.json();
-        setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: decodedText });
-
-        setTimeout(() => {
-          setScanResult(null);
-          lastTokenRef.current = null;
-          try { scanner.resume(); } catch {}
-        }, 6000);
-      },
-      () => {} // Suppress frame errors
-    );
-
-    setScannerReady(true);
-
-    return () => {
-      try { scanner.clear(); } catch {}
+    try {
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 280, height: 280 } },
+        async (decodedText) => {
+          if (lastTokenRef.current === decodedText || showModal) return;
+          lastTokenRef.current = decodedText;
+          
+          try {
+            const res = await fetch("/api/admin/scan", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ 
+                qrToken: decodedText, 
+                eventId: eventIdRef.current, 
+                action: "scan" 
+              }),
+            });
+            const data = await res.json();
+            const result: ScanResult = { 
+              status: data.status ?? (res.ok ? "success" : "error"), 
+              ...data, 
+              rawToken: decodedText 
+            };
+            setScanResult(result);
+            setShowModal(true);
+            if ("vibrate" in navigator) navigator.vibrate(result.status === "success" ? [100, 50, 100] : 200);
+          } catch (err) {
+            setScanResult({ status: "error", error: "Connection error" });
+            setShowModal(true);
+          }
+        },
+        () => {}
+      );
+      setIsScanning(true);
+    } catch (err: any) {
+      console.error("Scanner start error:", err);
+      setScannerError(err?.message || "Could not start camera. Please check permissions.");
+      setIsScanning(false);
       scannerRef.current = null;
-    };
-  }, [eventId]);
+    }
+  };
 
-  const confirmWalkIn = async (token: string) => {
-    setConfirmingWalkIn(true);
-    const res = await fetch("/api/admin/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ qrToken: token, eventId, isWalkIn: true }),
-    });
-    const data = await res.json();
-    setScanResult({ status: data.status ?? "error", ...data });
-    setConfirmingWalkIn(false);
+  useEffect(() => {
+    if (events.length > 0) {
+      startScanner();
+    }
+    return () => {
+      if (scannerRef.current) {
+        const s = scannerRef.current;
+        // Robust check: try to stop only if it appears to be active
+        // and always catch to prevent fatal crashes
+        try {
+          s.stop().catch(() => {});
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+  }, [events.length > 0]);
+
+  const closeModal = () => {
+    setShowModal(false);
+    setTimeout(() => {
+      setScanResult(null);
+      lastTokenRef.current = null;
+    }, 300);
+  };
+
+  const confirmAttendance = async (token: string) => {
+    setIsConfirming(true);
+    try {
+      const res = await fetch("/api/admin/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qrToken: token, eventId, action: "confirm" }),
+      });
+      const data = await res.json();
+      setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: token });
+      if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
+    } catch (err) {
+      setScanResult({ status: "error", error: "Connection error" });
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
   const handleManualSearch = async (q: string) => {
@@ -105,241 +184,375 @@ export default function QRScannerPage() {
     const res = await fetch("/api/admin/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ qrToken, eventId, isWalkIn: true }),
+      body: JSON.stringify({ qrToken, eventId, action: "scan" }),
     });
     const data = await res.json();
-    setScanResult({ status: data.status ?? "error", ...data });
+    setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: qrToken });
+    setShowModal(true);
     setManualResults([]);
     setManualSearch("");
     setCheckingIn(null);
   };
 
-  const STATUS_CONFIG: Record<ScanStatus, { bg: string; border: string; color: string; icon: string; title: string }> = {
-    success:           { bg: "rgba(34,197,94,0.08)",   border: "rgba(34,197,94,0.3)",   color: "#4ade80", icon: "✓", title: "Check-In Confirmed" },
-    already_checked_in:{ bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.3)",   color: "#f87171", icon: "✕", title: "Already Checked In" },
-    walk_in_required:  { bg: "rgba(234,179,8,0.08)",   border: "rgba(234,179,8,0.3)",   color: "#facc15", icon: "!", title: "Walk-in Required" },
-    not_found:         { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.3)",   color: "#f87171", icon: "?", title: "Student Not Found" },
-    quota_full:        { bg: "rgba(234,179,8,0.08)",   border: "rgba(234,179,8,0.3)",   color: "#facc15", icon: "⚠", title: "Event Full" },
-    error:             { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.3)",   color: "#f87171", icon: "✕", title: "Error" },
+  const STATUS_CONFIG: Record<ScanStatus, { 
+    color: string; 
+    icon: any; 
+    title: string; 
+    desc: string;
+    bg: string;
+  }> = {
+    success: { 
+      color: "#10b981", 
+      icon: UserCheck, 
+      title: "Check-In Success", 
+      desc: "Student has been checked in successfully.",
+      bg: "rgba(16, 185, 129, 0.1)"
+    },
+    success_walk_in: { 
+      color: "#10b981", 
+      icon: Zap, 
+      title: "Walk-In Registered", 
+      desc: "Student was not registered, but has been added as a walk-in.",
+      bg: "rgba(16, 185, 129, 0.1)"
+    },
+    pending_confirmation: { 
+      color: "#6366f1", 
+      icon: AlertCircle, 
+      title: "Verify Presence", 
+      desc: "Student is pre-registered. Please confirm physical presence.",
+      bg: "rgba(99, 102, 241, 0.1)"
+    },
+    already_checked_in: { 
+      color: "#ef4444", 
+      icon: RefreshCcw, 
+      title: "Duplicate Check-In", 
+      desc: "Student already checked into this event.",
+      bg: "rgba(239, 68, 68, 0.1)"
+    },
+    walk_ins_disabled: { 
+      color: "#f59e0b", 
+      icon: UserMinus, 
+      title: "Walk-ins Disabled", 
+      desc: "This event does not allow walk-ins and student is not registered.",
+      bg: "rgba(245, 158, 11, 0.1)"
+    },
+    not_found: { 
+      color: "#ef4444", 
+      icon: XCircle, 
+      title: "Invalid Token", 
+      desc: "This QR code is not recognized by the system.",
+      bg: "rgba(239, 68, 68, 0.1)"
+    },
+    quota_full: { 
+      color: "#f59e0b", 
+      icon: Zap, 
+      title: "Event Full", 
+      desc: "Maximum capacity reached for this event.",
+      bg: "rgba(245, 158, 11, 0.1)"
+    },
+    error: { 
+      color: "#ef4444", 
+      icon: AlertCircle, 
+      title: "System Error", 
+      desc: "An unexpected error occurred. Please try again.",
+      bg: "rgba(239, 68, 68, 0.1)"
+    },
   };
 
+  const cfg = scanResult ? (STATUS_CONFIG[scanResult.status] || STATUS_CONFIG.error) : null;
+
   return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <p className="section-title">Admin Panel</p>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-0.02em" }}>QR Scanner</h1>
+    <div className="animate-fade-in">
+      <div style={{ marginBottom: 40, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-accent-primary" style={{ background: 'var(--accent-primary)', boxShadow: '0 0 8px var(--accent-glow)' }} />
+            <p className="section-title" style={{ margin: 0 }}>Attendance System</p>
+          </div>
+          <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: "-0.04em" }}>QR Scanner</h1>
+        </div>
       </div>
 
-      {/* Event selector */}
-      <div
-        style={{
-          background: "var(--bg-surface)",
-          border: "1px solid var(--border-subtle)",
-          borderRadius: "var(--radius-lg)",
-          padding: 20,
-          marginBottom: 24,
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-        }}
-      >
-        <label className="label" style={{ margin: 0, whiteSpace: "nowrap" }}>Active Event:</label>
-        <select
-          id="event-selector"
-          className="input"
-          style={{ maxWidth: 400 }}
-          value={eventId}
-          onChange={(e) => setEventId(e.target.value)}
-        >
-          {events.length === 0 && <option value="">No events found</option>}
-          {events.map((e) => (
-            <option key={e.id} value={e.id}>{e.title}</option>
-          ))}
-        </select>
-      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 32, alignItems: "start" }}>
+        
+        {/* Left: Main Scanner Area */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Event Selector */}
+          <div className="stat-card" style={{ padding: 24, display: "flex", alignItems: "center", gap: 20 }}>
+            <div style={{ width: 48, height: 48, background: "var(--bg-elevated)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Zap size={24} color="var(--accent-primary)" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>ACTIVE EVENT</label>
+              <select
+                className="input"
+                style={{ width: "100%", fontSize: 18, fontWeight: 700, padding: "4px 0", border: "none", background: "none" }}
+                value={eventId}
+                onChange={(e) => setEventId(e.target.value)}
+              >
+                {events.length === 0 && <option value="">No events available</option>}
+                {events.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+              </select>
+            </div>
+            {eventId && (
+              <a 
+                href={`/api/admin/events/${eventId}/report`}
+                download
+                className="btn btn-ghost"
+                style={{ padding: "8px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
+              >
+                <Download size={16} />
+                Report
+              </a>
+            )}
+          </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-        {/* Left: Scanner + Manual */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* QR Camera Box */}
           <div
             style={{
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-              borderRadius: "var(--radius-lg)",
+              background: "#000",
+              borderRadius: "var(--radius-xl)",
               overflow: "hidden",
+              border: "8px solid var(--bg-surface)",
+              boxShadow: "0 40px 80px rgba(0,0,0,0.15)",
+              position: "relative",
+              minHeight: 320,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
             }}
           >
             <div id="qr-reader" style={{ width: "100%" }} />
-          </div>
-
-          {/* Manual fallback (FE-16) */}
-          <div
-            style={{
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-              borderRadius: "var(--radius-lg)",
-              padding: 20,
-            }}
-          >
-            <p className="section-title">Manual Override (FE-16)</p>
-            <input
-              id="manual-search-input"
-              className="input"
-              placeholder="Search by name, nickname, or student ID..."
-              value={manualSearch}
-              onChange={(e) => handleManualSearch(e.target.value)}
-            />
-            {manualResults.length > 0 && (
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                {manualResults.map((s) => (
-                  <div
-                    key={s.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "10px 14px",
-                      background: "var(--bg-elevated)",
-                      borderRadius: "var(--radius-md)",
-                      border: "1px solid var(--border-subtle)",
-                    }}
-                  >
-                    <div>
-                      <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
-                        {s.name} <span style={{ color: "var(--text-muted)" }}>({s.nickname})</span>
-                      </p>
-                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{s.studentId}</p>
-                    </div>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={checkingIn === s.qrToken}
-                      onClick={() => manualCheckIn(s.qrToken)}
-                    >
-                      {checkingIn === s.qrToken ? <div className="spinner" /> : "Check In"}
-                    </button>
-                  </div>
-                ))}
+            
+            {(!isScanning && !scannerError) && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#000", color: "#fff", gap: 16 }}>
+                <div className="spinner" />
+                <p style={{ fontSize: 14, fontWeight: 600 }}>Initializing Camera...</p>
               </div>
+            )}
+
+            {scannerError && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.9)", color: "#fff", padding: 40, textAlign: "center" }}>
+                <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
+                <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Camera Access Error</p>
+                <p style={{ fontSize: 14, color: "#94a3b8", marginBottom: 24 }}>{scannerError}</p>
+                <button 
+                    className="btn btn-primary" 
+                    style={{ borderRadius: 12 }}
+                    onClick={startScanner}
+                >
+                    <RotateCcw size={16} /> Retry Camera
+                </button>
+              </div>
+            )}
+
+            {isScanning && (
+                <div style={{ position: "absolute", top: 20, left: 20, pointerEvents: "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.5)", padding: "6px 12px", borderRadius: 10, backdropFilter: "blur(4px)" }}>
+                        <div className="animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} />
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.05em" }}>Scanner Active</span>
+                    </div>
+                </div>
             )}
           </div>
         </div>
 
-        {/* Right: Result */}
-        <div>
-          {scanResult ? (
-            (() => {
-              const cfg = STATUS_CONFIG[scanResult.status] ?? STATUS_CONFIG.error;
-              return (
-                <div
-                  className="animate-fade-in-up"
-                  style={{
-                    background: cfg.bg,
-                    border: `1px solid ${cfg.border}`,
-                    borderRadius: "var(--radius-lg)",
-                    padding: 32,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 16,
-                    height: "100%",
-                    minHeight: 280,
-                    justifyContent: "center",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "50%",
-                        background: cfg.bg,
-                        border: `2px solid ${cfg.color}`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 22,
-                        color: cfg.color,
-                        fontWeight: 900,
-                      }}
-                    >
-                      {cfg.icon}
-                    </div>
-                    <h2 style={{ fontSize: 22, fontWeight: 900, color: cfg.color }}>{cfg.title}</h2>
-                  </div>
-
-                  {scanResult.student && (
-                    <>
-                      <p style={{ fontSize: 28, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
-                        {scanResult.student.name}
-                        {scanResult.student.nickname && (
-                          <span style={{ fontSize: 18, color: "var(--text-secondary)", fontWeight: 600 }}>
-                            {" "}({scanResult.student.nickname})
-                          </span>
-                        )}
-                      </p>
-                      {scanResult.student.house && (
-                        <span
-                          className="badge"
-                          style={{
-                            background: `${scanResult.student.houseColor ?? "var(--accent-primary)"}20`,
-                            color: scanResult.student.houseColor ?? "var(--accent-primary)",
-                            border: `1px solid ${scanResult.student.houseColor ?? "var(--accent-primary)"}40`,
-                            fontSize: 14,
-                            padding: "6px 14px",
-                            alignSelf: "flex-start",
-                          }}
-                        >
-                          🏠 {scanResult.student.house}
-                        </span>
-                      )}
-                    </>
-                  )}
-
-                  {scanResult.checkedInAt && (
-                    <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                      Original check-in: {new Date(scanResult.checkedInAt).toLocaleString()}
-                    </p>
-                  )}
-
-                  {scanResult.error && (
-                    <p style={{ fontSize: 14, color: cfg.color, opacity: 0.85 }}>{scanResult.error}</p>
-                  )}
-
-                  {scanResult.status === "walk_in_required" && scanResult.rawToken && (
-                    <button
-                      id="confirm-walkin-btn"
-                      className="btn btn-primary"
-                      onClick={() => confirmWalkIn(scanResult.rawToken!)}
-                      disabled={confirmingWalkIn}
-                      style={{ alignSelf: "flex-start" }}
-                    >
-                      {confirmingWalkIn ? <><div className="spinner" />Confirming…</> : "✓ Confirm Walk-in (Check Quota)"}
-                    </button>
-                  )}
-                </div>
-              );
-            })()
-          ) : (
-            <div
-              style={{
-                background: "var(--bg-surface)",
-                border: "2px dashed var(--border-subtle)",
-                borderRadius: "var(--radius-lg)",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                minHeight: 280,
-                color: "var(--text-muted)",
-                gap: 12,
-              }}
-            >
-              <div style={{ fontSize: 48 }}>📷</div>
-              <p style={{ fontWeight: 600, fontSize: 15 }}>Waiting for QR scan…</p>
-              <p style={{ fontSize: 13 }}>Point camera at a student's Digital ID</p>
+        {/* Right: Manual Override & Stats */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          <div className="stat-card" style={{ padding: 32 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+              <Search size={20} color="var(--accent-primary)" />
+              <h3 style={{ fontSize: 18, fontWeight: 800 }}>Manual Override</h3>
             </div>
-          )}
+            
+            <div style={{ position: "relative" }}>
+              <input
+                className="input"
+                placeholder="Name or Student ID..."
+                style={{ paddingLeft: 12 }}
+                value={manualSearch}
+                onChange={(e) => handleManualSearch(e.target.value)}
+              />
+            </div>
+
+            {manualResults.length > 0 && (
+              <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                {manualResults.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => manualCheckIn(s.qrToken)}
+                    disabled={checkingIn === s.qrToken}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: 16,
+                      background: "var(--bg-elevated)",
+                      borderRadius: 16,
+                      border: "1px solid var(--border-subtle)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <div>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{s.name}</p>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{s.studentId}</p>
+                    </div>
+                    <ArrowRight size={16} color="var(--accent-primary)" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="stat-card" style={{ padding: 32, background: "linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%)" }}>
+             <ShieldCheck size={40} style={{ marginBottom: 16, opacity: 0.2 }} />
+             <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 700 }}>SESSION SECURITY</p>
+             <p style={{ fontSize: 15, color: "var(--text-primary)", marginTop: 8, lineHeight: 1.6 }}>
+               System is operating under <b>Secure Mode</b>. All scans are logged with admin timestamps.
+             </p>
+          </div>
         </div>
       </div>
+
+      {/* Result Modal */}
+      {showModal && cfg && (
+        <div 
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(0,0,0,0.6)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+          onClick={closeModal}
+        >
+          <div 
+            className="animate-fade-in-up"
+            style={{
+              background: "var(--bg-surface)",
+              borderRadius: "var(--radius-xl)",
+              width: "100%",
+              maxWidth: 440,
+              overflow: "hidden",
+              boxShadow: "0 50px 100px rgba(0,0,0,0.3)",
+              border: `1px solid var(--border-subtle)`
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header/Icon */}
+            <div style={{ background: cfg.bg, padding: "48px 32px", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+              <div style={{ 
+                width: 80, 
+                height: 80, 
+                borderRadius: "50%", 
+                background: "var(--bg-surface)", 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "center",
+                color: cfg.color,
+                boxShadow: `0 10px 30px ${cfg.color}30`,
+                border: `4px solid var(--bg-surface)`
+              }}>
+                <cfg.icon size={40} strokeWidth={3} />
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <h2 style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)" }}>{cfg.title}</h2>
+                <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: 4 }}>{cfg.desc}</p>
+              </div>
+            </div>
+
+            {/* Modal Body: Student Info */}
+            <div style={{ padding: 32 }}>
+              {scanResult?.student ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.04em" }}>
+                      {scanResult.student.name}
+                    </p>
+                    <p style={{ fontSize: 18, color: "var(--text-secondary)", fontWeight: 700, marginTop: 4 }}>
+                      {scanResult.student.studentId}
+                    </p>
+                    {scanResult.student.nickname && (
+                      <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600, marginTop: 2 }}>
+                        aka "{scanResult.student.nickname}"
+                      </p>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+                    <div style={{ 
+                      padding: "10px 20px", 
+                      borderRadius: 12, 
+                      background: "var(--bg-elevated)", 
+                      border: "1px solid var(--border-subtle)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8
+                    }}>
+                      <House size={16} color={scanResult.student.houseColor} />
+                      <span style={{ fontSize: 14, fontWeight: 700, color: scanResult.student.houseColor }}>
+                        {scanResult.student.house}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", color: cfg.color, fontWeight: 700 }}>
+                  {scanResult?.error || "Unknown Student"}
+                </div>
+              )}
+
+              {scanResult?.status === "pending_confirmation" && scanResult.rawToken && (
+                <button
+                  className="btn btn-primary btn-full btn-xl"
+                  style={{ marginTop: 24, background: "#6366f1" }}
+                  onClick={() => confirmAttendance(scanResult.rawToken!)}
+                  disabled={isConfirming}
+                >
+                  {isConfirming ? "Processing..." : "Confirm Physical Presence"}
+                </button>
+              )}
+
+              {(scanResult?.status === "success" || scanResult?.status === "success_walk_in") && (
+                <div 
+                  style={{ 
+                    marginTop: 24, 
+                    padding: 16, 
+                    borderRadius: 16, 
+                    background: "#10b981", 
+                    color: "white", 
+                    textAlign: "center",
+                    fontWeight: 800,
+                    fontSize: 18,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 12,
+                    boxShadow: "0 10px 20px rgba(16, 185, 129, 0.3)"
+                  }}
+                >
+                  <CheckCircle2 size={24} />
+                  Confirmed
+                </div>
+              )}
+
+              <button 
+                className="btn btn-ghost btn-full btn-xl" 
+                style={{ marginTop: 12 }}
+                onClick={closeModal}
+              >
+                Continue Scanning
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

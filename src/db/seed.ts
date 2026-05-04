@@ -10,10 +10,10 @@ import { houses } from "./schema";
 
 
 const HOUSES = [
-  { id: "red",    name: "Red House",    color: "#ef4444" },
-  { id: "blue",   name: "Blue House",   color: "#3b82f6" },
-  { id: "green",  name: "Green House",  color: "#22c55e" },
-  { id: "yellow", name: "Yellow House", color: "#eab308" },
+  { id: "red",    name: "Lanna",   color: "#ef4444" },
+  { id: "green",  name: "Mengrai", color: "#14b8a6" },
+  { id: "yellow", name: "Kawila",  color: "#f59e0b" },
+  { id: "blue",   name: "Dara",    color: "#6366f1" },
 ];
 
 async function seed() {
@@ -23,7 +23,10 @@ async function seed() {
     await db
       .insert(houses)
       .values({ id: house.id, name: house.name, color: house.color, points: 0 })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: houses.id,
+        set: { name: house.name, color: house.color }
+      });
     console.log(`  ✅ House: ${house.name}`);
   }
 

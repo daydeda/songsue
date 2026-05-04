@@ -618,22 +618,16 @@ export default function AdminEventsPage() {
 
       {/* Main Header */}
       <div style={{ marginBottom: 48 }}>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 32 }}>
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-8">
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-               <div style={{ width: 32, height: 2, background: "var(--accent-primary)", borderRadius: 2 }} />
-               <p className="section-title" style={{ margin: 0, color: "var(--accent-primary)", fontWeight: 800 }}>Event Command Center</p>
+            <div className="flex items-center gap-2 mb-2">
+               <div className="w-8 h-[2px] bg-[var(--accent-primary)] rounded-full" />
+               <p className="section-title m-0 text-[var(--accent-primary)] font-extrabold uppercase tracking-widest text-[10px]">Event Command Center</p>
             </div>
-            <h1 style={{ fontSize: 48, fontWeight: 900, letterSpacing: "-0.05em", color: "var(--text-primary)" }}>Manage Events</h1>
+            <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">Manage Events</h1>
           </div>
           <button
-            className={`btn ${showForm ? "btn-ghost" : "btn-primary"} btn-lg`}
-            style={{ 
-              borderRadius: 24, 
-              padding: "16px 32px", 
-              boxShadow: showForm ? "none" : "0 12px 32px var(--accent-glow)",
-              height: 64
-            }}
+            className={`btn ${showForm ? "btn-ghost" : "btn-primary"} h-16 px-8 rounded-2xl text-lg font-bold transition-all duration-300 ${!showForm && "shadow-[0_12px_32px_var(--accent-glow)]"}`}
             onClick={() => {
               if (showForm) {
                 setShowForm(false);
@@ -651,15 +645,7 @@ export default function AdminEventsPage() {
         </div>
 
         {/* Toolbar */}
-        <div style={{ 
-          display: "flex", 
-          gap: 16, 
-          background: "var(--bg-surface)", 
-          padding: 12, 
-          borderRadius: 24, 
-          border: "1px solid var(--border-subtle)",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.03)"
-        }}>
+        <div className="flex flex-col md:flex-row gap-4 bg-[var(--bg-surface)] p-3 rounded-[24px] border border-[var(--border-subtle)] shadow-sm">
           <div style={{ position: "relative", flex: 1 }}>
             <Search size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
             <input 
@@ -670,22 +656,12 @@ export default function AdminEventsPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <div style={{ display: "flex", gap: 8, background: "var(--bg-elevated)", padding: 4, borderRadius: 16 }}>
+          <div className="flex gap-1 bg-[var(--bg-elevated)] p-1 rounded-2xl overflow-x-auto no-scrollbar">
             {(["all", "live", "upcoming", "past"] as const).map((s) => (
               <button 
                 key={s} 
                 onClick={() => setFilterStatus(s)}
-                style={{ 
-                  padding: "8px 16px", 
-                  borderRadius: 12, 
-                  fontSize: 13, 
-                  fontWeight: 700, 
-                  textTransform: "capitalize",
-                  background: filterStatus === s ? "var(--bg-surface)" : "transparent",
-                  color: filterStatus === s ? "var(--accent-primary)" : "var(--text-muted)",
-                  boxShadow: filterStatus === s ? "0 4px 12px rgba(0,0,0,0.05)" : "none",
-                  transition: "all 0.2s"
-                }}
+                className={`px-4 py-2 rounded-xl text-[13px] font-bold capitalize transition-all duration-200 whitespace-nowrap ${filterStatus === s ? "bg-[var(--bg-surface)] text-[var(--accent-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
               >
                 {s}
               </button>
@@ -717,8 +693,8 @@ export default function AdminEventsPage() {
             {editingId ? "Edit Event Intelligence" : "Define New Event"}
           </h2>
           
-          <form onSubmit={handleSubmit} style={{ position: "relative" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 40 }}>
+          <form onSubmit={handleSubmit} className="relative">
+            <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-10">
               {/* Left Column: Basic Info */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 <div className="field">

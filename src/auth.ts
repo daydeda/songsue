@@ -32,6 +32,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       // Ensure every user has a qrToken (FE-13)
+      // Note: On first sign-in, the user might not be in the DB yet.
+      // The session callback below will act as a secondary safety net.
       const existingUser = await db.query.users.findFirst({
         where: eq(users.email, email),
         columns: { qrToken: true, id: true }
@@ -64,12 +66,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       });
 
       if (dbUser) {
+        // If qrToken is missing in DB for some reason, generate it now (FE-13)
+        if (!dbUser.qrToken) {
+          const newToken = crypto.randomUUID();
+          await db.update(users).set({ qrToken: newToken }).where(eq(users.id, user.id));
+          dbUser.qrToken = newToken;
+        }
+
         session.user.email = dbUser.email;
         (session.user as any).role = dbUser.role ?? "student";
         (session.user as any).profileCompleted = dbUser.profileCompleted ?? false;
         (session.user as any).houseId = dbUser.houseId ?? null;
         (session.user as any).imageTransform = dbUser.imageTransform ?? null;
-        (session.user as any).qrToken = dbUser.qrToken ?? null;
+        (session.user as any).qrToken = dbUser.qrToken;
       }
 
       // Force admin role for the official SMO email - CASE INSENSITIVE (FE-04)

@@ -298,7 +298,7 @@ export default function OnboardingPage() {
               )}
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="field" style={{ width: 140 }}>
                 <label className={labelCls}>{t.prefix}</label>
                 <select
@@ -323,7 +323,7 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="field flex-1">
                 <label className={labelCls}>{t.studentId}</label>
                 <input
@@ -348,7 +348,7 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="field flex-1">
                 <label className={labelCls}>{t.major}</label>
                 <select
@@ -365,7 +365,7 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="field flex-1">
                 <label className={labelCls}>{t.religion}</label>
                 <input
@@ -377,7 +377,7 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="field flex-1">
                 <label className={labelCls}>{t.phone}</label>
                 <input
@@ -412,7 +412,7 @@ export default function OnboardingPage() {
               <span>{t.medicalInfoDetail}</span>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="field flex-1">
                 <label className={labelCls}>{t.chronicDiseases}</label>
                 <input
@@ -433,7 +433,7 @@ export default function OnboardingPage() {
               </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="field flex-1">
                 <label className={labelCls}>{t.drugAllergies}</label>
                 <input
@@ -531,7 +531,7 @@ export default function OnboardingPage() {
                       onChange={(e) => setEC(i, "name", e.target.value)}
                     />
                   </div>
-                  <div className="flex gap-4">
+                  <div className="flex flex-col sm:flex-row gap-4">
                     <div className="field flex-1">
                       <label className={labelCls}>{t.relationship}</label>
                       <input
@@ -582,7 +582,7 @@ export default function OnboardingPage() {
               >
                 {t.profileSummary}
               </p>
-              <dl style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px" }}>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-x-4">
                 {[
                   [t.fullName, `${formData.prefix}${formData.name}`],
                   [t.nickname, formData.nickname],
@@ -641,7 +641,7 @@ export default function OnboardingPage() {
 
         {/* Navigation buttons */}
         <div
-          className="flex gap-3"
+          className="flex flex-col sm:flex-row gap-3"
           style={{ marginTop: 32, justifyContent: step === 0 ? "flex-end" : "space-between" }}
         >
           {step > 0 && (

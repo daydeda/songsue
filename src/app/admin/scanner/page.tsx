@@ -263,17 +263,17 @@ export default function QRScannerPage() {
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: 40, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2 h-2 rounded-full bg-accent-primary" style={{ background: 'var(--accent-primary)', boxShadow: '0 0 8px var(--accent-glow)' }} />
             <p className="section-title" style={{ margin: 0 }}>Attendance System</p>
           </div>
-          <h1 style={{ fontSize: 42, fontWeight: 900, letterSpacing: "-0.04em" }}>QR Scanner</h1>
+          <h1 style={{ fontSize: "clamp(32px, 5vw, 42px)", fontWeight: 900, letterSpacing: "-0.04em" }}>QR Scanner</h1>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 32, alignItems: "start" }}>
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-8 items-start">
         
         {/* Left: Main Scanner Area */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>

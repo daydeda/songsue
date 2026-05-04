@@ -37,7 +37,7 @@ export default function HistoryPage() {
             <div className="spinner" style={{ width: 32, height: 32 }} />
           </div>
         ) : history.length > 0 ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 24 }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {history.map((h) => (
               <div key={h.id} className="glass animate-fade-in-up" style={{ 
                 padding: 24, 

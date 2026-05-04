@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 const scanSchema = z.object({
-  qrToken: z.string().uuid(),
+  qrToken: z.string(), // Relaxed from uuid() to allow fallback IDs
   eventId: z.string().uuid(),
   action: z.enum(["scan", "confirm"]).default("scan"),
 });
@@ -21,9 +21,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { qrToken, eventId, action } = scanSchema.parse(body);
 
-    // 1. Resolve student
+    // 1. Resolve student (Try QR Token first, then fallback to User ID)
     const student = await db.query.users.findFirst({
-      where: eq(users.qrToken, qrToken),
+      where: (users, { eq, or }) => or(
+        eq(users.qrToken, qrToken),
+        eq(users.id, qrToken)
+      ),
       with: { house: true },
     });
 

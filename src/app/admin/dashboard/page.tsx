@@ -177,7 +177,7 @@ export default function AdminDashboardOverview() {
       )}
 
       {/* Page header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 40 }}>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2 h-2 rounded-full bg-accent-primary" style={{ background: 'var(--accent-primary)', boxShadow: '0 0 8px var(--accent-glow)' }} />
@@ -221,7 +221,7 @@ export default function AdminDashboardOverview() {
       ) : (
         <>
           {/* Stat cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24, marginBottom: 48 }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
             <div className="stat-card" style={{ background: "linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%)", padding: 32, position: "relative", overflow: "hidden" }}>
                <Users size={80} style={{ position: "absolute", right: -10, bottom: -10, opacity: 0.03 }} />
               <p className="section-title">Total Students</p>
@@ -266,7 +266,7 @@ export default function AdminDashboardOverview() {
               <div className="badge badge-yellow">Season 1 Active</div>
             </div>
             
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {sortedHouses.map((house, idx) => (
                 <div
                   key={house.id}
@@ -356,7 +356,7 @@ export default function AdminDashboardOverview() {
             </div>
           </section>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             <div className="stat-card" style={{ padding: 32 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <h3 style={{ fontSize: 18, fontWeight: 800 }}>Recent Activity</h3>

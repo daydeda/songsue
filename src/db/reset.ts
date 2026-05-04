@@ -60,6 +60,7 @@ async function reset() {
       name: "Admin",
       email: adminEmail,
       role: "admin",
+      qrToken: crypto.randomUUID(),
       profileCompleted: true,
       createdAt: new Date(),
       updatedAt: new Date(),

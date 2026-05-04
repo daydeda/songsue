@@ -133,7 +133,7 @@ export default function HousesPage() {
           ))}
         </section>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 32 }}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8">
           {/* Recent Activity */}
           <section className="glass" style={{ padding: 40, borderRadius: 40 }}>
             <h2 style={{ fontSize: 24, fontWeight: 900, marginBottom: 32, display: "flex", alignItems: "center", gap: 12 }}>

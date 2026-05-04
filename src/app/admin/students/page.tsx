@@ -98,49 +98,40 @@ export default function AdminStudentsDirectory() {
     <>
     <div className="animate-fade-in-up" style={{ paddingBottom: 100 }}>
       {/* Header Section */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 48 }}>
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12">
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-             <div style={{ width: 32, height: 2, background: "var(--accent-primary)", borderRadius: 2 }} />
-             <p className="section-title" style={{ margin: 0, color: "var(--accent-primary)", fontWeight: 800 }}>Member Intelligence</p>
+          <div className="flex items-center gap-2 mb-2">
+             <div className="w-8 h-[2px] bg-[var(--accent-primary)] rounded-full" />
+             <p className="section-title m-0 text-[var(--accent-primary)] font-extrabold uppercase tracking-widest text-[10px]">Member Intelligence</p>
           </div>
-          <h1 style={{ fontSize: 48, fontWeight: 900, letterSpacing: "-0.05em", color: "var(--text-primary)" }}>Student Directory</h1>
+          <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)]">Student Directory</h1>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--bg-elevated)", padding: "12px 24px", borderRadius: 24, border: "1px solid var(--border-subtle)" }}>
+        <div className="flex items-center gap-4 bg-[var(--bg-elevated)] px-6 py-3 rounded-2xl border border-[var(--border-subtle)] self-start lg:self-auto">
            <Users size={20} className="text-muted" />
-           <span style={{ fontSize: 18, fontWeight: 900, color: "var(--text-primary)" }}>{filtered.length}</span>
-           <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-muted)" }}>Active Members</span>
+           <div className="flex flex-col">
+              <span className="text-xl font-black text-[var(--text-primary)] leading-none">{filtered.length}</span>
+              <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Active Members</span>
+           </div>
         </div>
       </div>
 
       {/* Toolbar & Filters */}
-      <div style={{ 
-        display: "flex", 
-        gap: 16, 
-        marginBottom: 32,
-        background: "var(--bg-surface)", 
-        padding: 12, 
-        borderRadius: 24, 
-        border: "1px solid var(--border-subtle)",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.03)"
-      }}>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Search size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+      <div className="flex flex-col md:flex-row gap-4 bg-[var(--bg-surface)] p-3 rounded-[24px] border border-[var(--border-subtle)] shadow-sm mb-8">
+        <div className="relative flex-1">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
           <input
             id="student-search-input"
-            className="input"
-            style={{ paddingLeft: 48, borderRadius: 16, height: 52, background: "var(--bg-elevated)", border: "none", fontSize: 15 }}
+            className="input w-full pl-12 h-12 bg-[var(--bg-elevated)] border-none rounded-xl text-sm"
             type="text"
             placeholder="Search by name, nickname, or student ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div style={{ position: "relative", minWidth: 200 }}>
-          <Filter size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", zIndex: 1 }} />
+        <div className="relative min-w-[200px]">
+          <Filter size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted z-10" />
           <select 
-            className="input" 
-            style={{ paddingLeft: 44, borderRadius: 16, height: 52, background: "var(--bg-elevated)", border: "none", appearance: "none", cursor: "pointer", fontWeight: 600, width: "100%" }}
+            className="input w-full pl-11 h-12 bg-[var(--bg-elevated)] border-none rounded-xl text-sm font-bold appearance-none cursor-pointer"
             value={houseFilter}
             onChange={(e) => setHouseFilter(e.target.value)}
           >
@@ -149,7 +140,7 @@ export default function AdminStudentsDirectory() {
               <option key={h.id} value={h.id}>{h.name}</option>
             ))}
           </select>
-          <ChevronDown size={14} style={{ position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
         </div>
       </div>
 

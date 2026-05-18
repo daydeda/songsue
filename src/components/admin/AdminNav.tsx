@@ -27,7 +27,7 @@ export function AdminNav() {
 
   return (
     <nav style={{ flex: 1 }}>
-      <p className="section-title" style={{ paddingLeft: 12, marginBottom: 12 }}>Main Menu</p>
+      <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>Main Menu</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {NAV.map((item) => {
           const Icon = item.icon;
@@ -56,8 +56,8 @@ export function AdminNav() {
         })}
       </div>
 
-      <div className="divider" style={{ margin: "24px 12px", opacity: 0.5 }} />
-      <p className="section-title" style={{ paddingLeft: 12, marginBottom: 12 }}>Account</p>
+      <div className="divider" style={{ margin: "24px 0", opacity: 0.5 }} />
+      <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>Account</p>
       <Link href="/dashboard" className="nav-link" style={{ gap: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
         <User size={18} strokeWidth={2 } />
         <span style={{ fontWeight: 500 }}>Switch to Student View</span>

@@ -17,6 +17,8 @@ const eventSchema = z.object({
   walkInsEnabled: z.boolean().optional(),
 });
 
+import { checkAndAwardPastEventPoints } from "@/lib/award-points";
+
 // GET /api/admin/events — List all events with registration counts
 export async function GET() {
   try {
@@ -24,6 +26,9 @@ export async function GET() {
     if (!session?.user || (session.user as any).role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Automatically check and award past event points
+    await checkAndAwardPastEventPoints();
 
     const list = await db.query.events.findMany({
       orderBy: (events, { desc }) => [desc(events.startTime)],

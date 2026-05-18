@@ -173,7 +173,7 @@ export default function HousesPage() {
                         <span>•</span>
                         <span>{a.event?.title || "Special Points"}</span>
                         <span>•</span>
-                        <span>{new Date(a.timestamp).toLocaleDateString("en-GB", { day: 'numeric', month: 'short' })}</span>
+                        <span>{new Date(a.timestamp).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })}</span>
                      </div>
                    </div>
                 </div>

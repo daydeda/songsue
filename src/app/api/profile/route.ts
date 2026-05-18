@@ -21,6 +21,7 @@ const profileSchema = z.object({
   dietaryRestrictions: z.string().optional().nullable(),
   emergencyContacts: z.any().optional().nullable(),
   faintingHistory: z.boolean().optional().nullable(),
+  emergencyMedication: z.string().optional().nullable(),
   image: z.string().optional().nullable(),
   studentId: z.string().optional().nullable(), // Allow empty or null for admins
 });

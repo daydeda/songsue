@@ -35,6 +35,7 @@ export const users = pgTable("users", {
   foodAllergies: text("food_allergies"),
   dietaryRestrictions: text("dietary_restrictions"),
   faintingHistory: boolean("fainting_history"),
+  emergencyMedication: text("emergency_medication"),
   emergencyContacts: jsonb("emergency_contacts"), // [{name, relationship, phone}]
   pdpaConsent: boolean("pdpa_consent").default(false),
   profileCompleted: boolean("profile_completed").default(false),
@@ -125,6 +126,7 @@ export const attendance = pgTable("attendance", {
   method: text("method"), // 'qr', 'manual', 'walk-in', 'pre-registered'
   status: text("status").default("registered"), // 'registered', 'attended'
   scannedBy: text("scanned_by").references(() => users.id),
+  medsCheckOption: text("meds_check_option"),
 });
 
 // Score history log per house per activity (FE-08)
@@ -204,5 +206,45 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
     fields: [auditLogs.targetId],
     references: [users.id],
     relationName: "target",
+  }),
+}));
+
+export const forms = pgTable("forms", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull().unique(),
+  title: text("title").notNull(),
+  description: text("description"),
+  questions: jsonb("questions").notNull(), // Array of: { id: string, type: 'text' | 'rating', label: string, required: boolean }
+  pointsAwarded: integer("points_awarded").default(0),
+  isActive: boolean("is_active").default(true),
+  isAwarded: boolean("is_awarded").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const formSubmissions = pgTable("form_submissions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  formId: uuid("form_id").references(() => forms.id, { onDelete: "cascade" }).notNull(),
+  studentId: text("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  answers: jsonb("answers").notNull(), // Map of questionId -> studentAnswer
+  submittedAt: timestamp("submitted_at").defaultNow(),
+});
+
+export const formsRelations = relations(forms, ({ one, many }) => ({
+  event: one(events, {
+    fields: [forms.eventId],
+    references: [events.id],
+  }),
+  submissions: many(formSubmissions),
+}));
+
+export const formSubmissionsRelations = relations(formSubmissions, ({ one }) => ({
+  form: one(forms, {
+    fields: [formSubmissions.formId],
+    references: [forms.id],
+  }),
+  user: one(users, {
+    fields: [formSubmissions.studentId],
+    references: [users.id],
   }),
 }));

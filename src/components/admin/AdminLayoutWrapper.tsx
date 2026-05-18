@@ -47,12 +47,39 @@ export function AdminLayoutWrapper({
         lg:translate-x-0 lg:flex
         w-[280px] bg-white border-r border-[var(--border-subtle)] flex flex-col p-6
       `}>
-        <div className="flex items-center justify-between lg:justify-start mb-10">
-          <Link href="/admin/dashboard" className="flex items-center gap-3 no-underline">
-            <div className="w-9 h-9 bg-[var(--accent-primary)] rounded-xl flex items-center justify-center text-white font-black text-lg">A</div>
-            <div className="flex flex-col">
-              <span className="gradient-text font-black text-2xl tracking-tight">ActiveCAMT</span>
-              <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-[0.2em] -mt-1">Admin Panel</span>
+        <div style={{ marginBottom: 40, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Link href="/admin/dashboard" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
+            <div style={{ 
+              width: 44, 
+              height: 44, 
+              background: "var(--accent-primary)", 
+              borderRadius: "50%", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              color: "white", 
+              fontWeight: 900, 
+              fontSize: 20,
+              boxShadow: "0 4px 12px var(--accent-primary)44"
+            }}>A</div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span style={{ 
+                fontSize: 22, 
+                fontWeight: 900, 
+                color: "var(--text-primary)", 
+                letterSpacing: "-0.03em",
+                lineHeight: 1
+              }}>
+                Active<span style={{ color: "var(--accent-primary)" }}>CAMT</span>
+              </span>
+              <span style={{ 
+                fontSize: 10, 
+                fontWeight: 800, 
+                color: "var(--text-muted)", 
+                textTransform: "uppercase", 
+                letterSpacing: "0.15em",
+                marginTop: 4
+              }}>Admin Panel</span>
             </div>
           </Link>
           <button className="lg:hidden p-2" onClick={() => setIsSidebarOpen(false)}>
@@ -83,15 +110,46 @@ export function AdminLayoutWrapper({
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className={`
-        flex-1 overflow-y-auto p-6 lg:p-12 mt-16 lg:mt-0
-        bg-[var(--bg-base)] transition-all duration-300
-      `}>
-        <div className="max-w-[1400px] mx-auto">
+      <main className="admin-main">
+        <div className="max-w-[1400px] mx-auto w-full">
           {children}
         </div>
       </main>
+
+      <style jsx>{`
+        .admin-main {
+          flex: 1;
+          overflow-y: auto;
+          background: var(--bg-base);
+          transition: all 0.3s ease;
+          padding-left: 16px;
+          padding-right: 16px;
+          padding-bottom: 32px;
+          padding-top: 112px;
+        }
+        @media (min-width: 640px) {
+          .admin-main {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 128px;
+          }
+        }
+        @media (min-width: 1024px) {
+          .admin-main {
+            padding-left: 40px;
+            padding-right: 40px;
+            padding-top: 80px;
+            padding-bottom: 48px;
+          }
+        }
+        @media (min-width: 1280px) {
+          .admin-main {
+            padding-left: 56px;
+            padding-right: 56px;
+            padding-top: 96px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

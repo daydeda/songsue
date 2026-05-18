@@ -23,17 +23,14 @@ export default function AdminAuditLogsPage() {
   }, []);
 
   return (
-    <div>
+    <div className="pb-20">
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div>
-          <p className="section-title">Admin Panel</p>
-          <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-0.02em" }}>Audit Trails</h1>
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1 }}>Audit Trails</h1>
+        <div className="flex gap-3 items-center flex-wrap">
           <button 
             className="btn btn-ghost" 
-            style={{ color: "#ef4444", fontSize: 13, fontWeight: 700 }}
+            style={{ color: "#ef4444", fontSize: 13, fontWeight: 700, minHeight: 44, paddingInline: 20, borderRadius: 12, border: "1px solid rgba(239,68,68,0.25)" }}
             onClick={async () => {
               if (confirm("⚠ DANGER: Are you sure you want to PERMANENTLY delete all audit logs? This action cannot be undone.")) {
                 const res = await fetch("/api/admin/audit-logs", { method: "DELETE" });
@@ -94,6 +91,7 @@ export default function AdminAuditLogsPage() {
                                 day: "numeric",
                                 month: "short",
                                 year: "numeric",
+                                timeZone: "Asia/Bangkok",
                               })}
                             </p>
                             <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -102,6 +100,7 @@ export default function AdminAuditLogsPage() {
                                 minute: "2-digit",
                                 second: "2-digit",
                                 hour12: false,
+                                timeZone: "Asia/Bangkok",
                               })}
                             </p>
                           </>

@@ -33,6 +33,7 @@ type Event = {
   isRegistered?: boolean;
   attendanceStatus?: string | null;
   imageUrl?: string;
+  pointsAwarded?: number;
 };
 
 export default function DashboardPage() {
@@ -136,17 +137,13 @@ export default function DashboardPage() {
                 {t.activeStudent}
               </span>
             </div>
-            <h1 style={{ fontSize: 48, fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>
+            <h1 className="text-fluid-h1" style={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
               {t.hey}, <span className="gradient-text">{user?.name?.split(" ")[0] || "Student"}!</span>
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
               <p style={{ color: "var(--text-secondary)", fontSize: 17, fontWeight: 500 }}>
                 {t.upcomingEventsCount.replace("{count}", upcoming.length.toString())}
               </p>
-              <Link href="/dashboard/profile" className="btn btn-ghost btn-sm" style={{ borderRadius: 99, background: "rgba(0,0,0,0.03)", gap: 6 }}>
-                <Settings size={14} />
-                {t.editProfile}
-              </Link>
             </div>
           </div>
 
@@ -178,7 +175,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8 items-start">
           
           {/* Left Column: Events */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+          <div className="order-2 lg:order-1" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
             
             {/* Featured Event / Alert */}
             <div className="alert alert-info" style={{ borderRadius: "var(--radius-lg)", padding: 20, background: "rgba(255,107,0,0.04)", border: "1px solid rgba(255,107,0,0.1)" }}>
@@ -213,12 +210,13 @@ export default function DashboardPage() {
                   <div className="spinner" style={{ width: 32, height: 32 }} />
                 </div>
               ) : upcoming.length > 0 ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 32 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24 }}>
                   {upcoming.map((e) => (
                     <div 
                       key={e.id} 
                       className="glass animate-fade-in-up event-card-ig"
                       style={{ 
+                        height: "100%",
                         borderRadius: 32,
                         border: "1px solid var(--border-subtle)",
                         transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -256,10 +254,10 @@ export default function DashboardPage() {
                                border: "1px solid rgba(0,0,0,0.05)"
                             }}>
                                <p style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
-                                 {new Date(e.startTime).toLocaleDateString("en-GB", { month: "short" })}
+                                 {new Date(e.startTime).toLocaleDateString("en-GB", { month: "short", timeZone: "Asia/Bangkok" })}
                                </p>
                                <p style={{ fontSize: 22, fontWeight: 900, color: "#111", lineHeight: 1 }}>
-                                 {new Date(e.startTime).getDate()}
+                                 {new Date(e.startTime).toLocaleDateString("en-GB", { day: "numeric", timeZone: "Asia/Bangkok" })}
                                </p>
                             </div>
                          </div>
@@ -279,6 +277,29 @@ export default function DashboardPage() {
                              {getEventStatus(e)}
                            </span>
                          </div>
+
+                         {/* Points Badge */}
+                         {e.pointsAwarded !== undefined && (
+                           <div style={{ position: "absolute", bottom: 16, left: 16 }}>
+                             <div style={{ 
+                               background: "rgba(0, 0, 0, 0.7)", 
+                               backdropFilter: "blur(8px)", 
+                               color: "#fff", 
+                               padding: "6px 12px", 
+                               borderRadius: 14, 
+                               fontSize: 11, 
+                               fontWeight: 900, 
+                               display: "inline-flex", 
+                               alignItems: "center", 
+                               gap: 6, 
+                               boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                               border: "1px solid rgba(255, 255, 255, 0.1)"
+                             }}>
+                               <Trophy size={12} style={{ color: "#fbbf24" }} />
+                               <span>{e.pointsAwarded} PTS</span>
+                             </div>
+                           </div>
+                         )}
                       </div>
 
                       {/* Content Area */}
@@ -314,6 +335,7 @@ export default function DashboardPage() {
                           dangerouslySetInnerHTML={{ __html: parseRichText(e.description || "") }}
                         />
 
+                        <div style={{ marginTop: "auto", paddingTop: 8 }}>
                           {(() => {
                             const isPastEvent = new Date() > new Date(e.endTime);
                             const isAttended = e.attendanceStatus === "attended";
@@ -353,6 +375,7 @@ export default function DashboardPage() {
                               </button>
                             );
                           })()}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -365,19 +388,20 @@ export default function DashboardPage() {
             </div>
           </div>
           {/* Right Column: Sidebar Stats */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+            <div className="order-1 lg:order-2" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
               {/* Digital ID Card */}
               <div
                 className="stat-card animate-fade-in-up"
                 style={{ 
-                  padding: 32, 
+                  padding: "clamp(20px, 5vw, 32px)", 
                   background: "var(--bg-surface)",
                   display: "flex", 
                   flexDirection: "column", 
                   alignItems: "center", 
                   gap: 24,
                   boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
-                  border: "1px solid var(--border-medium)"
+                  border: "1px solid var(--border-medium)",
+                  width: "100%"
                 }}
               >
                 <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -388,14 +412,16 @@ export default function DashboardPage() {
                 <div
                   style={{
                     background: "#fff",
-                    padding: "24px 20px",
+                    padding: "clamp(12px, 3vw, 24px)",
                     borderRadius: 28,
                     border: "1px solid var(--border-medium)",
                     boxShadow: "0 0 50px rgba(0,0,0,0.03)",
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
-                    gap: 16
+                    gap: 16,
+                    width: "100%",
+                    maxWidth: 300
                   }}
                 >
                   {user?.image ? (
@@ -420,6 +446,7 @@ export default function DashboardPage() {
                   <QRCodeSVG
                     value={qrValue}
                     size={240}
+                    style={{ width: "100%", height: "auto", maxWidth: 240 }}
                     level="H"
                     bgColor="#ffffff"
                     fgColor="#000000"

@@ -23,7 +23,22 @@ type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "alre
 
 type ScanResult = {
   status: ScanStatus;
-  student?: { name: string; nickname: string; studentId?: string; house?: string; houseColor?: string };
+  student?: { 
+    name: string; 
+    nickname: string; 
+    studentId?: string; 
+    house?: string; 
+    houseColor?: string;
+    hasMedicalCondition?: boolean;
+    chronicDiseases?: string | null;
+    medicalHistory?: string | null;
+    drugAllergies?: string | null;
+    foodAllergies?: string | null;
+    dietaryRestrictions?: string | null;
+    faintingHistory?: boolean;
+    emergencyMedication?: string | null;
+  };
+  isWalkIn?: boolean;
   checkedInAt?: string;
   error?: string;
   rawToken?: string;
@@ -43,6 +58,7 @@ export default function QRScannerPage() {
   const [manualResults, setManualResults] = useState<any[]>([]);
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [medsCheckOption, setMedsCheckOption] = useState<string | null>(null);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
@@ -151,6 +167,7 @@ export default function QRScannerPage() {
     setTimeout(() => {
       setScanResult(null);
       lastTokenRef.current = null;
+      setMedsCheckOption(null);
     }, 300);
   };
 
@@ -160,7 +177,12 @@ export default function QRScannerPage() {
       const res = await fetch("/api/admin/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrToken: token, eventId, action: "confirm" }),
+        body: JSON.stringify({ 
+          qrToken: token, 
+          eventId, 
+          action: "confirm",
+          medsCheckOption: medsCheckOption || null,
+        }),
       });
       const data = await res.json();
       setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: token });
@@ -259,21 +281,26 @@ export default function QRScannerPage() {
     },
   };
 
-  const cfg = scanResult ? (STATUS_CONFIG[scanResult.status] || STATUS_CONFIG.error) : null;
+  let cfg = scanResult ? (STATUS_CONFIG[scanResult.status] || STATUS_CONFIG.error) : null;
+
+  if (cfg && scanResult?.student?.hasMedicalCondition) {
+    cfg = {
+      ...cfg,
+      color: "#ef4444",
+      icon: AlertCircle,
+      bg: "rgba(239, 68, 68, 0.12)",
+      title: "Medical Warning! / คำเตือนด้านสุขภาพ!",
+      desc: "Student has a recorded health condition. Please verify medication.",
+    };
+  }
 
   return (
     <div className="animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-2 h-2 rounded-full bg-accent-primary" style={{ background: 'var(--accent-primary)', boxShadow: '0 0 8px var(--accent-glow)' }} />
-            <p className="section-title" style={{ margin: 0 }}>Attendance System</p>
-          </div>
-          <h1 style={{ fontSize: "clamp(32px, 5vw, 42px)", fontWeight: 900, letterSpacing: "-0.04em" }}>QR Scanner</h1>
-        </div>
+      <div className="mb-10">
+        <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>QR Scanner</h1>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-8 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6 items-start">
         
         {/* Left: Main Scanner Area */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -376,7 +403,7 @@ export default function QRScannerPage() {
             </div>
 
             {manualResults.length > 0 && (
-              <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
                 {manualResults.map((s) => (
                   <button
                     key={s.id}
@@ -385,21 +412,23 @@ export default function QRScannerPage() {
                     style={{
                       width: "100%",
                       textAlign: "left",
-                      padding: 16,
+                      minHeight: 64,
+                      padding: "12px 16px",
                       background: "var(--bg-elevated)",
                       borderRadius: 16,
                       border: "1px solid var(--border-subtle)",
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      transition: "all 0.2s"
+                      transition: "all 0.2s",
+                      cursor: "pointer"
                     }}
                   >
                     <div>
                       <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{s.name}</p>
-                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{s.studentId}</p>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{s.studentId}</p>
                     </div>
-                    <ArrowRight size={16} color="var(--accent-primary)" />
+                    <ArrowRight size={18} color="var(--accent-primary)" />
                   </button>
                 ))}
               </div>
@@ -439,6 +468,9 @@ export default function QRScannerPage() {
               borderRadius: "var(--radius-xl)",
               width: "100%",
               maxWidth: 440,
+              maxHeight: "calc(100vh - 48px)",
+              display: "flex",
+              flexDirection: "column",
               overflow: "hidden",
               boxShadow: "0 50px 100px rgba(0,0,0,0.3)",
               border: `1px solid var(--border-subtle)`
@@ -446,10 +478,10 @@ export default function QRScannerPage() {
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Header/Icon */}
-            <div style={{ background: cfg.bg, padding: "48px 32px", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            <div style={{ background: cfg.bg, padding: "32px 32px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, flexShrink: 0 }}>
               <div style={{ 
-                width: 80, 
-                height: 80, 
+                width: 72, 
+                height: 72, 
                 borderRadius: "50%", 
                 background: "var(--bg-surface)", 
                 display: "flex", 
@@ -459,16 +491,16 @@ export default function QRScannerPage() {
                 boxShadow: `0 10px 30px ${cfg.color}30`,
                 border: `4px solid var(--bg-surface)`
               }}>
-                <cfg.icon size={40} strokeWidth={3} />
+                <cfg.icon size={36} strokeWidth={3} />
               </div>
               <div style={{ textAlign: "center" }}>
-                <h2 style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)" }}>{cfg.title}</h2>
-                <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: 4 }}>{cfg.desc}</p>
+                <h2 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)" }}>{cfg.title}</h2>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>{cfg.desc}</p>
               </div>
             </div>
 
             {/* Modal Body: Student Info */}
-            <div style={{ padding: 32 }}>
+            <div style={{ padding: "24px 32px 32px", overflowY: "auto", flex: 1 }}>
               {scanResult?.student ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                   <div style={{ textAlign: "center" }}>
@@ -501,6 +533,149 @@ export default function QRScannerPage() {
                       </span>
                     </div>
                   </div>
+
+                  {scanResult.student.hasMedicalCondition && (
+                    <div style={{ 
+                      marginTop: 8,
+                      padding: 16, 
+                      borderRadius: 16, 
+                      background: "rgba(239, 68, 68, 0.04)", 
+                      border: "1.5px dashed rgba(239, 68, 68, 0.25)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                      textAlign: "left"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                        <AlertCircle size={18} color="#ef4444" style={{ marginTop: 2, flexShrink: 0 }} />
+                        <div>
+                          <p style={{ fontSize: 13, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            Health Alert / ข้อมูลสุขภาพสำคัญ
+                          </p>
+                          <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+                            {scanResult.student.chronicDiseases && scanResult.student.chronicDiseases !== "-" && scanResult.student.chronicDiseases !== "" && (
+                              <p>• <b>โรคประจำตัว:</b> {scanResult.student.chronicDiseases}</p>
+                            )}
+                            {scanResult.student.medicalHistory && scanResult.student.medicalHistory !== "-" && scanResult.student.medicalHistory !== "" && (
+                              <p>• <b>ประวัติการรักษา/อื่นๆ:</b> {scanResult.student.medicalHistory}</p>
+                            )}
+                            {scanResult.student.drugAllergies && scanResult.student.drugAllergies !== "-" && scanResult.student.drugAllergies !== "" && (
+                              <p>• <b>แพ้ยา:</b> {scanResult.student.drugAllergies}</p>
+                            )}
+                            {scanResult.student.foodAllergies && scanResult.student.foodAllergies !== "-" && scanResult.student.foodAllergies !== "" && (
+                              <p>• <b>แพ้อาหาร:</b> {scanResult.student.foodAllergies}</p>
+                            )}
+                            {scanResult.student.dietaryRestrictions && scanResult.student.dietaryRestrictions !== "-" && scanResult.student.dietaryRestrictions !== "" && (
+                              <p>• <b>การจำกัดอาหาร:</b> {scanResult.student.dietaryRestrictions}</p>
+                            )}
+                            {scanResult.student.faintingHistory && (
+                              <p>• <b>ประวัติเป็นลม/วูบ:</b> เคยมีประวัติเป็นลม/วูบ</p>
+                            )}
+                            {scanResult.student.emergencyMedication && scanResult.student.emergencyMedication !== "-" && scanResult.student.emergencyMedication !== "" && (
+                              <p>• <b>ยาสามัญ/ยาฉุกเฉินประจำตัว:</b> {scanResult.student.emergencyMedication}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Safety Action Selector */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                        <p style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+                          Admin Action / การดำเนินการโดยผู้ดูแล
+                        </p>
+                        
+                        {/* Option 1: Brought Medication */}
+                        <label style={{ 
+                          display: "flex", 
+                          alignItems: "center", 
+                          gap: 10, 
+                          padding: "10px 12px", 
+                          background: medsCheckOption === "brought" ? "rgba(16, 185, 129, 0.08)" : "var(--bg-elevated)", 
+                          borderRadius: 12, 
+                          border: medsCheckOption === "brought" ? "1.5px solid #10b981" : "1.5px solid var(--border-subtle)", 
+                          cursor: "pointer",
+                          userSelect: "none",
+                          transition: "all 0.2s"
+                        }}>
+                          <input 
+                            type="radio" 
+                            name="meds-check-radio"
+                            style={{ width: 16, height: 16, accentColor: "#10b981", cursor: "pointer" }} 
+                            checked={medsCheckOption === "brought"}
+                            onChange={() => setMedsCheckOption("brought")}
+                          />
+                          <div style={{ textAlign: "left" }}>
+                            <p style={{ fontSize: 12, fontWeight: 800, color: medsCheckOption === "brought" ? "#10b981" : "var(--text-primary)" }}>
+                              พกยาส่วนตัว/ยาฉุกเฉินมาด้วยแล้ว
+                            </p>
+                            <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
+                              Brought Medication (Safe check-in)
+                            </p>
+                          </div>
+                        </label>
+
+                        {/* Option 2: Didn't Bring Medication */}
+                        <label style={{ 
+                          display: "flex", 
+                          alignItems: "center", 
+                          gap: 10, 
+                          padding: "10px 12px", 
+                          background: medsCheckOption === "forgot" ? "rgba(245, 158, 11, 0.08)" : "var(--bg-elevated)", 
+                          borderRadius: 12, 
+                          border: medsCheckOption === "forgot" ? "1.5px solid #f59e0b" : "1.5px solid var(--border-subtle)", 
+                          cursor: "pointer",
+                          userSelect: "none",
+                          transition: "all 0.2s"
+                        }}>
+                          <input 
+                            type="radio" 
+                            name="meds-check-radio"
+                            style={{ width: 16, height: 16, accentColor: "#f59e0b", cursor: "pointer" }} 
+                            checked={medsCheckOption === "forgot"}
+                            onChange={() => setMedsCheckOption("forgot")}
+                          />
+                          <div style={{ textAlign: "left" }}>
+                            <p style={{ fontSize: 12, fontWeight: 800, color: medsCheckOption === "forgot" ? "#f59e0b" : "var(--text-primary)" }}>
+                              ไม่ได้พกยามาด้วย / รับทราบความเสี่ยง
+                            </p>
+                            <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
+                              Didn't bring medication (Accept risk)
+                            </p>
+                          </div>
+                        </label>
+
+                        {/* Option 3: Acknowledge Dietary/Allergies Only */}
+                        <label style={{ 
+                          display: "flex", 
+                          alignItems: "center", 
+                          gap: 10, 
+                          padding: "10px 12px", 
+                          background: medsCheckOption === "acknowledge" ? "rgba(99, 102, 241, 0.08)" : "var(--bg-elevated)", 
+                          borderRadius: 12, 
+                          border: medsCheckOption === "acknowledge" ? "1.5px solid #6366f1" : "1.5px solid var(--border-subtle)", 
+                          cursor: "pointer",
+                          userSelect: "none",
+                          transition: "all 0.2s"
+                        }}>
+                          <input 
+                            type="radio" 
+                            name="meds-check-radio"
+                            style={{ width: 16, height: 16, accentColor: "#6366f1", cursor: "pointer" }} 
+                            checked={medsCheckOption === "acknowledge"}
+                            onChange={() => setMedsCheckOption("acknowledge")}
+                          />
+                          <div style={{ textAlign: "left" }}>
+                            <p style={{ fontSize: 12, fontWeight: 800, color: medsCheckOption === "acknowledge" ? "#6366f1" : "var(--text-primary)" }}>
+                              รับทราบข้อมูล (กรณีข้อจำกัดอาหาร / ข้อมูลทั่วไป)
+                            </p>
+                            <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
+                              Acknowledge (For Dietary / Allergies / General info)
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={{ textAlign: "center", color: cfg.color, fontWeight: 700 }}>
@@ -510,22 +685,32 @@ export default function QRScannerPage() {
 
               {scanResult?.status === "pending_confirmation" && scanResult.rawToken && (
                 <button
-                  className="btn btn-primary btn-full btn-xl"
-                  style={{ marginTop: 24, background: "#6366f1" }}
+                  className="btn btn-primary btn-full"
                   onClick={() => confirmAttendance(scanResult.rawToken!)}
-                  disabled={isConfirming}
+                  disabled={isConfirming || (scanResult?.student?.hasMedicalCondition && !medsCheckOption)}
+                  style={{ 
+                    marginTop: 24, 
+                    background: (scanResult?.student?.hasMedicalCondition && !medsCheckOption) ? "var(--bg-elevated)" : "#6366f1", 
+                    color: (scanResult?.student?.hasMedicalCondition && !medsCheckOption) ? "var(--text-muted)" : "white",
+                    minHeight: 56, 
+                    borderRadius: 16, 
+                    fontSize: 16, 
+                    fontWeight: 700,
+                    opacity: (scanResult?.student?.hasMedicalCondition && !medsCheckOption) ? 0.7 : 1,
+                    cursor: (scanResult?.student?.hasMedicalCondition && !medsCheckOption) ? "not-allowed" : "pointer"
+                  }}
                 >
-                  {isConfirming ? "Processing..." : "Confirm Physical Presence"}
+                  {isConfirming ? "Processing..." : (scanResult?.isWalkIn ? "Confirm Walk-in Presence" : "Confirm Physical Presence")}
                 </button>
               )}
 
-              {(scanResult?.status === "success" || scanResult?.status === "success_walk_in") && (
+              {(scanResult?.status === "success" || scanResult?.status === "success_walk_in" || scanResult?.status === "already_checked_in") && (
                 <div 
                   style={{ 
                     marginTop: 24, 
                     padding: 16, 
                     borderRadius: 16, 
-                    background: "#10b981", 
+                    background: scanResult?.status === "already_checked_in" ? "#3b82f6" : "#10b981", 
                     color: "white", 
                     textAlign: "center",
                     fontWeight: 800,
@@ -534,21 +719,40 @@ export default function QRScannerPage() {
                     alignItems: "center",
                     justifyContent: "center",
                     gap: 12,
-                    boxShadow: "0 10px 20px rgba(16, 185, 129, 0.3)"
+                    boxShadow: scanResult?.status === "already_checked_in" ? "0 10px 20px rgba(59, 130, 246, 0.3)" : "0 10px 20px rgba(16, 185, 129, 0.3)"
                   }}
                 >
                   <CheckCircle2 size={24} />
-                  Confirmed
+                  {scanResult?.status === "already_checked_in" ? "Already Checked In / เช็คอินแล้ว" : "Confirmed / ยืนยันสิทธิ์สำเร็จ"}
                 </div>
               )}
 
-              <button 
-                className="btn btn-ghost btn-full btn-xl" 
-                style={{ marginTop: 12 }}
-                onClick={closeModal}
-              >
-                Continue Scanning
-              </button>
+              {(() => {
+                const isCloseDisabled = !!(
+                  scanResult?.student?.hasMedicalCondition && 
+                  !medsCheckOption && 
+                  scanResult?.status !== "pending_confirmation"
+                );
+                return (
+                  <button 
+                    className="btn btn-ghost btn-full" 
+                    onClick={closeModal}
+                    disabled={isCloseDisabled}
+                    style={{ 
+                      marginTop: 12, 
+                      minHeight: 52, 
+                      borderRadius: 16, 
+                      fontSize: 16, 
+                      fontWeight: 700,
+                      opacity: isCloseDisabled ? 0.5 : 1,
+                      cursor: isCloseDisabled ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    Continue Scanning
+                  </button>
+                );
+              })()}
+
             </div>
           </div>
         </div>

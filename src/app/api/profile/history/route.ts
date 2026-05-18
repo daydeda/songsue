@@ -22,13 +22,14 @@ export async function GET() {
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
+    const { forms, formSubmissions } = await import("@/db/schema");
+
     // For each attendance, calculate the rank
     const history = await Promise.all(
       userAttendances.map(async (att) => {
         if (!att.event) return null;
 
         // Count how many people checked in before or at the same time as this student
-        // Using checkInTime for rank. If times are identical, the order might vary slightly but it's the most fair metric.
         const [{ value: rank }] = await db
           .select({ value: count() })
           .from(attendance)
@@ -39,6 +40,35 @@ export async function GET() {
             )
           );
 
+        // Check if there is an evaluation form for the event
+        const formObj = await db.query.forms.findFirst({
+          where: eq(forms.eventId, att.eventId),
+        });
+
+        let formStatus: "none" | "available" | "submitted" | "closed" = "none";
+        let formId: string | null = null;
+        let formPoints = 0;
+
+        if (formObj) {
+          formId = formObj.id;
+          formPoints = formObj.pointsAwarded ?? 0;
+          
+          const sub = await db.query.formSubmissions.findFirst({
+            where: and(
+              eq(formSubmissions.formId, formObj.id),
+              eq(formSubmissions.studentId, userId)
+            ),
+          });
+          
+          if (sub) {
+            formStatus = "submitted";
+          } else if (!formObj.isActive) {
+            formStatus = "closed";
+          } else {
+            formStatus = "available";
+          }
+        }
+
         return {
           id: att.id,
           eventId: att.eventId,
@@ -48,6 +78,9 @@ export async function GET() {
           checkInTime: att.checkInTime,
           method: att.method,
           rank: (rank || 0) + 1, // 1st, 2nd, etc.
+          formStatus,
+          formId,
+          formPoints,
         };
       })
     );

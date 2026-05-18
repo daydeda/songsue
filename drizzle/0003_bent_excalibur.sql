@@ -1,0 +1,1 @@
+ALTER TABLE "attendance" ADD COLUMN "meds_check_option" text;

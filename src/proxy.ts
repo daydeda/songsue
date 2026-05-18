@@ -4,7 +4,6 @@ import type { NextRequest } from "next/server";
 
 // Next.js 16: "middleware" renamed to "proxy"
 export async function proxy(req: NextRequest) {
-  const session = await auth();
   const { pathname } = req.nextUrl;
 
   // Allow public paths and Next.js internals to pass through
@@ -17,6 +16,8 @@ export async function proxy(req: NextRequest) {
   if (isPublicPath) {
     return NextResponse.next();
   }
+
+  const session = await auth();
 
   // Not authenticated → redirect to home (sign-in page)
   if (!session?.user) {
@@ -50,5 +51,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

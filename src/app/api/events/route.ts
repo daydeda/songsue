@@ -4,6 +4,8 @@ import { attendance, events } from "@/db/schema";
 import { and, count, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { checkAndAwardPastEventPoints } from "@/lib/award-points";
+
 // GET /api/events — List all upcoming & past events (student-facing, FE-04)
 export async function GET() {
   try {
@@ -11,6 +13,9 @@ export async function GET() {
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Automatically check and award past event points
+    await checkAndAwardPastEventPoints();
 
     const allEvents = await db.query.events.findMany({
       orderBy: (events, { asc }) => [asc(events.startTime)],

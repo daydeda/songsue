@@ -15,6 +15,27 @@
       "when": 1777830938122,
       "tag": "0001_lyrical_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779033790637,
+      "tag": "0002_easy_blizzard",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779052047537,
+      "tag": "0003_bent_excalibur",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779054600721,
+      "tag": "0004_bright_psynapse",
+      "breakpoints": true
     }
   ]
 }

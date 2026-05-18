@@ -98,15 +98,21 @@ export function StudentNav() {
                 <ShieldCheck size={14} />
               </Link>
             )}
-            <button className="btn btn-ghost btn-sm rounded-full" onClick={() => signOut({ callbackUrl: "/" })}>
+            <button 
+              className="btn btn-ghost btn-sm rounded-full touch-target" 
+              onClick={() => signOut({ callbackUrl: "/" })}
+              aria-label={t.signOut}
+            >
               <LogOut size={16} />
             </button>
           </div>
 
           {/* Mobile Toggle (Hidden on Desktop) */}
           <button 
-            className="mobile-toggle"
+            className="mobile-toggle touch-target"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle Menu"
+            aria-expanded={isMobileMenuOpen}
           >
             {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -232,6 +238,8 @@ export function StudentNav() {
           object-fit: cover;
         }
         .actions {
+          display: flex;
+          align-items: center;
           gap: 8px;
         }
         .mobile-toggle {
@@ -287,8 +295,9 @@ export function StudentNav() {
           align-items: center;
           gap: 8px;
           transition: all 0.2s;
-          padding: 8px 16px;
+          padding: 12px 20px;
           border-radius: 12px;
+          min-height: 44px;
         }
         :global(.nav-link:hover) {
           color: var(--accent-primary);

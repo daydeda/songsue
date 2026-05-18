@@ -72,10 +72,10 @@ export default function AdminActivityPage() {
                   <tr key={i}>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <p style={{ fontSize: 13, fontWeight: 600 }}>
-                        {new Date(a.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                        {new Date(a.timestamp).toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false })}
                       </p>
                       <p style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {new Date(a.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                        {new Date(a.timestamp).toLocaleDateString('en-GB', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short' })}
                       </p>
                     </td>
                     <td>

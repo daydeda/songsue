@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { 
-  Plus, Edit2, Trash2, Calendar, MapPin, Clock, 
-  ArrowRight, User, Users, CheckCircle2, Search, 
+import {
+  Plus, Edit2, Trash2, Calendar, MapPin, Clock,
+  ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronRight, AlertCircle, BarChart3, Image as ImageIcon, Zap,
-  Activity, Phone, HeartPulse, Info
+  Activity, Phone, HeartPulse, Info, Trophy
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 
@@ -33,13 +33,222 @@ export default function AdminEventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "live" | "upcoming" | "past">("all");
-  
+
   // Attendance tracking
   const [showAttendance, setShowAttendance] = useState(false);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
+  const [filterMedical, setFilterMedical] = useState(false);
+
+  // Custom Form Builder states
+  const [showFormBuilder, setShowFormBuilder] = useState(false);
+  const [formEventId, setFormEventId] = useState<string | null>(null);
+  const [formEventTitle, setFormEventTitle] = useState<string | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formTitle, setFormTitle] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formPoints, setFormPoints] = useState(50);
+  const [formQuestions, setFormQuestions] = useState<any[]>([]);
+  const [formIsActive, setFormIsActive] = useState(true);
+  const [formIsAwarded, setFormIsAwarded] = useState(false);
+  const [formStats, setFormStats] = useState<any>(null);
+  const [formSubmissions, setFormSubmissions] = useState<any[]>([]);
+  const [formAwarding, setFormAwarding] = useState(false);
+  const [formSaving, setFormSaving] = useState(false);
+  const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
+  
+  // Custom admin form builder premium notification states
+  const [formBuilderError, setFormBuilderError] = useState<string | null>(null);
+  const [formBuilderSuccess, setFormBuilderSuccess] = useState<string | null>(null);
+  const [showAwardConfirm, setShowAwardConfirm] = useState(false);
+
+  const openFormBuilder = async (eventId: string, eventTitle: string) => {
+    setFormEventId(eventId);
+    setFormEventTitle(eventTitle);
+    setShowFormBuilder(true);
+    setFormLoading(true);
+    setFormTab("edit");
+    setFormBuilderError(null);
+    setFormBuilderSuccess(null);
+    setShowAwardConfirm(false);
+    
+    try {
+      const res = await fetch(`/api/admin/events/${eventId}/form`);
+      const data = await res.json();
+      
+      if (data.form) {
+        setFormTitle(data.form.title);
+        setFormDescription(data.form.description || "");
+        setFormPoints(data.form.pointsAwarded || 0);
+        setFormQuestions(data.form.questions || []);
+        setFormIsActive(data.form.isActive);
+        setFormIsAwarded(data.form.isAwarded || false);
+        setFormStats(data.stats);
+        setFormSubmissions(data.submissions || []);
+        if (data.submissions && data.submissions.length > 0) {
+          setFormTab("stats");
+        }
+      } else {
+        setFormTitle(`${eventTitle} Evaluation`);
+        setFormDescription("Thank you for attending! Please give us your feedback.");
+        setFormPoints(50);
+        setFormQuestions([
+          { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
+          { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
+          { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false }
+        ]);
+        setFormIsActive(true);
+        setFormIsAwarded(false);
+        setFormStats(null);
+        setFormSubmissions([]);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const saveForm = async () => {
+    if (!formEventId) return;
+    setFormSaving(true);
+    setFormBuilderError(null);
+    setFormBuilderSuccess(null);
+    try {
+      const res = await fetch(`/api/admin/events/${formEventId}/form`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: formTitle,
+          description: formDescription,
+          pointsAwarded: formPoints,
+          questions: formQuestions,
+          isActive: formIsActive
+        })
+      });
+      if (res.ok) {
+        setFormBuilderSuccess("Evaluation form saved successfully!");
+        
+        // Refresh states in background
+        const freshRes = await fetch(`/api/admin/events/${formEventId}/form`);
+        const freshData = await freshRes.json();
+        if (freshData.form) {
+          setFormTitle(freshData.form.title);
+          setFormDescription(freshData.form.description || "");
+          setFormPoints(freshData.form.pointsAwarded || 0);
+          setFormQuestions(freshData.form.questions || []);
+          setFormIsActive(freshData.form.isActive);
+          setFormIsAwarded(freshData.form.isAwarded || false);
+          setFormStats(freshData.stats);
+          setFormSubmissions(freshData.submissions || []);
+        }
+      } else {
+        const d = await res.json();
+        setFormBuilderError("Failed to save: " + (d.error || "Unknown error"));
+      }
+    } catch (e) {
+      console.error(e);
+      setFormBuilderError("Failed to save evaluation form.");
+    } finally {
+      setFormSaving(false);
+    }
+  };
+
+  const toggleFormActiveStatus = async () => {
+    if (!formEventId) return;
+    setFormSaving(true);
+    setFormBuilderError(null);
+    setFormBuilderSuccess(null);
+    const newActiveState = !formIsActive;
+    try {
+      const res = await fetch(`/api/admin/events/${formEventId}/form`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: formTitle,
+          description: formDescription,
+          pointsAwarded: formPoints,
+          questions: formQuestions,
+          isActive: newActiveState
+        })
+      });
+      if (res.ok) {
+        setFormIsActive(newActiveState);
+        setFormBuilderSuccess(newActiveState ? "Evaluation form is now open for students!" : "Evaluation form has been closed.");
+      } else {
+        const d = await res.json();
+        setFormBuilderError("Failed to update status: " + (d.error || "Unknown error"));
+      }
+    } catch (e) {
+      console.error(e);
+      setFormBuilderError("Failed to toggle form status.");
+    } finally {
+      setFormSaving(false);
+    }
+  };
+
+  const awardFormPoints = () => {
+    setShowAwardConfirm(true);
+  };
+
+  const awardFormPointsReal = async () => {
+    if (!formEventId) return;
+    
+    setFormAwarding(true);
+    setFormBuilderError(null);
+    setFormBuilderSuccess(null);
+    try {
+      const res = await fetch(`/api/admin/events/${formEventId}/form/award`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        if (data.winners && data.winners.length > 0) {
+          setFormBuilderSuccess(`🏆 Contest Ended! Winner: ${data.winners.map((w: string) => w.toUpperCase()).join(" & ")} House won with ${data.submissionsCount} submissions! +${formPoints} PTS awarded!`);
+        } else {
+          setFormBuilderSuccess(data.message || "Form ended, no points awarded.");
+        }
+        
+        // Refresh state
+        const freshRes = await fetch(`/api/admin/events/${formEventId}/form`);
+        const freshData = await freshRes.json();
+        if (freshData.form) {
+          setFormIsActive(freshData.form.isActive);
+          setFormIsAwarded(freshData.form.isAwarded || false);
+          setFormStats(freshData.stats);
+          setFormSubmissions(freshData.submissions || []);
+        }
+      } else {
+        setFormBuilderError("Failed: " + (data.error || "Unknown error"));
+      }
+    } catch (e) {
+      console.error(e);
+      setFormBuilderError("Failed to end contest and award points.");
+    } finally {
+      setFormAwarding(false);
+    }
+  };
+
+  const addQuestion = () => {
+    const newQ = {
+      id: "q_" + Date.now(),
+      type: "text",
+      label: "New Question",
+      required: false
+    };
+    setFormQuestions([...formQuestions, newQ]);
+  };
+
+  const removeQuestion = (qId: string) => {
+    setFormQuestions(formQuestions.filter(q => q.id !== qId));
+  };
+
+  const updateQuestion = (qId: string, key: string, val: any) => {
+    setFormQuestions(formQuestions.map(q => q.id === qId ? { ...q, [key]: val } : q));
+  };
 
   const hasActualMedicalInfo = (user: any) => {
     if (!user) return false;
@@ -48,7 +257,8 @@ export default function AdminEventsPage() {
       user.medicalHistory,
       user.drugAllergies,
       user.foodAllergies,
-      user.dietaryRestrictions
+      user.dietaryRestrictions,
+      user.emergencyMedication
     ];
     const isMeaningful = (val: any) => {
       if (typeof val !== 'string') return !!val;
@@ -68,9 +278,17 @@ export default function AdminEventsPage() {
     try {
       const res = await fetch("/api/admin/events");
       const data = await res.json();
-      setEvents(data);
+      if (Array.isArray(data)) {
+        setEvents(data);
+      } else {
+        setEvents([]);
+        if (data && data.error) {
+          setError(data.error);
+        }
+      }
     } catch (err) {
       console.error(err);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -89,60 +307,60 @@ export default function AdminEventsPage() {
     const selected = text.substring(start, end);
     const before = text.substring(0, start);
     const after = text.substring(end);
-    
+
     if (prefix.startsWith("{{color:") && lastInjectedRange.current) {
-       const { start: lStart, end: lEnd } = lastInjectedRange.current;
-       const lastText = text.substring(lStart, lEnd);
-       if (lastText.startsWith("{{color:") && lastText.endsWith("}}")) {
-          const parts = lastText.split("|");
-          if (parts.length >= 2) {
-             const contentOnly = parts.slice(1).join("|").slice(0, -2);
-             const b = text.substring(0, lStart);
-             const a = text.substring(lEnd);
-             const newTag = prefix + contentOnly + suffix;
-             set("description", b + newTag + a);
-             lastInjectedRange.current = { start: lStart, end: lStart + newTag.length };
-             setTimeout(() => {
-                el.focus();
-                el.setSelectionRange(lStart, lStart + newTag.length);
-             }, 10);
-             return;
-          }
-       }
+      const { start: lStart, end: lEnd } = lastInjectedRange.current;
+      const lastText = text.substring(lStart, lEnd);
+      if (lastText.startsWith("{{color:") && lastText.endsWith("}}")) {
+        const parts = lastText.split("|");
+        if (parts.length >= 2) {
+          const contentOnly = parts.slice(1).join("|").slice(0, -2);
+          const b = text.substring(0, lStart);
+          const a = text.substring(lEnd);
+          const newTag = prefix + contentOnly + suffix;
+          set("description", b + newTag + a);
+          lastInjectedRange.current = { start: lStart, end: lStart + newTag.length };
+          setTimeout(() => {
+            el.focus();
+            el.setSelectionRange(lStart, lStart + newTag.length);
+          }, 10);
+          return;
+        }
+      }
     }
 
     if (prefix.startsWith("{{color:")) {
-       const lastTagStart = before.lastIndexOf("{{color:");
-       const lastTagEnd = before.lastIndexOf("}}");
-       const nextTagEnd = after.indexOf("}}");
-       const nextTagStart = after.indexOf("{{color:");
+      const lastTagStart = before.lastIndexOf("{{color:");
+      const lastTagEnd = before.lastIndexOf("}}");
+      const nextTagEnd = after.indexOf("}}");
+      const nextTagStart = after.indexOf("{{color:");
 
-       let isInside = (lastTagStart > -1 && (lastTagEnd === -1 || lastTagEnd < lastTagStart));
-       let actualTagStart = lastTagStart;
-       let actualTagEnd = end + nextTagEnd + 2;
+      let isInside = (lastTagStart > -1 && (lastTagEnd === -1 || lastTagEnd < lastTagStart));
+      let actualTagStart = lastTagStart;
+      let actualTagEnd = end + nextTagEnd + 2;
 
-       if (isInside && nextTagEnd > -1 && (nextTagStart === -1 || nextTagStart > nextTagEnd)) {
-             const tagFullText = text.substring(actualTagStart, actualTagEnd);
-             const parts = tagFullText.split("|");
-             if (parts.length >= 2) {
-                const contentOnly = parts.slice(1).join("|").slice(0, -2);
-                const b = text.substring(0, actualTagStart);
-                const a = text.substring(actualTagEnd);
-                const newTag = prefix + contentOnly + suffix;
-                set("description", b + newTag + a);
-                lastInjectedRange.current = { start: actualTagStart, end: actualTagStart + newTag.length };
-                setTimeout(() => {
-                  el.focus();
-                  el.setSelectionRange(actualTagStart, actualTagStart + newTag.length);
-                }, 10);
-                return;
-             }
-       }
+      if (isInside && nextTagEnd > -1 && (nextTagStart === -1 || nextTagStart > nextTagEnd)) {
+        const tagFullText = text.substring(actualTagStart, actualTagEnd);
+        const parts = tagFullText.split("|");
+        if (parts.length >= 2) {
+          const contentOnly = parts.slice(1).join("|").slice(0, -2);
+          const b = text.substring(0, actualTagStart);
+          const a = text.substring(actualTagEnd);
+          const newTag = prefix + contentOnly + suffix;
+          set("description", b + newTag + a);
+          lastInjectedRange.current = { start: actualTagStart, end: actualTagStart + newTag.length };
+          setTimeout(() => {
+            el.focus();
+            el.setSelectionRange(actualTagStart, actualTagStart + newTag.length);
+          }, 10);
+          return;
+        }
+      }
     }
 
     let processedSelected = selected;
     if (prefix.startsWith("{{color:")) {
-       processedSelected = selected.replace(/\{\{color:.*?\|/g, "").replace(/\}\}/g, "");
+      processedSelected = selected.replace(/\{\{color:.*?\|/g, "").replace(/\}\}/g, "");
     }
 
     if (prefix !== "" && prefix.startsWith("{{color:") === false && selected.startsWith(prefix) && selected.endsWith(suffix)) {
@@ -165,11 +383,11 @@ export default function AdminEventsPage() {
       }, 10);
       return;
     }
-    
+
     const content = processedSelected || (prefix === "**" ? "bold text" : "text");
     const newText = before + prefix + content + suffix + after;
     set("description", newText);
-    
+
     const finalStart = start;
     const finalEnd = start + prefix.length + content.length + suffix.length;
     lastInjectedRange.current = { start: finalStart, end: finalEnd };
@@ -256,6 +474,7 @@ export default function AdminEventsPage() {
     setActiveEventId(eventId);
     setShowAttendance(true);
     setLoadingAttendance(true);
+    setFilterMedical(false);
     try {
       const res = await fetch(`/api/admin/events/${eventId}/attendance`);
       const data = await res.json();
@@ -267,17 +486,24 @@ export default function AdminEventsPage() {
     }
   };
 
-  const groupedAttendance = attendance.reduce((acc: any, curr: any) => {
+  const filteredAttendance = attendance.filter((m) => {
+    if (filterMedical) {
+      return hasActualMedicalInfo(m.user);
+    }
+    return true;
+  });
+
+  const groupedAttendance = filteredAttendance.reduce((acc: any, curr: any) => {
     const houseName = curr.user?.house?.name || "Unassigned";
     if (!acc[houseName]) acc[houseName] = [];
     acc[houseName].push(curr);
     return acc;
   }, {});
 
-  const filteredEvents = events.filter(evt => {
-    const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (evt.location && evt.location.toLowerCase().includes(searchQuery.toLowerCase()));
-    
+  const filteredEvents = Array.isArray(events) ? events.filter(evt => {
+    const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (evt.location && evt.location.toLowerCase().includes(searchQuery.toLowerCase()));
+
     const now = new Date();
     const isLive = now >= new Date(evt.startTime) && now <= new Date(evt.endTime);
     const isPast = now > new Date(evt.endTime);
@@ -287,7 +513,7 @@ export default function AdminEventsPage() {
     if (filterStatus === "past") return matchesSearch && isPast;
     if (filterStatus === "upcoming") return matchesSearch && isUpcoming;
     return matchesSearch;
-  });
+  }) : [];
 
   const getEventStatus = (evt: any) => {
     const now = new Date();
@@ -326,74 +552,116 @@ export default function AdminEventsPage() {
             position: "relative"
           }}>
             {/* Modal Header */}
-            <div style={{ 
-              padding: "32px 40px", 
-              borderBottom: "1px solid var(--border-subtle)", 
-              display: "flex", 
-              justifyContent: "space-between", 
+            <div style={{
+              padding: "32px 40px",
+              borderBottom: "1px solid var(--border-subtle)",
+              display: "flex",
+              justifyContent: "space-between",
               alignItems: "center",
               background: "linear-gradient(to right, var(--bg-surface), var(--bg-elevated))"
             }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                   <div style={{ 
-                     width: 12, 
-                     height: 12, 
-                     borderRadius: "50%", 
-                     background: "#10b981", 
-                     boxShadow: "0 0 15px rgba(16,185,129,0.5)",
-                     animation: "pulse-glow 2s infinite"
-                   }} />
-                   <p className="section-title" style={{ margin: 0, color: "#10b981", fontWeight: 800, fontSize: 12 }}>REAL-TIME ATTENDANCE</p>
+                  <div style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: "50%",
+                    background: "#10b981",
+                    boxShadow: "0 0 15px rgba(16,185,129,0.5)",
+                    animation: "pulse-glow 2s infinite"
+                  }} />
+                  <p className="section-title" style={{ margin: 0, color: "#10b981", fontWeight: 800, fontSize: 12 }}>REAL-TIME ATTENDANCE</p>
                 </div>
                 <h2 style={{ fontSize: 32, fontWeight: 900, letterSpacing: "-0.04em" }}>
                   {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
                 </h2>
                 <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
-                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Users size={16} className="text-muted" />
-                      <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 15 }}>
-                        <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{attendance.length}</span> Check-ins
-                      </p>
-                   </div>
-                   <div style={{ width: 1, height: 16, background: "var(--border-medium)" }} />
-                   <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                     Event ID: <span style={{ fontFamily: "monospace" }}>{activeEventId?.slice(0, 8)}</span>
-                   </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} className="text-muted" />
+                    <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 15 }}>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{attendance.length}</span> Check-ins
+                    </p>
+                  </div>
+                  <div style={{ width: 1, height: 16, background: "var(--border-medium)" }} />
+                  <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                    Event ID: <span style={{ fontFamily: "monospace" }}>{activeEventId?.slice(0, 8)}</span>
+                  </p>
                 </div>
               </div>
-              <button 
-                className="btn btn-ghost" 
-                style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }} 
+              <button
+                className="btn btn-ghost"
+                style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }}
                 onClick={() => setShowAttendance(false)}
               >
                 <X size={20} />
               </button>
             </div>
 
+            {/* Filter Bar */}
+            {!loadingAttendance && attendance.length > 0 && (
+              <div style={{
+                padding: "16px 40px",
+                background: "var(--bg-elevated)",
+                borderBottom: "1px solid var(--border-subtle)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button
+                    onClick={() => setFilterMedical(!filterMedical)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 99,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "all 0.2s",
+                      border: filterMedical ? "1px solid #ef4444" : "1px solid var(--border-subtle)",
+                      background: filterMedical ? "rgba(239, 68, 68, 0.1)" : "var(--bg-surface)",
+                      color: filterMedical ? "#ef4444" : "var(--text-secondary)"
+                    }}
+                  >
+                    <HeartPulse size={16} />
+                    {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
+                  </button>
+                </div>
+                {filterMedical && (
+                  <p style={{ fontSize: 13, color: "#ef4444", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Activity size={14} className="animate-pulse" />
+                    Filtering {filteredAttendance.length} of {attendance.length} checked-in students
+                  </p>
+                )}
+              </div>
+            )}
+
             {loadingAttendance ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
-                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
-                    <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
-                    <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 16 }}>Synchronizing records...</p>
-                 </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+                  <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
+                  <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 16 }}>Synchronizing records...</p>
+                </div>
               </div>
             ) : (
               <div style={{ overflowY: "auto", flex: 1, padding: "40px" }} className="custom-scrollbar">
-                {Object.keys(groupedAttendance).length === 0 ? (
+                {attendance.length === 0 ? (
                   <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
-                    <div style={{ 
-                      width: 100, 
-                      height: 100, 
-                      borderRadius: "50%", 
-                      background: "var(--bg-elevated)", 
-                      display: "flex", 
-                      alignItems: "center", 
-                      justifyContent: "center", 
+                    <div style={{
+                      width: 100,
+                      height: 100,
+                      borderRadius: "50%",
+                      background: "var(--bg-elevated)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                       color: "var(--text-muted)",
                       border: "1px solid var(--border-subtle)"
                     }}>
-                       <Search size={40} />
+                      <Search size={40} />
                     </div>
                     <div>
                       <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>Waiting for first entry</h3>
@@ -402,27 +670,49 @@ export default function AdminEventsPage() {
                       </p>
                     </div>
                   </div>
+                ) : filteredAttendance.length === 0 ? (
+                  <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+                    <div style={{
+                      width: 100,
+                      height: 100,
+                      borderRadius: "50%",
+                      background: "rgba(239, 68, 68, 0.05)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#ef4444",
+                      border: "1px solid rgba(239, 68, 68, 0.1)"
+                    }}>
+                      <HeartPulse size={40} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>No medical conditions reported</h3>
+                      <p style={{ color: "var(--text-muted)", marginTop: 8, maxWidth: 400, margin: "8px auto 0" }}>
+                        None of the {attendance.length} checked-in students have reported any medical conditions or allergies for this event.
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
                     {Object.entries(groupedAttendance).map(([house, members]: [string, any]) => (
                       <div key={house}>
-                        <div style={{ 
-                          display: "flex", 
-                          alignItems: "center", 
-                          justifyContent: "space-between", 
-                          marginBottom: 20, 
-                          padding: "12px 20px", 
-                          background: "var(--bg-elevated)", 
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: 20,
+                          padding: "12px 20px",
+                          background: "var(--bg-elevated)",
                           borderRadius: 16,
                           border: "1px solid var(--border-subtle)"
                         }}>
                           <h4 style={{ fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 12 }}>
-                            <span style={{ 
-                              width: 16, 
-                              height: 16, 
-                              borderRadius: 4, 
-                              background: members[0]?.user?.house?.color || "var(--accent-primary)", 
-                              boxShadow: `0 0 15px ${members[0]?.user?.house?.color}55` 
+                            <span style={{
+                              width: 16,
+                              height: 16,
+                              borderRadius: 4,
+                              background: members[0]?.user?.house?.color || "var(--accent-primary)",
+                              boxShadow: `0 0 15px ${members[0]?.user?.house?.color}55`
                             }} />
                             {house}
                           </h4>
@@ -432,10 +722,10 @@ export default function AdminEventsPage() {
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
                           {members.map((m: any) => (
-                            <div key={m.id} className="attendance-card" style={{ 
-                              padding: "20px", 
-                              background: "var(--bg-surface)", 
-                              borderRadius: 24, 
+                            <div key={m.id} className="attendance-card" style={{
+                              padding: "20px",
+                              background: "var(--bg-surface)",
+                              borderRadius: 24,
                               border: "1px solid var(--border-subtle)",
                               display: "flex",
                               alignItems: "center",
@@ -443,13 +733,13 @@ export default function AdminEventsPage() {
                               transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                               boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
                             }}>
-                              <div style={{ 
-                                width: 52, 
-                                height: 52, 
-                                borderRadius: 16, 
-                                background: "var(--bg-elevated)", 
-                                display: "flex", 
-                                alignItems: "center", 
+                              <div style={{
+                                width: 52,
+                                height: 52,
+                                borderRadius: 16,
+                                background: "var(--bg-elevated)",
+                                display: "flex",
+                                alignItems: "center",
                                 justifyContent: "center",
                                 fontSize: 18,
                                 fontWeight: 900,
@@ -461,15 +751,64 @@ export default function AdminEventsPage() {
                               <div style={{ flex: 1 }}>
                                 <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)" }}>{m.user?.name}</p>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-                                   <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>{m.user?.studentId || "No ID"}</p>
-                                   <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
-                                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                      <Clock size={12} className="text-muted" />
-                                      <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
-                                        {new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })}
-                                      </p>
-                                   </div>
+                                  <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>{m.user?.studentId || "No ID"}</p>
+                                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
+                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <Clock size={12} className="text-muted" />
+                                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                                      {new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })}
+                                    </p>
+                                  </div>
                                 </div>
+                                {m.medsCheckOption && (
+                                  <div style={{ 
+                                    display: "inline-flex", 
+                                    alignItems: "center", 
+                                    gap: 6, 
+                                    marginTop: 6, 
+                                    padding: "4px 10px", 
+                                    borderRadius: 8, 
+                                    fontSize: 11, 
+                                    fontWeight: 800,
+                                    textTransform: "uppercase",
+                                    background: m.medsCheckOption === "brought" 
+                                      ? "rgba(16, 185, 129, 0.12)" 
+                                      : m.medsCheckOption === "forgot" 
+                                      ? "rgba(239, 68, 68, 0.12)" 
+                                      : "rgba(59, 130, 246, 0.12)",
+                                    color: m.medsCheckOption === "brought" 
+                                      ? "#10b981" 
+                                      : m.medsCheckOption === "forgot" 
+                                      ? "#ef4444" 
+                                      : "#3b82f6",
+                                    border: m.medsCheckOption === "brought"
+                                      ? "1px solid rgba(16, 185, 129, 0.2)"
+                                      : m.medsCheckOption === "forgot"
+                                      ? "1px solid rgba(239, 68, 68, 0.2)"
+                                      : "1px solid rgba(59, 130, 246, 0.2)"
+                                  }}>
+                                    <span style={{ 
+                                      width: 6, 
+                                      height: 6, 
+                                      borderRadius: "50%", 
+                                      background: m.medsCheckOption === "brought" 
+                                        ? "#10b981" 
+                                        : m.medsCheckOption === "forgot" 
+                                        ? "#ef4444" 
+                                        : "#3b82f6",
+                                      boxShadow: m.medsCheckOption === "brought"
+                                        ? "0 0 8px #10b981"
+                                        : m.medsCheckOption === "forgot"
+                                        ? "0 0 8px #ef4444"
+                                        : "0 0 8px #3b82f6"
+                                    }} />
+                                    {m.medsCheckOption === "brought" 
+                                      ? "Brought Meds / พกยามาด้วย" 
+                                      : m.medsCheckOption === "forgot" 
+                                      ? "No Meds (Risk) / ไม่ได้พกยา (รับความเสี่ยง)" 
+                                      : "Acknowledged / รับทราบข้อมูล"}
+                                  </div>
+                                )}
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                                 {hasActualMedicalInfo(m.user) && (
@@ -477,8 +816,8 @@ export default function AdminEventsPage() {
                                     <Activity size={20} />
                                   </div>
                                 )}
-                                <button 
-                                  className="btn btn-ghost" 
+                                <button
+                                  className="btn btn-ghost"
                                   style={{ padding: 8, borderRadius: 10 }}
                                   onClick={() => setSelectedStudent(m.user)}
                                 >
@@ -497,10 +836,10 @@ export default function AdminEventsPage() {
                 )}
               </div>
             )}
-            
+
             {/* Modal Footer */}
             <div style={{ padding: "20px 40px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", background: "var(--bg-elevated)" }}>
-               <button className="btn btn-primary" onClick={() => setShowAttendance(false)}>Done Tracking</button>
+              <button className="btn btn-primary" onClick={() => setShowAttendance(false)}>Done Tracking</button>
             </div>
           </div>
         </div>
@@ -529,105 +868,101 @@ export default function AdminEventsPage() {
             border: "1px solid var(--border-medium)"
           }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: 32, borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-               <h3 style={{ fontSize: 20, fontWeight: 900 }}>Student Profile</h3>
-               <button className="btn btn-ghost" onClick={() => setSelectedStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={18} /></button>
+              <h3 style={{ fontSize: 20, fontWeight: 900 }}>Student Profile</h3>
+              <button className="btn btn-ghost" onClick={() => setSelectedStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={18} /></button>
             </div>
             <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24 }}>
-               {/* Header Info */}
-               <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-                  <div style={{ width: 64, height: 64, borderRadius: 20, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 900, color: "var(--accent-primary)" }}>
-                     {selectedStudent.name?.charAt(0)}
-                  </div>
-                  <div>
-                     <p style={{ fontSize: 22, fontWeight: 900 }}>{selectedStudent.name}</p>
-                     <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>{selectedStudent.studentId} • {selectedStudent.major}</p>
-                  </div>
-               </div>
+              {/* Header Info */}
+              <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+                <div style={{ width: 64, height: 64, borderRadius: 20, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 900, color: "var(--accent-primary)" }}>
+                  {selectedStudent.name?.charAt(0)}
+                </div>
+                <div>
+                  <p style={{ fontSize: 22, fontWeight: 900 }}>{selectedStudent.name}</p>
+                  <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>{selectedStudent.studentId} • {selectedStudent.major}</p>
+                </div>
+              </div>
 
-               {/* Contact */}
-               <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
-                  <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Contact Information</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                     <Phone size={16} color="var(--accent-primary)" />
-                     <span style={{ fontWeight: 700 }}>{selectedStudent.phone || "No phone provided"}</span>
-                  </div>
-               </div>
+              {/* Contact */}
+              <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
+                <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Contact Information</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <Phone size={16} color="var(--accent-primary)" />
+                  <span style={{ fontWeight: 700 }}>{selectedStudent.phone || "No phone provided"}</span>
+                </div>
+              </div>
 
-               {/* Medical */}
-               <div style={{ 
-                 background: hasActualMedicalInfo(selectedStudent) 
-                   ? "rgba(239, 68, 68, 0.05)" 
-                   : "var(--bg-elevated)", 
-                 padding: 20, 
-                 borderRadius: 20,
-                 border: hasActualMedicalInfo(selectedStudent)
-                   ? "1px solid rgba(239, 68, 68, 0.1)"
-                   : "1px solid transparent"
-               }}>
-                  <p style={{ 
-                    fontSize: 12, 
-                    fontWeight: 800, 
-                    color: hasActualMedicalInfo(selectedStudent) ? "#ef4444" : "var(--text-muted)", 
-                    textTransform: "uppercase", 
-                    marginBottom: 12, 
-                    letterSpacing: "0.05em",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8
-                  }}>
-                    <HeartPulse size={14} />
-                    Medical & Health Info
-                  </p>
-                  
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Chronic:</b> {selectedStudent.chronicDiseases}</p>}
-                    {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>History:</b> {selectedStudent.medicalHistory}</p>}
-                    {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Drug Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
-                    {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Food Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
-                    {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Dietary:</b> {selectedStudent.dietaryRestrictions}</p>}
-                    {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ History of fainting</p>}
-                    
-                    {!hasActualMedicalInfo(selectedStudent) && (
-                      <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
-                    )}
-                  </div>
-               </div>
+              {/* Medical */}
+              <div style={{
+                background: hasActualMedicalInfo(selectedStudent)
+                  ? "rgba(239, 68, 68, 0.05)"
+                  : "var(--bg-elevated)",
+                padding: 20,
+                borderRadius: 20,
+                border: hasActualMedicalInfo(selectedStudent)
+                  ? "1px solid rgba(239, 68, 68, 0.1)"
+                  : "1px solid transparent"
+              }}>
+                <p style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: hasActualMedicalInfo(selectedStudent) ? "#ef4444" : "var(--text-muted)",
+                  textTransform: "uppercase",
+                  marginBottom: 12,
+                  letterSpacing: "0.05em",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8
+                }}>
+                  <HeartPulse size={14} />
+                  Medical & Health Info
+                </p>
 
-               {/* Emergency Contact */}
-               {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (
-                 <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
-                    <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Emergency Contact</p>
-                    {selectedStudent.emergencyContacts.map((c: any, i: number) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <p style={{ fontWeight: 700, fontSize: 14 }}>{c.name} ({c.relationship})</p>
-                          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{c.phone}</p>
-                        </div>
-                        <a href={`tel:${c.phone}`} className="btn btn-ghost" style={{ borderRadius: "50%", width: 36, height: 36, padding: 0 }}><Phone size={14} /></a>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Chronic:</b> {selectedStudent.chronicDiseases}</p>}
+                  {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>History:</b> {selectedStudent.medicalHistory}</p>}
+                  {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Drug Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
+                  {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Food Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
+                  {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Dietary:</b> {selectedStudent.dietaryRestrictions}</p>}
+                  {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Emergency Medication:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
+                  {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ History of fainting</p>}
+
+                  {!hasActualMedicalInfo(selectedStudent) && (
+                    <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Emergency Contact */}
+              {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (
+                <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
+                  <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Emergency Contact</p>
+                  {selectedStudent.emergencyContacts.map((c: any, i: number) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 14 }}>{c.name} ({c.relationship})</p>
+                        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{c.phone}</p>
                       </div>
-                    ))}
-                 </div>
-               )}
+                      <a href={`tel:${c.phone}`} className="btn btn-ghost" style={{ borderRadius: "50%", width: 36, height: 36, padding: 0 }}><Phone size={14} /></a>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{ padding: "20px 32px", background: "var(--bg-elevated)", display: "flex", justifyContent: "flex-end" }}>
-               <button className="btn btn-primary" onClick={() => setSelectedStudent(null)}>Close Profile</button>
+              <button className="btn btn-primary" onClick={() => setSelectedStudent(null)}>Close Profile</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Main Header */}
-      <div style={{ marginBottom: 48 }}>
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-8">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-               <div className="w-8 h-[2px] bg-[var(--accent-primary)] rounded-full" />
-               <p className="section-title m-0 text-[var(--accent-primary)] font-extrabold uppercase tracking-widest text-[10px]">Event Command Center</p>
-            </div>
-            <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">Manage Events</h1>
-          </div>
+      <div className="mb-10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 20 }}>
+          <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">Manage Events</h1>
           <button
-            className={`btn ${showForm ? "btn-ghost" : "btn-primary"} h-16 px-8 rounded-2xl text-lg font-bold transition-all duration-300 ${!showForm && "shadow-[0_12px_32px_var(--accent-glow)]"}`}
+            className={`btn ${showForm ? "btn-ghost" : "btn-primary"} flex-shrink-0 transition-all duration-300 ${!showForm && "shadow-[0_12px_32px_var(--accent-glow)]"}`}
+            style={{ gap: 10, minHeight: 52, paddingInline: 28, borderRadius: 99, fontSize: 15, fontWeight: 700 }}
             onClick={() => {
               if (showForm) {
                 setShowForm(false);
@@ -640,28 +975,42 @@ export default function AdminEventsPage() {
               }
             }}
           >
-            {showForm ? <><X size={20} /> Close Editor</> : <><Plus size={20} /> Create New Event</>}
+            {showForm ? <><X size={18} /> Close Editor</> : <><Plus size={18} /> Create New Event</>}
           </button>
         </div>
 
         {/* Toolbar */}
-        <div className="flex flex-col md:flex-row gap-4 bg-[var(--bg-surface)] p-3 rounded-[24px] border border-[var(--border-subtle)] shadow-sm">
-          <div style={{ position: "relative", flex: 1 }}>
-            <Search size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-            <input 
-              className="input" 
-              placeholder="Search by event name or location..." 
-              style={{ paddingLeft: 48, borderRadius: 16, height: 48, background: "var(--bg-elevated)", border: "none" }} 
+        <div className="flex flex-col sm:flex-row gap-3" style={{ marginBottom: 48 }}>
+          {/* Search Bar */}
+          <div className="relative flex-1">
+            <Search size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+            <input
+              className="input w-full h-12"
+              style={{ paddingLeft: 48, borderRadius: 16, border: "1px solid var(--border-subtle)", background: "var(--bg-elevated)" }}
+              placeholder="Search by event name or location..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="flex gap-1 bg-[var(--bg-elevated)] p-1 rounded-2xl overflow-x-auto no-scrollbar">
+          {/* Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap">
             {(["all", "live", "upcoming", "past"] as const).map((s) => (
-              <button 
-                key={s} 
+              <button
+                key={s}
                 onClick={() => setFilterStatus(s)}
-                className={`px-4 py-2 rounded-xl text-[13px] font-bold capitalize transition-all duration-200 whitespace-nowrap ${filterStatus === s ? "bg-[var(--bg-surface)] text-[var(--accent-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                style={{
+                  padding: "8px 20px",
+                  minHeight: 44,
+                  borderRadius: 99,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textTransform: "capitalize",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  border: filterStatus === s ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                  background: filterStatus === s ? "var(--accent-glow)" : "var(--bg-elevated)",
+                  color: filterStatus === s ? "var(--accent-primary)" : "var(--text-secondary)"
+                }}
               >
                 {s}
               </button>
@@ -692,7 +1041,7 @@ export default function AdminEventsPage() {
             <div style={{ width: 12, height: 32, background: "var(--accent-primary)", borderRadius: 6 }} />
             {editingId ? "Edit Event Intelligence" : "Define New Event"}
           </h2>
-          
+
           <form onSubmit={handleSubmit} className="relative">
             <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-10">
               {/* Left Column: Basic Info */}
@@ -701,7 +1050,7 @@ export default function AdminEventsPage() {
                   <label className="label">Event Title <span style={{ color: "var(--accent-primary)" }}>*</span></label>
                   <input className="input" required value={formData.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. IT Freshy Night 2026" style={{ fontSize: 16, padding: "16px 20px", borderRadius: 16 }} />
                 </div>
-                
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div className="field">
                     <label className="label">Location</label>
@@ -722,12 +1071,12 @@ export default function AdminEventsPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div className="field">
                     <label className="label">Start Time <span style={{ color: "var(--accent-primary)" }}>*</span></label>
-                    <input 
-                      className="input" 
-                      required 
-                      type="datetime-local" 
-                      lang="en-GB" 
-                      value={formData.startTime} 
+                    <input
+                      className="input"
+                      required
+                      type="datetime-local"
+                      lang="en-GB"
+                      value={formData.startTime}
                       onChange={(e) => {
                         const val = e.target.value;
                         const newFormData = { ...formData, startTime: val };
@@ -739,7 +1088,7 @@ export default function AdminEventsPage() {
                           newFormData.endTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
                         }
                         setFormData(newFormData);
-                      }} 
+                      }}
                     />
                   </div>
                   <div className="field">
@@ -756,11 +1105,11 @@ export default function AdminEventsPage() {
                       <input className="input" type="number" min={1} value={formData.quota} onChange={(e) => set("quota", Number(e.target.value))} placeholder="Unlimited if 0" style={{ paddingLeft: 44 }} />
                     </div>
                   </div>
-                  
+
                   <div className="field" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                    <div 
+                    <div
                       onClick={() => set("walkInsEnabled", !formData.walkInsEnabled)}
-                      style={{ 
+                      style={{
                         height: 48,
                         background: "var(--bg-elevated)",
                         borderRadius: 16,
@@ -773,10 +1122,10 @@ export default function AdminEventsPage() {
                         transition: "all 0.2s"
                       }}
                     >
-                      <div style={{ 
-                        width: 24, 
-                        height: 24, 
-                        borderRadius: 6, 
+                      <div style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 6,
                         border: "2px solid var(--border-medium)",
                         background: formData.walkInsEnabled ? "var(--accent-primary)" : "transparent",
                         borderColor: formData.walkInsEnabled ? "var(--accent-primary)" : "var(--border-medium)",
@@ -799,10 +1148,10 @@ export default function AdminEventsPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 <div className="field">
                   <label className="label">Event Poster</label>
-                  <div style={{ 
+                  <div style={{
                     position: "relative",
-                    height: 180, 
-                    background: "var(--bg-elevated)", 
+                    height: 180,
+                    background: "var(--bg-elevated)",
                     borderRadius: 20,
                     border: "2px dashed var(--border-medium)",
                     display: "flex",
@@ -817,23 +1166,23 @@ export default function AdminEventsPage() {
                       <>
                         <img src={formData.imageUrl} alt="Poster" style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }} />
                         <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0, transition: "opacity 0.2s", color: "#fff" }} className="hover-overlay">
-                           <Edit2 size={24} />
+                          <Edit2 size={24} />
                         </div>
                       </>
                     ) : (
                       <div style={{ textAlign: "center", padding: 20 }}>
                         <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bg-surface)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", color: "var(--text-muted)" }}>
-                           <ImageIcon size={28} />
+                          <ImageIcon size={28} />
                         </div>
                         <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)" }}>Upload Poster</p>
                         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>1:1 Aspect Ratio Recommended</p>
                       </div>
                     )}
-                    <input 
-                      type="file" 
-                      id="poster-upload" 
-                      accept="image/*" 
-                      style={{ display: "none" }} 
+                    <input
+                      type="file"
+                      id="poster-upload"
+                      accept="image/*"
+                      style={{ display: "none" }}
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
@@ -862,22 +1211,22 @@ export default function AdminEventsPage() {
                     </div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, height: 220 }}>
-                    <textarea 
+                    <textarea
                       ref={textareaRef}
-                      className="input" 
+                      className="input"
                       style={{ resize: "none", borderRadius: 16, background: "var(--bg-elevated)", border: "none", height: "100%", fontSize: 14, padding: 16 }}
-                      value={formData.description} 
-                      onChange={(e) => set("description", e.target.value)} 
+                      value={formData.description}
+                      onChange={(e) => set("description", e.target.value)}
                       placeholder="Tell them about the event..."
                     />
-                    <div 
+                    <div
                       className="custom-scrollbar"
-                      style={{ 
-                        background: "var(--bg-elevated)", 
-                        borderRadius: 16, 
-                        padding: 16, 
-                        fontSize: 14, 
-                        lineHeight: 1.6, 
+                      style={{
+                        background: "var(--bg-elevated)",
+                        borderRadius: 16,
+                        padding: 16,
+                        fontSize: 14,
+                        lineHeight: 1.6,
                         overflowY: "auto",
                         color: "var(--text-primary)",
                         border: "1px solid var(--border-subtle)"
@@ -913,11 +1262,11 @@ export default function AdminEventsPage() {
           <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>Loading Event Records...</p>
         </div>
       ) : filteredEvents.length === 0 ? (
-        <div style={{ 
-          background: "var(--bg-surface)", 
-          borderRadius: 40, 
-          padding: 80, 
-          textAlign: "center", 
+        <div style={{
+          background: "var(--bg-surface)",
+          borderRadius: 40,
+          padding: 80,
+          textAlign: "center",
           border: "1px solid var(--border-subtle)",
           display: "flex",
           flexDirection: "column",
@@ -925,7 +1274,7 @@ export default function AdminEventsPage() {
           gap: 24
         }}>
           <div style={{ width: 120, height: 120, borderRadius: "50%", background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
-             <Calendar size={48} />
+            <Calendar size={48} />
           </div>
           <div>
             <h3 style={{ fontSize: 24, fontWeight: 800 }}>No events found</h3>
@@ -939,11 +1288,11 @@ export default function AdminEventsPage() {
             const status = getEventStatus(evt);
             const isLive = status === "live";
             const isPast = status === "past";
-            
+
             return (
-              <div key={evt.id} className="event-card-premium" style={{ 
-                background: "var(--bg-surface)", 
-                borderRadius: 32, 
+              <div key={evt.id} className="event-card-premium" style={{
+                background: "var(--bg-surface)",
+                borderRadius: 32,
                 border: "1px solid var(--border-subtle)",
                 overflow: "hidden",
                 display: "flex",
@@ -953,17 +1302,25 @@ export default function AdminEventsPage() {
                 boxShadow: "0 10px 40px rgba(0,0,0,0.04)"
               }}>
                 {/* Card Header (Image/Status) */}
-                <div style={{ height: 200, position: "relative", background: "var(--bg-elevated)", overflow: "hidden" }}>
-                  {evt.imageUrl ? (
-                    <img src={evt.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", background: "rgba(0,0,0,0.8)" }} />
-                  ) : (
-                    <div style={{ width: "100%", height: "100%", background: "linear-gradient(45deg, #ff6b0011, #ff6b0022)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                       <Calendar size={40} style={{ color: "var(--accent-primary)", opacity: 0.3 }} />
-                    </div>
-                  )}
-                  
+                <div style={{ height: 220, position: "relative", background: "var(--bg-elevated)", padding: 16 }}>
+                  <div style={{ width: "100%", height: "100%", borderRadius: 20, overflow: "hidden", position: "relative" }}>
+                    {evt.imageUrl ? (
+                      <img src={evt.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    ) : (
+                      <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg, var(--bg-elevated) 0%, var(--border-subtle) 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Calendar size={48} style={{ color: "var(--accent-primary)", opacity: 0.2 }} />
+                      </div>
+                    )}
+                  </div>
+
                   {/* Status Overlay */}
-                  <div style={{ position: "absolute", top: 20, right: 20, display: "flex", gap: 8 }}>
+                  <div style={{ position: "absolute", top: 28, right: 28, display: "flex", gap: 8 }}>
+                    {evt.walkInsEnabled && (
+                      <div className="badge" style={{ background: "rgba(99, 102, 241, 0.2)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                        <Zap size={12} style={{ marginRight: 4 }} />
+                        WALK-IN
+                      </div>
+                    )}
                     {isLive && (
                       <div className="badge animate-pulse-glow" style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px" }}>
                         <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", marginRight: 6 }} />
@@ -974,95 +1331,136 @@ export default function AdminEventsPage() {
                       <div className="badge" style={{ background: "var(--accent-primary)", color: "#fff", border: "none", padding: "6px 12px" }}>UPCOMING</div>
                     )}
                     {isPast && (
-                      <div className="badge" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)", padding: "6px 12px" }}>PAST</div>
-                    )}
-                    {evt.walkInsEnabled && (
-                      <div className="badge" style={{ background: "rgba(99, 102, 241, 0.2)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
-                        <Zap size={12} style={{ marginRight: 4 }} />
-                        WALK-IN
-                      </div>
+                      <div className="badge" style={{ background: "rgba(0,0,0,0.4)", color: "#fff", border: "none", padding: "6px 12px", backdropFilter: "blur(4px)" }}>PAST</div>
                     )}
                   </div>
 
                   {/* Points Badge */}
-                  <div style={{ position: "absolute", bottom: 20, left: 20 }}>
-                     <div style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "#fff", padding: "6px 12px", borderRadius: 12, fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
-                        <Sparkles size={14} style={{ color: "#fbbf24" }} />
-                        {evt.pointsAwarded} PTS
-                     </div>
-                  </div>
+                  {evt.pointsAwarded !== undefined && (
+                    <div style={{ position: "absolute", bottom: 28, left: 28 }}>
+                      <div style={{ 
+                        background: "rgba(0, 0, 0, 0.7)", 
+                        backdropFilter: "blur(8px)", 
+                        color: "#fff", 
+                        padding: "6px 12px", 
+                        borderRadius: 14, 
+                        fontSize: 11, 
+                        fontWeight: 900, 
+                        display: "inline-flex", 
+                        alignItems: "center", 
+                        gap: 6, 
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)"
+                      }}>
+                        <Trophy size={12} style={{ color: "#fbbf24" }} />
+                        <span>{evt.pointsAwarded} PTS</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Card Content */}
-                <div style={{ padding: 28, flex: 1, display: "flex", flexDirection: "column" }}>
+                <div style={{ padding: "28px", flex: 1, display: "flex", flexDirection: "column" }}>
                   <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 22, fontWeight: 900, marginBottom: 8, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>{evt.title}</h3>
+                    <h3 style={{ fontSize: 20, fontWeight: 900, marginBottom: 8, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.2 }}>{evt.title}</h3>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", fontSize: 14, fontWeight: 500 }}>
-                        <MapPin size={16} style={{ color: "var(--accent-primary)" }} />
-                        {evt.location || "Online / TBD"}
-                      </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", fontSize: 13, fontWeight: 600 }}>
-                        <Calendar size={16} style={{ color: "var(--accent-primary)" }} />
+                        <MapPin size={14} style={{ color: "var(--accent-primary)" }} />
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{evt.location || "Online / TBD"}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: 12, fontWeight: 700 }}>
+                        <Calendar size={14} style={{ color: "var(--accent-primary)" }} />
                         {(() => {
                           const start = new Date(evt.startTime);
                           const end = new Date(evt.endTime);
                           const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' };
                           const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
                           
-                          return `${start.toLocaleDateString('en-GB', dateOpts)} ${start.toLocaleTimeString('en-GB', timeOpts)} — ${end.toLocaleDateString('en-GB', dateOpts)} ${end.toLocaleTimeString('en-GB', timeOpts)}`;
+                          const startDateStr = start.toLocaleDateString('en-GB', dateOpts);
+                          const endDateStr = end.toLocaleDateString('en-GB', dateOpts);
+                          const startTimeStr = start.toLocaleTimeString('en-GB', timeOpts);
+                          const endTimeStr = end.toLocaleTimeString('en-GB', timeOpts);
+
+                          if (startDateStr === endDateStr) {
+                            return `${startDateStr} ${startTimeStr} - ${endTimeStr}`;
+                          } else {
+                            return `${startDateStr} ${startTimeStr} - ${endDateStr} ${endTimeStr}`;
+                          }
                         })()}
                       </div>
                     </div>
                   </div>
 
                   {/* Quota Progress */}
-                  <div style={{ marginBottom: 24 }}>
-                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 800, marginBottom: 8 }}>
-                        <span style={{ color: "var(--text-muted)", letterSpacing: "0.05em" }}>CAPACITY</span>
-                        <span style={{ color: "var(--text-primary)" }}>
-                          {evt.attendeeCount || 0} / {evt.quota || "∞"}
-                        </span>
-                     </div>
-                     <div style={{ width: "100%", height: 8, background: "var(--bg-elevated)", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border-subtle)" }}>
-                        <div style={{ 
-                          width: `${evt.quota ? Math.min(100, ((evt.attendeeCount || 0) / evt.quota) * 100) : 0}%`, 
-                          height: "100%", 
-                          background: evt.quota && (evt.attendeeCount || 0) >= evt.quota ? "#ef4444" : "var(--accent-primary)", 
-                          borderRadius: 4,
-                          transition: "width 0.5s ease-out"
-                        }} />
-                     </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div style={{ display: "flex", gap: 12, marginTop: "auto" }}>
-                    <button 
-                      className="btn btn-primary" 
-                      style={{ flex: 1, borderRadius: 16 }} 
-                      onClick={() => viewAttendance(evt.id)}
-                    >
-                      <BarChart3 size={18} /> Attendance
-                    </button>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button 
-                        className="btn btn-ghost" 
-                        style={{ width: 48, height: 48, padding: 0, borderRadius: 16 }} 
-                        onClick={() => handleEdit(evt)}
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button 
-                        id={`delete-event-${evt.id}-btn`}
-                        className="btn btn-danger" 
-                        style={{ width: 48, height: 48, padding: 0, borderRadius: 16 }} 
-                        disabled={deletingId === evt.id}
-                        onClick={() => handleDelete(evt.id)}
-                      >
-                        {deletingId === evt.id ? <div className="spinner" /> : <Trash2 size={18} />}
-                      </button>
+                  <div style={{ marginTop: "auto", marginBottom: 24 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontWeight: 900, marginBottom: 6 }}>
+                      <span style={{ color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>CAPACITY</span>
+                      <span style={{ color: "var(--text-primary)" }}>
+                        {evt.attendeeCount || 0} / {evt.quota || "∞"}
+                      </span>
+                    </div>
+                    <div style={{ width: "100%", height: 8, background: "var(--bg-elevated)", borderRadius: 99, overflow: "hidden", border: "1px solid var(--border-subtle)" }}>
+                      <div style={{
+                        width: `${evt.quota ? Math.min(100, ((evt.attendeeCount || 0) / evt.quota) * 100) : 0}%`,
+                        height: "100%",
+                        background: evt.quota && (evt.attendeeCount || 0) >= evt.quota ? "var(--red-house)" : "var(--accent-primary)",
+                        borderRadius: 99,
+                        transition: "width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)"
+                      }} />
                     </div>
                   </div>
+
+                   {/* Actions */}
+                   <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 20, borderTop: "1px solid var(--border-subtle)" }}>
+                     <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+                       <button
+                         className="btn btn-primary"
+                         style={{ flex: 1, height: 44, borderRadius: 12, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                         onClick={() => viewAttendance(evt.id)}
+                       >
+                         <BarChart3 size={15} /> Attendance
+                       </button>
+                       <button
+                         className="btn"
+                         style={{ 
+                           flex: 1, 
+                           height: 44, 
+                           borderRadius: 12, 
+                           fontSize: 13, 
+                           background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)", 
+                           color: "#fff",
+                           border: "none",
+                           display: "flex", 
+                           alignItems: "center", 
+                           justifyContent: "center", 
+                           gap: 6,
+                           boxShadow: "0 4px 12px rgba(79, 70, 229, 0.2)",
+                           cursor: "pointer"
+                         }}
+                         onClick={() => openFormBuilder(evt.id, evt.title)}
+                       >
+                         <Zap size={14} fill="currentColor" /> Feedback Form
+                       </button>
+                     </div>
+                     <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+                       <button
+                         className="btn btn-ghost"
+                         style={{ flex: 1, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(0,0,0,0.03)", fontSize: 13 }}
+                         onClick={() => handleEdit(evt)}
+                       >
+                         <Edit2 size={13} /> Edit
+                       </button>
+                       <button
+                         id={`delete-event-${evt.id}-btn`}
+                         className="btn btn-danger"
+                         style={{ flex: 1, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13 }}
+                         disabled={deletingId === evt.id}
+                         onClick={() => handleDelete(evt.id)}
+                       >
+                         {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} Delete
+                       </button>
+                     </div>
+                   </div>
                 </div>
               </div>
             );
@@ -1099,6 +1497,650 @@ export default function AdminEventsPage() {
           background: var(--text-muted);
         }
       `}</style>
+
+      {/* Evaluation Form Builder Modal */}
+      {showFormBuilder && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.4)",
+          backdropFilter: "blur(8px)",
+          zIndex: 1100,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "clamp(12px, 3vw, 24px)"
+        }} onClick={() => setShowFormBuilder(false)}>
+          <div className="animate-fade-in-up custom-scrollbar" style={{
+            background: "var(--bg-surface)",
+            width: "100%",
+            maxWidth: 800,
+            maxHeight: "92vh",
+            borderRadius: "clamp(20px, 4vw, 32px)",
+            overflowY: "auto",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            
+            {/* Modal Header */}
+            <div style={{ padding: "20px clamp(16px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10 }}>
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Interactive Feedback</span>
+                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)" }}>{formEventTitle || "Event"} Form</h3>
+              </div>
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => setShowFormBuilder(false)} 
+                style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Navigation Tabs */}
+            <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-surface)" }}>
+              <button
+                style={{
+                  flex: 1,
+                  padding: "16px 20px",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  border: "none",
+                  borderBottom: formTab === "edit" ? "3px solid var(--accent-primary)" : "3px solid transparent",
+                  background: "transparent",
+                  color: formTab === "edit" ? "var(--accent-primary)" : "var(--text-secondary)",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+                onClick={() => setFormTab("edit")}
+              >
+                📝 Design Form & Rules
+              </button>
+              <button
+                style={{
+                  flex: 1,
+                  padding: "16px 20px",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  border: "none",
+                  borderBottom: formTab === "stats" ? "3px solid var(--accent-primary)" : "3px solid transparent",
+                  background: "transparent",
+                  color: formTab === "stats" ? "var(--accent-primary)" : "var(--text-secondary)",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+                onClick={() => setFormTab("stats")}
+              >
+                🏆 House Leaderboard & Submissions ({formSubmissions.length})
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            {formLoading ? (
+              <div style={{ padding: "80px 0", textAlign: "center" }}>
+                <div className="spinner w-8 h-8 border-4 border-t-transparent" style={{ margin: "0 auto 16px" }} />
+                <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>Fetching evaluation system data...</p>
+              </div>
+            ) : (
+              <div style={{ padding: "clamp(16px, 5vw, 40px)" }}>
+                {formBuilderSuccess && (
+                  <div className="animate-fade-in" style={{
+                    background: "rgba(16, 185, 129, 0.08)",
+                    border: "1px solid rgba(16, 185, 129, 0.2)",
+                    borderRadius: 16,
+                    padding: "16px 20px",
+                    marginBottom: 28,
+                    color: "#10b981",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10
+                  }}>
+                    <span style={{ fontSize: 16 }}>✅</span> {formBuilderSuccess}
+                  </div>
+                )}
+
+                {formBuilderError && (
+                  <div className="animate-fade-in" style={{
+                    background: "rgba(239, 68, 68, 0.08)",
+                    border: "1px solid rgba(239, 68, 68, 0.2)",
+                    borderRadius: 16,
+                    padding: "16px 20px",
+                    marginBottom: 28,
+                    color: "#ef4444",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10
+                  }}>
+                    <span style={{ fontSize: 16 }}>⚠️</span> {formBuilderError}
+                  </div>
+                )}
+                {formTab === "edit" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                    {/* General Settings */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
+                      {/* Left Panel */}
+                      <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 16 }}>
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Form Title</label>
+                          <input
+                            type="text"
+                            className="input"
+                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px" }}
+                            value={formTitle}
+                            onChange={e => setFormTitle(e.target.value)}
+                            placeholder="e.g. Event Satisfaction Survey"
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Instructional Description</label>
+                          <textarea
+                            className="input custom-scrollbar"
+                            style={{ width: "100%", minHeight: 80, borderRadius: 12, padding: "12px 16px", resize: "vertical" }}
+                            value={formDescription}
+                            onChange={e => setFormDescription(e.target.value)}
+                            placeholder="Helpful prompt text for students..."
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* Right Panel */}
+                      <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 16 }}>
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+                            <Zap size={14} style={{ color: "var(--accent-primary)" }} /> House Points Reward
+                          </label>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Winning house gets these points.</p>
+                          <input
+                            type="number"
+                            className="input"
+                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", fontWeight: 800 }}
+                            value={formPoints}
+                            onChange={e => setFormPoints(Math.max(0, parseInt(e.target.value) || 0))}
+                          />
+                        </div>
+                        
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.02)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: "50%",
+                              background: formIsAwarded ? "#10b981" : (formIsActive ? "var(--green-house)" : "var(--text-muted)")
+                            }} />
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)" }}>
+                              Status: {formIsAwarded ? "Finalized & Awarded" : (formIsActive ? "Accepting Entries" : "Closed / Inactive")}
+                            </span>
+                          </div>
+                          
+                          <button
+                            type="button"
+                            className={`btn ${formIsActive ? "btn-danger" : "btn-primary"}`}
+                            style={{
+                              width: "100%",
+                              height: 38,
+                              borderRadius: 10,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6
+                            }}
+                            disabled={formIsAwarded}
+                            onClick={toggleFormActiveStatus}
+                          >
+                            {formIsAwarded ? (
+                              <>🔒 Locked (Points Awarded)</>
+                            ) : formIsActive ? (
+                              <>🔒 Close Form (Disable Entries)</>
+                            ) : (
+                              <>🔓 Open Form (Enable Entries)</>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Questions Section */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "var(--accent-primary)", color: "#fff", fontSize: 12 }}>{formQuestions.length}</span>
+                          Form Questions
+                        </h4>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{
+                            borderRadius: 12,
+                            padding: "8px 16px",
+                            fontSize: 13,
+                            fontWeight: 800,
+                            background: "rgba(255,107,0,0.1)",
+                            color: "var(--accent-primary)",
+                            border: "none",
+                            cursor: "pointer"
+                          }}
+                          onClick={addQuestion}
+                        >
+                          ➕ Add Question
+                        </button>
+                      </div>
+
+                      {formQuestions.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: "40px 20px", border: "2px dashed var(--border-subtle)", borderRadius: 20, background: "var(--bg-elevated)" }}>
+                          <p style={{ color: "var(--text-muted)", fontWeight: 700, marginBottom: 4 }}>No custom questions yet</p>
+                          <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Click "Add Question" to start building your evaluation form!</p>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                          {formQuestions.map((q, idx) => (
+                            <div 
+                              key={q.id || idx} 
+                              className="flex flex-col md:flex-row md:items-center gap-4"
+                              style={{ 
+                                background: "var(--bg-elevated)", 
+                                padding: "16px 20px", 
+                                borderRadius: 16,
+                                border: "1px solid var(--border-subtle)"
+                              }}
+                            >
+                              {/* Label Input */}
+                              <div style={{ display: "flex", gap: 12, alignItems: "center", flex: "1 1 auto", width: "100%" }}>
+                                <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20 }}>{idx + 1}.</span>
+                                <input
+                                  type="text"
+                                  className="input"
+                                  style={{ flex: 1, height: 40, borderRadius: 10, padding: "0 12px" }}
+                                  value={q.label}
+                                  onChange={e => updateQuestion(q.id, "label", e.target.value)}
+                                  placeholder="Question Text..."
+                                />
+                              </div>
+
+                              {/* Controls Container */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }} className="md:w-auto">
+                                {/* Type Select */}
+                                <select
+                                  className="input"
+                                  style={{ height: 40, borderRadius: 10, padding: "0 12px", background: "var(--bg-surface)", cursor: "pointer", fontWeight: 700, fontSize: 13, flex: "1 1 auto", minWidth: 140 }}
+                                  value={q.type}
+                                  onChange={e => updateQuestion(q.id, "type", e.target.value)}
+                                >
+                                  <option value="text">Long Answer</option>
+                                  <option value="rating">Rating (1-5 Star)</option>
+                                </select>
+
+                                {/* Required Toggle */}
+                                <button
+                                  type="button"
+                                  style={{
+                                    padding: "6px 12px",
+                                    height: 40,
+                                    borderRadius: 10,
+                                    border: "none",
+                                    background: q.required ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.03)",
+                                    color: q.required ? "#10b981" : "var(--text-muted)",
+                                    whiteSpace: "nowrap",
+                                    fontWeight: 800,
+                                    fontSize: 11,
+                                    cursor: "pointer"
+                                  }}
+                                  onClick={() => updateQuestion(q.id, "required", !q.required)}
+                                >
+                                  {q.required ? "Required" : "Optional"}
+                                </button>
+
+                                {/* Delete Button */}
+                                <button
+                                  type="button"
+                                  className="btn btn-danger"
+                                  style={{ width: 40, height: 40, padding: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                                  onClick={() => removeQuestion(q.id)}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 12 }}>
+                      <button
+                        className="btn btn-ghost"
+                        type="button"
+                        style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
+                        onClick={() => setShowFormBuilder(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
+                        disabled={formSaving || formIsAwarded}
+                        onClick={saveForm}
+                      >
+                        {formSaving ? <div className="spinner w-4 h-4 border-2" /> : "Save Form Structure"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+                    
+                    {/* Contest End Actions */}
+                    {!formIsAwarded && (
+                      <div 
+                        style={{ 
+                          background: "linear-gradient(135deg, rgba(255,107,0,0.08) 0%, rgba(255,50,0,0.08) 100%)", 
+                          border: "1px solid rgba(255,107,0,0.2)", 
+                          borderRadius: 24, 
+                          padding: "24px 32px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 24
+                        }}
+                      >
+                        <div>
+                          <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--accent-primary)", marginBottom: 4 }}>🏆 Declare House Points Winner!</h4>
+                          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                            This will close this form, calculate which house has completed it the most, and award <b>+{formPoints} PTS</b> immediately!
+                          </p>
+                        </div>
+                        <button
+                          className="btn"
+                          style={{
+                            background: "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
+                            color: "#fff",
+                            border: "none",
+                            padding: "12px 24px",
+                            borderRadius: 14,
+                            fontWeight: 900,
+                            fontSize: 14,
+                            cursor: "pointer",
+                            boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8
+                          }}
+                          disabled={formAwarding || formSubmissions.length === 0}
+                          onClick={awardFormPoints}
+                          title={formSubmissions.length === 0 ? "Requires at least 1 submission" : ""}
+                        >
+                          {formAwarding ? <div className="spinner w-4 h-4 border-2" /> : <Trophy size={16} />} 
+                          End & Award Points
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Closed Status Banner */}
+                    {!formIsActive && (
+                      <div 
+                        style={{ 
+                          background: "var(--bg-elevated)", 
+                          border: "1px solid var(--border-subtle)", 
+                          borderRadius: 24, 
+                          padding: "24px 32px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 16
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                          <div style={{ 
+                            display: "flex", 
+                            alignItems: "center", 
+                            justifyContent: "center", 
+                            width: 44, 
+                            height: 44, 
+                            borderRadius: "50%", 
+                            background: formIsAwarded ? "rgba(16,185,129,0.1)" : "rgba(255,107,0,0.1)", 
+                            color: formIsAwarded ? "#10b981" : "var(--accent-primary)" 
+                          }}>
+                            {formIsAwarded ? <CheckCircle2 size={22} /> : <AlertCircle size={22} />}
+                          </div>
+                          <div>
+                            <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>
+                              {formIsAwarded ? "Contest Finalized & Closed" : "Evaluation Form Suspended / Closed"}
+                            </h4>
+                            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                              {formIsAwarded 
+                                ? "Points have been awarded to the winning house and this evaluation form is frozen."
+                                : "This form is temporarily closed under Design & Rules. You can re-open it or declare points winner above."}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {!formIsAwarded ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{
+                              height: 38,
+                              borderRadius: 10,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              border: "1px solid var(--border-medium)"
+                            }}
+                            onClick={toggleFormActiveStatus}
+                          >
+                            🔓 Re-open Form
+                          </button>
+                        ) : (
+                          <div style={{
+                            padding: "8px 16px",
+                            borderRadius: 10,
+                            background: "rgba(16,185,129,0.1)",
+                            color: "#10b981",
+                            fontSize: 12,
+                            fontWeight: 900,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6
+                          }}>
+                            🔒 Permanent Lock
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Stats Leaderboard Cards */}
+                    <div>
+                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20 }}>📊 House Submission Standings</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {["red", "green", "yellow", "blue"].map(hId => {
+                          const houseColors: Record<string, string> = {
+                            red: "var(--red-house)",
+                            green: "var(--green-house)",
+                            yellow: "var(--yellow-house)",
+                            blue: "var(--blue-house)"
+                          };
+                          const houseNames: Record<string, string> = {
+                            red: "Lanna",
+                            green: "Mengrai",
+                            yellow: "Kawila",
+                            blue: "Dara"
+                          };
+                          const count = formStats?.[hId] || 0;
+                          return (
+                            <div 
+                              key={hId} 
+                              style={{ 
+                                background: "var(--bg-elevated)", 
+                                border: `1px solid var(--border-subtle)`,
+                                borderTop: `5px solid ${houseColors[hId]}`,
+                                borderRadius: 16, 
+                                padding: 20, 
+                                textAlign: "center" 
+                              }}
+                            >
+                              <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>{houseNames[hId]}</p>
+                              <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-primary)" }}>{count}</p>
+                              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>submissions</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* List of Submissions */}
+                    <div>
+                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20 }}>💬 Student Submissions ({formSubmissions.length})</h4>
+                      {formSubmissions.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: "60px 20px", border: "1px dashed var(--border-subtle)", borderRadius: 20 }}>
+                          <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>No feedback submissions yet.</p>
+                          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Once students complete the form, their answers will appear here live!</p>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                          {formSubmissions.map((sub, sIdx) => (
+                            <div 
+                              key={sub.id || sIdx} 
+                              style={{ 
+                                background: "var(--bg-elevated)", 
+                                border: "1px solid var(--border-subtle)", 
+                                borderRadius: 20, 
+                                padding: 24 
+                              }}
+                            >
+                              {/* Header info */}
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 12 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <div style={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: "50%",
+                                    background: sub.houseId === "red" ? "var(--red-house)" : sub.houseId === "green" ? "var(--green-house)" : sub.houseId === "yellow" ? "var(--yellow-house)" : "var(--blue-house)"
+                                  }} />
+                                  <span style={{ fontWeight: 800, fontSize: 15 }}>{sub.studentName}</span>
+                                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>• {sub.studentId}</span>
+                                </div>
+                                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+                                  {new Date(sub.submittedAt).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+
+                              {/* Answers */}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                {formQuestions.map((q) => {
+                                  const ans = sub.answers?.[q.id];
+                                  return (
+                                    <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)" }}>{q.label}</span>
+                                      {q.type === "rating" ? (
+                                        <div style={{ display: "flex", gap: 2, color: "#ffb000" }}>
+                                          {Array.from({ length: 5 }).map((_, starIdx) => (
+                                            <span key={starIdx} style={{ fontSize: 16 }}>
+                                              {starIdx < (parseInt(ans) || 0) ? "★" : "☆"}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500, whiteSpace: "pre-wrap" }}>
+                                          {ans || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>No answer</span>}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirm Modal for Awarding Contest Points */}
+      {showAwardConfirm && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 1200,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setShowAwardConfirm(false)}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "100%",
+            maxWidth: 480,
+            borderRadius: 28,
+            padding: 36,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              background: "rgba(255,107,0,0.1)",
+              color: "var(--accent-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <Trophy size={32} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>End Evaluation Contest?</h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              Are you sure you want to end this evaluation form session and award the points? This will freeze the form and update house standings immediately!
+            </p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <button
+                className="btn btn-ghost"
+                style={{ flex: 1, height: 46, borderRadius: 12 }}
+                onClick={() => setShowAwardConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn"
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 12,
+                  background: "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
+                  color: "#fff",
+                  border: "none",
+                  fontWeight: 800,
+                  boxShadow: "0 4px 14px rgba(255,107,0,0.3)"
+                }}
+                disabled={formAwarding}
+                onClick={() => {
+                  setShowAwardConfirm(false);
+                  awardFormPointsReal();
+                }}
+              >
+                {formAwarding ? <div className="spinner w-4 h-4 border-2" /> : "Confirm & End"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

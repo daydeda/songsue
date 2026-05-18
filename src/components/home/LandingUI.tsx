@@ -130,7 +130,8 @@ export function LandingUI({
             <div className="flex flex-col gap-5 lg:gap-6">
               <button
                 onClick={() => signIn("google")}
-                className="btn btn-primary btn-full"
+                className="btn btn-primary btn-full touch-target"
+                aria-label={t.signInBtn}
                 style={{ 
                   height: "clamp(64px, 8vw, 76px)", 
                   borderRadius: "clamp(18px, 2vw, 24px)", 
@@ -198,7 +199,7 @@ export function LandingUI({
 
               {/* Language Switcher in the Card */}
               <div className="pt-1 flex justify-center lg:justify-start">
-                <LanguageSwitcher />
+                <LanguageSwitcher variant="segmented" />
               </div>
             </div>
           </div>
@@ -206,7 +207,7 @@ export function LandingUI({
       </main>
 
       {/* Footer - Absolute on desktop, relative on mobile */}
-      <footer className="w-full px-8 py-10 lg:py-6 lg:absolute lg:bottom-0 flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-4 lg:gap-8 border-t border-black/[0.03] bg-white/30 backdrop-blur-md z-20">
+      <footer className="w-full px-8 py-10 lg:py-6 lg:absolute lg:bottom-0 flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-8 border-t border-black/[0.03] bg-white/30 backdrop-blur-md z-20">
         <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "0.02em" }}>© SMO CAMT 2026</p>
         <div className="hidden lg:block" style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--text-muted)" }} />
         <p style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500, textAlign: "center" }}>{t.modernizing}</p>

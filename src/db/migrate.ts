@@ -71,6 +71,20 @@ async function migrate() {
   `;
   console.log("  ✅ users.image_transform");
 
+  // 8. Add emergency_medication column to users
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS emergency_medication text
+  `;
+  console.log("  ✅ users.emergency_medication");
+
+  // 9. Add meds_check_option column to attendance
+  await sql`
+    ALTER TABLE attendance
+    ADD COLUMN IF NOT EXISTS meds_check_option text
+  `;
+  console.log("  ✅ attendance.meds_check_option");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

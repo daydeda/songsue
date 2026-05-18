@@ -4,12 +4,17 @@ import { attendance, events, houses, users } from "@/db/schema";
 import { count, gte } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { checkAndAwardPastEventPoints } from "@/lib/award-points";
+
 export async function GET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user || (session.user as any).role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Automatically check and award past event points
+    await checkAndAwardPastEventPoints();
 
     const type = new URL(req.url).searchParams.get("type") || "overview";
 

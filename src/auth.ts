@@ -12,6 +12,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
+  session: { strategy: "jwt" },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
@@ -48,13 +49,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
 
-    async session({ session, user }) {
-      session.user.id = user.id;
-      session.user.email = user.email;
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      const userId = (token.id || token.sub) as string;
+      if (userId) {
+        session.user.id = userId;
+      } else {
+        return session; // No user ID, can't fetch DB details
+      }
 
       // Fetch custom DB fields to include in the session token
       const dbUser = await db.query.users.findFirst({
-        where: (users, { eq }) => eq(users.id, user.id),
+        where: (users, { eq }) => eq(users.id, userId),
         columns: { 
           role: true, 
           email: true,
@@ -69,7 +80,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // If qrToken is missing in DB for some reason, generate it now (FE-13)
         if (!dbUser.qrToken) {
           const newToken = crypto.randomUUID();
-          await db.update(users).set({ qrToken: newToken }).where(eq(users.id, user.id));
+          await db.update(users).set({ qrToken: newToken }).where(eq(users.id, userId));
           dbUser.qrToken = newToken;
         }
 
@@ -83,7 +94,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       // Force admin role for the official SMO email - CASE INSENSITIVE (FE-04)
       const adminEmail = "smocamt.official@gmail.com".toLowerCase();
-      const currentEmail = (session.user?.email || dbUser?.email || user?.email || "").toLowerCase();
+      const currentEmail = (session.user?.email || dbUser?.email || "").toLowerCase();
       
       if (currentEmail === adminEmail) {
         (session.user as any).role = "admin";

@@ -9,6 +9,7 @@ const scanSchema = z.object({
   qrToken: z.string(), // Relaxed from uuid() to allow fallback IDs
   eventId: z.string().uuid(),
   action: z.enum(["scan", "confirm"]).default("scan"),
+  medsCheckOption: z.string().nullish(),
 });
 
 export async function POST(req: Request) {
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { qrToken, eventId, action } = scanSchema.parse(body);
+    const { qrToken, eventId, action, medsCheckOption } = scanSchema.parse(body);
 
     // 1. Resolve student (Try QR Token first, then fallback to User ID)
     const student = await db.query.users.findFirst({
@@ -51,12 +52,62 @@ export async function POST(req: Request) {
       where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, student.id)),
     });
 
+    const checkMedical = (val?: string | null) => {
+      if (!val) return false;
+      const clean = val.trim().toLowerCase();
+      
+      const negativeValues = [
+        "",
+        "-",
+        "ไม่มี",
+        "ไม่มีโรคประจำตัว",
+        "ไม่มีประวัติแพ้ยา",
+        "ไม่มีประวัติแพ้อาหาร",
+        "ไม่มีโรค",
+        "ไม่มีแพ้ยา",
+        "ไม่มีแพ้อาหาร",
+        "ปกติ",
+        "none",
+        "no",
+        "n/a",
+        "nil"
+      ];
+      
+      return !negativeValues.includes(clean);
+    };
+
+    const hasMedicalCondition = !!(
+      student.faintingHistory || 
+      checkMedical(student.chronicDiseases) ||
+      checkMedical(student.medicalHistory) ||
+      checkMedical(student.drugAllergies) ||
+      checkMedical(student.foodAllergies) ||
+      checkMedical(student.dietaryRestrictions) ||
+      checkMedical(student.emergencyMedication)
+    );
+
+    const studentInfo = {
+      name: student.name,
+      nickname: student.nickname,
+      studentId: student.studentId,
+      house: student.house?.name ?? "UNASSIGNED",
+      houseColor: (student.house as any)?.color ?? "#6366f1",
+      hasMedicalCondition,
+      chronicDiseases: student.chronicDiseases,
+      medicalHistory: student.medicalHistory,
+      drugAllergies: student.drugAllergies,
+      foodAllergies: student.foodAllergies,
+      dietaryRestrictions: student.dietaryRestrictions,
+      faintingHistory: student.faintingHistory,
+      emergencyMedication: student.emergencyMedication,
+    };
+
     // Case A: Student is already registered for the event
     if (record) {
       if (record.status === "attended") {
         return NextResponse.json({
           status: "already_checked_in",
-          student: { name: student.name, nickname: student.nickname },
+          student: studentInfo,
           checkedInAt: record.checkInTime,
         }, { status: 409 });
       }
@@ -68,32 +119,21 @@ export async function POST(req: Request) {
             status: "attended",
             checkInTime: new Date(),
             scannedBy: session.user.id,
+            medsCheckOption: medsCheckOption || null,
             // Keep original method (pre-registered)
           })
           .where(eq(attendance.id, record.id));
 
         return NextResponse.json({
           status: "success",
-          student: {
-            name: student.name,
-            nickname: student.nickname,
-            studentId: student.studentId,
-            house: student.house?.name ?? "UNASSIGNED",
-            houseColor: (student.house as any)?.color ?? "#6366f1",
-          },
+          student: studentInfo,
         });
       }
 
       // Wait for manual confirmation (Workflow A)
       return NextResponse.json({
         status: "pending_confirmation",
-        student: {
-          name: student.name,
-          nickname: student.nickname,
-          studentId: student.studentId,
-          house: student.house?.name ?? "UNASSIGNED",
-          houseColor: (student.house as any)?.color ?? "#6366f1",
-        },
+        student: studentInfo,
       });
     }
 
@@ -114,32 +154,36 @@ export async function POST(req: Request) {
         }
       }
 
-      // Automatically create and mark as attended
-      await db.insert(attendance).values({
-        eventId: eventId,
-        studentId: student.id,
-        scannedBy: session.user.id,
-        method: "walk-in",
-        status: "attended",
-        checkInTime: new Date(),
-      });
+      if (action === "confirm") {
+        // Automatically create and mark as attended
+        await db.insert(attendance).values({
+          eventId: eventId,
+          studentId: student.id,
+          scannedBy: session.user.id,
+          method: "walk-in",
+          status: "attended",
+          checkInTime: new Date(),
+          medsCheckOption: medsCheckOption || null,
+        });
 
+        return NextResponse.json({
+          status: "success_walk_in",
+          student: studentInfo,
+        });
+      }
+
+      // Wait for manual confirmation (Workflow B)
       return NextResponse.json({
-        status: "success_walk_in",
-        student: {
-          name: student.name,
-          nickname: student.nickname,
-          studentId: student.studentId,
-          house: student.house?.name ?? "UNASSIGNED",
-          houseColor: (student.house as any)?.color ?? "#6366f1",
-        },
+        status: "pending_confirmation",
+        isWalkIn: true,
+        student: studentInfo,
       });
     }
 
     // Walk-ins disabled and not registered
     return NextResponse.json({
       status: "walk_ins_disabled",
-      student: { name: student.name, nickname: student.nickname },
+      student: studentInfo,
       error: "Walk-ins are not enabled for this event and student is not pre-registered.",
     }, { status: 403 });
 

@@ -72,7 +72,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           profileCompleted: true, 
           houseId: true, 
           imageTransform: true,
-          qrToken: true
+          qrToken: true,
+          studentId: true,
         },
       });
 
@@ -85,11 +86,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         session.user.email = dbUser.email;
-        (session.user as any).role = dbUser.role ?? "student";
-        (session.user as any).profileCompleted = dbUser.profileCompleted ?? false;
-        (session.user as any).houseId = dbUser.houseId ?? null;
-        (session.user as any).imageTransform = dbUser.imageTransform ?? null;
-        (session.user as any).qrToken = dbUser.qrToken;
+        session.user.role = dbUser.role ?? "student";
+        session.user.profileCompleted = dbUser.profileCompleted ?? false;
+        session.user.houseId = dbUser.houseId ?? null;
+        session.user.imageTransform = (dbUser.imageTransform as { scale: number; x: number; y: number } | null) ?? null;
+        session.user.qrToken = dbUser.qrToken;
+        session.user.studentId = dbUser.studentId ?? null;
       }
 
       // Force admin role for the official SMO email - CASE INSENSITIVE (FE-04)
@@ -97,8 +99,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const currentEmail = (session.user?.email || dbUser?.email || "").toLowerCase();
       
       if (currentEmail === adminEmail) {
-        (session.user as any).role = "admin";
-        (session.user as any).profileCompleted = true;
+        session.user.role = "admin";
+        session.user.profileCompleted = true;
       }
 
       return session;

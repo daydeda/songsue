@@ -1,4 +1,4 @@
-import NextAuth, { DefaultSession, DefaultUser } from "next-auth"
+import { DefaultSession, DefaultUser } from "next-auth"
 
 declare module "next-auth" {
   interface Session {
@@ -7,6 +7,9 @@ declare module "next-auth" {
       role: string;
       profileCompleted: boolean;
       houseId: string | null;
+      imageTransform: { scale: number; x: number; y: number } | null;
+      qrToken: string | null;
+      studentId: string | null;
     } & DefaultSession["user"]
   }
 
@@ -15,5 +18,8 @@ declare module "next-auth" {
     role: string;
     profileCompleted: boolean;
     houseId: string | null;
+    imageTransform: { scale: number; x: number; y: number } | null;
+    qrToken: string | null;
+    studentId: string | null;
   }
 }

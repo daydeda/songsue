@@ -24,7 +24,7 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  const user = session.user as any;
+  const user = session.user;
 
   // Authenticated but profile not complete → force onboarding
   // (except for admins, the /onboarding page itself, and API routes)

@@ -126,6 +126,8 @@ export function LanguageSwitcher({ align = "right", position = "bottom", variant
                 background: isActive ? "#ffffff" : "transparent",
                 color: isActive ? "var(--accent-primary)" : "var(--text-secondary)",
                 boxShadow: isActive ? "0 4px 12px rgba(255,107,0,0.08), 0 2px 4px rgba(0,0,0,0.04)" : "none",
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
               }}
             >
               {renderFlag(l.code)}

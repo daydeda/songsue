@@ -10,7 +10,7 @@ export function LanguageWrapper({ children }: { children: React.ReactNode }) {
     <div 
       style={{ 
         fontFamily: lang === "th" ? "var(--font-thai), sans-serif" : "var(--font-inter), sans-serif",
-        height: "100%",
+        minHeight: "100%",
         display: "flex",
         flexDirection: "column"
       }}

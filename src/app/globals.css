@@ -42,14 +42,12 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  height: 100%;
+  min-height: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: "Inter", "Geist", sans-serif;
   -webkit-font-smoothing: antialiased;
   scroll-behavior: smooth;
-  padding-top: var(--safe-top);
-  padding-bottom: var(--safe-bottom);
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────────────────────── */
@@ -278,7 +276,11 @@ select.input { cursor: pointer; }
 /* ── Animations ─────────────────────────────────────────────────────────────── */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 12px var(--accent-glow); }
@@ -289,6 +291,9 @@ select.input { cursor: pointer; }
 }
 
 .animate-fade-in-up { animation: fadeInUp 0.4s ease both; }
+@media (max-width: 1024px) {
+  .animate-fade-in-up { animation: fadeIn 0.3s ease both; }
+}
 .animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
 
 /* ── Loading Spinner ────────────────────────────────────────────────────────── */
@@ -324,7 +329,7 @@ select.input { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: var(--radius-md);
   font-size: 14px;
   font-weight: 500;
@@ -332,6 +337,9 @@ select.input { cursor: pointer; }
   text-decoration: none;
   transition: all 0.15s;
   margin-bottom: 2px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .nav-link:hover {
   background: var(--bg-glass);

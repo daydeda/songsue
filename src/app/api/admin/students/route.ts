@@ -20,6 +20,7 @@ export async function GET() {
         phone: true,
         houseId: true,
         profileCompleted: true,
+        role: true,
       },
       with: { house: true },
     });

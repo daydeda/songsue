@@ -39,8 +39,8 @@ export function AdminNav() {
               className={`nav-link ${isActive ? "active" : ""}`} 
               style={{ gap: 12, position: "relative" }}
             >
-              <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
-              <span style={{ fontWeight: isActive ? 700 : 500 }}>{item.label}</span>
+              <Icon size={18} strokeWidth={isActive ? 2.5 : 2} style={{ pointerEvents: "none" }} />
+              <span style={{ fontWeight: isActive ? 700 : 500, pointerEvents: "none" }}>{item.label}</span>
               {isActive && (
                 <div style={{ 
                   position: "absolute", 
@@ -48,7 +48,8 @@ export function AdminNav() {
                   width: 6, 
                   height: 6, 
                   borderRadius: "50%", 
-                  background: "var(--accent-primary)" 
+                  background: "var(--accent-primary)",
+                  pointerEvents: "none"
                 }} />
               )}
             </Link>
@@ -59,8 +60,8 @@ export function AdminNav() {
       <div className="divider" style={{ margin: "24px 0", opacity: 0.5 }} />
       <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>Account</p>
       <Link href="/dashboard" className="nav-link" style={{ gap: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
-        <User size={18} strokeWidth={2 } />
-        <span style={{ fontWeight: 500 }}>Switch to Student View</span>
+        <User size={18} strokeWidth={2} style={{ pointerEvents: "none" }} />
+        <span style={{ fontWeight: 500, pointerEvents: "none" }}>Switch to Student View</span>
       </Link>
 
       <AdminLanguageSwitcher />

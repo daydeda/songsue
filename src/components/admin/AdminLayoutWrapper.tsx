@@ -25,9 +25,10 @@ export function AdminLayoutWrapper({
         </div>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="p-2 rounded-xl bg-gray-50 text-[var(--text-primary)]"
+          className="rounded-xl bg-gray-50 text-[var(--text-primary)] flex items-center justify-center"
+          style={{ width: 44, height: 44, border: "none", touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
         >
-          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+          {isSidebarOpen ? <X size={24} style={{ pointerEvents: "none" }} /> : <Menu size={24} style={{ pointerEvents: "none" }} />}
         </button>
       </header>
 
@@ -82,8 +83,12 @@ export function AdminLayoutWrapper({
               }}>Admin Panel</span>
             </div>
           </Link>
-          <button className="lg:hidden p-2" onClick={() => setIsSidebarOpen(false)}>
-            <ChevronLeft size={20} />
+          <button 
+            className="lg:hidden flex items-center justify-center text-[var(--text-secondary)]" 
+            onClick={() => setIsSidebarOpen(false)}
+            style={{ width: 44, height: 44, borderRadius: 12, border: "none", background: "var(--bg-elevated)", touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
+          >
+            <ChevronLeft size={20} style={{ pointerEvents: "none" }} />
           </button>
         </div>
 

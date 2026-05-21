@@ -1,10 +1,31 @@
-
 "use client";
 
+import { useState, useEffect } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { ArrowRight, ShieldCheck, Zap, UserCheck, Sparkles } from "lucide-react";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { signIn } from "next-auth/react";
+
+function AvatarImage({ src }: { src: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  if (hasError || !src) {
+    return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-elevated)', color: 'var(--text-muted)', fontSize: '10px', fontWeight: '900' }}>
+        ?
+      </div>
+    );
+  }
+
+  return (
+    <img 
+      src={src} 
+      alt="Student" 
+      className="w-full h-full object-cover"
+      onError={() => setHasError(true)}
+    />
+  );
+}
 
 export function LandingUI({ 
   userCount = 0, 
@@ -15,18 +36,19 @@ export function LandingUI({
 }) {
   const { t } = useLanguage();
 
+
   const displayCount = userCount > 500 ? `${userCount}+` : userCount;
   const joinText = userCount === 1 ? t.studentSingle : t.studentPlural;
 
   return (
     <div
-      className="min-h-screen relative flex flex-col overflow-y-auto lg:overflow-hidden"
+      className="min-h-screen relative flex flex-col overflow-x-hidden"
       style={{ background: "#f8fafc" }}
     >
-      {/* Dynamic Background Elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {/* Dynamic Background Elements - Hidden on mobile for performance & click safety */}
+      <div className="hidden lg:block absolute inset-0 overflow-hidden pointer-events-none -z-10">
         <div 
-          className="absolute opacity-[0.03]"
+          className="absolute opacity-[0.03] pointer-events-none"
           style={{
             inset: 0,
             backgroundImage: `radial-gradient(var(--accent-primary) 1px, transparent 1px)`,
@@ -36,7 +58,7 @@ export function LandingUI({
         
         {/* Animated Orbs */}
         <div
-          className="absolute animate-pulse"
+          className="absolute animate-pulse pointer-events-none"
           style={{
             width: 800,
             height: 800,
@@ -48,7 +70,7 @@ export function LandingUI({
           }}
         />
         <div
-          className="absolute animate-pulse"
+          className="absolute animate-pulse pointer-events-none"
           style={{
             width: 600,
             height: 600,
@@ -65,7 +87,7 @@ export function LandingUI({
       <main className="relative z-10 w-full mx-auto px-6 lg:px-12 py-12 lg:py-0 flex-1 flex flex-col lg:flex-row gap-12 lg:gap-24 items-center justify-center">
         
         {/* Left: Branding & Value Prop */}
-        <div className="flex flex-col gap-6 lg:gap-12 animate-fade-in-up text-center lg:text-left items-center lg:items-start w-full lg:w-auto max-w-[600px]">
+        <div className="flex flex-col gap-6 lg:gap-12 text-center lg:text-left items-center lg:items-start w-full lg:w-auto max-w-[600px]">
           <div className="flex items-center gap-3">
             <div style={{ padding: "6px 20px", background: "var(--accent-glow)", borderRadius: 100, border: "1px solid rgba(255,107,0,0.15)" }}>
               <span style={{ fontSize: "clamp(11px, 1.5vw, 13px)", fontWeight: 800, color: "var(--accent-primary)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t.studentPortal}</span>
@@ -105,21 +127,19 @@ export function LandingUI({
         </div>
 
         {/* Right: Auth Card */}
-        <div className="flex justify-center animate-fade-in-up w-full lg:w-auto max-w-[500px]" style={{ animationDelay: '0.1s' }}>
+        <div className="flex justify-center w-full lg:w-auto max-w-[500px]">
           <div
             style={{
-              background: "rgba(255, 255, 255, 0.8)",
-              backdropFilter: "blur(40px)",
-              WebkitBackdropFilter: "blur(40px)",
-              border: "1px solid white",
+              background: "#ffffff",
+              border: "1px solid rgba(0,0,0,0.06)",
               borderRadius: "clamp(32px, 5vw, 48px)",
               padding: "clamp(32px, 6vw, 64px)",
               width: "100%",
-              boxShadow: "0 50px 140px -20px rgba(0,0,0,0.22), inset 0 0 0 1px rgba(255,255,255,0.6)",
+              boxShadow: "0 50px 140px -20px rgba(0,0,0,0.12), 0 0 0 1px rgba(255,255,255,0.6)",
               display: "flex",
               flexDirection: "column",
               gap: "clamp(32px, 5vw, 48px)",
-              position: "relative"
+              position: "relative",
             }}
           >
             <div className="flex flex-col gap-3 lg:gap-4">
@@ -137,7 +157,9 @@ export function LandingUI({
                   borderRadius: "clamp(18px, 2vw, 24px)", 
                   fontSize: "clamp(18px, 2vw, 20px)", 
                   boxShadow: "0 28px 56px var(--accent-glow)",
-                  gap: 16
+                  gap: 16,
+                  touchAction: "manipulation",
+                  WebkitTapHighlightColor: "transparent",
                 }}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -175,15 +197,7 @@ export function LandingUI({
                           justifyContent: "center"
                         }}
                       >
-                        <img 
-                          src={img} 
-                          alt="Student" 
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            (e.target as HTMLImageElement).parentElement!.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-center;background:var(--bg-elevated);color:var(--text-muted);font-size:10px;font-weight:900">?</div>';
-                          }}
-                        />
+                        <AvatarImage src={img} />
                       </div>
                     ))
                   ) : (
@@ -207,7 +221,7 @@ export function LandingUI({
       </main>
 
       {/* Footer - Absolute on desktop, relative on mobile */}
-      <footer className="w-full px-8 py-10 lg:py-6 lg:absolute lg:bottom-0 flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-8 border-t border-black/[0.03] bg-white/30 backdrop-blur-md z-20">
+      <footer className="w-full px-8 py-10 lg:py-6 lg:absolute lg:bottom-0 flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-8 border-t border-black/[0.03] bg-transparent lg:bg-white/30 lg:backdrop-blur-md lg:z-20">
         <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "0.02em" }}>© SMO CAMT 2026</p>
         <div className="hidden lg:block" style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--text-muted)" }} />
         <p style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500, textAlign: "center" }}>{t.modernizing}</p>

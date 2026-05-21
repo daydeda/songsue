@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Search, Users, ShieldAlert, Heart, Phone,
   ChevronRight, Filter, MoreVertical, X,
   AlertCircle, ShieldCheck, User as UserIcon,
   Activity, GraduationCap, MapPin, ChevronDown,
-  Edit2, Trash2, Save
+  Edit2, Trash2, Save, Check
 } from "lucide-react";
 
 type Student = {
@@ -19,7 +20,141 @@ type Student = {
   houseId?: string;
   house?: { name: string; color?: string } | null;
   profileCompleted?: boolean;
+  role?: string;
 };
+
+type DropdownOption = {
+  value: string;
+  label: string;
+  color?: string;
+  icon?: React.ReactNode;
+};
+
+interface CustomDropdownProps {
+  value: string;
+  options: DropdownOption[];
+  onChange: (value: string) => void;
+  icon?: React.ReactNode;
+  placeholder?: string;
+  className?: string;
+}
+
+function CustomDropdown({ value, options, onChange, icon, placeholder = "Select...", className = "" }: CustomDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const currentOption = options.find(o => o.value === value);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        buttonRef.current && !buttonRef.current.contains(event.target as Node) &&
+        dropdownRef.current && !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeMenu = () => setOpen(false);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, [open]);
+
+  const handleOpen = () => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownStyle({
+        position: "fixed",
+        top: `${rect.bottom + 8}px`,
+        left: `${rect.left}px`,
+        width: `${rect.width}px`,
+        zIndex: 9999,
+      });
+    }
+    setOpen(!open);
+  };
+
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={handleOpen}
+        className="flex items-center justify-between w-full h-14 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/50 rounded-2xl px-5 text-base font-bold text-[var(--text-primary)] shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          {icon && <span className="text-muted flex-shrink-0">{icon}</span>}
+          {currentOption?.color && (
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: currentOption.color, flexShrink: 0 }} />
+          )}
+          {currentOption?.icon && <span className="flex-shrink-0">{currentOption.icon}</span>}
+          <span>{currentOption ? currentOption.label : placeholder}</span>
+        </div>
+        <ChevronDown
+          size={16}
+          className="text-muted transition-transform duration-300"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+        />
+      </button>
+
+      {open && mounted && createPortal(
+        <div
+          ref={dropdownRef}
+          className="bg-[var(--bg-surface)]/95 backdrop-blur-xl border border-[var(--border-medium)] rounded-xl p-1.5 animate-fade-in-up"
+          style={{
+            ...dropdownStyle,
+            boxShadow: "0 8px 30px rgba(0,0,0,0.15), 0 -1px 0 rgba(0,0,0,0.05)",
+          }}
+        >
+          {options.map((opt) => {
+            const isSelected = opt.value === value;
+            return (
+              <button
+                type="button"
+                key={opt.value}
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={`flex items-center justify-between w-full px-4 py-3 text-left text-sm font-semibold transition-all duration-200 cursor-pointer rounded-lg hover:bg-[var(--bg-elevated)] ${
+                  isSelected
+                    ? "text-[var(--text-primary)] font-bold bg-[var(--bg-elevated)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                    {opt.color ? (
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: opt.color }} />
+                    ) : opt.icon ? (
+                      <span className="text-[var(--text-secondary)] flex items-center justify-center">{opt.icon}</span>
+                    ) : null}
+                  </div>
+                  <span className="truncate">{opt.label}</span>
+                </div>
+                {isSelected && <Check size={16} className="text-[var(--accent-primary)] flex-shrink-0 ml-2" />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 export default function AdminStudentsDirectory() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -31,6 +166,7 @@ export default function AdminStudentsDirectory() {
 
   const [houses, setHouses] = useState<{ id: string; name: string }[]>([]);
   const [houseFilter, setHouseFilter] = useState<string>("all");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [editingStudent, setEditingStudent] = useState<any | null>(null);
   const [updating, setUpdating] = useState(false);
 
@@ -50,6 +186,35 @@ export default function AdminStudentsDirectory() {
     };
     return fields.some(isMeaningful) || user.faintingHistory === true;
   };
+
+  const houseOptions = [
+    { value: "all", label: "All Houses" },
+    ...houses.map(h => ({
+      value: h.id,
+      label: h.name,
+      color: h.id === "red" ? "#ef4444" : h.id === "blue" ? "#3b82f6" : h.id === "green" ? "#10b981" : h.id === "yellow" ? "#f59e0b" : "var(--accent-primary)"
+    }))
+  ];
+
+  const roleOptions = [
+    { value: "all", label: "All Roles" },
+    { value: "student", label: "Students", icon: <GraduationCap size={16} className="text-muted" /> },
+    { value: "admin", label: "Administrators", icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
+  ];
+
+  const editRoleOptions = [
+    { value: "student", label: "Student", icon: <GraduationCap size={16} className="text-muted" /> },
+    { value: "admin", label: "Administrator", icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
+  ];
+
+  const editHouseOptions = [
+    { value: "", label: "Unassigned" },
+    ...houses.map(h => ({
+      value: h.id,
+      label: h.name,
+      color: h.id === "red" ? "#ef4444" : h.id === "blue" ? "#3b82f6" : h.id === "green" ? "#10b981" : h.id === "yellow" ? "#f59e0b" : "var(--accent-primary)"
+    }))
+  ];
 
   useEffect(() => {
     refreshData();
@@ -74,8 +239,9 @@ export default function AdminStudentsDirectory() {
         s.nickname?.toLowerCase().includes(search.toLowerCase());
 
       const matchesHouse = houseFilter === "all" || s.houseId === houseFilter;
+      const matchesRole = roleFilter === "all" || (s.role || "student") === roleFilter;
 
-      return matchesSearch && matchesHouse;
+      return matchesSearch && matchesHouse && matchesRole;
     }
   );
 
@@ -112,7 +278,10 @@ export default function AdminStudentsDirectory() {
         </div>
 
         {/* Toolbar & Filters */}
-        <div className="flex flex-col md:flex-row gap-5 bg-[var(--bg-surface)] p-4 rounded-[32px] border border-[var(--border-subtle)] shadow-2xl shadow-black/5" style={{ marginBottom: 48 }}>
+        <div
+          className="flex flex-col lg:flex-row gap-5 bg-[var(--bg-surface)] p-4 rounded-[32px] border border-[var(--border-subtle)] shadow-2xl shadow-black/5 overflow-visible"
+          style={{ marginBottom: 48 }}
+        >
           <div className="relative flex-1 group">
             <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted transition-colors group-focus-within:text-[var(--accent-primary)]" />
             <input
@@ -125,20 +294,21 @@ export default function AdminStudentsDirectory() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="relative min-w-[240px] group">
-            <Filter size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted transition-colors group-focus-within:text-[var(--accent-primary)] z-10" />
-            <select
-              className="input w-full h-14 bg-[var(--bg-elevated)] border-none rounded-2xl text-base font-bold appearance-none cursor-pointer transition-all focus:ring-2 focus:ring-[var(--accent-primary)]/20"
-              style={{ paddingLeft: 56, paddingRight: 48 }}
+          <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
+            <CustomDropdown
+              className="min-w-[200px]"
               value={houseFilter}
-              onChange={(e) => setHouseFilter(e.target.value)}
-            >
-              <option value="all">All Houses</option>
-              {houses.map(h => (
-                <option key={h.id} value={h.id}>{h.name}</option>
-              ))}
-            </select>
-            <ChevronDown size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              options={houseOptions}
+              onChange={setHouseFilter}
+              icon={<Filter size={18} />}
+            />
+            <CustomDropdown
+              className="min-w-[200px]"
+              value={roleFilter}
+              options={roleOptions}
+              onChange={setRoleFilter}
+              icon={<Filter size={18} />}
+            />
           </div>
         </div>
 
@@ -184,17 +354,18 @@ export default function AdminStudentsDirectory() {
                         </div>
                       </td>
                       <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <div>
-                            <p style={{ fontWeight: 800, color: "var(--text-primary)", fontSize: 16 }}>{s.name}</p>
-                            {s.nickname && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                                <span className="badge" style={{ padding: "2px 8px", background: "var(--bg-elevated)", color: "var(--text-muted)", fontSize: 10 }}>&ldquo;{s.nickname}&rdquo;</span>
-                              </div>
-                            )}
-                          </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+                          <span style={{ fontWeight: 800, color: "var(--text-primary)", fontSize: 16 }}>{s.name}</span>
+                          {s.role === "admin" && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="System Administrator">
+                              <ShieldCheck size={10} /> Admin
+                            </span>
+                          )}
+                          {s.nickname && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "var(--bg-elevated)", color: "var(--text-muted)", fontSize: 10, flexShrink: 0 }}>&ldquo;{s.nickname}&rdquo;</span>
+                          )}
                           {hasActualMedicalInfo(s) && (
-                            <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
+                            <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite", display: "inline-flex", flexShrink: 0 }} title="Medical Condition">
                               <Activity size={20} />
                             </div>
                           )}
@@ -504,25 +675,19 @@ export default function AdminStudentsDirectory() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>System Role</label>
-                  <select
-                    className="input"
+                  <CustomDropdown
                     value={editingStudent.role || "student"}
-                    onChange={e => setEditingStudent({ ...editingStudent, role: e.target.value })}
-                  >
-                    <option value="student">Student</option>
-                    <option value="admin">Administrator</option>
-                  </select>
+                    options={editRoleOptions}
+                    onChange={val => setEditingStudent({ ...editingStudent, role: val })}
+                  />
                 </div>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>House</label>
-                  <select
-                    className="input"
+                  <CustomDropdown
                     value={editingStudent.houseId || ""}
-                    onChange={e => setEditingStudent({ ...editingStudent, houseId: e.target.value })}
-                  >
-                    <option value="">Unassigned</option>
-                    {houses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-                  </select>
+                    options={editHouseOptions}
+                    onChange={val => setEditingStudent({ ...editingStudent, houseId: val })}
+                  />
                 </div>
               </div>
 

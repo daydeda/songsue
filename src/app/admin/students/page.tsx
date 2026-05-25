@@ -5,7 +5,7 @@ import {
   Search, Users, ShieldAlert, Heart, Phone,
   Filter, X, ShieldCheck, User as UserIcon,
   Activity, GraduationCap, ChevronDown,
-  Edit2, Trash2, Check
+  Edit2, Trash2, Check, Home, Shield
 } from "lucide-react";
 
 type Student = {
@@ -64,74 +64,122 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
+  // Check if a specific filter (not "all" or empty) is selected
+  const hasActiveFilter = value !== "all" && value !== "";
+
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`flex items-center justify-between w-full h-14 bg-[var(--bg-elevated)] border rounded-2xl px-5 text-base font-bold text-[var(--text-primary)] shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer ${open
-          ? "border-[var(--accent-primary)] shadow-[0_0_0_3px_var(--accent-glow)]"
-          : "border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/50"
-          }`}
+        className={`flex items-center justify-between w-full h-14 bg-[var(--bg-elevated)] border rounded-2xl px-4 text-base font-bold text-[var(--text-primary)] shadow-sm transition-all duration-300 cursor-pointer ${
+          open
+            ? "border-[var(--accent-primary)] shadow-[0_0_0_3px_var(--accent-glow)] bg-[var(--bg-surface)]"
+            : "border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/40 hover:bg-[var(--bg-surface)] hover:shadow-md"
+        }`}
       >
         <div className="flex items-center gap-3">
-          {icon && <span className="text-muted flex-shrink-0">{icon}</span>}
-          {currentOption?.color && (
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: currentOption.color, flexShrink: 0 }} />
+          {/* Left badge for category icon */}
+          {icon && (
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ${
+              hasActiveFilter
+                ? "bg-[var(--accent-glow)] text-[var(--accent-primary)] shadow-[0_0_10px_rgba(255,107,0,0.15)]"
+                : "bg-[var(--bg-surface)] text-[var(--text-muted)] border border-[var(--border-subtle)]"
+            }`}>
+              {icon}
+            </div>
           )}
-          {currentOption?.icon && <span className="flex-shrink-0">{currentOption.icon}</span>}
-          <span>{currentOption ? currentOption.label : placeholder}</span>
+
+          {/* Option details block */}
+          <div className="flex items-center gap-2">
+            {currentOption?.color && (
+              <div style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: currentOption.color,
+                boxShadow: `0 0 8px ${currentOption.color}88`,
+                flexShrink: 0
+              }} />
+            )}
+            {currentOption?.icon && (
+              <span className="flex-shrink-0 text-[var(--accent-primary)]">
+                {currentOption.icon}
+              </span>
+            )}
+            <span className="text-sm font-extrabold text-[var(--text-primary)] leading-tight truncate max-w-[140px]">
+              {currentOption ? currentOption.label : placeholder}
+            </span>
+          </div>
         </div>
+
         <ChevronDown
           size={16}
-          className="text-muted transition-transform duration-300"
+          className={`text-muted transition-transform duration-300 ${open ? "text-[var(--accent-primary)]" : ""}`}
           style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
         />
       </button>
 
       {open && (
         <div
-          className="absolute left-0 right-0 top-full mt-2 bg-[var(--bg-surface)]/95 backdrop-blur-xl border border-[var(--border-medium)] rounded-2xl p-1.5 animate-fade-in-up"
+          className="absolute left-0 right-0 top-full mt-2 bg-[var(--bg-surface)]/95 backdrop-blur-md border border-[var(--border-medium)] rounded-none animate-fade-in-up overflow-hidden"
           style={{
             zIndex: 9999,
-            boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.04)",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.06)",
           }}
         >
-          <div className="flex flex-col gap-0.5 max-h-[280px] overflow-y-auto custom-scrollbar">
+          <div className="flex flex-col gap-0 max-h-[280px] overflow-y-auto custom-scrollbar">
             {options.map((opt) => {
               const isSelected = opt.value === value;
+              
+              // Dynamic text color for selected state
+              const dynamicText = opt.color
+                ? opt.color
+                : "var(--accent-primary)";
+
               return (
                 <button
                   type="button"
                   key={opt.value}
                   onClick={() => { onChange(opt.value); setOpen(false); }}
-                  className={`group flex items-center justify-between w-full px-4 py-3 text-left text-sm font-semibold transition-all duration-300 cursor-pointer rounded-xl hover:bg-[var(--bg-elevated)] hover:pl-5 ${isSelected
-                    ? "text-[var(--text-primary)] font-bold bg-[var(--bg-elevated)]"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    }`}
+                  className={`group flex items-center justify-between w-full px-5 py-3.5 text-left text-sm font-semibold transition-all duration-200 cursor-pointer rounded-none hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]`}
+                  style={{
+                    color: isSelected ? dynamicText : "var(--text-secondary)",
+                  }}
                 >
                   <div className="flex items-center gap-3 transition-transform duration-300">
-                    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                    {/* Explicit 20px spacer to ensure absolute vertical alignment */}
+                    <div style={{ width: '20px', height: '20px' }} className="flex items-center justify-center flex-shrink-0">
                       {opt.color ? (
                         <div
-                          className="transition-transform duration-300 group-hover:scale-125"
+                          className="transition-all duration-300 group-hover:scale-125"
                           style={{
                             width: 10,
                             height: 10,
                             borderRadius: "50%",
                             background: opt.color,
-                            boxShadow: `0 0 8px ${opt.color}66`
+                            boxShadow: `0 0 8px ${opt.color}66`,
                           }}
                         />
                       ) : opt.icon ? (
-                        <span className="text-[var(--text-secondary)] flex items-center justify-center transition-transform duration-300 group-hover:scale-110 group-hover:text-[var(--accent-primary)]">
+                        <span className={`flex items-center justify-center transition-all duration-300 group-hover:scale-110 ${
+                          isSelected ? "" : "text-[var(--text-muted)] group-hover:text-[var(--accent-primary)]"
+                        }`}>
                           {opt.icon}
                         </span>
                       ) : null}
                     </div>
-                    <span className="truncate transition-colors duration-300 group-hover:text-[var(--text-primary)]">{opt.label}</span>
+                    <span className={`truncate transition-colors duration-200 ${
+                      isSelected ? "font-bold text-[var(--text-primary)]" : "group-hover:text-[var(--text-primary)]"
+                    }`}
+                      style={{
+                        color: isSelected ? dynamicText : undefined
+                      }}
+                    >
+                      {opt.label}
+                    </span>
                   </div>
-                  {isSelected && <Check size={16} className="text-[var(--accent-primary)] flex-shrink-0 ml-2" />}
+                  {isSelected && <Check size={16} className="flex-shrink-0 ml-2 animate-fade-in" style={{ color: dynamicText }} />}
                 </button>
               );
             })}
@@ -213,7 +261,7 @@ export default function AdminStudentsDirectory() {
   ];
 
   const editHouseOptions = [
-    { value: "", label: "Unassigned" },
+    { value: "", label: "Unassigned", icon: <X size={16} className="text-muted" /> },
     ...houses.map(h => ({
       value: h.id,
       label: h.name,
@@ -285,18 +333,18 @@ export default function AdminStudentsDirectory() {
           </div>
           <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
             <CustomDropdown
-              className="min-w-[200px]"
+              className="min-w-[220px]"
               value={houseFilter}
               options={houseOptions}
               onChange={setHouseFilter}
-              icon={<Filter size={18} />}
+              icon={<Home size={18} />}
             />
             <CustomDropdown
-              className="min-w-[200px]"
+              className="min-w-[220px]"
               value={roleFilter}
               options={roleOptions}
               onChange={setRoleFilter}
-              icon={<Filter size={18} />}
+              icon={<Shield size={18} />}
             />
           </div>
         </div>

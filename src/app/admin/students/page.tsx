@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { createPortal } from "react-dom";
 import {
   Search, Users, ShieldAlert, Heart, Phone,
-  ChevronRight, Filter, MoreVertical, X,
-  AlertCircle, ShieldCheck, User as UserIcon,
-  Activity, GraduationCap, MapPin, ChevronDown,
-  Edit2, Trash2, Save, Check
+  Filter, X, ShieldCheck, User as UserIcon,
+  Activity, GraduationCap, ChevronDown,
+  Edit2, Trash2, Check
 } from "lucide-react";
 
 type Student = {
@@ -21,6 +19,17 @@ type Student = {
   house?: { name: string; color?: string } | null;
   profileCompleted?: boolean;
   role?: string;
+  chronicDiseases?: string | null;
+  medicalHistory?: string | null;
+  drugAllergies?: string | null;
+  foodAllergies?: string | null;
+  dietaryRestrictions?: string | null;
+  faintingHistory?: boolean | null;
+  emergencyContacts?: Array<{
+    name: string;
+    relationship: string;
+    phone: string;
+  }> | null;
 };
 
 type DropdownOption = {
@@ -42,22 +51,12 @@ interface CustomDropdownProps {
 function CustomDropdown({ value, options, onChange, icon, placeholder = "Select...", className = "" }: CustomDropdownProps) {
   const [open, setOpen] = useState(false);
   const currentOption = options.find(o => o.value === value);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        buttonRef.current && !buttonRef.current.contains(event.target as Node) &&
-        dropdownRef.current && !dropdownRef.current.contains(event.target as Node)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
@@ -65,38 +64,15 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const closeMenu = () => setOpen(false);
-    window.addEventListener("scroll", closeMenu, true);
-    window.addEventListener("resize", closeMenu);
-    return () => {
-      window.removeEventListener("scroll", closeMenu, true);
-      window.removeEventListener("resize", closeMenu);
-    };
-  }, [open]);
-
-  const handleOpen = () => {
-    if (!open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setDropdownStyle({
-        position: "fixed",
-        top: `${rect.bottom + 8}px`,
-        left: `${rect.left}px`,
-        width: `${rect.width}px`,
-        zIndex: 9999,
-      });
-    }
-    setOpen(!open);
-  };
-
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className}`} ref={dropdownRef}>
       <button
-        ref={buttonRef}
         type="button"
-        onClick={handleOpen}
-        className="flex items-center justify-between w-full h-14 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/50 rounded-2xl px-5 text-base font-bold text-[var(--text-primary)] shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer"
+        onClick={() => setOpen(!open)}
+        className={`flex items-center justify-between w-full h-14 bg-[var(--bg-elevated)] border rounded-2xl px-5 text-base font-bold text-[var(--text-primary)] shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer ${open
+          ? "border-[var(--accent-primary)] shadow-[0_0_0_3px_var(--accent-glow)]"
+          : "border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/50"
+          }`}
       >
         <div className="flex items-center gap-3">
           {icon && <span className="text-muted flex-shrink-0">{icon}</span>}
@@ -113,44 +89,54 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
         />
       </button>
 
-      {open && mounted && createPortal(
+      {open && (
         <div
-          ref={dropdownRef}
-          className="bg-[var(--bg-surface)]/95 backdrop-blur-xl border border-[var(--border-medium)] rounded-xl p-1.5 animate-fade-in-up"
+          className="absolute left-0 right-0 top-full mt-2 bg-[var(--bg-surface)]/95 backdrop-blur-xl border border-[var(--border-medium)] rounded-2xl p-1.5 animate-fade-in-up"
           style={{
-            ...dropdownStyle,
-            boxShadow: "0 8px 30px rgba(0,0,0,0.15), 0 -1px 0 rgba(0,0,0,0.05)",
+            zIndex: 9999,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.04)",
           }}
         >
-          {options.map((opt) => {
-            const isSelected = opt.value === value;
-            return (
-              <button
-                type="button"
-                key={opt.value}
-                onClick={() => { onChange(opt.value); setOpen(false); }}
-                className={`flex items-center justify-between w-full px-4 py-3 text-left text-sm font-semibold transition-all duration-200 cursor-pointer rounded-lg hover:bg-[var(--bg-elevated)] ${
-                  isSelected
+          <div className="flex flex-col gap-0.5 max-h-[280px] overflow-y-auto custom-scrollbar">
+            {options.map((opt) => {
+              const isSelected = opt.value === value;
+              return (
+                <button
+                  type="button"
+                  key={opt.value}
+                  onClick={() => { onChange(opt.value); setOpen(false); }}
+                  className={`group flex items-center justify-between w-full px-4 py-3 text-left text-sm font-semibold transition-all duration-300 cursor-pointer rounded-xl hover:bg-[var(--bg-elevated)] hover:pl-5 ${isSelected
                     ? "text-[var(--text-primary)] font-bold bg-[var(--bg-elevated)]"
                     : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                    {opt.color ? (
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: opt.color }} />
-                    ) : opt.icon ? (
-                      <span className="text-[var(--text-secondary)] flex items-center justify-center">{opt.icon}</span>
-                    ) : null}
+                    }`}
+                >
+                  <div className="flex items-center gap-3 transition-transform duration-300">
+                    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                      {opt.color ? (
+                        <div
+                          className="transition-transform duration-300 group-hover:scale-125"
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            background: opt.color,
+                            boxShadow: `0 0 8px ${opt.color}66`
+                          }}
+                        />
+                      ) : opt.icon ? (
+                        <span className="text-[var(--text-secondary)] flex items-center justify-center transition-transform duration-300 group-hover:scale-110 group-hover:text-[var(--accent-primary)]">
+                          {opt.icon}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="truncate transition-colors duration-300 group-hover:text-[var(--text-primary)]">{opt.label}</span>
                   </div>
-                  <span className="truncate">{opt.label}</span>
-                </div>
-                {isSelected && <Check size={16} className="text-[var(--accent-primary)] flex-shrink-0 ml-2" />}
-              </button>
-            );
-          })}
-        </div>,
-        document.body
+                  {isSelected && <Check size={16} className="text-[var(--accent-primary)] flex-shrink-0 ml-2" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -161,16 +147,35 @@ export default function AdminStudentsDirectory() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [viewingId, setViewingId] = useState<string | null>(null);
-  const [sensitiveData, setSensitiveData] = useState<any>(null);
+  const [sensitiveData, setSensitiveData] = useState<Student | null>(null);
   const [loadingSensitive, setLoadingSensitive] = useState(false);
 
   const [houses, setHouses] = useState<{ id: string; name: string }[]>([]);
   const [houseFilter, setHouseFilter] = useState<string>("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [editingStudent, setEditingStudent] = useState<any | null>(null);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [updating, setUpdating] = useState(false);
 
-  const hasActualMedicalInfo = (user: any) => {
+  const refreshData = () => {
+    setLoading(true);
+    fetch("/api/admin/students")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setStudents(d); })
+      .finally(() => setLoading(false));
+
+    fetch("/api/admin/houses")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setHouses(d); });
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      refreshData();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const hasActualMedicalInfo = (user: Student) => {
     if (!user) return false;
     const fields = [
       user.chronicDiseases,
@@ -179,7 +184,7 @@ export default function AdminStudentsDirectory() {
       user.foodAllergies,
       user.dietaryRestrictions
     ];
-    const isMeaningful = (val: any) => {
+    const isMeaningful = (val: string | null | undefined) => {
       if (typeof val !== 'string') return !!val;
       const t = val.trim();
       return t !== "" && t !== "-";
@@ -215,22 +220,6 @@ export default function AdminStudentsDirectory() {
       color: h.id === "red" ? "#ef4444" : h.id === "blue" ? "#3b82f6" : h.id === "green" ? "#10b981" : h.id === "yellow" ? "#f59e0b" : "var(--accent-primary)"
     }))
   ];
-
-  useEffect(() => {
-    refreshData();
-  }, []);
-
-  const refreshData = () => {
-    setLoading(true);
-    fetch("/api/admin/students")
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d)) setStudents(d); })
-      .finally(() => setLoading(false));
-
-    fetch("/api/admin/houses")
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d)) setHouses(d); });
-  };
 
   const filtered = students.filter(
     (s) => {
@@ -577,7 +566,7 @@ export default function AdminStudentsDirectory() {
                     </p>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                       {Array.isArray(sensitiveData.emergencyContacts) && sensitiveData.emergencyContacts.length > 0 ? (
-                        sensitiveData.emergencyContacts.map((c: any, i: number) => (
+                        sensitiveData.emergencyContacts.map((c, i) => (
                           <div key={i} style={{ padding: "20px", background: "var(--bg-elevated)", borderRadius: 20, border: "1px solid var(--border-subtle)" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                               <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-primary)" }} />
@@ -635,11 +624,11 @@ export default function AdminStudentsDirectory() {
             width: "100%",
             maxWidth: 500,
             borderRadius: 32,
-            overflow: "hidden",
+            overflow: "visible",
             boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
             border: "1px solid var(--border-medium)"
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: 32, borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ padding: 32, borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", borderTopLeftRadius: 32, borderTopRightRadius: 32 }}>
               <h3 style={{ fontSize: 20, fontWeight: 900 }}>Manage User</h3>
               <button className="btn btn-ghost" onClick={() => setEditingStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={18} /></button>
             </div>
@@ -701,7 +690,7 @@ export default function AdminStudentsDirectory() {
                 />
               </div>
             </div>
-            <div style={{ padding: "20px 32px", background: "var(--bg-elevated)", display: "flex", justifyContent: "flex-end", gap: 12 }}>
+            <div style={{ padding: "20px 32px", background: "var(--bg-elevated)", display: "flex", justifyContent: "flex-end", gap: 12, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 }}>
               <button className="btn btn-ghost" onClick={() => setEditingStudent(null)}>Cancel</button>
               <button
                 className="btn btn-primary"

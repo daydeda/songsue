@@ -2,9 +2,9 @@
 
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
-import { 
-  LogOut, 
-  User, 
+import {
+  LogOut,
+  User,
   ShieldCheck,
   History,
   Trophy,
@@ -17,33 +17,40 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState } from "react";
 
+interface NavLinksProps {
+  t: any;
+  onLinkClick: () => void;
+}
+
+function NavLinks({ t, onLinkClick }: NavLinksProps) {
+  return (
+    <>
+      <Link href="/dashboard" className="nav-link" onClick={onLinkClick}>
+        <LayoutDashboard size={16} />
+        {t.upcomingEvents}
+      </Link>
+      <Link href="/dashboard/history" className="nav-link" onClick={onLinkClick}>
+        <History size={16} />
+        {t.eventHistory}
+      </Link>
+      <Link href="/dashboard/houses" className="nav-link" onClick={onLinkClick}>
+        <Trophy size={16} />
+        {t.leaderboard}
+      </Link>
+      <Link href="/dashboard/profile" className="nav-link" onClick={onLinkClick}>
+        <Settings size={16} />
+        {t.editProfile}
+      </Link>
+    </>
+  );
+}
+
 export function StudentNav() {
   const { data: session } = useSession();
   const { t } = useLanguage();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const user = session?.user as any;
-
-  const NavLinks = () => (
-    <>
-      <Link href="/dashboard" className="nav-link" onClick={() => setIsMobileMenuOpen(false)}>
-        <LayoutDashboard size={16} />
-        {t.upcomingEvents}
-      </Link>
-      <Link href="/dashboard/history" className="nav-link" onClick={() => setIsMobileMenuOpen(false)}>
-        <History size={16} />
-        {t.eventHistory}
-      </Link>
-      <Link href="/dashboard/houses" className="nav-link" onClick={() => setIsMobileMenuOpen(false)}>
-        <Trophy size={16} />
-        {t.leaderboard}
-      </Link>
-      <Link href="/dashboard/profile" className="nav-link" onClick={() => setIsMobileMenuOpen(false)}>
-        <Settings size={16} />
-        {t.editProfile}
-      </Link>
-    </>
-  );
 
   return (
     <nav className="student-nav">
@@ -60,7 +67,7 @@ export function StudentNav() {
 
         {/* Center: Desktop Nav (Hidden on Mobile) */}
         <div className="nav-center desktop-links">
-          <NavLinks />
+          <NavLinks t={t} onLinkClick={() => setIsMobileMenuOpen(false)} />
         </div>
 
         {/* Right: Actions & User (Responsive) */}
@@ -74,20 +81,20 @@ export function StudentNav() {
               <p className="user-name">{user?.name}</p>
               <p className="user-role">{user?.role === "admin" ? "Admin" : (user?.studentId || "Student")}</p>
             </div>
-            
+
             <div className="avatar">
-               {user?.image ? (
-                  <img
-                    src={user.image}
-                    alt={user.name}
-                    className="avatar-img"
-                    style={{ 
-                      transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
-                    }}
-                  />
-                ) : (
-                  <User size={18} color="var(--text-secondary)" />
-                )}
+              {user?.image ? (
+                <img
+                  src={user.image}
+                  alt={user.name}
+                  className="avatar-img"
+                  style={{
+                    transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
+                  }}
+                />
+              ) : (
+                <User size={18} color="var(--text-secondary)" />
+              )}
             </div>
           </div>
 
@@ -98,8 +105,8 @@ export function StudentNav() {
                 <ShieldCheck size={14} />
               </Link>
             )}
-            <button 
-              className="btn btn-ghost btn-sm rounded-full touch-target" 
+            <button
+              className="btn btn-ghost btn-sm rounded-full touch-target"
               onClick={() => signOut({ callbackUrl: "/" })}
               aria-label={t.signOut}
             >
@@ -108,7 +115,7 @@ export function StudentNav() {
           </div>
 
           {/* Mobile Toggle (Hidden on Desktop) */}
-          <button 
+          <button
             className="mobile-toggle touch-target"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle Menu"
@@ -124,7 +131,7 @@ export function StudentNav() {
         <div className="mobile-menu-overlay">
           <div className="mobile-menu-content">
             <div className="mobile-links">
-              <NavLinks />
+              <NavLinks t={t} onLinkClick={() => setIsMobileMenuOpen(false)} />
               {((user as any)?.role === "admin" || (user as any)?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
                 <Link href="/admin/dashboard" className="nav-link admin-link" onClick={() => setIsMobileMenuOpen(false)}>
                   <ShieldCheck size={16} /> {t.adminPanel}

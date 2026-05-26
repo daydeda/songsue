@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLanguage } from "@/lib/LanguageContext";
 
 type AuditLog = {
   id: string;
@@ -12,6 +13,7 @@ type AuditLog = {
 };
 
 export default function AdminAuditLogsPage() {
+  const { t, lang } = useLanguage();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,8 +27,8 @@ export default function AdminAuditLogsPage() {
   return (
     <div className="pb-20">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1 }}>Audit Trails</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 40 }}>
+        <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1 }}>{t.auditTrailsTitle}</h1>
         <div className="flex gap-3 items-center flex-wrap">
           <button 
             className="btn btn-ghost" 
@@ -38,17 +40,16 @@ export default function AdminAuditLogsPage() {
               }
             }}
           >
-            Reset All Logs
+            {t.resetLogsBtn}
           </button>
-          <span className="badge badge-red">🔒 Immutable Logs</span>
+          <span className="badge badge-red">{t.immutableLogsBadge}</span>
         </div>
       </div>
 
       <div className="alert alert-info" style={{ marginBottom: 24, fontSize: 13 }}>
         <span>ℹ️</span>
         <span>
-          Every access to sensitive student data (medical records, emergency contacts) is permanently recorded here.
-          Logs are <strong>append-only</strong> — no administrator can edit or delete them.
+          {t.auditAlertText}
         </span>
       </div>
 
@@ -70,11 +71,11 @@ export default function AdminAuditLogsPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Timestamp</th>
-                  <th>Admin Actor</th>
-                  <th>Action</th>
-                  <th>Target Student</th>
-                  <th>IP Address</th>
+                  <th>{t.thTimestamp}</th>
+                  <th>{t.thActor}</th>
+                  <th>{t.thAction}</th>
+                  <th>{t.thTarget}</th>
+                  <th>{t.thIpAddress}</th>
                 </tr>
               </thead>
               <tbody>
@@ -83,11 +84,11 @@ export default function AdminAuditLogsPage() {
                     <td style={{ whiteSpace: "nowrap" }}>
                       {(() => {
                         const date = new Date(log.timestamp);
-                        
+                        const locale = lang === "th" ? "th-TH" : lang === "cn" ? "zh-CN" : "en-GB";
                         return (
                           <>
                             <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                              {date.toLocaleDateString("en-GB", {
+                              {date.toLocaleDateString(locale, {
                                 day: "numeric",
                                 month: "short",
                                 year: "numeric",
@@ -95,7 +96,7 @@ export default function AdminAuditLogsPage() {
                               })}
                             </p>
                             <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                              {date.toLocaleTimeString("en-GB", {
+                              {date.toLocaleTimeString(locale, {
                                 hour: "2-digit",
                                 minute: "2-digit",
                                 second: "2-digit",
@@ -113,7 +114,7 @@ export default function AdminAuditLogsPage() {
                       </p>
                       {log.actor?.role && (
                         <span className="badge badge-purple" style={{ fontSize: 10, marginTop: 4 }}>
-                          {log.actor.role}
+                          {log.actor.role === "admin" ? t.roleAdmin : log.actor.role === "professor" ? t.roleProfessor : log.actor.role === "officer" ? t.roleOfficer : t.roleStudent}
                         </span>
                       )}
                     </td>
@@ -142,7 +143,7 @@ export default function AdminAuditLogsPage() {
                 {logs.length === 0 && (
                   <tr>
                     <td colSpan={5} style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
-                      No audit logs recorded yet.
+                      {t.noLogsRecorded}
                     </td>
                   </tr>
                 )}

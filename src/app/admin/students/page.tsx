@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useLanguage } from "@/lib/LanguageContext";
 import {
   Search, Users, ShieldAlert, Heart, Phone,
-  Filter, X, ShieldCheck, User as UserIcon,
+  X, ShieldCheck, User as UserIcon,
   Activity, GraduationCap, ChevronDown,
-  Edit2, Trash2, Check, Home, Shield
+  Edit2, Trash2, Check, Home, Shield,
+  BookOpen, Briefcase
 } from "lucide-react";
 
 type Student = {
@@ -81,12 +83,12 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
         <div className="flex items-center gap-3">
           {/* Left badge for category icon */}
           {icon && (
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ${
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ml-2 mr-0.5 ${
               hasActiveFilter
                 ? "bg-[var(--accent-glow)] text-[var(--accent-primary)] shadow-[0_0_10px_rgba(255,107,0,0.15)]"
                 : "bg-[var(--bg-surface)] text-[var(--text-muted)] border border-[var(--border-subtle)]"
             }`}>
-              {icon}
+              {currentOption?.icon ? currentOption.icon : icon}
             </div>
           )}
 
@@ -102,7 +104,7 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
                 flexShrink: 0
               }} />
             )}
-            {currentOption?.icon && (
+            {currentOption?.icon && !icon && (
               <span className="flex-shrink-0 text-[var(--accent-primary)]">
                 {currentOption.icon}
               </span>
@@ -191,6 +193,7 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
 }
 
 export default function AdminStudentsDirectory() {
+  const { t } = useLanguage();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -241,7 +244,7 @@ export default function AdminStudentsDirectory() {
   };
 
   const houseOptions = [
-    { value: "all", label: "All Houses" },
+    { value: "all", label: t.allHouses },
     ...houses.map(h => ({
       value: h.id,
       label: h.name,
@@ -250,18 +253,22 @@ export default function AdminStudentsDirectory() {
   ];
 
   const roleOptions = [
-    { value: "all", label: "All Roles" },
-    { value: "student", label: "Students", icon: <GraduationCap size={16} className="text-muted" /> },
-    { value: "admin", label: "Administrators", icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
+    { value: "all", label: t.allRoles },
+    { value: "student", label: t.roleStudentPlural, icon: <GraduationCap size={16} className="text-muted" /> },
+    { value: "professor", label: t.roleProfessorPlural, icon: <BookOpen size={16} className="text-[#8b5cf6]" /> },
+    { value: "officer", label: t.roleOfficerPlural, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
+    { value: "admin", label: t.roleAdminPlural, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
   ];
 
   const editRoleOptions = [
-    { value: "student", label: "Student", icon: <GraduationCap size={16} className="text-muted" /> },
-    { value: "admin", label: "Administrator", icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
+    { value: "student", label: t.roleStudent, icon: <GraduationCap size={16} className="text-muted" /> },
+    { value: "professor", label: t.roleProfessor, icon: <BookOpen size={16} className="text-[#8b5cf6]" /> },
+    { value: "officer", label: t.roleOfficer, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
+    { value: "admin", label: t.roleAdmin, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
   ];
 
   const editHouseOptions = [
-    { value: "", label: "Unassigned", icon: <X size={16} className="text-muted" /> },
+    { value: "", label: t.unassignedLabel, icon: <X size={16} className="text-muted" /> },
     ...houses.map(h => ({
       value: h.id,
       label: h.name,
@@ -302,7 +309,7 @@ export default function AdminStudentsDirectory() {
       <div className="animate-fade-in-up pb-24">
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6" style={{ marginBottom: 40 }}>
-          <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">Student Directory</h1>
+          <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">{t.adminStudentsDirectory}</h1>
           <div className="flex items-center gap-5 bg-[var(--bg-surface)] px-7 py-4 rounded-[40px] border border-[var(--border-subtle)] shadow-xl shadow-black/5 flex-shrink-0">
             <div className="flex-shrink-0 w-14 h-14 rounded-[20px] bg-[var(--accent-glow)] flex items-center justify-center text-[var(--accent-primary)]">
               <Users size={26} />
@@ -326,7 +333,7 @@ export default function AdminStudentsDirectory() {
               className="input w-full h-14 bg-[var(--bg-elevated)] border-none rounded-2xl text-base font-medium transition-all focus:ring-2 focus:ring-[var(--accent-primary)]/20"
               style={{ paddingLeft: 60 }}
               type="text"
-              placeholder="Search by name, nickname, or student ID..."
+              placeholder={t.searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -396,6 +403,16 @@ export default function AdminStudentsDirectory() {
                           {s.role === "admin" && (
                             <span className="badge" style={{ padding: "2px 8px", background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="System Administrator">
                               <ShieldCheck size={10} /> Admin
+                            </span>
+                          )}
+                          {s.role === "professor" && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(139,92,246,0.1)", color: "#8b5cf6", border: "1px solid rgba(139,92,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Professor">
+                              <BookOpen size={10} /> Professor
+                            </span>
+                          )}
+                          {s.role === "officer" && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(20,184,166,0.1)", color: "#14b8a6", border: "1px solid rgba(20,184,166,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Officer">
+                              <Briefcase size={10} /> Officer
                             </span>
                           )}
                           {s.nickname && (
@@ -677,12 +694,12 @@ export default function AdminStudentsDirectory() {
             border: "1px solid var(--border-medium)"
           }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: 32, borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", borderTopLeftRadius: 32, borderTopRightRadius: 32 }}>
-              <h3 style={{ fontSize: 20, fontWeight: 900 }}>Manage User</h3>
-              <button className="btn btn-ghost" onClick={() => setEditingStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={18} /></button>
+              <h3 style={{ fontSize: 20, fontWeight: 900 }}>{t.manageUser}</h3>
+              <button className="btn btn-ghost" onClick={() => setEditingStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={20} /></button>
             </div>
             <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 20 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>Full Name</label>
+                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.fullName}</label>
                 <input
                   className="input"
                   value={editingStudent.name}
@@ -692,7 +709,7 @@ export default function AdminStudentsDirectory() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>Student ID</label>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.studentId}</label>
                   <input
                     className="input"
                     value={editingStudent.studentId || ""}
@@ -700,7 +717,7 @@ export default function AdminStudentsDirectory() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>Nickname</label>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.nickname}</label>
                   <input
                     className="input"
                     value={editingStudent.nickname || ""}
@@ -711,25 +728,27 @@ export default function AdminStudentsDirectory() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>System Role</label>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block", marginLeft: 8 }}>{t.systemRole}</label>
                   <CustomDropdown
                     value={editingStudent.role || "student"}
                     options={editRoleOptions}
                     onChange={val => setEditingStudent({ ...editingStudent, role: val })}
+                    icon={<Shield size={18} />}
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>House</label>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.house}</label>
                   <CustomDropdown
                     value={editingStudent.houseId || ""}
                     options={editHouseOptions}
                     onChange={val => setEditingStudent({ ...editingStudent, houseId: val })}
+                    icon={<Home size={18} />}
                   />
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>Major / Program</label>
+                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.major}</label>
                 <input
                   className="input"
                   value={editingStudent.major || ""}
@@ -739,7 +758,7 @@ export default function AdminStudentsDirectory() {
               </div>
             </div>
             <div style={{ padding: "20px 32px", background: "var(--bg-elevated)", display: "flex", justifyContent: "flex-end", gap: 12, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 }}>
-              <button className="btn btn-ghost" onClick={() => setEditingStudent(null)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => setEditingStudent(null)}>{t.cancel}</button>
               <button
                 className="btn btn-primary"
                 disabled={updating}

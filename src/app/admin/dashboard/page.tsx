@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLanguage } from "@/lib/LanguageContext";
 import Link from "next/link";
 import {
   Users,
@@ -32,7 +33,8 @@ const HOUSE_GRADIENT: Record<string, string> = {
 };
 
 export default function AdminDashboardOverview() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const { t } = useLanguage();
+  const [stats, setStats] = useState<DashboardStats | { error: string } | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const fetchStats = () => {
@@ -43,6 +45,91 @@ export default function AdminDashboardOverview() {
 
   useEffect(() => {
     fetchStats();
+
+    // Establish Server-Sent Events (SSE) Real-time subscription
+    const eventSource = new EventSource("/api/realtime");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "ping") return; // Heartbeat ignore
+
+        if (payload.type === "checkin") {
+          setStats((prev) => {
+            if (!prev || "error" in prev) return prev;
+            return {
+              ...prev,
+              checkinsToday: prev.checkinsToday + 1,
+              recentActivity: [
+                {
+                  type: "checkin",
+                  studentName: payload.studentName,
+                  studentNickname: payload.studentNickname || "",
+                  eventTitle: payload.eventTitle,
+                  timestamp: payload.timestamp,
+                },
+                ...prev.recentActivity.slice(0, 9), // Keep top 10 logs
+              ],
+            };
+          });
+        } else if (payload.type === "score") {
+          setStats((prev) => {
+            if (!prev || "error" in prev) return prev;
+
+            // 1. Update points for the specific house
+            const updatedHouses = prev.houses.map((h) => {
+              if (h.id === payload.houseId) {
+                return { ...h, points: h.points + payload.delta };
+              }
+              return h;
+            });
+
+            // 2. Append score log to recent activity
+            return {
+              ...prev,
+              houses: updatedHouses,
+              recentActivity: [
+                {
+                  type: "score",
+                  houseName: payload.houseName,
+                  houseColor: payload.houseColor,
+                  delta: payload.delta,
+                  reason: payload.reason,
+                  timestamp: payload.timestamp,
+                },
+                ...prev.recentActivity.slice(0, 9), // Keep top 10 logs
+              ],
+            };
+          });
+        } else if (payload.type === "event_created") {
+          setStats((prev) => {
+            if (!prev || "error" in prev) return prev;
+            return {
+              ...prev,
+              totalEvents: prev.totalEvents + 1,
+            };
+          });
+        } else if (payload.type === "event_deleted") {
+          setStats((prev) => {
+            if (!prev || "error" in prev) return prev;
+            return {
+              ...prev,
+              totalEvents: Math.max(0, prev.totalEvents - 1),
+            };
+          });
+        }
+      } catch (err) {
+        console.error("Failed to parse SSE payload:", err);
+      }
+    };
+
+    eventSource.onerror = () => {
+      // Browsers handle automatic reconnects for EventSource automatically
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
   const handleExportCSV = async () => {
@@ -177,8 +264,8 @@ export default function AdminDashboardOverview() {
       )}
 
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-10">
-        <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>Dashboard</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 48 }}>
+        <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>{t.dashboard}</h1>
         <div className="flex gap-3 flex-wrap">
           <button
             id="refresh-stats-btn"
@@ -187,7 +274,7 @@ export default function AdminDashboardOverview() {
             onClick={() => window.location.reload()}
           >
             <RefreshCcw size={16} />
-            Refresh
+            {t.refresh}
           </button>
           <button
             id="export-csv-btn"
@@ -196,7 +283,7 @@ export default function AdminDashboardOverview() {
             onClick={handleExportCSV}
             disabled={exporting}
           >
-            {exporting ? <><div className="spinner" />Exporting…</> : <><Download size={16} /> Export CSV</>}
+            {exporting ? <><div className="spinner" />{t.exporting}</> : <><Download size={16} /> {t.exportCSV}</>}
           </button>
         </div>
       </div>
@@ -209,13 +296,13 @@ export default function AdminDashboardOverview() {
       ) : ("error" in stats) ? (
         <div style={{ padding: 40, background: "rgba(239, 68, 68, 0.1)", borderRadius: 24, textAlign: "center", border: "1px solid rgba(239, 68, 68, 0.2)" }}>
           <p style={{ color: "#ef4444", fontWeight: 700 }}>Failed to load dashboard data</p>
-          <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 4 }}>{(stats as any).error}</p>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 4 }}>{(stats as { error: string }).error}</p>
           <button className="btn btn-ghost" style={{ marginTop: 16 }} onClick={fetchStats}>Retry</button>
         </div>
       ) : (
         <>
           {/* Stat cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" style={{ marginBottom: 64 }}>
             <div className="stat-card" style={{ background: "linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%)", padding: 32, position: "relative", overflow: "hidden" }}>
               <Users size={80} style={{ position: "absolute", right: -10, bottom: -10, opacity: 0.03 }} />
               <p className="section-title">Total Students</p>
@@ -388,7 +475,7 @@ export default function AdminDashboardOverview() {
                               }}>
                                 {a.delta > 0 ? `+${a.delta}` : a.delta}
                               </span>
-                              pts: <i>"{a.reason}"</i>
+                              pts: <i>&ldquo;{a.reason}&rdquo;</i>
                             </>
                           )}
                         </p>

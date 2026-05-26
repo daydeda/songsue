@@ -6,9 +6,10 @@ import {
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronRight, AlertCircle, BarChart3, Image as ImageIcon, Zap,
-  Activity, Phone, HeartPulse, Info, Trophy
+  Activity, Phone, HeartPulse, Info, Trophy, ClipboardList
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
+import { useLanguage } from "@/lib/LanguageContext";
 
 const EMPTY_FORM = {
   title: "",
@@ -23,6 +24,7 @@ const EMPTY_FORM = {
 };
 
 export default function AdminEventsPage() {
+  const { t, lang } = useLanguage();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -247,7 +249,49 @@ export default function AdminEventsPage() {
   };
 
   const updateQuestion = (qId: string, key: string, val: any) => {
-    setFormQuestions(formQuestions.map(q => q.id === qId ? { ...q, [key]: val } : q));
+    setFormQuestions(formQuestions.map(q => {
+      if (q.id === qId) {
+        let updated = { ...q, [key]: val };
+        // If type changed to choice or multiple and options don't exist, initialize default options
+        if (key === "type" && (val === "choice" || val === "multiple") && !updated.options) {
+          updated.options = ["Option 1", "Option 2"];
+        }
+        return updated;
+      }
+      return q;
+    }));
+  };
+
+  const addOption = (qId: string) => {
+    setFormQuestions(formQuestions.map(q => {
+      if (q.id === qId) {
+        const opts = q.options ? [...q.options] : [];
+        opts.push(`Option ${opts.length + 1}`);
+        return { ...q, options: opts };
+      }
+      return q;
+    }));
+  };
+
+  const removeOption = (qId: string, optIdx: number) => {
+    setFormQuestions(formQuestions.map(q => {
+      if (q.id === qId) {
+        const opts = q.options ? q.options.filter((_: any, idx: number) => idx !== optIdx) : [];
+        return { ...q, options: opts };
+      }
+      return q;
+    }));
+  };
+
+  const updateOption = (qId: string, optIdx: number, val: string) => {
+    setFormQuestions(formQuestions.map(q => {
+      if (q.id === qId) {
+        const opts = q.options ? [...q.options] : [];
+        opts[optIdx] = val;
+        return { ...q, options: opts };
+      }
+      return q;
+    }));
   };
 
   const hasActualMedicalInfo = (user: any) => {
@@ -272,6 +316,28 @@ export default function AdminEventsPage() {
 
   useEffect(() => {
     fetchEvents();
+
+    // Establish Server-Sent Events (SSE) Real-time subscription
+    const eventSource = new EventSource("/api/realtime");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (
+          payload.type === "event_created" ||
+          payload.type === "event_updated" ||
+          payload.type === "event_deleted"
+        ) {
+          fetchEvents(); // Live update the events listing!
+        }
+      } catch (err) {
+        console.error("SSE parse error in events admin page:", err);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
   const fetchEvents = async () => {
@@ -959,7 +1025,7 @@ export default function AdminEventsPage() {
       {/* Main Header */}
       <div className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 20 }}>
-          <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">Manage Events</h1>
+          <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">{t.eventsTitle}</h1>
           <button
             className={`btn ${showForm ? "btn-ghost" : "btn-primary"} flex-shrink-0 transition-all duration-300 ${!showForm && "shadow-[0_12px_32px_var(--accent-glow)]"}`}
             style={{ gap: 10, minHeight: 52, paddingInline: 28, borderRadius: 99, fontSize: 15, fontWeight: 700 }}
@@ -975,7 +1041,7 @@ export default function AdminEventsPage() {
               }
             }}
           >
-            {showForm ? <><X size={18} /> Close Editor</> : <><Plus size={18} /> Create New Event</>}
+            {showForm ? <><X size={18} /> {lang === "th" ? "ปิดตัวแก้ไข" : lang === "cn" ? "关闭编辑器" : lang === "mm" ? "အယ်ဒီတာ ပိတ်ရန်" : "Close Editor"}</> : <><Plus size={18} /> {t.addEventBtn}</>}
           </button>
         </div>
 
@@ -987,7 +1053,7 @@ export default function AdminEventsPage() {
             <input
               className="input w-full h-12"
               style={{ paddingLeft: 48, borderRadius: 16, border: "1px solid var(--border-subtle)", background: "var(--bg-elevated)" }}
-              placeholder="Search by event name or location..."
+              placeholder={t.searchEventsPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -1012,7 +1078,7 @@ export default function AdminEventsPage() {
                   color: filterStatus === s ? "var(--accent-primary)" : "var(--text-secondary)"
                 }}
               >
-                {s}
+                {s === "all" ? t.filterAll : s === "live" ? t.filterLive : s === "upcoming" ? t.filterUpcoming : t.filterPast}
               </button>
             ))}
           </div>
@@ -1277,10 +1343,10 @@ export default function AdminEventsPage() {
             <Calendar size={48} />
           </div>
           <div>
-            <h3 style={{ fontSize: 24, fontWeight: 800 }}>No events found</h3>
-            <p style={{ color: "var(--text-muted)", marginTop: 8 }}>Try adjusting your filters or create a new event to get started.</p>
+            <h3 style={{ fontSize: 24, fontWeight: 800 }}>{t.noEventsFoundLabel}</h3>
+            <p style={{ color: "var(--text-muted)", marginTop: 8 }}>{lang === "th" ? "ลองปรับตัวกรองหรือสร้างกิจกรรมใหม่เพื่อเริ่มต้น" : lang === "cn" ? "尝试调整您的筛选条件或创建一个新活动以开始。" : lang === "mm" ? "စတင်ရန် စစ်ထုတ်မှုများကို ချိန်ညှိပါ သို့မဟုတ် ပွဲအသစ်တစ်ခု ဖန်တီးပါ။" : "Try adjusting your filters or create a new event to get started."}</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Create First Event</button>
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 32 }}>
@@ -1318,20 +1384,20 @@ export default function AdminEventsPage() {
                     {evt.walkInsEnabled && (
                       <div className="badge" style={{ background: "rgba(99, 102, 241, 0.2)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
                         <Zap size={12} style={{ marginRight: 4 }} />
-                        WALK-IN
+                        Walk-in
                       </div>
                     )}
                     {isLive && (
                       <div className="badge animate-pulse-glow" style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px" }}>
                         <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", marginRight: 6 }} />
-                        LIVE
+                        {t.statusLive.toUpperCase()}
                       </div>
                     )}
                     {!isLive && !isPast && (
-                      <div className="badge" style={{ background: "var(--accent-primary)", color: "#fff", border: "none", padding: "6px 12px" }}>UPCOMING</div>
+                      <div className="badge" style={{ background: "var(--accent-primary)", color: "#fff", border: "none", padding: "6px 12px" }}>{t.statusUpcoming.toUpperCase()}</div>
                     )}
                     {isPast && (
-                      <div className="badge" style={{ background: "rgba(0,0,0,0.4)", color: "#fff", border: "none", padding: "6px 12px", backdropFilter: "blur(4px)" }}>PAST</div>
+                      <div className="badge" style={{ background: "rgba(0,0,0,0.4)", color: "#fff", border: "none", padding: "6px 12px", backdropFilter: "blur(4px)" }}>{t.statusPast.toUpperCase()}</div>
                     )}
                   </div>
 
@@ -1394,7 +1460,7 @@ export default function AdminEventsPage() {
                   {/* Quota Progress */}
                   <div style={{ marginTop: "auto", marginBottom: 24 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontWeight: 900, marginBottom: 6 }}>
-                      <span style={{ color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>CAPACITY</span>
+                      <span style={{ color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.thQuota.toUpperCase()}</span>
                       <span style={{ color: "var(--text-primary)" }}>
                         {evt.attendeeCount || 0} / {evt.quota || "∞"}
                       </span>
@@ -1418,29 +1484,29 @@ export default function AdminEventsPage() {
                          style={{ flex: 1, height: 44, borderRadius: 12, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
                          onClick={() => viewAttendance(evt.id)}
                        >
-                         <BarChart3 size={15} /> Attendance
+                         <BarChart3 size={15} /> {lang === "th" ? "การเช็คอิน" : lang === "cn" ? "签到情况" : lang === "mm" ? "ချက်အင်ဝင်ရောက်မှု" : "Attendance"}
                        </button>
                        <button
-                         className="btn"
-                         style={{ 
-                           flex: 1, 
-                           height: 44, 
-                           borderRadius: 12, 
-                           fontSize: 13, 
-                           background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)", 
-                           color: "#fff",
-                           border: "none",
-                           display: "flex", 
-                           alignItems: "center", 
-                           justifyContent: "center", 
-                           gap: 6,
-                           boxShadow: "0 4px 12px rgba(79, 70, 229, 0.2)",
-                           cursor: "pointer"
-                         }}
-                         onClick={() => openFormBuilder(evt.id, evt.title)}
-                       >
-                         <Zap size={14} fill="currentColor" /> Feedback Form
-                       </button>
+                          className="btn"
+                          style={{ 
+                            flex: 1, 
+                            height: 44, 
+                            borderRadius: 12, 
+                            fontSize: 13, 
+                            background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)", 
+                            color: "#fff",
+                            border: "none",
+                            display: "flex", 
+                            alignItems: "center", 
+                            justifyContent: "center", 
+                            gap: 6,
+                            boxShadow: "0 4px 12px rgba(79, 70, 229, 0.2)",
+                            cursor: "pointer"
+                          }}
+                          onClick={() => openFormBuilder(evt.id, evt.title)}
+                        >
+                          <ClipboardList size={14} /> {lang === "th" ? "แบบประเมิน" : lang === "cn" ? "评估表单" : lang === "mm" ? "အကဲဖြတ်ပုံစံ" : "Feedback Form"}
+                        </button>
                      </div>
                      <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
                        <button
@@ -1448,7 +1514,7 @@ export default function AdminEventsPage() {
                          style={{ flex: 1, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(0,0,0,0.03)", fontSize: 13 }}
                          onClick={() => handleEdit(evt)}
                        >
-                         <Edit2 size={13} /> Edit
+                         <Edit2 size={13} /> {t.eventEditBtnLabel || "Edit"}
                        </button>
                        <button
                          id={`delete-event-${evt.id}-btn`}
@@ -1457,7 +1523,7 @@ export default function AdminEventsPage() {
                          disabled={deletingId === evt.id}
                          onClick={() => handleDelete(evt.id)}
                        >
-                         {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} Delete
+                         {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} {t.eventDeleteBtnLabel || "Delete"}
                        </button>
                      </div>
                    </div>
@@ -1525,7 +1591,7 @@ export default function AdminEventsPage() {
             {/* Modal Header */}
             <div style={{ padding: "20px clamp(16px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10 }}>
               <div>
-                <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Interactive Feedback</span>
+                <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{lang === "th" ? "แบบประเมินผู้เข้าร่วม" : lang === "cn" ? "互动反馈" : lang === "mm" ? "အပြန်အလှန် အကြံပြုချက်" : "Interactive Feedback"}</span>
                 <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)" }}>{formEventTitle || "Event"} Form</h3>
               </div>
               <button 
@@ -1554,7 +1620,7 @@ export default function AdminEventsPage() {
                 }}
                 onClick={() => setFormTab("edit")}
               >
-                📝 Design Form & Rules
+                📝 {lang === "th" ? "ออกแบบฟอร์มและกฎ" : lang === "cn" ? "设计表单与规则" : lang === "mm" ? "ပုံစံနှင့် စည်းကမ်းများ ဒီဇိုင်းဆွဲရန်" : "Design Form & Rules"}
               </button>
               <button
                 style={{
@@ -1571,7 +1637,7 @@ export default function AdminEventsPage() {
                 }}
                 onClick={() => setFormTab("stats")}
               >
-                🏆 House Leaderboard & Submissions ({formSubmissions.length})
+                🏆 {lang === "th" ? "กระดานผู้นำบ้านและการส่งข้อมูล" : lang === "cn" ? "学院排行榜与提交" : lang === "mm" ? "အိမ်တော် ဦးဆောင်သူစာရင်းနှင့် တင်သွင်းမှုများ" : "House Leaderboard & Submissions"} ({formSubmissions.length})
               </button>
             </div>
 
@@ -1625,7 +1691,7 @@ export default function AdminEventsPage() {
                       {/* Left Panel */}
                       <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 16 }}>
                         <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Form Title</label>
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.eventFormTitleLabel}</label>
                           <input
                             type="text"
                             className="input"
@@ -1636,7 +1702,7 @@ export default function AdminEventsPage() {
                           />
                         </div>
                         <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Instructional Description</label>
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.eventFormInstructionLabel}</label>
                           <textarea
                             className="input custom-scrollbar"
                             style={{ width: "100%", minHeight: 80, borderRadius: 12, padding: "12px 16px", resize: "vertical" }}
@@ -1727,84 +1793,131 @@ export default function AdminEventsPage() {
                           }}
                           onClick={addQuestion}
                         >
-                          ➕ Add Question
+                          ➕ {t.eventAddQuestionLabel}
                         </button>
                       </div>
 
                       {formQuestions.length === 0 ? (
-                        <div style={{ textAlign: "center", padding: "40px 20px", border: "2px dashed var(--border-subtle)", borderRadius: 20, background: "var(--bg-elevated)" }}>
-                          <p style={{ color: "var(--text-muted)", fontWeight: 700, marginBottom: 4 }}>No custom questions yet</p>
-                          <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Click "Add Question" to start building your evaluation form!</p>
+                        <div style={{ textAlign: "center", padding: "40px 20px", background: "var(--bg-elevated)", borderRadius: 20, border: "1px dashed var(--border-subtle)", color: "var(--text-muted)" }}>
+                          {lang === "th" ? "ยังไม่มีคำถาม เพิ่มคำถามแรกกันเลย!" : lang === "cn" ? "尚未添加问题，添加第一个问题吧！" : lang === "mm" ? "မေးခွန်းများမရှိသေးပါ၊ ပထမဦးဆုံးမေးခွန်းကို ထည့်ပါ" : "No questions added yet. Add your first question!"}
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                           {formQuestions.map((q, idx) => (
                             <div 
                               key={q.id || idx} 
-                              className="flex flex-col md:flex-row md:items-center gap-4"
                               style={{ 
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 16,
                                 background: "var(--bg-elevated)", 
-                                padding: "16px 20px", 
-                                borderRadius: 16,
+                                padding: "20px", 
+                                borderRadius: 20,
                                 border: "1px solid var(--border-subtle)"
                               }}
                             >
-                              {/* Label Input */}
-                              <div style={{ display: "flex", gap: 12, alignItems: "center", flex: "1 1 auto", width: "100%" }}>
-                                <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20 }}>{idx + 1}.</span>
-                                <input
-                                  type="text"
-                                  className="input"
-                                  style={{ flex: 1, height: 40, borderRadius: 10, padding: "0 12px" }}
-                                  value={q.label}
-                                  onChange={e => updateQuestion(q.id, "label", e.target.value)}
-                                  placeholder="Question Text..."
-                                />
+                              {/* Question Main Controls Row */}
+                              <div className="flex flex-col md:flex-row md:items-center gap-4">
+                                {/* Label Input */}
+                                <div style={{ display: "flex", gap: 12, alignItems: "center", flex: "1 1 auto", width: "100%" }}>
+                                  <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20 }}>{idx + 1}.</span>
+                                  <input
+                                    type="text"
+                                    className="input"
+                                    style={{ flex: 1, height: 40, borderRadius: 10, padding: "0 12px" }}
+                                    value={q.label}
+                                    onChange={e => updateQuestion(q.id, "label", e.target.value)}
+                                    placeholder={lang === "th" ? "ข้อความคำถาม..." : lang === "cn" ? "问题内容..." : lang === "mm" ? "မေးခွန်းစာသား..." : "Question Text..."}
+                                  />
+                                </div>
+
+                                {/* Controls Container */}
+                                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }} className="md:w-auto">
+                                  {/* Type Select */}
+                                  <select
+                                    className="input"
+                                    style={{ height: 40, borderRadius: 10, padding: "0 12px", background: "var(--bg-surface)", cursor: "pointer", fontWeight: 700, fontSize: 13, flex: "1 1 auto", minWidth: 160 }}
+                                    value={q.type}
+                                    onChange={e => updateQuestion(q.id, "type", e.target.value)}
+                                  >
+                                    <option value="text">{lang === "th" ? "คำตอบแบบยาว" : lang === "cn" ? "长答题" : lang === "mm" ? "စာသားအဖြေရှည်" : "Long Answer"}</option>
+                                    <option value="rating">{lang === "th" ? "คะแนนเรตติ้ง (1-5 ดาว)" : lang === "cn" ? "评分 (1-5 星)" : lang === "mm" ? "ကြယ်ပွင့်အဆင့်သတ်မှတ်ချက် (၁-၅)" : "Rating (1-5 Star)"}</option>
+                                    <option value="choice">{lang === "th" ? "หลายตัวเลือก (เลือกได้ 1 ข้อ)" : lang === "cn" ? "单选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (တစ်ခုရွေးရန်)" : "Multiple Choice"}</option>
+                                    <option value="multiple">{lang === "th" ? "เครื่องหมายเลือก (เลือกได้หลายข้อ)" : lang === "cn" ? "多选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (အများကြီးရွေးရန်)" : "Checkbox"}</option>
+                                  </select>
+
+                                  {/* Required Toggle */}
+                                  <button
+                                    type="button"
+                                    style={{
+                                      padding: "6px 12px",
+                                      height: 40,
+                                      borderRadius: 10,
+                                      border: "none",
+                                      background: q.required ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.03)",
+                                      color: q.required ? "#10b981" : "var(--text-muted)",
+                                      whiteSpace: "nowrap",
+                                      fontWeight: 800,
+                                      fontSize: 11,
+                                      cursor: "pointer"
+                                    }}
+                                    onClick={() => updateQuestion(q.id, "required", !q.required)}
+                                  >
+                                    {q.required ? t.eventRequiredLabel : (lang === "th" ? "ไม่บังคับ" : lang === "cn" ? "选填" : lang === "mm" ? "ရွေးချယ်နိုင်သည်" : "Optional")}
+                                  </button>
+
+                                  {/* Delete Button */}
+                                  <button
+                                    type="button"
+                                    className="btn btn-danger"
+                                    style={{ width: 40, height: 40, padding: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                                    onClick={() => removeQuestion(q.id)}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               </div>
 
-                              {/* Controls Container */}
-                              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }} className="md:w-auto">
-                                {/* Type Select */}
-                                <select
-                                  className="input"
-                                  style={{ height: 40, borderRadius: 10, padding: "0 12px", background: "var(--bg-surface)", cursor: "pointer", fontWeight: 700, fontSize: 13, flex: "1 1 auto", minWidth: 140 }}
-                                  value={q.type}
-                                  onChange={e => updateQuestion(q.id, "type", e.target.value)}
-                                >
-                                  <option value="text">Long Answer</option>
-                                  <option value="rating">Rating (1-5 Star)</option>
-                                </select>
-
-                                {/* Required Toggle */}
-                                <button
-                                  type="button"
-                                  style={{
-                                    padding: "6px 12px",
-                                    height: 40,
-                                    borderRadius: 10,
-                                    border: "none",
-                                    background: q.required ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.03)",
-                                    color: q.required ? "#10b981" : "var(--text-muted)",
-                                    whiteSpace: "nowrap",
-                                    fontWeight: 800,
-                                    fontSize: 11,
-                                    cursor: "pointer"
-                                  }}
-                                  onClick={() => updateQuestion(q.id, "required", !q.required)}
-                                >
-                                  {q.required ? "Required" : "Optional"}
-                                </button>
-
-                                {/* Delete Button */}
-                                <button
-                                  type="button"
-                                  className="btn btn-danger"
-                                  style={{ width: 40, height: 40, padding: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                                  onClick={() => removeQuestion(q.id)}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
+                              {/* Google Forms-like Options Builder */}
+                              {(q.type === "choice" || q.type === "multiple") && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
+                                  <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    {lang === "th" ? "ตัวเลือกคำตอบ" : lang === "cn" ? "选项设置" : lang === "mm" ? "ရွေးချယ်စရာများ" : "Answer Options"}
+                                  </span>
+                                  {q.options?.map((opt: string, optIdx: number) => (
+                                    <div key={optIdx} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                      <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
+                                        {q.type === "choice" ? "○" : "□"}
+                                      </span>
+                                      <input
+                                        type="text"
+                                        className="input"
+                                        style={{ flex: 1, height: 36, borderRadius: 8, padding: "0 12px", fontSize: 13 }}
+                                        value={opt}
+                                        onChange={e => updateOption(q.id, optIdx, e.target.value)}
+                                        placeholder={`Option ${optIdx + 1}`}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost"
+                                        style={{ width: 36, height: 36, padding: 0, color: "#ef4444", borderRadius: 8, fontSize: 14, fontWeight: 800 }}
+                                        onClick={() => removeOption(q.id, optIdx)}
+                                        disabled={q.options.length <= 1}
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost"
+                                    style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 800, color: "var(--accent-primary)", padding: "4px 12px", height: 32, borderRadius: 8, marginTop: 4 }}
+                                    onClick={() => addOption(q.id)}
+                                  >
+                                    ➕ {lang === "th" ? "เพิ่มตัวเลือก" : lang === "cn" ? "添加选项" : lang === "mm" ? "ရွေးချယ်စရာထည့်ရန်" : "Add Option"}
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -2046,6 +2159,29 @@ export default function AdminEventsPage() {
                                               {starIdx < (parseInt(ans) || 0) ? "★" : "☆"}
                                             </span>
                                           ))}
+                                        </div>
+                                      ) : Array.isArray(ans) ? (
+                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
+                                          {ans.length > 0 ? (
+                                            ans.map((item: string, itemIdx: number) => (
+                                              <span
+                                                key={itemIdx}
+                                                style={{
+                                                  fontSize: 12,
+                                                  fontWeight: 800,
+                                                  background: "rgba(255,107,0,0.08)",
+                                                  color: "var(--accent-primary)",
+                                                  padding: "4px 8px",
+                                                  borderRadius: 8,
+                                                  border: "1px solid rgba(255,107,0,0.15)"
+                                                }}
+                                              >
+                                                {item}
+                                              </span>
+                                            ))
+                                          ) : (
+                                            <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: 13 }}>No selection</span>
+                                          )}
                                         </div>
                                       ) : (
                                         <p style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500, whiteSpace: "pre-wrap" }}>

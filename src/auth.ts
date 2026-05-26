@@ -49,9 +49,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
 
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
+      }
+      if (trigger === "update") {
+        token.updateTime = Date.now(); // Forces NextAuth to regenerate and write a fresh session cookie
       }
       return token;
     },

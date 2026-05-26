@@ -61,6 +61,13 @@ export default function OnboardingPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Validate size (max 5MB)
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setError(t.fileTooLarge);
+      return;
+    }
+
     // Local preview immediately (Blob URL is fastest)
     const localUrl = URL.createObjectURL(file);
     setPreviewUrl(localUrl);
@@ -122,8 +129,18 @@ export default function OnboardingPage() {
     const isTh = t.back === "กลับ";
     if (step === 0) {
       const isStudent = session?.user && (session.user as any).role !== "admin";
-      if (!formData.name.trim() || (isStudent && formData.studentId.trim().length !== 9) || !formData.nickname.trim() || !formData.phone.trim() || !formData.contactChannels.trim()) {
+      if (!formData.name.trim() || !formData.nickname.trim() || !formData.phone.trim() || !formData.contactChannels.trim() || (isStudent && !formData.studentId.trim())) {
         setError(isTh ? "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน" : "Please fill out all required fields.");
+        setValidationTriggered(true);
+        return;
+      }
+      if (isStudent && !/^[0-9]{9}$/.test(formData.studentId.trim())) {
+        setError(isTh ? "รหัสนักศึกษาต้องเป็นตัวเลข 9 หลักเท่านั้น" : "Student ID must be exactly 9 digits and contain only numbers.");
+        setValidationTriggered(true);
+        return;
+      }
+      if (!/^[0-9]{10}$/.test(formData.phone.trim())) {
+        setError(isTh ? "เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลักเท่านั้น" : "Phone number must be exactly 10 digits and contain only numbers.");
         setValidationTriggered(true);
         return;
       }
@@ -135,10 +152,20 @@ export default function OnboardingPage() {
         setValidationTriggered(true);
         return;
       }
+      if (!/^[0-9]{10}$/.test(ec1.phone.trim())) {
+        setError(isTh ? "เบอร์โทรศัพท์ผู้ติดต่อฉุกเฉินคนที่ 1 ต้องเป็นตัวเลข 10 หลักเท่านั้น" : "Emergency Contact #1 phone number must be exactly 10 digits and contain only numbers.");
+        setValidationTriggered(true);
+        return;
+      }
       const ec2 = formData.emergencyContacts[1];
       if (ec2.name.trim() || ec2.relationship.trim() || ec2.phone.trim()) {
         if (!ec2.name.trim() || !ec2.relationship.trim() || !ec2.phone.trim()) {
           setError(isTh ? "กรุณากรอกข้อมูลผู้ติดต่อฉุกเฉินคนที่ 2 ให้ครบถ้วน หรือปล่อยว่างไว้ทั้งหมด" : "Please complete all fields for Emergency Contact #2 or leave it empty.");
+          setValidationTriggered(true);
+          return;
+        }
+        if (!/^[0-9]{10}$/.test(ec2.phone.trim())) {
+          setError(isTh ? "เบอร์โทรศัพท์ผู้ติดต่อฉุกเฉินคนที่ 2 ต้องเป็นตัวเลข 10 หลักเท่านั้น" : "Emergency Contact #2 phone number must be exactly 10 digits and contain only numbers.");
           setValidationTriggered(true);
           return;
         }
@@ -383,7 +410,7 @@ export default function OnboardingPage() {
                     maxLength={9}
                     placeholder="640510000"
                     value={formData.studentId}
-                    onChange={(e) => set("studentId", e.target.value)}
+                    onChange={(e) => set("studentId", e.target.value.replace(/[^0-9]/g, "").slice(0, 9))}
                     style={{
                       borderColor: validationTriggered && (session?.user && (session.user as any).role !== "admin" && formData.studentId.trim().length !== 9) ? "#ef4444" : undefined,
                       boxShadow: validationTriggered && (session?.user && (session.user as any).role !== "admin" && formData.studentId.trim().length !== 9) ? "0 0 0 1px #ef4444" : undefined
@@ -453,15 +480,17 @@ export default function OnboardingPage() {
                     required
                     placeholder="0812345678"
                     value={formData.phone}
-                    onChange={(e) => set("phone", e.target.value)}
+                    onChange={(e) => set("phone", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
                     style={{
-                      borderColor: validationTriggered && !formData.phone.trim() ? "#ef4444" : undefined,
-                      boxShadow: validationTriggered && !formData.phone.trim() ? "0 0 0 1px #ef4444" : undefined
+                      borderColor: validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim())) ? "#ef4444" : undefined,
+                      boxShadow: validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim())) ? "0 0 0 1px #ef4444" : undefined
                     }}
                   />
-                  {validationTriggered && !formData.phone.trim() && (
+                  {validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim())) && (
                     <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                      {t.back === "กลับ" ? "⚠️ กรุณากรอกเบอร์โทรศัพท์" : "⚠️ This field is required"}
+                      {!formData.phone.trim() 
+                        ? (t.back === "กลับ" ? "⚠️ กรุณากรอกเบอร์โทรศัพท์" : "⚠️ This field is required")
+                        : (t.back === "กลับ" ? "⚠️ เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก" : "⚠️ Phone number must be exactly 10 digits and numbers only")}
                     </span>
                   )}
                 </div>
@@ -546,8 +575,18 @@ export default function OnboardingPage() {
                   <label className={labelCls}>{t.dietaryRestrictions}</label>
                   <select
                     className={inputCls}
-                    value={formData.dietaryRestrictions}
-                    onChange={(e) => set("dietaryRestrictions", e.target.value)}
+                    value={
+                      ["", "Vegetarian", "Vegan", "Halal", "Kosher"].includes(formData.dietaryRestrictions)
+                        ? formData.dietaryRestrictions
+                        : "Other"
+                    }
+                    onChange={(e) => {
+                      if (e.target.value === "Other") {
+                        set("dietaryRestrictions", "Other:");
+                      } else {
+                        set("dietaryRestrictions", e.target.value);
+                      }
+                    }}
                   >
                     <option value="">{t.none}</option>
                     <option value="Vegetarian">{t.veg}</option>
@@ -556,6 +595,20 @@ export default function OnboardingPage() {
                     <option value="Kosher">{t.kosher}</option>
                     <option value="Other">{t.other}</option>
                   </select>
+                  {(!["", "Vegetarian", "Vegan", "Halal", "Kosher"].includes(formData.dietaryRestrictions) || formData.dietaryRestrictions.startsWith("Other:")) && (
+                    <input
+                      type="text"
+                      className={inputCls}
+                      style={{ marginTop: 8 }}
+                      placeholder={t.back === "กลับ" ? "กรุณาระบุข้อจำกัดอาหาร..." : "Please specify dietary restrictions..."}
+                      value={
+                        formData.dietaryRestrictions.startsWith("Other:")
+                          ? formData.dietaryRestrictions.substring(6)
+                          : formData.dietaryRestrictions
+                      }
+                      onChange={(e) => set("dietaryRestrictions", "Other:" + e.target.value)}
+                    />
+                  )}
                 </div>
                 <div className="field flex-1">
                   <label className={labelCls}>{t.emergencyMed}</label>
@@ -679,15 +732,17 @@ export default function OnboardingPage() {
                             required={isFieldRequired}
                             placeholder="0812345678"
                             value={contact.phone}
-                            onChange={(e) => setEC(i, "phone", e.target.value)}
+                            onChange={(e) => setEC(i, "phone", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
                             style={{
-                              borderColor: validationTriggered && isFieldRequired && !contact.phone.trim() ? "#ef4444" : undefined,
-                              boxShadow: validationTriggered && isFieldRequired && !contact.phone.trim() ? "0 0 0 1px #ef4444" : undefined
+                              borderColor: validationTriggered && isFieldRequired && (!contact.phone.trim() || !/^[0-9]{10}$/.test(contact.phone.trim())) ? "#ef4444" : undefined,
+                              boxShadow: validationTriggered && isFieldRequired && (!contact.phone.trim() || !/^[0-9]{10}$/.test(contact.phone.trim())) ? "0 0 0 1px #ef4444" : undefined
                             }}
                           />
-                          {validationTriggered && isFieldRequired && !contact.phone.trim() && (
+                          {validationTriggered && isFieldRequired && (!contact.phone.trim() || !/^[0-9]{10}$/.test(contact.phone.trim())) && (
                             <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                              {t.back === "กลับ" ? "⚠️ กรุณากรอกเบอร์โทรศัพท์" : "⚠️ This field is required"}
+                              {!contact.phone.trim()
+                                ? (t.back === "กลับ" ? "⚠️ กรุณากรอกเบอร์โทรศัพท์" : "⚠️ This field is required")
+                                : (t.back === "กลับ" ? "⚠️ เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก" : "⚠️ Phone number must be exactly 10 digits and numbers only")}
                             </span>
                           )}
                         </div>

@@ -17,9 +17,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
+    // Validate file size (max 5MB)
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      return NextResponse.json({ error: "File size exceeds the 5MB limit." }, { status: 400 });
+    }
+
     // Check if it's an image
     if (!file.type.startsWith("image/")) {
       return NextResponse.json({ error: "Only images are allowed" }, { status: 400 });
+    }
+
+    // Harden upload: check file extension to prevent content-type spoofing (Stored XSS)
+    const allowedExts = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+    const ext = path.extname(file.name).toLowerCase();
+    if (!allowedExts.includes(ext)) {
+      return NextResponse.json({ error: "Invalid image extension. Only .jpg, .jpeg, .png, .webp, and .gif are allowed." }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();

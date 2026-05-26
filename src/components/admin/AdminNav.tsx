@@ -8,30 +8,30 @@ import {
   QrCode, 
   Users, 
   ShieldCheck, 
-  User,
-  ChevronRight,
-  Languages
+  User
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 
 const NAV = [
-  { href: "/admin/dashboard", label: "Overview",         icon: LayoutDashboard },
-  { href: "/admin/events",    label: "Manage Events",    icon: Calendar },
-  { href: "/admin/scanner",   label: "QR Scanner",       icon: QrCode },
-  { href: "/admin/students",  label: "Student Directory", icon: Users },
-  { href: "/admin/audit-logs",label: "Audit Trails",     icon: ShieldCheck },
-];
+  { href: "/admin/dashboard", key: "overview",             icon: LayoutDashboard },
+  { href: "/admin/events",    key: "manageEvents",         icon: Calendar },
+  { href: "/admin/scanner",   key: "qrScanner",            icon: QrCode },
+  { href: "/admin/students",  key: "adminStudentsDirectory",icon: Users },
+  { href: "/admin/audit-logs",key: "auditTrails",          icon: ShieldCheck },
+] as const;
 
 export function AdminNav() {
   const pathname = usePathname();
+  const { t } = useLanguage();
 
   return (
     <nav style={{ flex: 1 }}>
-      <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>Main Menu</p>
+      <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>{t.mainMenu}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {NAV.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
+          const labelText = t[item.key] || item.key;
           return (
             <Link 
               key={item.href} 
@@ -40,7 +40,7 @@ export function AdminNav() {
               style={{ gap: 12, position: "relative" }}
             >
               <Icon size={18} strokeWidth={isActive ? 2.5 : 2} style={{ pointerEvents: "none" }} />
-              <span style={{ fontWeight: isActive ? 700 : 500, pointerEvents: "none" }}>{item.label}</span>
+              <span style={{ fontWeight: isActive ? 700 : 500, pointerEvents: "none" }}>{labelText}</span>
               {isActive && (
                 <div style={{ 
                   position: "absolute", 
@@ -58,10 +58,10 @@ export function AdminNav() {
       </div>
 
       <div className="divider" style={{ margin: "24px 0", opacity: 0.5 }} />
-      <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>Account</p>
+      <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>{t.accountLabel}</p>
       <Link href="/dashboard" className="nav-link" style={{ gap: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
         <User size={18} strokeWidth={2} style={{ pointerEvents: "none" }} />
-        <span style={{ fontWeight: 500, pointerEvents: "none" }}>Switch to Student View</span>
+        <span style={{ fontWeight: 500, pointerEvents: "none" }}>{t.switchToStudentView}</span>
       </Link>
 
       <AdminLanguageSwitcher />

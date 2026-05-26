@@ -4,6 +4,7 @@ import { events } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { realtimeEmitter } from "@/lib/realtime-emitter";
 
 const eventUpdateSchema = z.object({
   title: z.string().min(1).optional(),
@@ -53,6 +54,15 @@ export async function PUT(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Broadcast event update in real-time
+    realtimeEmitter.emit("dashboard_update", {
+      type: "event_updated",
+      event: {
+        id: updated.id,
+        title: updated.title,
+      }
+    });
+
     return NextResponse.json({ success: true, event: updated });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -94,6 +104,12 @@ export async function DELETE(
       if (!deleted) {
         throw new Error("Event not found");
       }
+    });
+
+    // Broadcast event deletion in real-time
+    realtimeEmitter.emit("dashboard_update", {
+      type: "event_deleted",
+      eventId: id,
     });
 
     return NextResponse.json({ success: true });

@@ -16,7 +16,8 @@ export function AdminLayoutWrapper({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen bg-[var(--bg-base)] overflow-hidden relative">
+    <LanguageProvider>
+      <div className="flex h-screen bg-[var(--bg-base)] overflow-hidden relative">
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-[var(--border-subtle)] flex items-center justify-between px-6 z-[1000] backdrop-blur-md bg-white/80">
         <div className="flex items-center gap-3">
@@ -93,9 +94,7 @@ export function AdminLayoutWrapper({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <LanguageProvider>
-            <AdminNav />
-          </LanguageProvider>
+          <AdminNav />
         </div>
 
         <div className="mt-auto pt-6 border-t border-[var(--border-subtle)]">
@@ -155,6 +154,7 @@ export function AdminLayoutWrapper({
           }
         }
       `}</style>
-    </div>
+      </div>
+    </LanguageProvider>
   );
 }

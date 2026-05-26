@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { Calendar, History, Trophy, ArrowRight, X, Star, CheckCircle2 } from "lucide-react";
+import { Calendar, History, Trophy, ArrowRight, X, Star, CheckCircle2, ClipboardList } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
 
 export default function HistoryPage() {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -22,6 +22,10 @@ export default function HistoryPage() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [generalSuccess, setGeneralSuccess] = useState<string | null>(null);
+
+  // Custom warning modal states for attendance 403 prevention
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningMessage, setWarningMessage] = useState("");
 
   const fetchHistory = () => {
     setLoading(true);
@@ -48,10 +52,24 @@ export default function HistoryPage() {
       const data = await res.json();
       
       if (data.form) {
+        if (!data.hasAttended) {
+          setShowStudentForm(false);
+          setWarningMessage(
+            lang === "th"
+              ? "คุณยังไม่ได้สแกนเช็คอินเข้าร่วมกิจกรรมนี้ กรุณาสแกนเช็คอินเพื่อเข้าร่วมกิจกรรมจริงก่อนจึงจะสามารถส่งแบบประเมินและสะสมคะแนนบ้านได้!"
+              : lang === "cn"
+              ? "您尚未扫码签到参加此活动。请先在现场签到参加活动，然后才能提交评估表并为您的“学院/House”赚取积分！"
+              : lang === "mm"
+              ? "သင်သည် ဤပွဲသို့ ပါဝင်ရန် QR check-in မလုပ်ရသေးပါ။ ကျေးဇူးပြု၍ ပွဲသို့ တကယ့်ကိုယ်တိုင်တက်ရောက်ပြီးမှသာ အကဲဖြတ်လွှาကို တင်သွင်းပြီး အိမ်မှတ်များ စုဆောင်းနိုင်မည်ဖြစ်သည်!"
+              : "You haven't scanned and checked into this event yet. Please check in and physically attend the event first to submit your evaluation and feed house points!"
+          );
+          setShowWarningModal(true);
+          return;
+        }
         setActiveForm({ ...data.form, eventId });
         const initialAnswers: Record<string, any> = {};
         data.form.questions.forEach((q: any) => {
-          initialAnswers[q.id] = q.type === "rating" ? 5 : "";
+          initialAnswers[q.id] = q.type === "rating" ? 5 : q.type === "multiple" ? [] : "";
         });
         setAnswers(initialAnswers);
       } else {
@@ -97,7 +115,21 @@ export default function HistoryPage() {
         setGeneralSuccess("Submitted");
         fetchHistory();
       } else {
-        setGeneralError(t.failedToSubmitFeedback + ": " + (data.error || "Unknown error"));
+        if (res.status === 403) {
+          setShowStudentForm(false);
+          setWarningMessage(
+            lang === "th"
+              ? "คุณยังไม่ได้สแกนเช็คอินเข้าร่วมกิจกรรมนี้ กรุณาสแกนเช็คอินเพื่อเข้าร่วมกิจกรรมจริงก่อนจึงจะสามารถส่งแบบประเมินและสะสมคะแนนบ้านได้!"
+              : lang === "cn"
+              ? "您尚未扫码签到参加此活动。请先在现场签到参加活动，然后才能提交评估表并为您的“学院/House”赚取积分！"
+              : lang === "mm"
+              ? "သင်သည် ဤပွဲသို့ ပါဝင်ရန် QR check-in မလုပ်ရသေးပါ။ ကျေးဇူးပြု၍ ပွဲသို့ တကယ့်ကိုယ်တိုင်တက်ရောက်ပြီးမှသာ အကဲဖြတ်လွှာကို တင်သွင်းပြီး အိမ်မှတ်များ စုဆောင်းနိုင်မည်ဖြစ်သည်!"
+              : "You haven't scanned and checked into this event yet. Please check in and physically attend the event first to submit your evaluation and feed house points!"
+          );
+          setShowWarningModal(true);
+        } else {
+          setGeneralError(t.failedToSubmitFeedback + ": " + (data.error || "Unknown error"));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -151,7 +183,11 @@ export default function HistoryPage() {
                   <div style={{ flex: 1 }}>
                     <p style={{ fontWeight: 900, fontSize: 17, color: "var(--text-primary)", letterSpacing: "-0.01em", lineHeight: 1.3 }}>{h.eventTitle}</p>
                     <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Completed on {new Date(h.checkInTime).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}
+                      {h.checkInTime ? (
+                        <>Completed on {new Date(h.checkInTime).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}</>
+                      ) : (
+                        <>Event Date: {new Date(h.eventStartTime).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}</>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -199,7 +235,7 @@ export default function HistoryPage() {
                         }}
                         onClick={() => openStudentForm(h.eventId, h.eventTitle)}
                       >
-                        <Trophy size={14} fill="currentColor" /> Feed House (+{h.formPoints} PTS)
+                        <ClipboardList size={14} /> {t.submitFeedback} (+{h.formPoints} PTS)
                       </button>
                     )}
                     {h.formStatus === "submitted" && (
@@ -247,6 +283,89 @@ export default function HistoryPage() {
              <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>No history yet</h3>
              <p style={{ color: "var(--text-muted)", marginBottom: 24 }}>Join your first event to start your activity journey!</p>
              <Link href="/dashboard" className="btn btn-primary">Browse Events</Link>
+          </div>
+        )}
+
+        {/* Warning Modal */}
+        {showWarningModal && (
+          <div style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(12px)",
+            zIndex: 1200,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24
+          }} onClick={() => setShowWarningModal(false)}>
+            <div className="animate-fade-in-up" style={{
+              background: "var(--bg-surface)",
+              width: "100%",
+              maxWidth: 480,
+              borderRadius: 32,
+              overflow: "hidden",
+              boxShadow: "0 30px 60px rgba(0,0,0,0.25)",
+              border: "1px solid var(--border-medium)",
+              padding: "40px 32px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center"
+            }} onClick={e => e.stopPropagation()}>
+              {/* Alert Icon with ambient glow */}
+              <div style={{
+                width: 72,
+                height: 72,
+                borderRadius: "50%",
+                background: "rgba(255, 107, 0, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 24,
+                border: "1px solid rgba(255, 107, 0, 0.2)",
+                boxShadow: "0 0 20px rgba(255,107,0,0.15)"
+              }}>
+                <Trophy size={36} style={{ color: "var(--accent-primary)" }} />
+              </div>
+
+              {/* Title */}
+              <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", marginBottom: 14 }}>
+                {lang === "th"
+                  ? "จำเป็นต้องเข้าร่วมกิจกรรม"
+                  : lang === "cn"
+                  ? "需要签到参加活动"
+                  : lang === "mm"
+                  ? "ပွဲတက်ရောက်ရန် လိုအပ်သည်"
+                  : "Event Attendance Required"}
+              </h3>
+
+              {/* Description */}
+              <p style={{ color: "var(--text-secondary)", fontSize: 14, fontWeight: 500, lineHeight: 1.6, marginBottom: 32 }}>
+                {warningMessage}
+              </p>
+
+              {/* CTA Button */}
+              <button
+                className="btn btn-primary"
+                type="button"
+                style={{
+                  width: "100%",
+                  height: 48,
+                  borderRadius: 14,
+                  fontWeight: 900,
+                  fontSize: 15,
+                  background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
+                  color: "#fff",
+                  border: "none",
+                  boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
+                  cursor: "pointer"
+                }}
+                onClick={() => setShowWarningModal(false)}
+              >
+                {lang === "th" ? "ตกลง" : lang === "cn" ? "好的" : lang === "mm" ? "ကောင်းပါပြီ" : "Understood"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -401,6 +520,102 @@ export default function HistoryPage() {
                             <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)", marginLeft: 12 }}>
                               {answers[q.id] || 0} / 5
                             </span>
+                          </div>
+                        ) : q.type === "choice" ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "8px 0" }}>
+                            {q.options?.map((opt: string, optIdx: number) => {
+                              const isSelected = answers[q.id] === opt;
+                              return (
+                                <label
+                                  key={optIdx}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    padding: "12px 16px",
+                                    borderRadius: 14,
+                                    border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                                    background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                    boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
+                                  }}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`choice-${q.id}`}
+                                    value={opt}
+                                    checked={isSelected}
+                                    onChange={() => {
+                                      setAnswers({ ...answers, [q.id]: opt });
+                                      if (formErrors[q.id]) {
+                                        const updated = { ...formErrors };
+                                        delete updated[q.id];
+                                        setFormErrors(updated);
+                                      }
+                                    }}
+                                    style={{
+                                      accentColor: "var(--accent-primary)",
+                                      width: 18,
+                                      height: 18,
+                                      cursor: "pointer"
+                                    }}
+                                  />
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{opt}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : q.type === "multiple" ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "8px 0" }}>
+                            {q.options?.map((opt: string, optIdx: number) => {
+                              const currentSelections = Array.isArray(answers[q.id]) ? answers[q.id] : [];
+                              const isSelected = currentSelections.includes(opt);
+                              return (
+                                <label
+                                  key={optIdx}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    padding: "12px 16px",
+                                    borderRadius: 14,
+                                    border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                                    background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                    boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    value={opt}
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      let updatedSelections = [...currentSelections];
+                                      if (e.target.checked) {
+                                        updatedSelections.push(opt);
+                                      } else {
+                                        updatedSelections = updatedSelections.filter((val: string) => val !== opt);
+                                      }
+                                      setAnswers({ ...answers, [q.id]: updatedSelections });
+                                      if (formErrors[q.id]) {
+                                        const updated = { ...formErrors };
+                                        delete updated[q.id];
+                                        setFormErrors(updated);
+                                      }
+                                    }}
+                                    style={{
+                                      accentColor: "var(--accent-primary)",
+                                      width: 18,
+                                      height: 18,
+                                      cursor: "pointer"
+                                    }}
+                                  />
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{opt}</span>
+                                </label>
+                              );
+                            })}
                           </div>
                         ) : (
                           <textarea

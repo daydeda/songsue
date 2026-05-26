@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { 
-  Camera, 
   Search, 
   CheckCircle2, 
   XCircle, 
@@ -18,6 +17,7 @@ import {
   RotateCcw,
   Download
 } from "lucide-react";
+import { useLanguage } from "@/lib/LanguageContext";
 
 type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "error";
 
@@ -47,15 +47,15 @@ type ScanResult = {
 type Event = { id: string; title: string };
 
 export default function QRScannerPage() {
+  const { t, lang } = useLanguage();
   const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState<string>("");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
-  const [confirmingWalkIn, setConfirmingWalkIn] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
-  const [manualResults, setManualResults] = useState<any[]>([]);
+  const [manualResults, setManualResults] = useState<{ id: string; name: string; studentId: string; qrToken: string }[]>([]);
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [medsCheckOption, setMedsCheckOption] = useState<string | null>(null);
@@ -86,7 +86,7 @@ export default function QRScannerPage() {
     if (scannerRef.current) {
         try {
             await scannerRef.current.stop();
-        } catch (e) {
+        } catch {
             // ignore
         }
         scannerRef.current = null;
@@ -128,7 +128,7 @@ export default function QRScannerPage() {
             setScanResult(result);
             setShowModal(true);
             if ("vibrate" in navigator) navigator.vibrate(result.status === "success" ? [100, 50, 100] : 200);
-          } catch (err) {
+          } catch {
             setScanResult({ status: "error", error: "Connection error" });
             setShowModal(true);
           }
@@ -136,9 +136,10 @@ export default function QRScannerPage() {
         () => {}
       );
       setIsScanning(true);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Scanner start error:", err);
-      setScannerError(err?.message || "Could not start camera. Please check permissions.");
+      const errorObj = err as Error;
+      setScannerError(errorObj?.message || "Could not start camera. Please check permissions.");
       setIsScanning(false);
       scannerRef.current = null;
     }
@@ -146,20 +147,23 @@ export default function QRScannerPage() {
 
   useEffect(() => {
     if (events.length > 0) {
-      startScanner();
+      // Avoid calling setState synchronously inside effect
+      const timer = setTimeout(() => {
+        startScanner();
+      }, 0);
+      return () => clearTimeout(timer);
     }
     return () => {
       if (scannerRef.current) {
         const s = scannerRef.current;
-        // Robust check: try to stop only if it appears to be active
-        // and always catch to prevent fatal crashes
         try {
           s.stop().catch(() => {});
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events.length > 0]);
 
   const closeModal = () => {
@@ -187,7 +191,7 @@ export default function QRScannerPage() {
       const data = await res.json();
       setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: token });
       if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
-    } catch (err) {
+    } catch {
       setScanResult({ status: "error", error: "Connection error" });
     } finally {
       setIsConfirming(false);
@@ -218,7 +222,7 @@ export default function QRScannerPage() {
 
   const STATUS_CONFIG: Record<ScanStatus, { 
     color: string; 
-    icon: any; 
+    icon: React.ComponentType<{ size?: number; strokeWidth?: number; fill?: string; className?: string }>; 
     title: string; 
     desc: string;
     bg: string;
@@ -226,57 +230,57 @@ export default function QRScannerPage() {
     success: { 
       color: "#10b981", 
       icon: UserCheck, 
-      title: "Check-In Success", 
-      desc: "Student has been checked in successfully.",
+      title: t.scanSuccess, 
+      desc: t.scanSuccess,
       bg: "rgba(16, 185, 129, 0.1)"
     },
     success_walk_in: { 
       color: "#10b981", 
       icon: Zap, 
-      title: "Walk-In Registered", 
-      desc: "Student was not registered, but has been added as a walk-in.",
+      title: t.scanSuccess + " (Walk-in)", 
+      desc: t.scanSuccess,
       bg: "rgba(16, 185, 129, 0.1)"
     },
     pending_confirmation: { 
       color: "#6366f1", 
       icon: AlertCircle, 
-      title: "Verify Presence", 
-      desc: "Student is pre-registered. Please confirm physical presence.",
+      title: t.manualCheckinTitle, 
+      desc: t.manualSearchPlaceholder,
       bg: "rgba(99, 102, 241, 0.1)"
     },
     already_checked_in: { 
       color: "#ef4444", 
       icon: RefreshCcw, 
-      title: "Duplicate Check-In", 
-      desc: "Student already checked into this event.",
+      title: t.scanAlreadyCheckedIn, 
+      desc: t.scanAlreadyCheckedIn,
       bg: "rgba(239, 68, 68, 0.1)"
     },
     walk_ins_disabled: { 
       color: "#f59e0b", 
       icon: UserMinus, 
-      title: "Walk-ins Disabled", 
-      desc: "This event does not allow walk-ins and student is not registered.",
+      title: t.eventDisableFormLabel || "Walk-ins Disabled", 
+      desc: t.eventDisableFormLabel || "Walk-ins Disabled",
       bg: "rgba(245, 158, 11, 0.1)"
     },
     not_found: { 
       color: "#ef4444", 
       icon: XCircle, 
-      title: "Invalid Token", 
-      desc: "This QR code is not recognized by the system.",
+      title: t.scanNotFound, 
+      desc: t.scanNotFound,
       bg: "rgba(239, 68, 68, 0.1)"
     },
     quota_full: { 
       color: "#f59e0b", 
       icon: Zap, 
-      title: "Event Full", 
-      desc: "Maximum capacity reached for this event.",
+      title: t.eventFull || "Event Full", 
+      desc: t.eventFull || "Event Full",
       bg: "rgba(245, 158, 11, 0.1)"
     },
     error: { 
       color: "#ef4444", 
       icon: AlertCircle, 
-      title: "System Error", 
-      desc: "An unexpected error occurred. Please try again.",
+      title: t.scanError, 
+      desc: t.scanError,
       bg: "rgba(239, 68, 68, 0.1)"
     },
   };
@@ -289,15 +293,15 @@ export default function QRScannerPage() {
       color: "#ef4444",
       icon: AlertCircle,
       bg: "rgba(239, 68, 68, 0.12)",
-      title: "Medical Warning! / คำเตือนด้านสุขภาพ!",
-      desc: "Student has a recorded health condition. Please verify medication.",
+      title: lang === "th" ? "คำเตือนด้านสุขภาพ!" : lang === "cn" ? "健康警告！" : lang === "mm" ? "ကျန်းမာရေး သတိပေးချက်!" : "Medical Warning!",
+      desc: lang === "th" ? "นักศึกษามีข้อมูลสุขภาพที่ลงทะเบียนไว้ โปรดตรวจสอบข้อมูลยาฉุกเฉินและข้อจำกัดสุขภาพ" : lang === "cn" ? "学生有已记录的健康状况。请核对药品与健康限制。" : lang === "mm" ? "ကျောင်းသားတွင် ကျန်းမာရေးအခြေအနေရှိသည်။ ဆေးဝါးနှင့် ကျန်းမာရေးကန့်သတ်ချက်များကို စစ်ဆေးပါ။" : "Student has a recorded health condition. Please verify medication.",
     };
   }
 
   return (
     <div className="animate-fade-in">
       <div className="mb-10">
-        <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>QR Scanner</h1>
+        <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>{t.qrScanner}</h1>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6 items-start">
@@ -310,14 +314,14 @@ export default function QRScannerPage() {
               <Zap size={24} color="var(--accent-primary)" />
             </div>
             <div style={{ flex: 1 }}>
-              <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>ACTIVE EVENT</label>
+              <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>{t.eventsTitle.toUpperCase()}</label>
               <select
                 className="input"
                 style={{ width: "100%", fontSize: 18, fontWeight: 700, padding: "4px 0", border: "none", background: "none" }}
                 value={eventId}
                 onChange={(e) => setEventId(e.target.value)}
               >
-                {events.length === 0 && <option value="">No events available</option>}
+                {events.length === 0 && <option value="">{t.noEvents || "No events available"}</option>}
                 {events.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
               </select>
             </div>
@@ -329,7 +333,7 @@ export default function QRScannerPage() {
                 style={{ padding: "8px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
               >
                 <Download size={16} />
-                Report
+                {t.exportCSV ? t.exportCSV.replace(" CSV", "") : "Report"}
               </a>
             )}
           </div>
@@ -354,21 +358,21 @@ export default function QRScannerPage() {
             {(!isScanning && !scannerError) && (
               <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#000", color: "#fff", gap: 16 }}>
                 <div className="spinner" />
-                <p style={{ fontSize: 14, fontWeight: 600 }}>Initializing Camera...</p>
+                <p style={{ fontSize: 14, fontWeight: 600 }}>{t.eventLoadingLabel}</p>
               </div>
             )}
 
             {scannerError && (
               <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.9)", color: "#fff", padding: 40, textAlign: "center" }}>
                 <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
-                <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Camera Access Error</p>
+                <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{t.scanError}</p>
                 <p style={{ fontSize: 14, color: "#94a3b8", marginBottom: 24 }}>{scannerError}</p>
                 <button 
                     className="btn btn-primary" 
                     style={{ borderRadius: 12 }}
                     onClick={startScanner}
                 >
-                    <RotateCcw size={16} /> Retry Camera
+                    <RotateCcw size={16} /> {t.refresh}
                 </button>
               </div>
             )}
@@ -377,7 +381,7 @@ export default function QRScannerPage() {
                 <div style={{ position: "absolute", top: 20, left: 20, pointerEvents: "none" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.5)", padding: "6px 12px", borderRadius: 10, backdropFilter: "blur(4px)" }}>
                         <div className="animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} />
-                        <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.05em" }}>Scanner Active</span>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.scanningActive}</span>
                     </div>
                 </div>
             )}
@@ -389,13 +393,13 @@ export default function QRScannerPage() {
           <div className="stat-card" style={{ padding: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
               <Search size={20} color="var(--accent-primary)" />
-              <h3 style={{ fontSize: 18, fontWeight: 800 }}>Manual Override</h3>
+              <h3 style={{ fontSize: 18, fontWeight: 800 }}>{t.manualCheckinTitle}</h3>
             </div>
             
             <div style={{ position: "relative" }}>
               <input
                 className="input"
-                placeholder="Name or Student ID..."
+                placeholder={t.manualSearchPlaceholder}
                 style={{ paddingLeft: 12 }}
                 value={manualSearch}
                 onChange={(e) => handleManualSearch(e.target.value)}
@@ -437,9 +441,9 @@ export default function QRScannerPage() {
 
           <div className="stat-card" style={{ padding: 32, background: "linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%)" }}>
              <ShieldCheck size={40} style={{ marginBottom: 16, opacity: 0.2 }} />
-             <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 700 }}>SESSION SECURITY</p>
+             <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 700 }}>{t.immutableLogsBadge.replace("🔒 ", "").toUpperCase()}</p>
              <p style={{ fontSize: 15, color: "var(--text-primary)", marginTop: 8, lineHeight: 1.6 }}>
-               System is operating under <b>Secure Mode</b>. All scans are logged with admin timestamps.
+               {t.auditAlertText}
              </p>
           </div>
         </div>
@@ -512,7 +516,7 @@ export default function QRScannerPage() {
                     </p>
                     {scanResult.student.nickname && (
                       <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600, marginTop: 2 }}>
-                        aka "{scanResult.student.nickname}"
+                        aka &quot;{scanResult.student.nickname}&quot;
                       </p>
                     )}
                   </div>
@@ -550,29 +554,29 @@ export default function QRScannerPage() {
                         <AlertCircle size={18} color="#ef4444" style={{ marginTop: 2, flexShrink: 0 }} />
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                            Health Alert / ข้อมูลสุขภาพสำคัญ
+                            {lang === "th" ? "ข้อมูลสุขภาพสำคัญ" : lang === "cn" ? "重要健康信息" : lang === "mm" ? "ကျန်းမာရေး သတိပေးချက်" : "Important Health Information"}
                           </p>
                           <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
                             {scanResult.student.chronicDiseases && scanResult.student.chronicDiseases !== "-" && scanResult.student.chronicDiseases !== "" && (
-                              <p>• <b>โรคประจำตัว:</b> {scanResult.student.chronicDiseases}</p>
+                              <p>• <b>{t.chronicDiseases}</b></p>
                             )}
                             {scanResult.student.medicalHistory && scanResult.student.medicalHistory !== "-" && scanResult.student.medicalHistory !== "" && (
-                              <p>• <b>ประวัติการรักษา/อื่นๆ:</b> {scanResult.student.medicalHistory}</p>
+                              <p>• <b>{t.medicalHistory}</b></p>
                             )}
                             {scanResult.student.drugAllergies && scanResult.student.drugAllergies !== "-" && scanResult.student.drugAllergies !== "" && (
-                              <p>• <b>แพ้ยา:</b> {scanResult.student.drugAllergies}</p>
+                              <p>• <b>{t.drugAllergies}</b></p>
                             )}
                             {scanResult.student.foodAllergies && scanResult.student.foodAllergies !== "-" && scanResult.student.foodAllergies !== "" && (
-                              <p>• <b>แพ้อาหาร:</b> {scanResult.student.foodAllergies}</p>
+                              <p>• <b>{t.foodAllergies}</b></p>
                             )}
                             {scanResult.student.dietaryRestrictions && scanResult.student.dietaryRestrictions !== "-" && scanResult.student.dietaryRestrictions !== "" && (
-                              <p>• <b>การจำกัดอาหาร:</b> {scanResult.student.dietaryRestrictions}</p>
+                              <p>• <b>{t.dietaryRestrictions}</b></p>
                             )}
                             {scanResult.student.faintingHistory && (
-                              <p>• <b>ประวัติเป็นลม/วูบ:</b> เคยมีประวัติเป็นลม/วูบ</p>
+                              <p>• <b>{t.faintingHistory}</b></p>
                             )}
                             {scanResult.student.emergencyMedication && scanResult.student.emergencyMedication !== "-" && scanResult.student.emergencyMedication !== "" && (
-                              <p>• <b>ยาสามัญ/ยาฉุกเฉินประจำตัว:</b> {scanResult.student.emergencyMedication}</p>
+                              <p>• <b>{t.emergencyMed}</b></p>
                             )}
                           </div>
                         </div>
@@ -581,21 +585,21 @@ export default function QRScannerPage() {
                       {/* Safety Action Selector */}
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
                         <p style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
-                          Admin Action / การดำเนินการโดยผู้ดูแล
+                          {lang === "th" ? "การดำเนินการโดยผู้ดูแล" : lang === "cn" ? "管理员操作选项" : lang === "mm" ? "အက်ဒမင်လုပ်ဆောင်ချက်" : "Admin Security Action"}
                         </p>
                         
                         {/* Option 1: Brought Medication */}
                         <label style={{ 
-                          display: "flex", 
-                          alignItems: "center", 
-                          gap: 10, 
-                          padding: "10px 12px", 
-                          background: medsCheckOption === "brought" ? "rgba(16, 185, 129, 0.08)" : "var(--bg-elevated)", 
-                          borderRadius: 12, 
-                          border: medsCheckOption === "brought" ? "1.5px solid #10b981" : "1.5px solid var(--border-subtle)", 
-                          cursor: "pointer",
-                          userSelect: "none",
-                          transition: "all 0.2s"
+                           display: "flex", 
+                           alignItems: "center", 
+                           gap: 10, 
+                           padding: "10px 12px", 
+                           background: medsCheckOption === "brought" ? "rgba(16, 185, 129, 0.08)" : "var(--bg-elevated)", 
+                           borderRadius: 12, 
+                           border: medsCheckOption === "brought" ? "1.5px solid #10b981" : "1.5px solid var(--border-subtle)", 
+                           cursor: "pointer",
+                           userSelect: "none",
+                           transition: "all 0.2s"
                         }}>
                           <input 
                             type="radio" 
@@ -606,7 +610,7 @@ export default function QRScannerPage() {
                           />
                           <div style={{ textAlign: "left" }}>
                             <p style={{ fontSize: 12, fontWeight: 800, color: medsCheckOption === "brought" ? "#10b981" : "var(--text-primary)" }}>
-                              พกยาส่วนตัว/ยาฉุกเฉินมาด้วยแล้ว
+                              {lang === "th" ? "พกยาส่วนตัว/ยาฉุกเฉินมาด้วยแล้ว" : lang === "cn" ? "已携带个人/紧急药品" : lang === "mm" ? "ကိုယ်ပိုင်/အရေးပေါ်ဆေးဝါး ယူဆောင်လာပြီး" : "Brought personal/emergency medication"}
                             </p>
                             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
                               Brought Medication (Safe check-in)
@@ -616,16 +620,16 @@ export default function QRScannerPage() {
 
                         {/* Option 2: Didn't Bring Medication */}
                         <label style={{ 
-                          display: "flex", 
-                          alignItems: "center", 
-                          gap: 10, 
-                          padding: "10px 12px", 
-                          background: medsCheckOption === "forgot" ? "rgba(245, 158, 11, 0.08)" : "var(--bg-elevated)", 
-                          borderRadius: 12, 
-                          border: medsCheckOption === "forgot" ? "1.5px solid #f59e0b" : "1.5px solid var(--border-subtle)", 
-                          cursor: "pointer",
-                          userSelect: "none",
-                          transition: "all 0.2s"
+                           display: "flex", 
+                           alignItems: "center", 
+                           gap: 10, 
+                           padding: "10px 12px", 
+                           background: medsCheckOption === "forgot" ? "rgba(245, 158, 11, 0.08)" : "var(--bg-elevated)", 
+                           borderRadius: 12, 
+                           border: medsCheckOption === "forgot" ? "1.5px solid #f59e0b" : "1.5px solid var(--border-subtle)", 
+                           cursor: "pointer",
+                           userSelect: "none",
+                           transition: "all 0.2s"
                         }}>
                           <input 
                             type="radio" 
@@ -636,26 +640,26 @@ export default function QRScannerPage() {
                           />
                           <div style={{ textAlign: "left" }}>
                             <p style={{ fontSize: 12, fontWeight: 800, color: medsCheckOption === "forgot" ? "#f59e0b" : "var(--text-primary)" }}>
-                              ไม่ได้พกยามาด้วย / รับทราบความเสี่ยง
+                              {lang === "th" ? "ไม่ได้พกยามาด้วย / รับทราบความเสี่ยง" : lang === "cn" ? "未携带药品 / 已知悉风险" : lang === "mm" ? "ဆေးဝါးယူမလာပါ / အန္တရာယ်ရှိနိုင်မှုကို သိရှိပြီး" : "Didn't bring medication / Acknowledged risk"}
                             </p>
                             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
-                              Didn't bring medication (Accept risk)
+                              {"Didn't bring medication (Accept risk)"}
                             </p>
                           </div>
                         </label>
 
                         {/* Option 3: Acknowledge Dietary/Allergies Only */}
                         <label style={{ 
-                          display: "flex", 
-                          alignItems: "center", 
-                          gap: 10, 
-                          padding: "10px 12px", 
-                          background: medsCheckOption === "acknowledge" ? "rgba(99, 102, 241, 0.08)" : "var(--bg-elevated)", 
-                          borderRadius: 12, 
-                          border: medsCheckOption === "acknowledge" ? "1.5px solid #6366f1" : "1.5px solid var(--border-subtle)", 
-                          cursor: "pointer",
-                          userSelect: "none",
-                          transition: "all 0.2s"
+                           display: "flex", 
+                           alignItems: "center", 
+                           gap: 10, 
+                           padding: "10px 12px", 
+                           background: medsCheckOption === "acknowledge" ? "rgba(99, 102, 241, 0.08)" : "var(--bg-elevated)", 
+                           borderRadius: 12, 
+                           border: medsCheckOption === "acknowledge" ? "1.5px solid #6366f1" : "1.5px solid var(--border-subtle)", 
+                           cursor: "pointer",
+                           userSelect: "none",
+                           transition: "all 0.2s"
                         }}>
                           <input 
                             type="radio" 
@@ -666,7 +670,7 @@ export default function QRScannerPage() {
                           />
                           <div style={{ textAlign: "left" }}>
                             <p style={{ fontSize: 12, fontWeight: 800, color: medsCheckOption === "acknowledge" ? "#6366f1" : "var(--text-primary)" }}>
-                              รับทราบข้อมูล (กรณีข้อจำกัดอาหาร / ข้อมูลทั่วไป)
+                              {lang === "th" ? "รับทราบข้อมูล (กรณีข้อจำกัดอาหาร / ข้อมูลทั่วไป)" : lang === "cn" ? "仅确认信息（饮食/过敏限制）" : lang === "mm" ? "အချက်အလက်ကို သိရှိပြီး (အစားအသောက်/ဓာတ်မတည့်မှု ကန့်သတ်ချက်)" : "Acknowledge info only (Dietary/Allergy restrictions)"}
                             </p>
                             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
                               Acknowledge (For Dietary / Allergies / General info)
@@ -700,7 +704,7 @@ export default function QRScannerPage() {
                     cursor: (scanResult?.student?.hasMedicalCondition && !medsCheckOption) ? "not-allowed" : "pointer"
                   }}
                 >
-                  {isConfirming ? "Processing..." : (scanResult?.isWalkIn ? "Confirm Walk-in Presence" : "Confirm Physical Presence")}
+                  {isConfirming ? (lang === "th" ? "กำลังดำเนินการ..." : lang === "cn" ? "处理中..." : lang === "mm" ? "လုပ်ဆောင်နေသည်..." : "Processing...") : (scanResult?.isWalkIn ? (lang === "th" ? "ยืนยันการเช็คอินแบบ Walk-in" : lang === "cn" ? "确认现场签到" : lang === "mm" ? "Walk-in ချက်အင်ဝင်ခြင်းကို အတည်ပြုရန်" : "Confirm Walk-in Presence") : (lang === "th" ? "ยืนยันการเข้าร่วมกิจกรรม" : lang === "cn" ? "确认到场签到" : lang === "mm" ? "ကိုယ်တိုင်တက်ရောက်မှုကို အတည်ပြုရန်" : "Confirm Physical Presence"))}
                 </button>
               )}
 
@@ -723,7 +727,7 @@ export default function QRScannerPage() {
                   }}
                 >
                   <CheckCircle2 size={24} />
-                  {scanResult?.status === "already_checked_in" ? "Already Checked In / เช็คอินแล้ว" : "Confirmed / ยืนยันสิทธิ์สำเร็จ"}
+                  {scanResult?.status === "already_checked_in" ? t.scanAlreadyCheckedIn : t.attended}
                 </div>
               )}
 
@@ -748,7 +752,7 @@ export default function QRScannerPage() {
                       cursor: isCloseDisabled ? "not-allowed" : "pointer"
                     }}
                   >
-                    Continue Scanning
+                    {lang === "th" ? "สแกนต่อ" : lang === "cn" ? "继续扫描" : lang === "mm" ? "စကင်ဖတ်ခြင်းကို ဆက်လုပ်ရန်" : "Continue Scanning"}
                   </button>
                 );
               })()}

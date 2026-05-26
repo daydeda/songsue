@@ -4,6 +4,7 @@ import { events } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { realtimeEmitter } from "@/lib/realtime-emitter";
 
 const eventSchema = z.object({
   title: z.string().min(1),
@@ -77,6 +78,17 @@ export async function POST(req: Request) {
         walkInsEnabled: data.walkInsEnabled ?? false,
       })
       .returning();
+
+    // Broadcast event creation in real-time
+    if (event) {
+      realtimeEmitter.emit("dashboard_update", {
+        type: "event_created",
+        event: {
+          id: event.id,
+          title: event.title,
+        }
+      });
+    }
 
     return NextResponse.json({ success: true, event: event }, { status: 201 });
   } catch (error) {

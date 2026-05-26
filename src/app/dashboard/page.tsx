@@ -52,16 +52,49 @@ export default function DashboardPage() {
     blue:   { name: "Dara",    color: "#6366f1" },
   };
 
-  useEffect(() => {
+  const fetchEvents = () => {
     fetch("/api/events")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setEvents(d); })
       .finally(() => setLoadingEvents(false));
+  };
 
+  const fetchHouses = () => {
     fetch("/api/houses")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setHouses(d); })
       .finally(() => setLoadingHouses(false));
+  };
+
+  useEffect(() => {
+    fetchEvents();
+    fetchHouses();
+
+    // Establish Server-Sent Events (SSE) Real-time subscription for students
+    const eventSource = new EventSource("/api/realtime");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "ping") return;
+
+        if (
+          payload.type === "event_created" ||
+          payload.type === "event_updated" ||
+          payload.type === "event_deleted"
+        ) {
+          fetchEvents(); // Live update the events listing on student dashboard!
+        } else if (payload.type === "score") {
+          fetchHouses(); // Live update the scoreboard/leaderboard on student dashboard!
+        }
+      } catch (err) {
+        console.error("SSE parse error in student dashboard:", err);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
   const handleRegister = async (eventId: string, registered: boolean) => {

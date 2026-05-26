@@ -75,6 +75,8 @@ export async function GET() {
           eventTitle: att.event.title,
           eventImageUrl: att.event.imageUrl,
           eventQuota: att.event.quota,
+          eventStartTime: att.event.startTime,
+          eventEndTime: att.event.endTime,
           checkInTime: att.checkInTime,
           method: att.method,
           rank: (rank || 0) + 1, // 1st, 2nd, etc.

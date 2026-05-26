@@ -47,14 +47,33 @@ npm install
 ```
 
 ### 2. การกำหนดค่าระบบ (Environment Configuration)
-Create a `.env` file in the root directory and specify the following keys:
+Create a `.env` file in the root directory. You can copy the production template and fill out the values:
+```bash
+cp .env.production.example .env
+```
+
+The core required keys in `.env` are:
 ```env
-DATABASE_URL="postgresql://[user]:[password]@[host]:5432/[dbname]?sslmode=require"
-NEXTAUTH_SECRET="your-super-secure-nextauth-secret"
+# Database Connection (Required for Drizzle ORM)
+DATABASE_URL="postgresql://activecamt_admin:securepassword@localhost:5432/activecamt_prod?sslmode=require"
+
+# NextAuth v5 Configuration
+AUTH_SECRET="your-super-secure-nextauth-secret"
+AUTH_URL="http://localhost:3000/api/auth"
+
+# Google OAuth Credentials (Get these from Google Cloud Console)
 AUTH_GOOGLE_ID="your-google-oauth-client-id"
 AUTH_GOOGLE_SECRET="your-google-oauth-client-secret"
-NEXTAUTH_URL="http://localhost:3000"
+
+# Self-Hosted PostgreSQL Configuration (Docker-compose database container)
+POSTGRES_USER="activecamt_admin"
+POSTGRES_PASSWORD="securepassword"
+POSTGRES_DB="activecamt_prod"
 ```
+
+> [!NOTE]
+> For a detailed step-by-step tutorial on **"How to Get Each Key"** (generating secure session secrets and setting up Google OAuth Client Credentials specifically for your university domain), please refer directly to the **[Production Environment Variables Template Guide (.env.production.example)](./.env.production.example)**.
+
 
 ### 3. การจัดการฐานข้อมูล (Database Migrations & Operations)
 Drizzle commands are configured to manage PostgreSQL schemas seamlessly:

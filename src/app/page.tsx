@@ -16,7 +16,7 @@ export default async function Home() {
   // Already authenticated: admins always go to dashboard, 
   // others go to dashboard if complete, onboarding if not.
   if (session?.user) {
-    const user = session.user as any;
+    const user = session.user;
     if (user.role === "admin" || user.profileCompleted) {
       redirect("/dashboard");
     } else {

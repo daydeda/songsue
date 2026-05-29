@@ -6,16 +6,48 @@ import { Calendar, History, Trophy, ArrowRight, X, Star, CheckCircle2, Clipboard
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
 
+interface HistoryItem {
+  id: string;
+  eventId: string;
+  eventImageUrl: string | null;
+  eventTitle: string;
+  checkInTime: string | null;
+  eventStartTime: string;
+  eventEndTime?: string;
+  eventQuota: number | null;
+  rank: number;
+  formStatus: "none" | "available" | "submitted" | "closed";
+  formId?: string | null;
+  formPoints?: number;
+  method?: string | null;
+}
+
+interface Question {
+  id: string;
+  type: "text" | "rating" | "multiple" | "choice";
+  label: string;
+  required?: boolean;
+  options?: string[];
+}
+
+interface ActiveForm {
+  id: string;
+  eventId: string;
+  title: string;
+  description: string | null;
+  questions: Question[];
+}
+
 export default function HistoryPage() {
   const { lang, t } = useLanguage();
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Form states for student submission
   const [showStudentForm, setShowStudentForm] = useState(false);
-  const [activeForm, setActiveForm] = useState<any | null>(null);
+  const [activeForm, setActiveForm] = useState<ActiveForm | null>(null);
   const [formLoading, setFormLoading] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [answers, setAnswers] = useState<Record<string, string | number | string[]>>({});
   const [submitting, setSubmitting] = useState(false);
   
   // Custom premium validation/alert states
@@ -36,7 +68,10 @@ export default function HistoryPage() {
   };
 
   useEffect(() => {
-    fetchHistory();
+    const timer = setTimeout(() => {
+      fetchHistory();
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const openStudentForm = async (eventId: string, eventTitle: string) => {
@@ -67,8 +102,8 @@ export default function HistoryPage() {
           return;
         }
         setActiveForm({ ...data.form, eventId });
-        const initialAnswers: Record<string, any> = {};
-        data.form.questions.forEach((q: any) => {
+        const initialAnswers: Record<string, string | number | string[]> = {};
+        data.form.questions.forEach((q: Question) => {
           initialAnswers[q.id] = q.type === "rating" ? 5 : q.type === "multiple" ? [] : "";
         });
         setAnswers(initialAnswers);
@@ -481,7 +516,7 @@ export default function HistoryPage() {
                   )}
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                    {activeForm?.questions.map((q: any) => (
+                    {activeForm?.questions.map((q: Question) => (
                       <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         <label style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
                           {q.label === "Overall Satisfaction" ? t.overallSatisfaction : q.label} {q.required && <span style={{ color: "#ef4444" }}>*</span>}
@@ -491,7 +526,8 @@ export default function HistoryPage() {
                           <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
                             {Array.from({ length: 5 }).map((_, starIdx) => {
                               const ratingValue = starIdx + 1;
-                              const isSelected = ratingValue <= (answers[q.id] || 0);
+                              const ansVal = answers[q.id];
+                              const isSelected = ratingValue <= (typeof ansVal === "number" ? ansVal : typeof ansVal === "string" ? parseInt(ansVal) || 0 : 0);
                               return (
                                 <button
                                   key={starIdx}
@@ -569,7 +605,7 @@ export default function HistoryPage() {
                         ) : q.type === "multiple" ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "8px 0" }}>
                             {q.options?.map((opt: string, optIdx: number) => {
-                              const currentSelections = Array.isArray(answers[q.id]) ? answers[q.id] : [];
+                              const currentSelections = (Array.isArray(answers[q.id]) ? answers[q.id] : []) as string[];
                               const isSelected = currentSelections.includes(opt);
                               return (
                                 <label

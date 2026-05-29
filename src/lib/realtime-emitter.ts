@@ -14,15 +14,15 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export const realtimeEmitter = {
-  on(event: string, listener: (...args: any[]) => void) {
+  on(event: string, listener: (...args: unknown[]) => void) {
     emitter.on(event, listener);
   },
 
-  off(event: string, listener: (...args: any[]) => void) {
+  off(event: string, listener: (...args: unknown[]) => void) {
     emitter.off(event, listener);
   },
 
-  emit(event: string, payload: any) {
+  emit(event: string, payload: unknown) {
     // 1. Emit locally in the same thread first
     emitter.emit(event, payload);
 

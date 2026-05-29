@@ -11,7 +11,11 @@ export function AdminLayoutWrapper({
   user 
 }: { 
   children: React.ReactNode; 
-  user: any;
+  user: {
+    name?: string | null;
+    image?: string | null;
+    role?: string | null;
+  };
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 

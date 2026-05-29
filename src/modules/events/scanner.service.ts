@@ -6,6 +6,8 @@ import { EventsService } from "./events.service";
 import { AuditService } from "../audit/audit.service";
 import { realtimeEmitter } from "@/lib/realtime-emitter";
 
+type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
+
 export interface ScanResult {
   status: "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "not_found" | "quota_full" | "walk_ins_disabled";
   student: {
@@ -76,7 +78,7 @@ export class ScannerService {
       nickname: student.nickname,
       studentId: student.studentId,
       house: student.house?.name ?? "UNASSIGNED",
-      houseColor: (student.house as any)?.color ?? "#6366f1",
+      houseColor: student.house?.color ?? "#6366f1",
       hasMedicalCondition,
       chronicDiseases: student.chronicDiseases,
       medicalHistory: student.medicalHistory,
@@ -234,7 +236,7 @@ export class ScannerService {
   /**
    * Evaluates if raw text is a valid medical condition (PDPA evaluation)
    */
-  private static evaluateMedicalCondition(student: any): boolean {
+  private static evaluateMedicalCondition(student: ResolvedStudent): boolean {
     const checkMedical = (val?: string | null) => {
       if (!val) return false;
       const clean = val.trim().toLowerCase();

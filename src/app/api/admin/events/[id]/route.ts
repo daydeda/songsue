@@ -11,11 +11,15 @@ const eventUpdateSchema = z.object({
   description: z.string().optional(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
-  quota: z.number().int().positive().optional(),
+  quota: z.number().int().min(0).optional(),
   location: z.string().optional(),
   pointsAwarded: z.number().int().min(0).optional(),
   imageUrl: z.string().optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
+  targetThai: z.boolean().optional(),
+  targetInternational: z.boolean().optional(),
+  quotaThai: z.number().int().min(0).optional().nullable(),
+  quotaInternational: z.number().int().min(0).optional().nullable(),
 });
 
 // PUT /api/admin/events/[id] — Update event
@@ -25,7 +29,7 @@ export async function PUT(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -45,6 +49,10 @@ export async function PUT(
         ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
         ...(data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled }),
+        ...(data.targetThai !== undefined && { targetThai: data.targetThai }),
+        ...(data.targetInternational !== undefined && { targetInternational: data.targetInternational }),
+        ...(data.quotaThai !== undefined && { quotaThai: data.quotaThai }),
+        ...(data.quotaInternational !== undefined && { quotaInternational: data.quotaInternational }),
         updatedAt: new Date(),
       })
       .where(eq(events.id, id))
@@ -82,7 +90,7 @@ export async function DELETE(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -113,9 +121,9 @@ export async function DELETE(
     });
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
-    if (error.message === "Event not found") {
+    if (error instanceof Error && error.message === "Event not found") {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

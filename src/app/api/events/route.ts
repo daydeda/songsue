@@ -21,6 +21,32 @@ export async function GET() {
       orderBy: (events, { asc }) => [asc(events.startTime)],
     });
 
+    const studentId = session.user.studentId || "";
+    const cleanId = studentId.trim();
+    let isThai = true;
+    let isIntl = false;
+    
+    if (cleanId.length >= 3) {
+      const lastThreeDigitFirst = cleanId.slice(-3)[0];
+      if (lastThreeDigitFirst === "5") {
+        isThai = false;
+        isIntl = true;
+      }
+    }
+
+    const eligibleEvents = allEvents.filter((event) => {
+      const targetThai = event.targetThai ?? true;
+      const targetInternational = event.targetInternational ?? true;
+      
+      // If both targets are unchecked, it means anyone can join (default to both true)
+      const effectiveThai = (!targetThai && !targetInternational) ? true : targetThai;
+      const effectiveIntl = (!targetThai && !targetInternational) ? true : targetInternational;
+      
+      if (isThai && !effectiveThai) return false;
+      if (isIntl && !effectiveIntl) return false;
+      return true;
+    });
+
     // For each event, check if the current user is registered
     const userId = session.user.id!;
     const userAttendances = await db.query.attendance.findMany({
@@ -30,7 +56,7 @@ export async function GET() {
 
     const attendanceMap = new Map(userAttendances.map((a) => [a.eventId, a.status]));
 
-    const enrichedEvents = allEvents.map((event) => ({
+    const enrichedEvents = eligibleEvents.map((event) => ({
       ...event,
       isRegistered: attendanceMap.has(event.id),
       attendanceStatus: attendanceMap.get(event.id) || null,

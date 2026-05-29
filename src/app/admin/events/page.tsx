@@ -11,6 +11,95 @@ import {
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
 
+interface AdminEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  startTime: string;
+  endTime: string;
+  quota: number | null;
+  pointsAwarded: number;
+  imageUrl: string | null;
+  walkInsEnabled: boolean;
+  targetThai: boolean;
+  targetInternational: boolean;
+  quotaThai: number | null;
+  quotaInternational: number | null;
+  attendeeCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface EmergencyContact {
+  name: string;
+  relationship: string;
+  phone: string;
+}
+
+interface AdminStudent {
+  id: string;
+  name: string;
+  nickname: string | null;
+  studentId: string | null;
+  email: string;
+  phone: string | null;
+  major: string | null;
+  religion: string | null;
+  contactChannels: string | null;
+  chronicDiseases: string | null;
+  medicalHistory: string | null;
+  drugAllergies: string | null;
+  foodAllergies: string | null;
+  dietaryRestrictions: string | null;
+  faintingHistory: boolean | null;
+  emergencyMedication: string | null;
+  emergencyContacts: EmergencyContact[];
+  houseId: string | null;
+  house: { name: string; color: string } | null;
+}
+
+interface AdminAttendance {
+  id: string;
+  eventId: string;
+  studentId: string;
+  checkInTime: string | null;
+  method: string | null;
+  status: string;
+  scannedBy: string | null;
+  medsCheckOption: string | null;
+  user?: AdminStudent;
+}
+
+interface FormBuilderQuestion {
+  id: string;
+  type: "text" | "rating" | "multiple" | "choice";
+  label: string;
+  required?: boolean;
+  options?: string[];
+}
+
+interface FormBuilderSubmission {
+  id: string;
+  studentName: string;
+  studentId: string;
+  houseId: string;
+  answers: Record<string, string | number | string[]>;
+  submittedAt: string;
+}
+
+interface FormBuilderStats {
+  totalSubmissions: number;
+  questions: Array<{
+    id: string;
+    label: string;
+    type: string;
+    average?: number;
+    distribution?: Record<string, number>;
+    textAnswers?: string[];
+  }>;
+}
+
 const EMPTY_FORM = {
   title: "",
   description: "",
@@ -20,12 +109,16 @@ const EMPTY_FORM = {
   quota: 0,
   pointsAwarded: 0,
   imageUrl: "",
-  walkInsEnabled: false
+  walkInsEnabled: false,
+  targetThai: true,
+  targetInternational: true,
+  quotaThai: null as number | null,
+  quotaInternational: null as number | null
 };
 
 export default function AdminEventsPage() {
   const { t, lang } = useLanguage();
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
@@ -38,11 +131,13 @@ export default function AdminEventsPage() {
 
   // Attendance tracking
   const [showAttendance, setShowAttendance] = useState(false);
-  const [attendance, setAttendance] = useState<any[]>([]);
+  const [attendance, setAttendance] = useState<AdminAttendance[]>([]);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
-  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
+  const [filterThai, setFilterThai] = useState(true);
+  const [filterInternational, setFilterInternational] = useState(true);
 
   // Custom Form Builder states
   const [showFormBuilder, setShowFormBuilder] = useState(false);
@@ -52,11 +147,11 @@ export default function AdminEventsPage() {
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formPoints, setFormPoints] = useState(50);
-  const [formQuestions, setFormQuestions] = useState<any[]>([]);
+  const [formQuestions, setFormQuestions] = useState<FormBuilderQuestion[]>([]);
   const [formIsActive, setFormIsActive] = useState(true);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
-  const [formStats, setFormStats] = useState<any>(null);
-  const [formSubmissions, setFormSubmissions] = useState<any[]>([]);
+  const [formStats, setFormStats] = useState<Record<string, number> | null>(null);
+  const [formSubmissions, setFormSubmissions] = useState<FormBuilderSubmission[]>([]);
   const [formAwarding, setFormAwarding] = useState(false);
   const [formSaving, setFormSaving] = useState(false);
   const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
@@ -65,6 +160,35 @@ export default function AdminEventsPage() {
   const [formBuilderError, setFormBuilderError] = useState<string | null>(null);
   const [formBuilderSuccess, setFormBuilderSuccess] = useState<string | null>(null);
   const [showAwardConfirm, setShowAwardConfirm] = useState(false);
+
+  // Custom premium modals for confirmation and errors
+  const [confirmModal, setConfirmModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+  }>({
+    show: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    confirmText: "",
+    cancelText: "",
+    isDanger: false
+  });
+
+  const [errorModal, setErrorModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+  }>({
+    show: false,
+    title: "",
+    message: ""
+  });
 
   const openFormBuilder = async (eventId: string, eventTitle: string) => {
     setFormEventId(eventId);
@@ -235,7 +359,7 @@ export default function AdminEventsPage() {
   };
 
   const addQuestion = () => {
-    const newQ = {
+    const newQ: FormBuilderQuestion = {
       id: "q_" + Date.now(),
       type: "text",
       label: "New Question",
@@ -248,10 +372,10 @@ export default function AdminEventsPage() {
     setFormQuestions(formQuestions.filter(q => q.id !== qId));
   };
 
-  const updateQuestion = (qId: string, key: string, val: any) => {
+  const updateQuestion = (qId: string, key: string, val: string | boolean | string[]) => {
     setFormQuestions(formQuestions.map(q => {
       if (q.id === qId) {
-        let updated = { ...q, [key]: val };
+        const updated = { ...q, [key]: val };
         // If type changed to choice or multiple and options don't exist, initialize default options
         if (key === "type" && (val === "choice" || val === "multiple") && !updated.options) {
           updated.options = ["Option 1", "Option 2"];
@@ -276,7 +400,7 @@ export default function AdminEventsPage() {
   const removeOption = (qId: string, optIdx: number) => {
     setFormQuestions(formQuestions.map(q => {
       if (q.id === qId) {
-        const opts = q.options ? q.options.filter((_: any, idx: number) => idx !== optIdx) : [];
+        const opts = q.options ? q.options.filter((_, idx: number) => idx !== optIdx) : [];
         return { ...q, options: opts };
       }
       return q;
@@ -294,7 +418,7 @@ export default function AdminEventsPage() {
     }));
   };
 
-  const hasActualMedicalInfo = (user: any) => {
+  const hasActualMedicalInfo = (user: AdminStudent | null | undefined) => {
     if (!user) return false;
     const fields = [
       user.chronicDiseases,
@@ -304,7 +428,7 @@ export default function AdminEventsPage() {
       user.dietaryRestrictions,
       user.emergencyMedication
     ];
-    const isMeaningful = (val: any) => {
+    const isMeaningful = (val: string | boolean | null | undefined) => {
       if (typeof val !== 'string') return !!val;
       const t = val.trim();
       return t !== "" && t !== "-";
@@ -313,32 +437,6 @@ export default function AdminEventsPage() {
   };
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    fetchEvents();
-
-    // Establish Server-Sent Events (SSE) Real-time subscription
-    const eventSource = new EventSource("/api/realtime");
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (
-          payload.type === "event_created" ||
-          payload.type === "event_updated" ||
-          payload.type === "event_deleted"
-        ) {
-          fetchEvents(); // Live update the events listing!
-        }
-      } catch (err) {
-        console.error("SSE parse error in events admin page:", err);
-      }
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
 
   const fetchEvents = async () => {
     try {
@@ -360,15 +458,45 @@ export default function AdminEventsPage() {
     }
   };
 
-  const set = (key: string, val: any) => setFormData({ ...formData, [key]: val });
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    timer = setTimeout(() => {
+      fetchEvents();
+    }, 0);
+
+    // Establish Server-Sent Events (SSE) Real-time subscription
+    const eventSource = new EventSource("/api/realtime");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (
+          payload.type === "event_created" ||
+          payload.type === "event_updated" ||
+          payload.type === "event_deleted"
+        ) {
+          fetchEvents(); // Live update the events listing!
+        }
+      } catch (err) {
+        console.error("SSE parse error in events admin page:", err);
+      }
+    };
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      eventSource.close();
+    };
+  }, []);
+
+  const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 
   const lastInjectedRange = useRef<{ start: number, end: number } | null>(null);
 
   const injectMarkup = (prefix: string, suffix: string) => {
     if (!textareaRef.current) return;
     const el = textareaRef.current;
-    let start = el.selectionStart;
-    let end = el.selectionEnd;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
     const text = el.value;
     const selected = text.substring(start, end);
     const before = text.substring(0, start);
@@ -401,9 +529,9 @@ export default function AdminEventsPage() {
       const nextTagEnd = after.indexOf("}}");
       const nextTagStart = after.indexOf("{{color:");
 
-      let isInside = (lastTagStart > -1 && (lastTagEnd === -1 || lastTagEnd < lastTagStart));
-      let actualTagStart = lastTagStart;
-      let actualTagEnd = end + nextTagEnd + 2;
+      const isInside = (lastTagStart > -1 && (lastTagEnd === -1 || lastTagEnd < lastTagStart));
+      const actualTagStart = lastTagStart;
+      const actualTagEnd = end + nextTagEnd + 2;
 
       if (isInside && nextTagEnd > -1 && (nextTagStart === -1 || nextTagStart > nextTagEnd)) {
         const tagFullText = text.substring(actualTagStart, actualTagEnd);
@@ -492,28 +620,63 @@ export default function AdminEventsPage() {
       } else {
         const err = await res.json();
         setError(err.error || "Failed to save event");
+        setErrorModal({
+          show: true,
+          title: lang === "th" ? "การบันทึกข้อมูลล้มเหลว" : "Save Failed",
+          message: err.error || (lang === "th" ? "ไม่สามารถบันทึกข้อมูลกิจกรรมได้" : "Failed to save event details.")
+        });
       }
     } catch (err) {
       setError("Something went wrong");
+      setErrorModal({
+        show: true,
+        title: lang === "th" ? "เกิดข้อผิดพลาด" : "System Error",
+        message: lang === "th" ? "เกิดข้อผิดพลาดบางอย่างกรุณาลองใหม่อีกครั้ง" : "Something went wrong. Please try again."
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure? This will also delete all attendance records for this event.")) return;
-    setDeletingId(id);
-    try {
-      const res = await fetch(`/api/admin/events/${id}`, { method: "DELETE" });
-      if (res.ok) fetchEvents();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setDeletingId(null);
-    }
+  const handleDelete = (id: string) => {
+    setConfirmModal({
+      show: true,
+      title: lang === "th" ? "คุณแน่ใจหรือไม่?" : "Are you sure?",
+      message: lang === "th" 
+        ? "การดำเนินการนี้จะลบกิจกรรมและบันทึกการเช็คอินทั้งหมดของกิจกรรมนี้อย่างถาวร!" 
+        : "This will permanently delete this event and all associated attendance records!",
+      confirmText: lang === "th" ? "ลบกิจกรรม" : "Delete Event",
+      cancelText: lang === "th" ? "ยกเลิก" : "Cancel",
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, show: false }));
+        setDeletingId(id);
+        try {
+          const res = await fetch(`/api/admin/events/${id}`, { method: "DELETE" });
+          if (res.ok) {
+            fetchEvents();
+          } else {
+            const err = await res.json();
+            setErrorModal({
+              show: true,
+              title: lang === "th" ? "การลบล้มเหลว" : "Delete Failed",
+              message: err.error || (lang === "th" ? "ไม่สามารถลบกิจกรรมได้" : "Failed to delete event")
+            });
+          }
+        } catch (err) {
+          setErrorModal({
+            show: true,
+            title: lang === "th" ? "เกิดข้อผิดพลาด" : "Error Occurred",
+            message: lang === "th" ? "เกิดข้อผิดพลาดบางอย่าง" : "Something went wrong"
+          });
+        } finally {
+          setDeletingId(null);
+        }
+      }
+    });
   };
 
-  const handleEdit = (evt: any) => {
+  const handleEdit = (evt: AdminEvent) => {
     const toLocal = (iso: string) => {
       const d = new Date(iso);
       const offset = d.getTimezoneOffset() * 60000;
@@ -529,7 +692,11 @@ export default function AdminEventsPage() {
       quota: evt.quota || 0,
       pointsAwarded: evt.pointsAwarded || 0,
       imageUrl: evt.imageUrl || "",
-      walkInsEnabled: evt.walkInsEnabled || false
+      walkInsEnabled: evt.walkInsEnabled || false,
+      targetThai: evt.targetThai !== false,
+      targetInternational: evt.targetInternational !== false,
+      quotaThai: evt.quotaThai || null,
+      quotaInternational: evt.quotaInternational || null
     });
     setEditingId(evt.id);
     setShowForm(true);
@@ -541,6 +708,8 @@ export default function AdminEventsPage() {
     setShowAttendance(true);
     setLoadingAttendance(true);
     setFilterMedical(false);
+    setFilterThai(true);
+    setFilterInternational(true);
     try {
       const res = await fetch(`/api/admin/events/${eventId}/attendance`);
       const data = await res.json();
@@ -553,13 +722,38 @@ export default function AdminEventsPage() {
   };
 
   const filteredAttendance = attendance.filter((m) => {
-    if (filterMedical) {
-      return hasActualMedicalInfo(m.user);
+    if (filterMedical && !hasActualMedicalInfo(m.user)) {
+      return false;
     }
+    
+    const studentId = m.user?.studentId || "";
+    const cleanId = studentId.trim();
+    
+    let isThai = true;
+    let isIntl = false;
+    
+    if (cleanId.length >= 3) {
+      const lastThreeDigitFirst = cleanId.slice(-3)[0];
+      if (lastThreeDigitFirst === "5") {
+        isThai = false;
+        isIntl = true;
+      } else if (["0", "1", "2", "3", "4"].includes(lastThreeDigitFirst)) {
+        isThai = true;
+        isIntl = false;
+      }
+    }
+    
+    if (!filterThai && isThai) {
+      return false;
+    }
+    if (!filterInternational && isIntl) {
+      return false;
+    }
+    
     return true;
   });
 
-  const groupedAttendance = filteredAttendance.reduce((acc: any, curr: any) => {
+  const groupedAttendance = filteredAttendance.reduce((acc: Record<string, AdminAttendance[]>, curr: AdminAttendance) => {
     const houseName = curr.user?.house?.name || "Unassigned";
     if (!acc[houseName]) acc[houseName] = [];
     acc[houseName].push(curr);
@@ -581,7 +775,7 @@ export default function AdminEventsPage() {
     return matchesSearch;
   }) : [];
 
-  const getEventStatus = (evt: any) => {
+  const getEventStatus = (evt: AdminEvent) => {
     const now = new Date();
     if (now >= new Date(evt.startTime) && now <= new Date(evt.endTime)) return "live";
     if (now > new Date(evt.endTime)) return "past";
@@ -674,7 +868,7 @@ export default function AdminEventsPage() {
                 justifyContent: "space-between",
                 gap: 16
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <button
                     onClick={() => setFilterMedical(!filterMedical)}
                     style={{
@@ -695,11 +889,57 @@ export default function AdminEventsPage() {
                     <HeartPulse size={16} />
                     {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
                   </button>
+
+                  <label style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: filterThai ? "var(--text-primary)" : "var(--text-muted)",
+                    cursor: "pointer",
+                    padding: "8px 16px",
+                    borderRadius: 99,
+                    background: filterThai ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
+                    border: filterThai ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                    transition: "all 0.2s"
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={filterThai}
+                      onChange={(e) => setFilterThai(e.target.checked)}
+                      style={{ accentColor: "var(--accent-primary)", width: 15, height: 15, cursor: "pointer" }}
+                    />
+                    Thai Students
+                  </label>
+
+                  <label style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: filterInternational ? "var(--text-primary)" : "var(--text-muted)",
+                    cursor: "pointer",
+                    padding: "8px 16px",
+                    borderRadius: 99,
+                    background: filterInternational ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
+                    border: filterInternational ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                    transition: "all 0.2s"
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={filterInternational}
+                      onChange={(e) => setFilterInternational(e.target.checked)}
+                      style={{ accentColor: "var(--accent-primary)", width: 15, height: 15, cursor: "pointer" }}
+                    />
+                    International Students
+                  </label>
                 </div>
-                {filterMedical && (
-                  <p style={{ fontSize: 13, color: "#ef4444", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                {(filterMedical || !filterThai || !filterInternational) && (
+                  <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
-                    Filtering {filteredAttendance.length} of {attendance.length} checked-in students
+                    Filtered: Showing {filteredAttendance.length} of {attendance.length} students
                   </p>
                 )}
               </div>
@@ -760,7 +1000,7 @@ export default function AdminEventsPage() {
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                    {Object.entries(groupedAttendance).map(([house, members]: [string, any]) => (
+                    {Object.entries(groupedAttendance).map(([house, members]: [string, AdminAttendance[]]) => (
                       <div key={house}>
                         <div style={{
                           display: "flex",
@@ -787,7 +1027,7 @@ export default function AdminEventsPage() {
                           </span>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-                          {members.map((m: any) => (
+                          {members.map((m: AdminAttendance) => (
                             <div key={m.id} className="attendance-card" style={{
                               padding: "20px",
                               background: "var(--bg-surface)",
@@ -822,7 +1062,7 @@ export default function AdminEventsPage() {
                                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                     <Clock size={12} className="text-muted" />
                                     <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
-                                      {new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })}
+                                      {m.checkInTime ? new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : "-"}
                                     </p>
                                   </div>
                                 </div>
@@ -885,7 +1125,7 @@ export default function AdminEventsPage() {
                                 <button
                                   className="btn btn-ghost"
                                   style={{ padding: 8, borderRadius: 10 }}
-                                  onClick={() => setSelectedStudent(m.user)}
+                                  onClick={() => setSelectedStudent(m.user || null)}
                                 >
                                   <Info size={18} />
                                 </button>
@@ -1003,7 +1243,7 @@ export default function AdminEventsPage() {
               {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (
                 <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
                   <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Emergency Contact</p>
-                  {selectedStudent.emergencyContacts.map((c: any, i: number) => (
+                  {selectedStudent.emergencyContacts.map((c: EmergencyContact, i: number) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div>
                         <p style={{ fontWeight: 700, fontSize: 14 }}>{c.name} ({c.relationship})</p>
@@ -1105,7 +1345,7 @@ export default function AdminEventsPage() {
 
           <h2 style={{ fontSize: 28, fontWeight: 900, marginBottom: 40, display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ width: 12, height: 32, background: "var(--accent-primary)", borderRadius: 6 }} />
-            {editingId ? "Edit Event Intelligence" : "Define New Event"}
+            {editingId ? t.editEventTitle : t.newEventTitle}
           </h2>
 
           <form onSubmit={handleSubmit} className="relative">
@@ -1113,20 +1353,20 @@ export default function AdminEventsPage() {
               {/* Left Column: Basic Info */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 <div className="field">
-                  <label className="label">Event Title <span style={{ color: "var(--accent-primary)" }}>*</span></label>
+                  <label className="label">{t.eventTitleLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
                   <input className="input" required value={formData.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. IT Freshy Night 2026" style={{ fontSize: 16, padding: "16px 20px", borderRadius: 16 }} />
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div className="field">
-                    <label className="label">Location</label>
+                    <label className="label">{t.eventLocationLabel}</label>
                     <div style={{ position: "relative" }}>
                       <MapPin size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
                       <input className="input" value={formData.location} onChange={(e) => set("location", e.target.value)} placeholder="CAMT Auditorium" style={{ paddingLeft: 44 }} />
                     </div>
                   </div>
                   <div className="field">
-                    <label className="label">Points Awarded</label>
+                    <label className="label">{t.eventPointsLabel}</label>
                     <div style={{ position: "relative" }}>
                       <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
                       <input className="input" type="number" min={0} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
@@ -1136,7 +1376,7 @@ export default function AdminEventsPage() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div className="field">
-                    <label className="label">Start Time <span style={{ color: "var(--accent-primary)" }}>*</span></label>
+                    <label className="label">{t.eventStartTimeLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
                     <input
                       className="input"
                       required
@@ -1158,17 +1398,17 @@ export default function AdminEventsPage() {
                     />
                   </div>
                   <div className="field">
-                    <label className="label">End Time <span style={{ color: "var(--accent-primary)" }}>*</span></label>
+                    <label className="label">{t.eventEndTimeLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
                     <input className="input" required type="datetime-local" lang="en-GB" value={formData.endTime} onChange={(e) => set("endTime", e.target.value)} />
                   </div>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div className="field">
-                    <label className="label">Participant Quota</label>
+                    <label className="label">{t.eventQuotaLabel}</label>
                     <div style={{ position: "relative" }}>
                       <Users size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-                      <input className="input" type="number" min={1} value={formData.quota} onChange={(e) => set("quota", Number(e.target.value))} placeholder="Unlimited if 0" style={{ paddingLeft: 44 }} />
+                      <input className="input" type="number" min={1} value={formData.quota} onChange={(e) => set("quota", Number(e.target.value))} placeholder={t.unlimitedIfZero} style={{ paddingLeft: 44 }} />
                     </div>
                   </div>
 
@@ -1203,17 +1443,207 @@ export default function AdminEventsPage() {
                         {formData.walkInsEnabled && <CheckCircle2 size={16} color="white" />}
                       </div>
                       <span style={{ fontSize: 14, fontWeight: 700, color: formData.walkInsEnabled ? "var(--text-primary)" : "var(--text-secondary)" }}>
-                        Allow Walk-ins
+                        {t.allowWalkins}
                       </span>
                     </div>
                   </div>
+                </div>
+
+                <div className="field" style={{ marginTop: 20 }}>
+                  <label className="label">{t.targetAudience}</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                    <div
+                      onClick={() => {
+                        const nextVal = !formData.targetThai;
+                        setFormData({
+                          ...formData,
+                          targetThai: nextVal,
+                          ...(!nextVal && { quotaThai: null })
+                        });
+                      }}
+                      style={{
+                        height: 48,
+                        background: "var(--bg-elevated)",
+                        borderRadius: 16,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "0 16px",
+                        cursor: "pointer",
+                        border: formData.targetThai ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                        transition: "all 0.2s"
+                      }}
+                    >
+                      <div style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 6,
+                        border: "2px solid var(--border-medium)",
+                        background: formData.targetThai ? "var(--accent-primary)" : "transparent",
+                        borderColor: formData.targetThai ? "var(--accent-primary)" : "var(--border-medium)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.1s"
+                      }}>
+                        {formData.targetThai && <CheckCircle2 size={16} color="white" />}
+                      </div>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: formData.targetThai ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                        {t.thaiStudents}
+                      </span>
+                    </div>
+
+                    <div
+                      onClick={() => {
+                        const nextVal = !formData.targetInternational;
+                        setFormData({
+                          ...formData,
+                          targetInternational: nextVal,
+                          ...(!nextVal && { quotaInternational: null })
+                        });
+                      }}
+                      style={{
+                        height: 48,
+                        background: "var(--bg-elevated)",
+                        borderRadius: 16,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "0 16px",
+                        cursor: "pointer",
+                        border: formData.targetInternational ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                        transition: "all 0.2s"
+                      }}
+                    >
+                      <div style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 6,
+                        border: "2px solid var(--border-medium)",
+                        background: formData.targetInternational ? "var(--accent-primary)" : "transparent",
+                        borderColor: formData.targetInternational ? "var(--accent-primary)" : "var(--border-medium)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.1s"
+                      }}>
+                        {formData.targetInternational && <CheckCircle2 size={16} color="white" />}
+                      </div>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: formData.targetInternational ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                        {t.internationalStudents}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cohort Quota Limits */}
+                  {(formData.targetThai || formData.targetInternational) && (
+                    <div style={{ 
+                      display: "grid", 
+                      gridTemplateColumns: formData.targetThai && formData.targetInternational ? "1fr 1fr" : "1fr", 
+                      gap: 20, 
+                      marginTop: 20 
+                    }}>
+                      {formData.targetThai && (
+                        <div className="field">
+                          <label className="label">{t.thaiStudentQuota}</label>
+                          <div style={{ position: "relative" }}>
+                            <Users size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                            <input 
+                              className="input" 
+                              type="number" 
+                              min={1} 
+                              value={formData.quotaThai || ""} 
+                              onChange={(e) => set("quotaThai", e.target.value ? Number(e.target.value) : null)} 
+                              placeholder={t.unlimitedIfEmpty} 
+                              style={{ paddingLeft: 44 }} 
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.targetInternational && (
+                        <div className="field">
+                          <label className="label">{t.intlStudentQuota}</label>
+                          <div style={{ position: "relative" }}>
+                            <Users size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                            <input 
+                              className="input" 
+                              type="number" 
+                              min={1} 
+                              value={formData.quotaInternational || ""} 
+                              onChange={(e) => set("quotaInternational", e.target.value ? Number(e.target.value) : null)} 
+                              placeholder={t.unlimitedIfEmpty} 
+                              style={{ paddingLeft: 44 }} 
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Quota Conflicts Warning */}
+                  {(() => {
+                    const warnings: string[] = [];
+                    const globalLimit = Number(formData.quota) || 0;
+                    const thaiLimit = formData.targetThai ? (Number(formData.quotaThai) || 0) : 0;
+                    const intlLimit = formData.targetInternational ? (Number(formData.quotaInternational) || 0) : 0;
+
+                    if (globalLimit > 0) {
+                      if (formData.targetThai && thaiLimit > globalLimit) {
+                        warnings.push(
+                          lang === "th"
+                            ? `โควตาสำหรับนักศึกษาไทย (${thaiLimit}) มีจำนวนมากกว่าโควตาทั้งหมดของกิจกรรม (${globalLimit})`
+                            : `Thai student limit (${thaiLimit}) exceeds the overall Participant Quota (${globalLimit}).`
+                        );
+                      }
+                      if (formData.targetInternational && intlLimit > globalLimit) {
+                        warnings.push(
+                          lang === "th"
+                            ? `โควตาสำหรับนักศึกษาต่างชาติ (${intlLimit}) มีจำนวนมากกว่าโควตาทั้งหมดของกิจกรรม (${globalLimit})`
+                            : `International student limit (${intlLimit}) exceeds the overall Participant Quota (${globalLimit}).`
+                        );
+                      }
+                      if (formData.targetThai && formData.targetInternational && thaiLimit > 0 && intlLimit > 0 && (thaiLimit + intlLimit) > globalLimit) {
+                        warnings.push(
+                          lang === "th"
+                            ? `ผลรวมโควตาของนักศึกษาไทยและต่างชาติ (${thaiLimit + intlLimit}) มีจำนวนมากกว่าโควตาทั้งหมดของกิจกรรม (${globalLimit}) ทั้งนี้ ระบบจะปิดรับการลงทะเบียนเมื่อผู้สมัครเต็มตามจำนวนโควตาทั้งหมด (${globalLimit} คน)`
+                            : `The sum of Thai and International student limits (${thaiLimit + intlLimit}) exceeds the overall Participant Quota (${globalLimit}). The event will stop accepting registrations once the overall limit of ${globalLimit} is reached.`
+                        );
+                      }
+                    }
+                    if (warnings.length === 0) return null;
+
+                    return (
+                      <div style={{
+                        marginTop: 20,
+                        padding: "16px 20px",
+                        background: "rgba(245, 158, 11, 0.1)",
+                        border: "1px solid rgba(245, 158, 11, 0.2)",
+                        borderRadius: 16,
+                        color: "#f59e0b",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                        boxShadow: "0 4px 12px rgba(245, 158, 11, 0.05)"
+                      }}>
+                        {warnings.map((w, idx) => (
+                          <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2, color: "#f59e0b" }} />
+                            <span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
               {/* Right Column: Poster & Description */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 <div className="field">
-                  <label className="label">Event Poster</label>
+                  <label className="label">{t.eventPosterLabel}</label>
                   <div style={{
                     position: "relative",
                     height: 180,
@@ -1240,8 +1670,8 @@ export default function AdminEventsPage() {
                         <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bg-surface)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", color: "var(--text-muted)" }}>
                           <ImageIcon size={28} />
                         </div>
-                        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)" }}>Upload Poster</p>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>1:1 Aspect Ratio Recommended</p>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)" }}>{lang === "th" ? "อัปโหลดโปสเตอร์" : "Upload Poster"}</p>
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{lang === "th" ? "แนะนำขนาดอัตราส่วน 1:1" : "1:1 Aspect Ratio Recommended"}</p>
                       </div>
                     )}
                     <input
@@ -1266,7 +1696,7 @@ export default function AdminEventsPage() {
 
                 <div className="field">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <label className="label" style={{ marginBottom: 0 }}>Description</label>
+                    <label className="label" style={{ marginBottom: 0 }}>{t.eventDescriptionLabel}</label>
                     <div style={{ display: "flex", gap: 4, background: "var(--bg-elevated)", padding: 2, borderRadius: 10 }}>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("**", "**")}><Edit2 size={14} /></button>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("[", "](https://...)")}><ExternalLink size={14} /></button>
@@ -1283,7 +1713,7 @@ export default function AdminEventsPage() {
                       style={{ resize: "none", borderRadius: 16, background: "var(--bg-elevated)", border: "none", height: "100%", fontSize: 14, padding: 16 }}
                       value={formData.description}
                       onChange={(e) => set("description", e.target.value)}
-                      placeholder="Tell them about the event..."
+                      placeholder={lang === "th" ? "อธิบายรายละเอียดเกี่ยวกับกิจกรรม..." : "Tell them about the event..."}
                     />
                     <div
                       className="custom-scrollbar"
@@ -1298,8 +1728,8 @@ export default function AdminEventsPage() {
                         border: "1px solid var(--border-subtle)"
                       }}
                     >
-                      <p style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.05em" }}>Live Preview</p>
-                      <div dangerouslySetInnerHTML={{ __html: parseRichText(formData.description) || '<span style="color: var(--text-muted); font-style: italic;">No content yet...</span>' }} />
+                      <p style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.05em" }}>{lang === "th" ? "ตัวอย่างการแสดงผล" : "Live Preview"}</p>
+                      <div dangerouslySetInnerHTML={{ __html: parseRichText(formData.description) || `<span style="color: var(--text-muted); font-style: italic;">${lang === "th" ? "ยังไม่มีเนื้อหา..." : "No content yet..."}</span>` }} />
                     </div>
                   </div>
                 </div>
@@ -1311,9 +1741,9 @@ export default function AdminEventsPage() {
                 {error && <div style={{ color: "#ef4444", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} /> {error}</div>}
               </div>
               <div style={{ display: "flex", gap: 16 }}>
-                <button type="button" className="btn btn-ghost btn-lg" style={{ borderRadius: 16 }} onClick={() => setShowForm(false)}>Discard</button>
+                <button type="button" className="btn btn-ghost btn-lg" style={{ borderRadius: 16 }} onClick={() => setShowForm(false)}>{t.discardBtn}</button>
                 <button type="submit" className="btn btn-primary btn-lg" style={{ borderRadius: 16, minWidth: 200 }} disabled={submitting}>
-                  {submitting ? <><div className="spinner" /> Saving...</> : editingId ? "Update System" : "Activate Event"}
+                  {submitting ? <>{lang === "th" ? "กำลังบันทึก..." : "Saving..."}</> : editingId ? t.updateSystemBtn : t.activateEventBtn}
                 </button>
               </div>
             </div>
@@ -1380,13 +1810,26 @@ export default function AdminEventsPage() {
                   </div>
 
                   {/* Status Overlay */}
-                  <div style={{ position: "absolute", top: 28, right: 28, display: "flex", gap: 8 }}>
+                  <div style={{ position: "absolute", top: 28, right: 28, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                     {evt.walkInsEnabled && (
                       <div className="badge" style={{ background: "rgba(99, 102, 241, 0.2)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
                         <Zap size={12} style={{ marginRight: 4 }} />
                         Walk-in
                       </div>
                     )}
+                    {(evt.targetThai !== false && evt.targetInternational !== false) || (evt.targetThai === false && evt.targetInternational === false) ? (
+                      <div className="badge" style={{ background: "rgba(16, 185, 129, 0.2)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                        All Students
+                      </div>
+                    ) : evt.targetThai !== false ? (
+                      <div className="badge" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#3b82f6", border: "1px solid rgba(59, 130, 246, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                        Thai Only
+                      </div>
+                    ) : evt.targetInternational !== false ? (
+                      <div className="badge" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                        {"Int'l Only"}
+                      </div>
+                    ) : null}
                     {isLive && (
                       <div className="badge animate-pulse-glow" style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px" }}>
                         <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", marginRight: 6 }} />
@@ -1474,6 +1917,16 @@ export default function AdminEventsPage() {
                         transition: "width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)"
                       }} />
                     </div>
+                    {((evt.quotaThai !== null && evt.quotaThai > 0) || (evt.quotaInternational !== null && evt.quotaInternational > 0)) && (
+                      <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 11, fontWeight: 700, color: "var(--text-muted)" }}>
+                        {evt.quotaThai !== null && evt.quotaThai > 0 && (
+                          <span>Thai Limit: <strong style={{ color: "var(--text-secondary)" }}>{evt.quotaThai}</strong></span>
+                        )}
+                        {evt.quotaInternational !== null && evt.quotaInternational > 0 && (
+                          <span>{"Int'l Limit:"} <strong style={{ color: "var(--text-secondary)" }}>{evt.quotaInternational}</strong></span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                    {/* Actions */}
@@ -1902,7 +2355,7 @@ export default function AdminEventsPage() {
                                         className="btn btn-ghost"
                                         style={{ width: 36, height: 36, padding: 0, color: "#ef4444", borderRadius: 8, fontSize: 14, fontWeight: 800 }}
                                         onClick={() => removeOption(q.id, optIdx)}
-                                        disabled={q.options.length <= 1}
+                                        disabled={!q.options || q.options.length <= 1}
                                       >
                                         ✕
                                       </button>
@@ -2156,7 +2609,7 @@ export default function AdminEventsPage() {
                                         <div style={{ display: "flex", gap: 2, color: "#ffb000" }}>
                                           {Array.from({ length: 5 }).map((_, starIdx) => (
                                             <span key={starIdx} style={{ fontSize: 16 }}>
-                                              {starIdx < (parseInt(ans) || 0) ? "★" : "☆"}
+                                               {starIdx < (typeof ans === "number" ? ans : typeof ans === "string" ? parseInt(ans) || 0 : 0) ? "★" : "☆"}
                                             </span>
                                           ))}
                                         </div>
@@ -2274,6 +2727,135 @@ export default function AdminEventsPage() {
                 {formAwarding ? <div className="spinner w-4 h-4 border-2" /> : "Confirm & End"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium custom Confirm Modal */}
+      {confirmModal.show && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 1300,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setConfirmModal(prev => ({ ...prev, show: false }))}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "90%",
+            maxWidth: 440,
+            borderRadius: 28,
+            padding: 32,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: confirmModal.isDanger ? "rgba(239, 68, 68, 0.1)" : "rgba(255, 107, 0, 0.1)",
+              color: confirmModal.isDanger ? "#ef4444" : "var(--accent-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <AlertCircle size={28} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
+              {confirmModal.title}
+            </h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              {confirmModal.message}
+            </p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <button
+                className="btn btn-ghost"
+                style={{ flex: 1, height: 46, borderRadius: 12, fontSize: 14, fontWeight: 700 }}
+                onClick={() => setConfirmModal(prev => ({ ...prev, show: false }))}
+              >
+                {confirmModal.cancelText || "Cancel"}
+              </button>
+              <button
+                className="btn"
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 12,
+                  fontSize: 14,
+                  fontWeight: 800,
+                  background: confirmModal.isDanger 
+                    ? "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)" 
+                    : "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
+                  color: "#fff",
+                  border: "none",
+                  boxShadow: confirmModal.isDanger 
+                    ? "0 4px 14px rgba(239, 68, 68, 0.3)" 
+                    : "0 4px 14px rgba(255, 107, 0, 0.3)"
+                }}
+                onClick={confirmModal.onConfirm}
+              >
+                {confirmModal.confirmText || "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium custom Error Modal */}
+      {errorModal.show && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 1350,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setErrorModal(prev => ({ ...prev, show: false }))}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "90%",
+            maxWidth: 440,
+            borderRadius: 28,
+            padding: 32,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "rgba(239, 68, 68, 0.1)",
+              color: "#ef4444",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <X size={28} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
+              {errorModal.title}
+            </h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              {errorModal.message}
+            </p>
+            <button
+              className="btn btn-ghost"
+              style={{ width: "100%", height: 46, borderRadius: 12, fontSize: 14, fontWeight: 800, border: "1px solid var(--border-medium)" }}
+              onClick={() => setErrorModal(prev => ({ ...prev, show: false }))}
+            >
+              {lang === "th" ? "ปิด" : "Close"}
+            </button>
           </div>
         </div>
       )}

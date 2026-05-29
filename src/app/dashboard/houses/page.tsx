@@ -189,7 +189,7 @@ export default function HousesPage() {
                  House Insight
                </h3>
                <p style={{ fontSize: 15, lineHeight: 1.6, opacity: 0.9, fontWeight: 500 }}>
-                 Currently, <strong>{houses[0]?.name}</strong> is leading the competition. Every event registration and check-in contributes to your house's success!
+                 Currently, <strong>{houses[0]?.name}</strong> is leading the competition. Every event registration and check-in contributes to your house&apos;s success!
                </p>
             </div>
 

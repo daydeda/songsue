@@ -17,6 +17,8 @@ import {
   Trophy,
   ArrowRight,
   Settings,
+  X,
+  AlertCircle
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -36,13 +38,29 @@ type Event = {
   pointsAwarded?: number;
 };
 
+interface HouseItem {
+  id: string;
+  name: string;
+  color: string;
+  points: number;
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [registeringId, setRegisteringId] = useState<string | null>(null);
-  const [houses, setHouses] = useState<any[]>([]);
+  const [errorModal, setErrorModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+  }>({
+    show: false,
+    title: "",
+    message: "",
+  });
+  const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
   
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
@@ -108,7 +126,11 @@ export default function DashboardPage() {
     } else {
       const errorData = await res.json();
       const errorMsg = errorData.error || t.registrationFailed;
-      alert(`${t.registrationFailed}: ${errorMsg}`);
+      setErrorModal({
+        show: true,
+        title: t.registrationFailed,
+        message: errorMsg
+      });
     }
     setRegisteringId(null);
   };
@@ -124,10 +146,10 @@ export default function DashboardPage() {
     );
   }
 
-  const user = session?.user as any;
+  const user = session?.user;
   const houseId = user?.houseId ?? null;
   const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
-  const qrValue = (user as any)?.qrToken ?? user?.id ?? "no-token";
+  const qrValue = user?.qrToken ?? user?.id ?? "no-token";
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -136,7 +158,7 @@ export default function DashboardPage() {
   const upcoming = events.filter((e) => new Date(e.endTime) >= startOfToday);
   const past = events.filter((e) => new Date(e.endTime) < startOfToday);
 
-  const getEventStatus = (evt: any) => {
+  const getEventStatus = (evt: Event) => {
     const dNow = new Date();
     const start = new Date(evt.startTime);
     const end = new Date(evt.endTime);
@@ -215,7 +237,7 @@ export default function DashboardPage() {
               <div style={{ fontSize: 24, background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}>🚀</div>
               <div>
                 <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>New Semester Kick-off!</p>
-                <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>Don't forget to register for the Freshy night and check your house points.</p>
+                <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>Don&apos;t forget to register for the Freshy night and check your house points.</p>
               </div>
             </div>
 
@@ -570,6 +592,58 @@ export default function DashboardPage() {
             </div>
           </div>
         </main>
+
+      {errorModal.show && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 1350,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setErrorModal(prev => ({ ...prev, show: false }))}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "90%",
+            maxWidth: 440,
+            borderRadius: 28,
+            padding: 32,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "rgba(239, 68, 68, 0.1)",
+              color: "#ef4444",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <X size={28} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
+              {errorModal.title}
+            </h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              {errorModal.message}
+            </p>
+            <button
+              className="btn btn-ghost"
+              style={{ width: "100%", height: 46, borderRadius: 12, fontSize: 14, fontWeight: 800, border: "1px solid var(--border-medium)" }}
+              onClick={() => setErrorModal(prev => ({ ...prev, show: false }))}
+            >
+              {lang === "th" ? "ปิด" : "Close"}
+            </button>
+          </div>
+        </div>
+      )}
 
         <style jsx global>{`
           .event-card-ig:hover {

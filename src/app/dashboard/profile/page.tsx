@@ -90,7 +90,7 @@ export default function ProfilePage() {
       });
   }, []);
 
-  const set = (key: string, value: any) => setFormData((p) => ({ ...p, [key]: value }));
+  const set = <K extends keyof typeof formData>(key: K, value: typeof formData[K]) => setFormData((p) => ({ ...p, [key]: value }));
 
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
@@ -473,7 +473,45 @@ export default function ProfilePage() {
                 </div>
                 <div className="field" style={{ gridColumn: "span 2" }}>
                   <label className="label">{t.religion}</label>
-                  <input className="input" name="religion" value={formData.religion} onChange={(e) => set("religion", e.target.value)} placeholder={t.religionPlaceholder} />
+                  <select
+                    className="input"
+                    name="religion"
+                    value={
+                      ["", "Buddhism", "Christianity", "Islam", "Hinduism", "Sikhism", "None"].includes(formData.religion)
+                        ? formData.religion
+                        : "Other"
+                    }
+                    onChange={(e) => {
+                      if (e.target.value === "Other") {
+                        set("religion", "Other:");
+                      } else {
+                        set("religion", e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="">{t.selectReligion}</option>
+                    <option value="Buddhism">{t.buddhism}</option>
+                    <option value="Christianity">{t.christianity}</option>
+                    <option value="Islam">{t.islam}</option>
+                    <option value="Hinduism">{t.hinduism}</option>
+                    <option value="Sikhism">{t.sikhism}</option>
+                    <option value="None">{t.noReligion}</option>
+                    <option value="Other">{t.other}</option>
+                  </select>
+                  {(!["", "Buddhism", "Christianity", "Islam", "Hinduism", "Sikhism", "None"].includes(formData.religion) || formData.religion.startsWith("Other:")) && (
+                    <input
+                      type="text"
+                      className="input"
+                      style={{ marginTop: 8 }}
+                      placeholder={t.back === "กลับ" ? "กรุณาระบุศาสนา..." : "Please specify religion..."}
+                      value={
+                        formData.religion.startsWith("Other:")
+                          ? formData.religion.substring(6)
+                          : formData.religion
+                      }
+                      onChange={(e) => set("religion", "Other:" + e.target.value)}
+                    />
+                  )}
                 </div>
               </div>
             </div>

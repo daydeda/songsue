@@ -16,9 +16,10 @@ import {
 import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState } from "react";
+import { translations } from "@/lib/i18n";
 
 interface NavLinksProps {
-  t: any;
+  t: typeof translations.en;
   onLinkClick: () => void;
 }
 
@@ -50,7 +51,7 @@ export function StudentNav() {
   const { t } = useLanguage();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const user = session?.user as any;
+  const user = session?.user;
 
   return (
     <nav className="student-nav">
@@ -86,7 +87,7 @@ export function StudentNav() {
               {user?.image ? (
                 <img
                   src={user.image}
-                  alt={user.name}
+                  alt={user.name || "User Avatar"}
                   className="avatar-img"
                   style={{
                     transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
@@ -100,7 +101,7 @@ export function StudentNav() {
 
           {/* Desktop Only Actions */}
           <div className="desktop-links actions">
-            {((user as any)?.role === "admin" || (user as any)?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+            {(user?.role === "admin" || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
               <Link href="/admin/dashboard" className="btn btn-primary btn-sm rounded-full">
                 <ShieldCheck size={14} />
               </Link>
@@ -132,7 +133,7 @@ export function StudentNav() {
           <div className="mobile-menu-content">
             <div className="mobile-links">
               <NavLinks t={t} onLinkClick={() => setIsMobileMenuOpen(false)} />
-              {((user as any)?.role === "admin" || (user as any)?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+              {(user?.role === "admin" || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
                 <Link href="/admin/dashboard" className="nav-link admin-link" onClick={() => setIsMobileMenuOpen(false)}>
                   <ShieldCheck size={16} /> {t.adminPanel}
                 </Link>

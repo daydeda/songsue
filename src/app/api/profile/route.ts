@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const data = profileSchema.parse(body);
 
-    const isAdmin = (session.user as any).role === "admin";
+    const isAdmin = session.user.role === "admin";
     if (!data.studentId && !isAdmin) {
       return NextResponse.json({ error: "Student ID is required" }, { status: 400 });
     }

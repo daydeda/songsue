@@ -11,11 +11,15 @@ const eventSchema = z.object({
   description: z.string().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
-  quota: z.number().int().positive().optional(),
+  quota: z.number().int().min(0).optional(),
   location: z.string().optional(),
   pointsAwarded: z.number().int().min(0).optional(),
   imageUrl: z.string().optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
+  targetThai: z.boolean().optional(),
+  targetInternational: z.boolean().optional(),
+  quotaThai: z.number().int().min(0).optional(),
+  quotaInternational: z.number().int().min(0).optional(),
 });
 
 import { checkAndAwardPastEventPoints } from "@/lib/award-points";
@@ -24,7 +28,7 @@ import { checkAndAwardPastEventPoints } from "@/lib/award-points";
 export async function GET() {
   try {
     const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -57,7 +61,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -76,6 +80,10 @@ export async function POST(req: Request) {
         pointsAwarded: data.pointsAwarded ?? 0,
         imageUrl: data.imageUrl,
         walkInsEnabled: data.walkInsEnabled ?? false,
+        targetThai: data.targetThai ?? true,
+        targetInternational: data.targetInternational ?? true,
+        quotaThai: data.quotaThai,
+        quotaInternational: data.quotaInternational,
       })
       .returning();
 

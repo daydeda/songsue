@@ -13,14 +13,16 @@ export async function GET(req: Request) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    const isAdmin = (session.user as any).role === "admin";
+    const isAdmin = session.user.role === "admin";
     const brokerDir = path.join(process.cwd(), "scratch", "realtime-events");
 
     // 2. Open persistent Server-Sent Events stream
     const responseStream = new ReadableStream({
       async start(controller) {
         // Enqueue text helper formatted for Server-Sent Events (data: <string>\n\n)
-        const handleUpdate = (eventPayload: any) => {
+        const handleUpdate = (...args: unknown[]) => {
+          const eventPayload = args[0] as ({ type: string } & Record<string, unknown>) | null | undefined;
+          if (!eventPayload) return;
           try {
             // PDPA and Security: If client is not an admin, filter out private details (like checkins)
             if (!isAdmin) {

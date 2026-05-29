@@ -114,6 +114,10 @@ export const events = pgTable("events", {
   pointsAwarded: integer("points_awarded").default(0),
   imageUrl: text("image_url"),
   walkInsEnabled: boolean("walk_ins_enabled").default(false),
+  targetThai: boolean("target_thai").default(true),
+  targetInternational: boolean("target_international").default(true),
+  quotaThai: integer("quota_thai"),
+  quotaInternational: integer("quota_international"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

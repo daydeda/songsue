@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events } from "@/db/schema";
-import { and, count, eq } from "drizzle-orm";
+import { attendance, events, users } from "@/db/schema";
+import { and, count, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // POST /api/events/[id]/register — One-click registration (FE-05)
@@ -27,6 +27,33 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Validate target audience eligibility
+    const studentId = session.user.studentId || "";
+    const cleanId = studentId.trim();
+    let isThai = true;
+    let isIntl = false;
+    if (cleanId.length >= 3) {
+      const lastThreeDigitFirst = cleanId.slice(-3)[0];
+      if (lastThreeDigitFirst === "5") {
+        isThai = false;
+        isIntl = true;
+      }
+    }
+
+    const targetThai = event.targetThai ?? true;
+    const targetInternational = event.targetInternational ?? true;
+    
+    // Fallback: If both targets are false/unchecked, anyone can join!
+    const effectiveThai = (!targetThai && !targetInternational) ? true : targetThai;
+    const effectiveIntl = (!targetThai && !targetInternational) ? true : targetInternational;
+    
+    if (isThai && !effectiveThai) {
+      return NextResponse.json({ error: "This event is for international students only" }, { status: 403 });
+    }
+    if (isIntl && !effectiveIntl) {
+      return NextResponse.json({ error: "This event is for Thai students only" }, { status: 403 });
+    }
+
     // (Removed strict end time check to allow late registration if event is still visible)
 
     // Check if already registered
@@ -38,8 +65,8 @@ export async function POST(
       return NextResponse.json({ error: "Already registered for this event" }, { status: 409 });
     }
 
-    // Quota check
-    if (event.quota !== null) {
+    // Quota check (Overall)
+    if (event.quota !== null && event.quota > 0) {
       const [{ value: currentCount }] = await db
         .select({ value: count() })
         .from(attendance)
@@ -47,6 +74,42 @@ export async function POST(
 
       if (currentCount >= event.quota) {
         return NextResponse.json({ error: "Event is full" }, { status: 422 });
+      }
+    }
+
+    // Cohort Quota check: Thai Students
+    if (isThai && event.quotaThai !== null && event.quotaThai > 0) {
+      const [{ value: currentThaiCount }] = await db
+        .select({ value: count() })
+        .from(attendance)
+        .innerJoin(users, eq(attendance.studentId, users.id))
+        .where(
+          and(
+            eq(attendance.eventId, eventId),
+            sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) IN ('0', '1', '2', '3', '4')`
+          )
+        );
+
+      if (currentThaiCount >= event.quotaThai) {
+        return NextResponse.json({ error: "Thai student quota is full" }, { status: 422 });
+      }
+    }
+
+    // Cohort Quota check: International Students
+    if (isIntl && event.quotaInternational !== null && event.quotaInternational > 0) {
+      const [{ value: currentIntlCount }] = await db
+        .select({ value: count() })
+        .from(attendance)
+        .innerJoin(users, eq(attendance.studentId, users.id))
+        .where(
+          and(
+            eq(attendance.eventId, eventId),
+            sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) = '5'`
+          )
+        );
+
+      if (currentIntlCount >= event.quotaInternational) {
+        return NextResponse.json({ error: "International student quota is full" }, { status: 422 });
       }
     }
 

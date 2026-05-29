@@ -70,6 +70,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const dbUser = await db.query.users.findFirst({
         where: (users, { eq }) => eq(users.id, userId),
         columns: { 
+          name: true,
+          image: true,
           role: true, 
           email: true,
           profileCompleted: true, 
@@ -88,6 +90,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           dbUser.qrToken = newToken;
         }
 
+        session.user.name = dbUser.name ?? session.user.name;
+        session.user.image = dbUser.image ?? session.user.image;
         session.user.email = dbUser.email;
         session.user.role = dbUser.role ?? "student";
         session.user.profileCompleted = dbUser.profileCompleted ?? false;

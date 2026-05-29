@@ -48,7 +48,7 @@ export default function OnboardingPage() {
     ] as EmergencyContact[],
   });
 
-  const set = (key: string, value: any) => setFormData((p) => ({ ...p, [key]: value }));
+  const set = <K extends keyof typeof formData>(key: K, value: typeof formData[K]) => setFormData((p) => ({ ...p, [key]: value }));
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
     contacts[idx] = { ...contacts[idx], [key]: value };
@@ -128,7 +128,7 @@ export default function OnboardingPage() {
     setError(null);
     const isTh = t.back === "กลับ";
     if (step === 0) {
-      const isStudent = session?.user && (session.user as any).role !== "admin";
+      const isStudent = session?.user && session.user.role !== "admin";
       if (!formData.name.trim() || !formData.nickname.trim() || !formData.phone.trim() || !formData.contactChannels.trim() || (isStudent && !formData.studentId.trim())) {
         setError(isTh ? "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน" : "Please fill out all required fields.");
         setValidationTriggered(true);
@@ -405,18 +405,18 @@ export default function OnboardingPage() {
                   <label className={labelCls}>{t.studentId} <span style={{ color: "#ef4444" }}>*</span></label>
                   <input
                     className={inputCls}
-                    required={session?.user && (session.user as any).role !== "admin"}
-                    minLength={(session?.user && (session.user as any).role === "admin") ? 0 : 9}
+                    required={session?.user && session.user.role !== "admin"}
+                    minLength={(session?.user && session.user.role === "admin") ? 0 : 9}
                     maxLength={9}
                     placeholder="640510000"
                     value={formData.studentId}
                     onChange={(e) => set("studentId", e.target.value.replace(/[^0-9]/g, "").slice(0, 9))}
                     style={{
-                      borderColor: validationTriggered && (session?.user && (session.user as any).role !== "admin" && formData.studentId.trim().length !== 9) ? "#ef4444" : undefined,
-                      boxShadow: validationTriggered && (session?.user && (session.user as any).role !== "admin" && formData.studentId.trim().length !== 9) ? "0 0 0 1px #ef4444" : undefined
+                      borderColor: validationTriggered && (session?.user && session.user.role !== "admin" && formData.studentId.trim().length !== 9) ? "#ef4444" : undefined,
+                      boxShadow: validationTriggered && (session?.user && session.user.role !== "admin" && formData.studentId.trim().length !== 9) ? "0 0 0 1px #ef4444" : undefined
                     }}
                   />
-                  {validationTriggered && (session?.user && (session.user as any).role !== "admin" && formData.studentId.trim().length !== 9) && (
+                  {validationTriggered && (session?.user && session.user.role !== "admin" && formData.studentId.trim().length !== 9) && (
                     <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
                       {t.back === "กลับ" ? "⚠️ รหัสนักศึกษาต้องมี 9 หลัก" : "⚠️ Student ID must be exactly 9 digits"}
                     </span>
@@ -463,12 +463,44 @@ export default function OnboardingPage() {
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="field flex-1">
                   <label className={labelCls}>{t.religion}</label>
-                  <input
+                  <select
                     className={inputCls}
-                    placeholder={t.religionPlaceholder}
-                    value={formData.religion}
-                    onChange={(e) => set("religion", e.target.value)}
-                  />
+                    value={
+                      ["", "Buddhism", "Christianity", "Islam", "Hinduism", "Sikhism", "None"].includes(formData.religion)
+                        ? formData.religion
+                        : "Other"
+                    }
+                    onChange={(e) => {
+                      if (e.target.value === "Other") {
+                        set("religion", "Other:");
+                      } else {
+                        set("religion", e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="">{t.selectReligion}</option>
+                    <option value="Buddhism">{t.buddhism}</option>
+                    <option value="Christianity">{t.christianity}</option>
+                    <option value="Islam">{t.islam}</option>
+                    <option value="Hinduism">{t.hinduism}</option>
+                    <option value="Sikhism">{t.sikhism}</option>
+                    <option value="None">{t.noReligion}</option>
+                    <option value="Other">{t.other}</option>
+                  </select>
+                  {(!["", "Buddhism", "Christianity", "Islam", "Hinduism", "Sikhism", "None"].includes(formData.religion) || formData.religion.startsWith("Other:")) && (
+                    <input
+                      type="text"
+                      className={inputCls}
+                      style={{ marginTop: 8 }}
+                      placeholder={t.back === "กลับ" ? "กรุณาระบุศาสนา..." : "Please specify religion..."}
+                      value={
+                        formData.religion.startsWith("Other:")
+                          ? formData.religion.substring(6)
+                          : formData.religion
+                      }
+                      onChange={(e) => set("religion", "Other:" + e.target.value)}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -784,7 +816,17 @@ export default function OnboardingPage() {
                     [t.studentId, formData.studentId],
                     [t.major, formData.major],
                     [t.phone, formData.phone],
-                    [t.religion, formData.religion || "—"],
+                    [t.religion, (() => {
+                      if (!formData.religion) return "—";
+                      if (formData.religion === "Buddhism") return t.buddhism;
+                      if (formData.religion === "Christianity") return t.christianity;
+                      if (formData.religion === "Islam") return t.islam;
+                      if (formData.religion === "Hinduism") return t.hinduism;
+                      if (formData.religion === "Sikhism") return t.sikhism;
+                      if (formData.religion === "None") return t.noReligion;
+                      if (formData.religion.startsWith("Other:")) return formData.religion.substring(6);
+                      return formData.religion;
+                    })()],
                   ].map(([k, v]) => (
                     <div key={k}>
                       <dt style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase" }}>{k}</dt>
@@ -823,6 +865,10 @@ export default function OnboardingPage() {
                   <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
                     {t.pdpaDetail}
                   </p>
+                  <div className="alert alert-warning" style={{ fontSize: 12, padding: "10px 14px", borderRadius: 10, marginTop: 12, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 14, marginTop: -2 }}>⚠️</span>
+                    <span style={{ lineHeight: 1.5, color: "var(--text-primary)" }}>{t.pdpaWarning}</span>
+                  </div>
                 </div>
               </label>
 

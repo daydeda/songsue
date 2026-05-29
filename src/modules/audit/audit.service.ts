@@ -8,11 +8,13 @@ export interface LogActionParams {
   ipAddress: string;
 }
 
+type DBTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export class AuditService {
   /**
    * Log an action inside a database transaction block (internal usage)
    */
-  static async logActionInternal(tx: any, params: LogActionParams) {
+  static async logActionInternal(tx: DBTransaction, params: LogActionParams) {
     const { actorId, targetId, action, ipAddress } = params;
     return await tx.insert(auditLogs).values({
       actorId,

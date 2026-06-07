@@ -26,12 +26,21 @@ export default async function Home() {
   }
 
   // Fetch real stats for social proof (FE-01)
-  const [{ count: userCount }] = await db.select({ count: count() }).from(users);
-  const sampleUsers = await db
-    .select({ image: users.image })
-    .from(users)
-    .where(and(isNotNull(users.image), ne(users.image, "")))
-    .limit(4);
+  let userCount = 0;
+  let sampleImages: string[] = [];
+  try {
+    const [{ count: countVal }] = await db.select({ count: count() }).from(users);
+    userCount = countVal;
+    
+    const sampleUsers = await db
+      .select({ image: users.image })
+      .from(users)
+      .where(and(isNotNull(users.image), ne(users.image, "")))
+      .limit(4);
+    sampleImages = sampleUsers.map(u => u.image as string);
+  } catch (err) {
+    console.error("Failed to fetch social proof stats from DB:", err);
+  }
 
-  return <LandingUI userCount={userCount} sampleImages={sampleUsers.map(u => u.image as string)} />;
+  return <LandingUI userCount={userCount} sampleImages={sampleImages} />;
 }

@@ -186,12 +186,6 @@ export default function DashboardPage() {
         {/* Header Section */}
         <section className="animate-fade-in-up" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 24 }}>
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="badge badge-purple" style={{ background: "rgba(255,107,0,0.08)", color: "var(--accent-primary)", border: "1px solid rgba(255,107,0,0.15)", gap: 6 }}>
-                <Zap size={10} fill="currentColor" />
-                {t.activeStudent}
-              </span>
-            </div>
             <h1 className="text-fluid-h1" style={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
               {t.hey}, <span className="gradient-text">{user?.name?.split(" ")[0] || "Student"}!</span>
             </h1>

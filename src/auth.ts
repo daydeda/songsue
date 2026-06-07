@@ -25,10 +25,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user }) {
       const email = user.email ?? "";
       
-      // Auto-promote official SMO email to admin and mark profile as complete (FE-04)
-      if (email === "smocamt.official@gmail.com") {
+      // Auto-promote official emails to super_admin and mark profile as complete (FE-04)
+      const superAdminEmails = ["smocamt.official@gmail.com", "daydedaa@gmail.com"];
+      if (superAdminEmails.includes(email.toLowerCase())) {
         await db.update(users)
-          .set({ role: "admin", profileCompleted: true })
+          .set({ role: "super_admin", profileCompleted: true })
           .where(eq(users.email, email));
       }
 
@@ -101,12 +102,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.studentId = dbUser.studentId ?? null;
       }
 
-      // Force admin role for the official SMO email - CASE INSENSITIVE (FE-04)
-      const adminEmail = "smocamt.official@gmail.com".toLowerCase();
+      // Force super_admin role for the official emails - CASE INSENSITIVE (FE-04)
+      const superAdmins = ["smocamt.official@gmail.com", "daydedaa@gmail.com"];
       const currentEmail = (session.user?.email || dbUser?.email || "").toLowerCase();
       
-      if (currentEmail === adminEmail) {
-        session.user.role = "admin";
+      if (superAdmins.includes(currentEmail)) {
+        session.user.role = "super_admin";
         session.user.profileCompleted = true;
       }
 

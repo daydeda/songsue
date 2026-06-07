@@ -6,14 +6,19 @@
  * Must be run once after the initial `npm run db:push`.
  */
 import { db } from "./index";
-import { houses } from "./schema";
-
+import { houses, users } from "./schema";
+import { eq } from "drizzle-orm";
 
 const HOUSES = [
   { id: "red",    name: "Lanna",   color: "#ef4444" },
   { id: "green",  name: "Mengrai", color: "#14b8a6" },
   { id: "yellow", name: "Kawila",  color: "#f59e0b" },
   { id: "blue",   name: "Dara",    color: "#6366f1" },
+];
+
+const SUPER_ADMINS = [
+  { email: "smocamt.official@gmail.com", name: "SMO CAMT Official" },
+  { email: "daydedaa@gmail.com", name: "Daydedaa Admin" },
 ];
 
 async function seed() {
@@ -28,6 +33,31 @@ async function seed() {
         set: { name: house.name, color: house.color }
       });
     console.log(`  ✅ House: ${house.name}`);
+  }
+
+  console.log("🌱 Seeding super admins...");
+  for (const admin of SUPER_ADMINS) {
+    const existing = await db.query.users.findFirst({
+      where: (u, { eq }) => eq(u.email, admin.email),
+    });
+
+    if (existing) {
+      await db
+        .update(users)
+        .set({ role: "super_admin", profileCompleted: true })
+        .where(eq(users.email, admin.email));
+      console.log(`  ✅ Updated role to super_admin for: ${admin.email}`);
+    } else {
+      await db.insert(users).values({
+        id: crypto.randomUUID(),
+        name: admin.name,
+        email: admin.email,
+        role: "super_admin",
+        profileCompleted: true,
+        qrToken: crypto.randomUUID(),
+      });
+      console.log(`  ✅ Created new super_admin user: ${admin.email}`);
+    }
   }
 
   console.log("✅ Seeding complete.");

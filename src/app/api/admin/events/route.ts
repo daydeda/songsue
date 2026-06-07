@@ -8,18 +8,18 @@ import { realtimeEmitter } from "@/lib/realtime-emitter";
 
 const eventSchema = z.object({
   title: z.string().min(1),
-  description: z.string().optional(),
+  description: z.string().optional().nullable(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
-  quota: z.number().int().min(0).optional(),
-  location: z.string().optional(),
-  pointsAwarded: z.number().int().min(0).optional(),
+  quota: z.number().int().min(0).optional().nullable(),
+  location: z.string().optional().nullable(),
+  pointsAwarded: z.number().int().min(0).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
   targetThai: z.boolean().optional(),
   targetInternational: z.boolean().optional(),
-  quotaThai: z.number().int().min(0).optional(),
-  quotaInternational: z.number().int().min(0).optional(),
+  quotaThai: z.number().int().min(0).optional().nullable(),
+  quotaInternational: z.number().int().min(0).optional().nullable(),
 });
 
 import { checkAndAwardPastEventPoints } from "@/lib/award-points";

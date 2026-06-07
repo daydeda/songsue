@@ -8,12 +8,12 @@ import { realtimeEmitter } from "@/lib/realtime-emitter";
 
 const eventUpdateSchema = z.object({
   title: z.string().min(1).optional(),
-  description: z.string().optional(),
+  description: z.string().optional().nullable(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
-  quota: z.number().int().min(0).optional(),
-  location: z.string().optional(),
-  pointsAwarded: z.number().int().min(0).optional(),
+  quota: z.number().int().min(0).optional().nullable(),
+  location: z.string().optional().nullable(),
+  pointsAwarded: z.number().int().min(0).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
   targetThai: z.boolean().optional(),

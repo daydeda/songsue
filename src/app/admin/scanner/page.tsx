@@ -54,6 +54,8 @@ export default function QRScannerPage() {
   const [showModal, setShowModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
   const [manualSearch, setManualSearch] = useState("");
   const [manualResults, setManualResults] = useState<{ id: string; name: string; studentId: string; qrToken: string }[]>([]);
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
@@ -81,14 +83,34 @@ export default function QRScannerPage() {
 
   // Fetch events for the selector
   useEffect(() => {
+    setLoadingEvents(true);
+    setEventsError(null);
     fetch("/api/admin/events")
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error(data.error || `HTTP error! status: ${r.status}`);
+        }
+        return r.json();
+      })
       .then((d) => {
-        if (Array.isArray(d) && d.length > 0) {
-          if (isMountedRef.current) {
+        if (isMountedRef.current) {
+          if (Array.isArray(d)) {
             setEvents(d);
-            setEventId(d[0].id);
+            if (d.length > 0) {
+              setEventId(d[0].id);
+            }
+          } else {
+            throw new Error("Invalid events list format received");
           }
+          setLoadingEvents(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Fetch events failed:", err);
+        if (isMountedRef.current) {
+          setEventsError(err.message || "Failed to load events");
+          setLoadingEvents(false);
         }
       });
   }, []);
@@ -426,14 +448,54 @@ export default function QRScannerPage() {
           >
             <div id="qr-reader" style={{ width: "100%" }} />
             
-            {(!isScanning && !scannerError) && (
+            {/* 1. Loading Events State */}
+            {loadingEvents && (
               <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#000", color: "#fff", gap: 16 }}>
                 <div className="spinner" />
                 <p style={{ fontSize: 14, fontWeight: 600 }}>{t.eventLoadingLabel}</p>
               </div>
             )}
 
-            {scannerError && (
+            {/* 2. Events Fetch Error State */}
+            {(!loadingEvents && eventsError) && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.95)", color: "#fff", padding: 40, textAlign: "center" }}>
+                <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
+                <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Failed to Load Events</p>
+                <p style={{ fontSize: 14, color: "#94a3b8", marginBottom: 24 }}>{eventsError}</p>
+                <button 
+                    className="btn btn-primary" 
+                    style={{ borderRadius: 12 }}
+                    onClick={() => window.location.reload()}
+                >
+                    <RotateCcw size={16} /> Retry Connection
+                </button>
+              </div>
+            )}
+
+            {/* 3. Empty Events State */}
+            {(!loadingEvents && !eventsError && events.length === 0) && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#1e293b", color: "#fff", padding: 24, textAlign: "center", gap: 16 }}>
+                <AlertCircle size={48} color="#f59e0b" />
+                <p style={{ fontSize: 16, fontWeight: 700 }}>No Events Available</p>
+                <p style={{ fontSize: 14, color: "#cbd5e1", maxWidth: 320, lineHeight: 1.5 }}>
+                  You must define at least one event in the database before you can scan student QR codes.
+                </p>
+                <a href="/admin/events" className="btn btn-primary" style={{ borderRadius: 12, display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px" }}>
+                  <Zap size={16} /> Create Event
+                </a>
+              </div>
+            )}
+
+            {/* 4. Scanner Loading State (when we have events but scanner has not started yet and no error) */}
+            {(!loadingEvents && !eventsError && events.length > 0 && !isScanning && !scannerError) && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#000", color: "#fff", gap: 16 }}>
+                <div className="spinner" />
+                <p style={{ fontSize: 14, fontWeight: 600 }}>{t.eventLoadingLabel}</p>
+              </div>
+            )}
+
+            {/* 5. Scanner Startup Error State */}
+            {(!loadingEvents && !eventsError && events.length > 0 && scannerError) && (
               <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.9)", color: "#fff", padding: 40, textAlign: "center" }}>
                 <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
                 <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{t.scanError}</p>

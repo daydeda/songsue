@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { promises as fs } from "fs";
 import path from "path";
+import os from "os";
 
 // Keep a local in-memory emitter for same-thread queries
 const globalForEmitter = globalThis as unknown as {
@@ -29,7 +30,10 @@ export const realtimeEmitter = {
     // 2. If it's a dashboard update, write a tiny JSON to filesystem
     // to cross the Next.js worker thread/process boundaries
     if (event === "dashboard_update") {
-      const brokerDir = path.join(process.cwd(), "scratch", "realtime-events");
+      const isVercel = !!process.env.VERCEL;
+      const brokerDir = isVercel
+        ? path.join(os.tmpdir(), "realtime-events")
+        : path.join(process.cwd(), "scratch", "realtime-events");
       const filename = `update-${Date.now()}-${Math.random().toString(36).substring(2)}.json`;
       const filePath = path.join(brokerDir, filename);
 

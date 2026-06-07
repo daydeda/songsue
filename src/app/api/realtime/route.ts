@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import { watch } from "fs";
 import path from "path";
+import os from "os";
 
 export async function GET(req: Request) {
   try {
@@ -14,7 +15,10 @@ export async function GET(req: Request) {
     }
 
     const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
-    const brokerDir = path.join(process.cwd(), "scratch", "realtime-events");
+    const isVercel = !!process.env.VERCEL;
+    const brokerDir = isVercel
+      ? path.join(os.tmpdir(), "realtime-events")
+      : path.join(process.cwd(), "scratch", "realtime-events");
 
     // 2. Open persistent Server-Sent Events stream
     const responseStream = new ReadableStream({
@@ -66,21 +70,26 @@ export async function GET(req: Request) {
         await processPendingFiles();
 
         // Start filesystem watcher to capture cross-thread event broker files
-        const fsWatcher = watch(brokerDir, async (eventType, filename) => {
-          if (eventType === "rename" && filename && filename.endsWith(".json")) {
-            const filePath = path.join(brokerDir, filename);
-            try {
-              // Tiny timeout to ensure file write completed
-              await new Promise((resolve) => setTimeout(resolve, 30));
-              const content = await fs.readFile(filePath, "utf-8");
-              const payload = JSON.parse(content);
-              handleUpdate(payload);
-              await fs.unlink(filePath); // Clean up file immediately
-            } catch (e) {
-              // Might be already unlinked by another connection thread
+        let fsWatcher: any = null;
+        try {
+          fsWatcher = watch(brokerDir, async (eventType, filename) => {
+            if (eventType === "rename" && filename && filename.endsWith(".json")) {
+              const filePath = path.join(brokerDir, filename);
+              try {
+                // Tiny timeout to ensure file write completed
+                await new Promise((resolve) => setTimeout(resolve, 30));
+                const content = await fs.readFile(filePath, "utf-8");
+                const payload = JSON.parse(content);
+                handleUpdate(payload);
+                await fs.unlink(filePath); // Clean up file immediately
+              } catch (e) {
+                // Might be already unlinked by another connection thread
+              }
             }
-          }
-        });
+          });
+        } catch (watchError) {
+          console.warn("SSE Realtime: fs.watch is not supported in this environment, bypassing file watcher:", watchError);
+        }
 
         // Keep-alive heartbeats every 15 seconds to prevent browser or Nginx timeouts
         const pingInterval = setInterval(() => {
@@ -92,7 +101,11 @@ export async function GET(req: Request) {
         // Clean up subscriptions and intervals when the request is aborted
         req.signal.addEventListener("abort", () => {
           realtimeEmitter.off("dashboard_update", handleUpdate);
-          fsWatcher.close(); // Close kernel watch handle
+          if (fsWatcher) {
+            try {
+              fsWatcher.close(); // Close kernel watch handle
+            } catch (e) {}
+          }
           clearInterval(pingInterval);
           try {
             controller.close();

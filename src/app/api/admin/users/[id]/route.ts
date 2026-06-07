@@ -11,7 +11,7 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "admin") {
+    if (!session?.user || !["super_admin", "admin"].includes(session.user.role || "")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -20,6 +20,19 @@ export async function PATCH(
 
     // Fields that can be updated by admin
     const { name, role, major, houseId, studentId, nickname } = body;
+
+    // FE-Security: non-super_admin cannot award super_admin role
+    if (role === "super_admin" && session.user.role !== "super_admin") {
+      return NextResponse.json({ error: "Forbidden: Only Super Admins can assign the Super Admin role" }, { status: 403 });
+    }
+
+    // FE-Security: non-super_admin cannot edit a super_admin user
+    const targetUser = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+    if (targetUser?.role === "super_admin" && session.user.role !== "super_admin") {
+      return NextResponse.json({ error: "Forbidden: Cannot edit Super Admin accounts" }, { status: 403 });
+    }
 
     await db.update(users)
       .set({
@@ -47,7 +60,7 @@ export async function DELETE(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "admin") {
+    if (!session?.user || !["super_admin", "admin"].includes(session.user.role || "")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -56,6 +69,14 @@ export async function DELETE(
     // Prevent self-deletion
     if (userId === session.user.id) {
       return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
+    }
+
+    // FE-Security: non-super_admin cannot delete a super_admin user
+    const targetUser = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+    if (targetUser?.role === "super_admin" && session.user.role !== "super_admin") {
+      return NextResponse.json({ error: "Forbidden: Cannot delete Super Admin accounts" }, { status: 403 });
     }
 
     await db.delete(users).where(eq(users.id, userId));

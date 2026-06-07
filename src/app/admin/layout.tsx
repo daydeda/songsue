@@ -9,7 +9,8 @@ export default async function AdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
+  const allowedRoles = ["super_admin", "admin", "registration", "organizer"];
+  if (!session?.user || !allowedRoles.includes(session.user.role || "")) {
     redirect("/dashboard");
   }
 

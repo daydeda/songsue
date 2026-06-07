@@ -98,7 +98,7 @@ export function AdminLayoutWrapper({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <AdminNav />
+          <AdminNav role={user.role} />
         </div>
 
         <div className="mt-auto pt-6 border-t border-[var(--border-subtle)]">
@@ -112,7 +112,9 @@ export function AdminLayoutWrapper({
             )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-[var(--text-primary)] truncate">{user.name}</p>
-              <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Administrator</p>
+              <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+                {user.role === "super_admin" ? "Super Admin" : user.role === "registration" ? "Registration" : user.role === "organizer" ? "Organizer" : "Administrator"}
+              </p>
             </div>
           </div>
         </div>

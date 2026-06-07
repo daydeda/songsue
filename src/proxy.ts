@@ -26,11 +26,13 @@ export async function proxy(req: NextRequest) {
 
   const user = session.user;
 
+  const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(user.role || "");
+
   // Authenticated but profile not complete → force onboarding
   // (except for admins, the /onboarding page itself, and API routes)
   if (
     !user.profileCompleted &&
-    user.role !== "admin" &&
+    !isAdminRole &&
     pathname !== "/onboarding" &&
     !pathname.startsWith("/api/")
   ) {
@@ -43,8 +45,13 @@ export async function proxy(req: NextRequest) {
   }
 
   // Admin-only routes — block non-admins
-  if (pathname.startsWith("/admin") && user.role !== "admin") {
+  if (pathname.startsWith("/admin") && !isAdminRole) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
+  }
+
+  // Organizer cannot access students list
+  if (pathname.startsWith("/admin/students") && user.role === "organizer") {
+    return NextResponse.redirect(new URL("/admin/dashboard", req.url));
   }
 
   return NextResponse.next();

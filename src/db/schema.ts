@@ -11,7 +11,7 @@ export const houses = pgTable("houses", {
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Auth.js / OAuth provider ID
-  name: text("name").notNull(),
+  name: text("name").notNull().unique(),
   email: text("email").notNull().unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
@@ -26,7 +26,7 @@ export const users = pgTable("users", {
   major: text("major"), // ANI, DG, DII, MMIT, SE
   imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }
   religion: text("religion"),
-  phone: text("phone"),
+  phone: text("phone").unique(),
   contactChannels: text("contact_channels"),
   // Sensitive data (FE-12, §4.3)
   chronicDiseases: text("chronic_diseases"),

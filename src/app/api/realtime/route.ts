@@ -13,7 +13,7 @@ export async function GET(req: Request) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    const isAdmin = session.user.role === "admin";
+    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
     const brokerDir = path.join(process.cwd(), "scratch", "realtime-events");
 
     // 2. Open persistent Server-Sent Events stream

@@ -63,6 +63,16 @@ export default function QRScannerPage() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
   const eventIdRef = useRef<string>("");
+  const isMountedRef = useRef(true);
+  const scanSessionIdRef = useRef(0);
+
+  // Manage component mounted lifecycle state
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Update ref whenever state changes
   useEffect(() => {
@@ -75,13 +85,18 @@ export default function QRScannerPage() {
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d) && d.length > 0) {
-          setEvents(d);
-          setEventId(d[0].id);
+          if (isMountedRef.current) {
+            setEvents(d);
+            setEventId(d[0].id);
+          }
         }
       });
   }, []);
 
   const startScanner = async () => {
+    if (!isMountedRef.current) return;
+    const currentSessionId = ++scanSessionIdRef.current;
+
     // 1. Clean up any existing instance first
     if (scannerRef.current) {
         try {
@@ -94,12 +109,18 @@ export default function QRScannerPage() {
 
     // 2. Ensure container is empty and ready
     const container = document.getElementById("qr-reader");
-    if (container) container.innerHTML = "";
+    if (container) {
+      container.innerHTML = "";
+    } else {
+      return;
+    }
 
     // 3. Initialize new instance
     const scanner = new Html5Qrcode("qr-reader");
     scannerRef.current = scanner;
-    setScannerError(null);
+    if (isMountedRef.current) {
+      setScannerError(null);
+    }
 
     try {
       await scanner.start(
@@ -125,35 +146,58 @@ export default function QRScannerPage() {
               ...data, 
               rawToken: decodedText 
             };
-            setScanResult(result);
-            setShowModal(true);
+            if (isMountedRef.current && currentSessionId === scanSessionIdRef.current) {
+              setScanResult(result);
+              setShowModal(true);
+            }
             if ("vibrate" in navigator) navigator.vibrate(result.status === "success" ? [100, 50, 100] : 200);
           } catch {
-            setScanResult({ status: "error", error: "Connection error" });
-            setShowModal(true);
+            if (isMountedRef.current && currentSessionId === scanSessionIdRef.current) {
+              setScanResult({ status: "error", error: "Connection error" });
+              setShowModal(true);
+            }
           }
         },
         () => {}
       );
-      setIsScanning(true);
+
+      // If component unmounted or another session started while starting, stop the scanner immediately!
+      if (!isMountedRef.current || currentSessionId !== scanSessionIdRef.current) {
+        try {
+          await scanner.stop();
+        } catch (stopErr) {
+          console.error("Failed to stop scanner after unmount or session change:", stopErr);
+        }
+        if (currentSessionId === scanSessionIdRef.current) {
+          scannerRef.current = null;
+        }
+        return;
+      }
+
+      if (isMountedRef.current) {
+        setIsScanning(true);
+      }
     } catch (err) {
       console.error("Scanner start error:", err);
       const errorObj = err as Error;
-      setScannerError(errorObj?.message || "Could not start camera. Please check permissions.");
-      setIsScanning(false);
-      scannerRef.current = null;
+      if (isMountedRef.current && currentSessionId === scanSessionIdRef.current) {
+        setScannerError(errorObj?.message || "Could not start camera. Please check permissions.");
+        setIsScanning(false);
+        scannerRef.current = null;
+      }
     }
   };
 
   useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
     if (events.length > 0) {
       // Avoid calling setState synchronously inside effect
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         startScanner();
       }, 0);
-      return () => clearTimeout(timer);
     }
     return () => {
+      if (timer) clearTimeout(timer);
       if (scannerRef.current) {
         const s = scannerRef.current;
         try {
@@ -161,6 +205,7 @@ export default function QRScannerPage() {
         } catch {
           // ignore
         }
+        scannerRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,9 +214,11 @@ export default function QRScannerPage() {
   const closeModal = () => {
     setShowModal(false);
     setTimeout(() => {
-      setScanResult(null);
-      lastTokenRef.current = null;
-      setMedsCheckOption(null);
+      if (isMountedRef.current) {
+        setScanResult(null);
+        lastTokenRef.current = null;
+        setMedsCheckOption(null);
+      }
     }, 300);
   };
 
@@ -189,35 +236,59 @@ export default function QRScannerPage() {
         }),
       });
       const data = await res.json();
-      setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: token });
+      if (isMountedRef.current) {
+        setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: token });
+      }
       if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
     } catch {
-      setScanResult({ status: "error", error: "Connection error" });
+      if (isMountedRef.current) {
+        setScanResult({ status: "error", error: "Connection error" });
+      }
     } finally {
-      setIsConfirming(false);
+      if (isMountedRef.current) {
+        setIsConfirming(false);
+      }
     }
   };
 
   const handleManualSearch = async (q: string) => {
     setManualSearch(q);
     if (q.length < 2) { setManualResults([]); return; }
-    const res = await fetch(`/api/admin/scan?q=${encodeURIComponent(q)}`);
-    if (res.ok) setManualResults(await res.json());
+    try {
+      const res = await fetch(`/api/admin/scan?q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (isMountedRef.current) {
+          setManualResults(data);
+        }
+      }
+    } catch (err) {
+      console.error("Manual search error:", err);
+    }
   };
 
   const manualCheckIn = async (qrToken: string) => {
     setCheckingIn(qrToken);
-    const res = await fetch("/api/admin/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ qrToken, eventId, action: "scan" }),
-    });
-    const data = await res.json();
-    setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: qrToken });
-    setShowModal(true);
-    setManualResults([]);
-    setManualSearch("");
-    setCheckingIn(null);
+    try {
+      const res = await fetch("/api/admin/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qrToken, eventId, action: "scan" }),
+      });
+      const data = await res.json();
+      if (isMountedRef.current) {
+        setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: qrToken });
+        setShowModal(true);
+        setManualResults([]);
+        setManualSearch("");
+      }
+    } catch (err) {
+      console.error("Manual checkin error:", err);
+    } finally {
+      if (isMountedRef.current) {
+        setCheckingIn(null);
+      }
+    }
   };
 
   const STATUS_CONFIG: Record<ScanStatus, { 

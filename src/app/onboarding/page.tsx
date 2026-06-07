@@ -13,6 +13,7 @@ type EmergencyContact = { name: string; relationship: string; phone: string };
 
 export default function OnboardingPage() {
   const { data: session, status, update } = useSession();
+  const isStudent = session?.user && !["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
   const { t, lang } = useLanguage();
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -115,7 +116,8 @@ export default function OnboardingPage() {
         window.location.href = "/dashboard";
       } else {
         const d = await res.json();
-        setError(Array.isArray(d.error) ? d.error[0]?.message : d.error);
+        const errVal = Array.isArray(d.error) ? d.error[0]?.message : d.error;
+        setError(t[errVal as keyof typeof t] || errVal);
       }
     } catch {
       setError("Network error. Please try again.");
@@ -128,7 +130,6 @@ export default function OnboardingPage() {
     setError(null);
     const isTh = t.back === "กลับ";
     if (step === 0) {
-      const isStudent = session?.user && session.user.role !== "admin";
       if (!formData.name.trim() || !formData.nickname.trim() || !formData.phone.trim() || !formData.contactChannels.trim() || (isStudent && !formData.studentId.trim())) {
         setError(isTh ? "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน" : "Please fill out all required fields.");
         setValidationTriggered(true);
@@ -306,11 +307,17 @@ export default function OnboardingPage() {
                     !uploading && <User size={48} className="text-muted opacity-30" />
                   )}
                 </div>
-                <label className="btn btn-ghost btn-sm" style={{ gap: 8, cursor: "pointer", borderRadius: 99 }}>
+                <label className="btn btn-ghost btn-sm" style={{ gap: 8, cursor: "not-allowed", borderRadius: 99, opacity: 0.5 }} title={t.profilePhotoDisabledNote}>
                   <Camera size={16} />
                   {previewUrl ? t.changePhoto : t.uploadPhoto}
-                  <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={uploading} />
+                  <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={true} />
                 </label>
+
+                {/* Note: Profile photo upload temporarily disabled */}
+                <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", maxWidth: 280, marginTop: 4 }}>
+                  {t.profilePhotoDisabledNote}
+                </div>
+
 
                 {previewUrl && (
                   <div style={{ width: "100%", maxWidth: 320, display: "flex", flexDirection: "column", gap: 12, padding: "12px 20px", background: "var(--bg-elevated)", borderRadius: 20, border: "1px solid var(--border-subtle)", marginTop: 8 }}>
@@ -405,18 +412,18 @@ export default function OnboardingPage() {
                   <label className={labelCls}>{t.studentId} <span style={{ color: "#ef4444" }}>*</span></label>
                   <input
                     className={inputCls}
-                    required={session?.user && session.user.role !== "admin"}
-                    minLength={(session?.user && session.user.role === "admin") ? 0 : 9}
+                    required={isStudent}
+                    minLength={isStudent ? 9 : 0}
                     maxLength={9}
                     placeholder="640510000"
                     value={formData.studentId}
                     onChange={(e) => set("studentId", e.target.value.replace(/[^0-9]/g, "").slice(0, 9))}
                     style={{
-                      borderColor: validationTriggered && (session?.user && session.user.role !== "admin" && formData.studentId.trim().length !== 9) ? "#ef4444" : undefined,
-                      boxShadow: validationTriggered && (session?.user && session.user.role !== "admin" && formData.studentId.trim().length !== 9) ? "0 0 0 1px #ef4444" : undefined
+                      borderColor: validationTriggered && (isStudent && formData.studentId.trim().length !== 9) ? "#ef4444" : undefined,
+                      boxShadow: validationTriggered && (isStudent && formData.studentId.trim().length !== 9) ? "0 0 0 1px #ef4444" : undefined
                     }}
                   />
-                  {validationTriggered && (session?.user && session.user.role !== "admin" && formData.studentId.trim().length !== 9) && (
+                  {validationTriggered && (isStudent && formData.studentId.trim().length !== 9) && (
                     <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
                       {t.back === "กลับ" ? "⚠️ รหัสนักศึกษาต้องมี 9 หลัก" : "⚠️ Student ID must be exactly 9 digits"}
                     </span>

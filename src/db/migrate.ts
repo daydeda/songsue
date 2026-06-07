@@ -85,6 +85,27 @@ async function migrate() {
   `;
   console.log("  ✅ attendance.meds_check_option");
 
+  // 10. Add unique constraints to users.name and users.phone
+  try {
+    await sql`
+      ALTER TABLE users
+      ADD CONSTRAINT users_name_unique UNIQUE (name)
+    `;
+    console.log("  ✅ users.name unique constraint");
+  } catch (e) {
+    console.log("  ⚠️ users.name unique constraint already exists or failed to apply (make sure there are no duplicates)");
+  }
+
+  try {
+    await sql`
+      ALTER TABLE users
+      ADD CONSTRAINT users_phone_unique UNIQUE (phone)
+    `;
+    console.log("  ✅ users.phone unique constraint");
+  } catch (e) {
+    console.log("  ⚠️ users.phone unique constraint already exists or failed to apply (make sure there are no duplicates)");
+  }
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

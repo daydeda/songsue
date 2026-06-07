@@ -9,7 +9,8 @@ import { checkAndAwardPastEventPoints } from "@/lib/award-points";
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "admin") {
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -20,6 +21,9 @@ export async function GET(req: Request) {
 
     if (type === "csv") {
       // FE-11: CSV Export
+      if (!["super_admin", "admin", "registration"].includes(session.user.role || "")) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
       const allAtt = await db.query.attendance.findMany({
         with: {
           user: { columns: { studentId: true, name: true, major: true } },

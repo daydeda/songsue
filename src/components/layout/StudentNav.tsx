@@ -80,7 +80,14 @@ export function StudentNav() {
           <div className="user-section">
             <div className="user-info desktop-links">
               <p className="user-name">{user?.name}</p>
-              <p className="user-role">{user?.role === "admin" ? "Admin" : (user?.studentId || "Student")}</p>
+              <p className="user-role">
+                {user?.role === "super_admin" ? t.roleSuperAdmin :
+                 user?.role === "admin" ? t.roleAdmin :
+                 user?.role === "registration" ? t.roleRegistration :
+                 user?.role === "organizer" ? t.roleOrganizer :
+                 user?.role === "staff" ? t.roleStaff :
+                 (user?.studentId || t.roleStudent)}
+              </p>
             </div>
 
             <div className="avatar">
@@ -101,7 +108,7 @@ export function StudentNav() {
 
           {/* Desktop Only Actions */}
           <div className="desktop-links actions">
-            {(user?.role === "admin" || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+            {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
               <Link href="/admin/dashboard" className="btn btn-primary btn-sm rounded-full">
                 <ShieldCheck size={14} />
               </Link>
@@ -133,7 +140,7 @@ export function StudentNav() {
           <div className="mobile-menu-content">
             <div className="mobile-links">
               <NavLinks t={t} onLinkClick={() => setIsMobileMenuOpen(false)} />
-              {(user?.role === "admin" || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+              {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
                 <Link href="/admin/dashboard" className="nav-link admin-link" onClick={() => setIsMobileMenuOpen(false)}>
                   <ShieldCheck size={16} /> {t.adminPanel}
                 </Link>

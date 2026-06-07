@@ -27,6 +27,7 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [validationTriggered, setValidationTriggered] = useState(false);
+  const [isProfileCompleted, setIsProfileCompleted] = useState(false);
 
   const [formData, setFormData] = useState({
     studentId: "",
@@ -81,6 +82,7 @@ export default function ProfilePage() {
             ],
           });
           if (user.image) setPreviewUrl(user.image);
+          setIsProfileCompleted(!!user.profileCompleted);
         }
         setLoading(false);
       })
@@ -200,7 +202,7 @@ export default function ProfilePage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Failed to update profile");
+        setError(t[data.error as keyof typeof t] || data.error || "Failed to update profile");
       }
     } catch (err) {
       setError("Something went wrong");
@@ -286,21 +288,27 @@ export default function ProfilePage() {
                     right: 4,
                     width: 44,
                     height: 44,
-                    background: "var(--accent-primary)",
-                    color: "#fff",
+                    background: "var(--border-medium)",
+                    color: "var(--text-muted)",
                     borderRadius: "50%",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    cursor: "pointer",
-                    boxShadow: "0 4px 12px var(--accent-glow)",
+                    cursor: "not-allowed",
                     border: "3px solid white"
                   }}
+                  title={t.profilePhotoDisabledNote}
                 >
                   <Camera size={20} />
-                  <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={uploading} />
+                  <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={true} />
                 </label>
               </div>
+
+              {/* Note: Profile photo upload temporarily disabled */}
+              <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", maxWidth: 280, marginTop: -8 }}>
+                {t.profilePhotoDisabledNote}
+              </div>
+
 
               {previewUrl && (
                 <div style={{ width: "100%", maxWidth: 300, display: "flex", flexDirection: "column", gap: 16, padding: "16px 24px", background: "var(--bg-elevated)", borderRadius: 24, border: "1px solid var(--border-subtle)" }}>
@@ -384,14 +392,20 @@ export default function ProfilePage() {
                   </select>
                 </div>
                 <div className="field">
-                  <label className="label">{t.fullName} <span style={{ color: "#ef4444" }}>*</span></label>
+                  <label className="label">
+                    {t.fullName} {isProfileCompleted ? "(Locked)" : <span style={{ color: "#ef4444" }}>*</span>}
+                  </label>
                   <input
                     className="input"
                     name="name"
                     required
+                    disabled={isProfileCompleted}
                     value={formData.name}
                     onChange={(e) => set("name", e.target.value)}
                     style={{
+                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
+                      cursor: isProfileCompleted ? "not-allowed" : undefined,
+                      opacity: isProfileCompleted ? 0.7 : undefined,
                       borderColor: validationTriggered && !formData.name.trim() ? "#ef4444" : undefined,
                       boxShadow: validationTriggered && !formData.name.trim() ? "0 0 0 1px #ef4444" : undefined
                     }}
@@ -431,14 +445,20 @@ export default function ProfilePage() {
                   </select>
                 </div>
                 <div className="field">
-                  <label className="label">{t.phone} <span style={{ color: "#ef4444" }}>*</span></label>
+                  <label className="label">
+                    {t.phone} {isProfileCompleted ? "(Locked)" : <span style={{ color: "#ef4444" }}>*</span>}
+                  </label>
                   <input
                     className="input"
                     name="phone"
                     required
+                    disabled={isProfileCompleted}
                     value={formData.phone}
                     onChange={(e) => set("phone", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
                     style={{
+                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
+                      cursor: isProfileCompleted ? "not-allowed" : undefined,
+                      opacity: isProfileCompleted ? 0.7 : undefined,
                       borderColor: validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim())) ? "#ef4444" : undefined,
                       boxShadow: validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim())) ? "0 0 0 1px #ef4444" : undefined
                     }}

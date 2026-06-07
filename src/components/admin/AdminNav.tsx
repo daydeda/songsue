@@ -20,15 +20,31 @@ const NAV = [
   { href: "/admin/audit-logs",key: "auditTrails",          icon: ShieldCheck },
 ] as const;
 
-export function AdminNav() {
+export function AdminNav({ role }: { role?: string | null }) {
   const pathname = usePathname();
   const { t } = useLanguage();
+
+  const filteredNav = NAV.filter(item => {
+    // Organizer cannot see Students list or Audit Logs
+    if (role === "organizer") {
+      if (item.href === "/admin/students" || item.href === "/admin/audit-logs") {
+        return false;
+      }
+    }
+    // Registration cannot see Audit Logs
+    if (role === "registration") {
+      if (item.href === "/admin/audit-logs") {
+        return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <nav style={{ flex: 1 }}>
       <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>{t.mainMenu}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {NAV.map((item) => {
+        {filteredNav.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
           const labelText = t[item.key] || item.key;

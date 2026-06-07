@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { useSession } from "next-auth/react";
 import {
   Search, Users, ShieldAlert, Heart, Phone,
   X, ShieldCheck, User as UserIcon,
   Activity, GraduationCap, ChevronDown,
   Edit2, Trash2, Check, Home, Shield,
-  BookOpen, Briefcase
+  BookOpen, Briefcase, Award
 } from "lucide-react";
 
 type Student = {
@@ -193,6 +194,12 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
 }
 
 export default function AdminStudentsDirectory() {
+  const { data: session } = useSession();
+  const userRole = session?.user?.role || "student";
+
+  const canViewMedicalLog = userRole === "super_admin";
+  const canEditOrDelete = userRole === "super_admin" || userRole === "admin";
+
   const { t } = useLanguage();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,17 +262,28 @@ export default function AdminStudentsDirectory() {
   const roleOptions = [
     { value: "all", label: t.allRoles },
     { value: "student", label: t.roleStudentPlural, icon: <GraduationCap size={16} className="text-muted" /> },
-    { value: "professor", label: t.roleProfessorPlural, icon: <BookOpen size={16} className="text-[#8b5cf6]" /> },
-    { value: "officer", label: t.roleOfficerPlural, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
-    { value: "admin", label: t.roleAdminPlural, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
+    { value: "staff", label: t.roleStaffPlural, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
+    { value: "admin", label: t.roleAdminPlural, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> },
+    { value: "super_admin", label: t.roleSuperAdminPlural, icon: <Shield size={16} className="text-[#ef4444]" /> },
+    { value: "registration", label: t.roleRegistrationPlural, icon: <UserIcon size={16} className="text-[#3b82f6]" /> },
+    { value: "organizer", label: t.roleOrganizerPlural, icon: <Award size={16} className="text-[#10b981]" /> }
   ];
 
   const editRoleOptions = [
     { value: "student", label: t.roleStudent, icon: <GraduationCap size={16} className="text-muted" /> },
-    { value: "professor", label: t.roleProfessor, icon: <BookOpen size={16} className="text-[#8b5cf6]" /> },
-    { value: "officer", label: t.roleOfficer, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
-    { value: "admin", label: t.roleAdmin, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> }
+    { value: "staff", label: t.roleStaff, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
+    { value: "admin", label: t.roleAdmin, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> },
+    { value: "super_admin", label: t.roleSuperAdmin, icon: <Shield size={16} className="text-[#ef4444]" /> },
+    { value: "registration", label: t.roleRegistration, icon: <UserIcon size={16} className="text-[#3b82f6]" /> },
+    { value: "organizer", label: t.roleOrganizer, icon: <Award size={16} className="text-[#10b981]" /> }
   ];
+
+  const allowedEditRoleOptions = editRoleOptions.filter(opt => {
+    if (opt.value === "super_admin" && userRole !== "super_admin") {
+      return false;
+    }
+    return true;
+  });
 
   const editHouseOptions = [
     { value: "", label: t.unassignedLabel, icon: <X size={16} className="text-muted" /> },
@@ -283,7 +301,9 @@ export default function AdminStudentsDirectory() {
         s.nickname?.toLowerCase().includes(search.toLowerCase());
 
       const matchesHouse = houseFilter === "all" || s.houseId === houseFilter;
-      const matchesRole = roleFilter === "all" || (s.role || "student") === roleFilter;
+      const matchesRole = roleFilter === "all" ||
+        (roleFilter === "staff" && ["staff", "professor", "officer"].includes(s.role || "")) ||
+        (s.role || "student") === roleFilter;
 
       return matchesSearch && matchesHouse && matchesRole;
     }
@@ -385,8 +405,11 @@ export default function AdminStudentsDirectory() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((s) => (
-                    <tr key={s.id} style={{ transition: "all 0.2s" }} className="student-row">
+                  {filtered.map((s) => {
+                    const isTargetSuperAdmin = s.role === "super_admin";
+                    const canModifyThisRow = canEditOrDelete && (!isTargetSuperAdmin || userRole === "super_admin");
+                    return (
+                      <tr key={s.id} style={{ transition: "all 0.2s" }} className="student-row">
                       <td style={{ padding: "24px 32px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                           <div style={{ width: 32, height: 32, borderRadius: 10, background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border-subtle)" }}>
@@ -400,19 +423,29 @@ export default function AdminStudentsDirectory() {
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
                           <span style={{ fontWeight: 800, color: "var(--text-primary)", fontSize: 16 }}>{s.name}</span>
+                          {s.role === "super_admin" && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Super Administrator">
+                              <Shield size={10} /> {t.roleSuperAdmin}
+                            </span>
+                          )}
                           {s.role === "admin" && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="System Administrator">
-                              <ShieldCheck size={10} /> Admin
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(249,115,22,0.1)", color: "#f97316", border: "1px solid rgba(249,115,22,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="System Administrator">
+                              <ShieldCheck size={10} /> {t.roleAdmin}
                             </span>
                           )}
-                          {s.role === "professor" && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(139,92,246,0.1)", color: "#8b5cf6", border: "1px solid rgba(139,92,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Professor">
-                              <BookOpen size={10} /> Professor
+                          {s.role === "registration" && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Registration Staff">
+                              <UserIcon size={10} /> {t.roleRegistration}
                             </span>
                           )}
-                          {s.role === "officer" && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(20,184,166,0.1)", color: "#14b8a6", border: "1px solid rgba(20,184,166,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Officer">
-                              <Briefcase size={10} /> Officer
+                          {s.role === "organizer" && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Event Organizer">
+                              <Award size={10} /> {t.roleOrganizer}
+                            </span>
+                          )}
+                          {(s.role === "staff" || s.role === "professor" || s.role === "officer") && (
+                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(20,184,166,0.1)", color: "#14b8a6", border: "1px solid rgba(20,184,166,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Staff">
+                              <Briefcase size={10} /> {t.roleStaff}
                             </span>
                           )}
                           {s.nickname && (
@@ -462,28 +495,50 @@ export default function AdminStudentsDirectory() {
                       </td>
                       <td style={{ textAlign: "right", paddingRight: 32 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-                          <button
-                            className="btn btn-ghost"
-                            style={{ padding: 8, borderRadius: 10, color: "var(--text-secondary)" }}
-                            onClick={() => setEditingStudent(s)}
-                            title="Edit User"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            className="btn btn-ghost"
-                            style={{ padding: 8, borderRadius: 10, color: "#ef4444" }}
-                            onClick={async () => {
-                              if (confirm(`⚠ PERMANENT ACTION: Are you sure you want to delete ${s.name}? This cannot be undone.`)) {
-                                const res = await fetch(`/api/admin/users/${s.id}`, { method: "DELETE" });
-                                if (res.ok) refreshData();
-                                else alert("Failed to delete user. Check permissions.");
-                              }
-                            }}
-                            title="Delete User"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          {canModifyThisRow ? (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: 8, borderRadius: 10, color: "var(--text-secondary)" }}
+                              onClick={() => setEditingStudent(s)}
+                              title="Edit User"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: 8, borderRadius: 10, color: "var(--text-muted)", opacity: 0.4, cursor: "not-allowed" }}
+                              disabled
+                              title="Edit User (Restricted)"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          )}
+                          {canModifyThisRow ? (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: 8, borderRadius: 10, color: "#ef4444" }}
+                              onClick={async () => {
+                                if (confirm(`⚠ PERMANENT ACTION: Are you sure you want to delete ${s.name}? This cannot be undone.`)) {
+                                  const res = await fetch(`/api/admin/users/${s.id}`, { method: "DELETE" });
+                                  if (res.ok) refreshData();
+                                  else alert("Failed to delete user. Check permissions.");
+                                }
+                              }}
+                              title="Delete User"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-ghost"
+                              style={{ padding: 8, borderRadius: 10, color: "var(--text-muted)", opacity: 0.4, cursor: "not-allowed" }}
+                              disabled
+                              title="Delete User (Restricted)"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                           <div style={{ width: 1, height: 24, background: "var(--border-subtle)", margin: "0 4px" }} />
                           <button
                             id={`view-sensitive-${s.id}-btn`}
@@ -504,7 +559,8 @@ export default function AdminStudentsDirectory() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {filtered.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ textAlign: "center", padding: 80 }}>
@@ -731,7 +787,7 @@ export default function AdminStudentsDirectory() {
                   <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block", marginLeft: 8 }}>{t.systemRole}</label>
                   <CustomDropdown
                     value={editingStudent.role || "student"}
-                    options={editRoleOptions}
+                    options={allowedEditRoleOptions}
                     onChange={val => setEditingStudent({ ...editingStudent, role: val })}
                     icon={<Shield size={18} />}
                   />

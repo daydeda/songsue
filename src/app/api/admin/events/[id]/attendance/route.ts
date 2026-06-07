@@ -10,9 +10,12 @@ export async function GET(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "admin") {
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const canViewMedical = session.user.role === "super_admin";
 
     const { id: eventId } = await params;
 
@@ -27,13 +30,13 @@ export async function GET(
             studentId: true,
             major: true,
             phone: true,
-            chronicDiseases: true,
-            medicalHistory: true,
-            drugAllergies: true,
-            foodAllergies: true,
-            dietaryRestrictions: true,
-            faintingHistory: true,
-            emergencyContacts: true,
+            chronicDiseases: canViewMedical,
+            medicalHistory: canViewMedical,
+            drugAllergies: canViewMedical,
+            foodAllergies: canViewMedical,
+            dietaryRestrictions: canViewMedical,
+            faintingHistory: canViewMedical,
+            emergencyContacts: canViewMedical,
           },
           with: {
             house: {
@@ -50,16 +53,18 @@ export async function GET(
     });
 
     // FE-12: Log the sensitive data access (Immutable Audit Trail)
-    // Since attendance list now contains medical info, we must log this access.
-    await db.insert(auditLogs).values({
-      actorId: session.user.id,
-      action: `Viewed Attendance List for Event ${eventId} (included health info)`,
-      timestamp: new Date(),
-      ipAddress:
-        req.headers.get("x-forwarded-for")?.split(",")[0] ||
-        req.headers.get("x-real-ip") ||
-        "127.0.0.1",
-    });
+    // Since attendance list now contains medical info, we must log this access if they have permission to view it.
+    if (canViewMedical) {
+      await db.insert(auditLogs).values({
+        actorId: session.user.id,
+        action: `Viewed Attendance List for Event ${eventId} (included health info)`,
+        timestamp: new Date(),
+        ipAddress:
+          req.headers.get("x-forwarded-for")?.split(",")[0] ||
+          req.headers.get("x-real-ip") ||
+          "127.0.0.1",
+      });
+    }
 
     return NextResponse.json(list);
   } catch (error) {

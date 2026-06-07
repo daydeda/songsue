@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const data = profileSchema.parse(body);
 
-    const isAdmin = session.user.role === "admin";
+    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
     if (!data.studentId && !isAdmin) {
       return NextResponse.json({ error: "Student ID is required" }, { status: 400 });
     }
@@ -96,10 +96,26 @@ export async function POST(req: Request) {
     revalidatePath("/dashboard");
 
     return NextResponse.json({ success: true, user: updated });
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues.map(i => `${i.path}: ${i.message}`).join(", ") }, { status: 400 });
     }
+    
+    // Handle Postgres Unique Constraint Violation (duplicate entries)
+    const dbError = error.cause || error;
+    if (dbError && dbError.code === "23505") {
+      const constraint = dbError.constraint_name || dbError.constraint || "";
+      let errorKey = "infoAlreadyInUse";
+      if (constraint.includes("student_id")) {
+        errorKey = "studentIdAlreadyRegistered";
+      } else if (constraint.includes("name")) {
+        errorKey = "fullNameAlreadyRegistered";
+      } else if (constraint.includes("phone")) {
+        errorKey = "phoneAlreadyRegistered";
+      }
+      return NextResponse.json({ error: errorKey }, { status: 400 });
+    }
+
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
@@ -129,10 +145,26 @@ export async function PATCH(req: Request) {
     revalidatePath("/dashboard");
 
     return NextResponse.json({ success: true, user: updated });
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+    
+    // Handle Postgres Unique Constraint Violation (duplicate entries)
+    const dbError = error.cause || error;
+    if (dbError && dbError.code === "23505") {
+      const constraint = dbError.constraint_name || dbError.constraint || "";
+      let errorKey = "infoAlreadyInUse";
+      if (constraint.includes("student_id")) {
+        errorKey = "studentIdAlreadyRegistered";
+      } else if (constraint.includes("name")) {
+        errorKey = "fullNameAlreadyRegistered";
+      } else if (constraint.includes("phone")) {
+        errorKey = "phoneAlreadyRegistered";
+      }
+      return NextResponse.json({ error: errorKey }, { status: 400 });
+    }
+
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

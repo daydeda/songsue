@@ -40,6 +40,36 @@ export async function POST(req: Request) {
 
     // Create unique filename
     const filename = `${Date.now()}-${file.name.replace(/\s+/g, "-")}`;
+
+    // --- PRODUCTION: Supabase Storage ---
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      );
+
+      const { data, error } = await supabase.storage
+        .from("uploads")
+        .upload(filename, buffer, {
+          contentType: file.type,
+          upsert: true,
+        });
+
+      if (error) {
+        console.error("Supabase storage upload error:", error);
+        return NextResponse.json({ error: "Failed to upload to cloud storage." }, { status: 500 });
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from("uploads")
+        .getPublicUrl(filename);
+
+      return NextResponse.json({ url: publicUrl });
+    }
+
+    // --- DEVELOPMENT FALLBACK: Local Disk ---
     const uploadDir = path.join(process.cwd(), "public", "uploads");
     
     // Ensure directory exists
@@ -57,3 +87,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
+

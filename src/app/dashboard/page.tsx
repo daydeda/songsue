@@ -453,11 +453,6 @@ export default function DashboardPage() {
                   width: "100%"
                 }}
               >
-                <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <p style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", letterSpacing: "0.15em", textTransform: "uppercase" }}>{t.digitalId}</p>
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#10b981", boxShadow: "0 0 10px #10b981" }} />
-                </div>
-
                 <div
                   style={{
                     background: "#fff",

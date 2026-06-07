@@ -384,8 +384,20 @@ export default function ProfilePage() {
                   <input className="input" disabled value={formData.studentId} style={{ background: "var(--bg-elevated)", cursor: "not-allowed", opacity: 0.7 }} />
                 </div>
                 <div className="field">
-                  <label className="label">{t.prefix}</label>
-                  <select className="input" value={formData.prefix} onChange={(e) => set("prefix", e.target.value)}>
+                  <label className="label">
+                    {t.prefix} {isProfileCompleted && "(Locked)"}
+                  </label>
+                  <select
+                    className="input"
+                    disabled={isProfileCompleted}
+                    value={formData.prefix}
+                    onChange={(e) => set("prefix", e.target.value)}
+                    style={{
+                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
+                      cursor: isProfileCompleted ? "not-allowed" : undefined,
+                      opacity: isProfileCompleted ? 0.7 : undefined,
+                    }}
+                  >
                     <option value="นาย">นาย (Mr.)</option>
                     <option value="นางสาว">นางสาว (Ms.)</option>
                     <option value="นาง">นาง (Mrs.)</option>
@@ -435,8 +447,20 @@ export default function ProfilePage() {
                   )}
                 </div>
                 <div className="field">
-                  <label className="label">{t.major}</label>
-                  <select className="input" value={formData.major} onChange={(e) => set("major", e.target.value)}>
+                  <label className="label">
+                    {t.major} {isProfileCompleted && "(Locked)"}
+                  </label>
+                  <select
+                    className="input"
+                    disabled={isProfileCompleted}
+                    value={formData.major}
+                    onChange={(e) => set("major", e.target.value)}
+                    style={{
+                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
+                      cursor: isProfileCompleted ? "not-allowed" : undefined,
+                      opacity: isProfileCompleted ? 0.7 : undefined,
+                    }}
+                  >
                     <option value="ANI">ANI - Animation and Visual Effect</option>
                     <option value="DG">DG - Digital Game</option>
                     <option value="DII">DII - Digital Industry Integration</option>
@@ -710,7 +734,7 @@ export default function ProfilePage() {
               {!error && !success && <div />}
 
               <button type="submit" disabled={saving || uploading} className="btn btn-primary btn-lg" style={{ minWidth: 200, borderRadius: 99, boxShadow: "0 10px 20px var(--accent-glow)" }}>
-                {saving ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> {t.continue}</>}
+                {saving ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> {t.save}</>}
               </button>
             </div>
 

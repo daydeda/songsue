@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: process.env.VERCEL ? undefined : ".next.nosync",
+  distDir: (typeof __dirname !== "undefined" && (__dirname.includes("CloudDocs") || __dirname.includes("Mobile Documents")))
+    ? ".next.nosync"
+    : undefined,
   allowedDevOrigins: ["192.168.1.3"],
   turbopack: {},
   webpack: (config, { dev }) => {

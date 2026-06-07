@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  distDir: ".next.nosync",
+  distDir: process.env.VERCEL ? undefined : ".next.nosync",
   allowedDevOrigins: ["192.168.1.3"],
   turbopack: {},
   webpack: (config, { dev }) => {

@@ -244,6 +244,20 @@ export function StudentNav() {
                 href={link.href} 
                 className={`nav-link ${isActive ? "active" : ""}`}
                 onClick={() => setIsMobileMenuOpen(false)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  padding: "14px 20px",
+                  color: isActive ? "var(--accent-primary)" : "var(--text-secondary)",
+                  fontWeight: 600,
+                  fontSize: "15px",
+                  borderRadius: "12px",
+                  textDecoration: "none",
+                  marginBottom: "4px",
+                  background: isActive ? "var(--accent-glow)" : "transparent",
+                  border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
+                }}
               >
                 <Icon size={16} />
                 {link.label}
@@ -255,6 +269,20 @@ export function StudentNav() {
               href="/admin/dashboard" 
               className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`} 
               onClick={() => setIsMobileMenuOpen(false)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                padding: "14px 20px",
+                color: "var(--accent-primary)",
+                fontWeight: 600,
+                fontSize: "15px",
+                borderRadius: "12px",
+                textDecoration: "none",
+                marginBottom: "4px",
+                background: pathname.startsWith("/admin") ? "var(--accent-glow)" : "rgba(255,107,0,0.05)",
+                border: pathname.startsWith("/admin") ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
+              }}
             >
               <ShieldCheck size={16} /> {t.adminPanel}
             </Link>

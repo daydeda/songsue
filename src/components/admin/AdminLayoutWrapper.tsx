@@ -49,7 +49,7 @@ export function AdminLayoutWrapper({
       <aside className={`
         sidebar fixed lg:static inset-y-0 left-0 z-[1002] 
         transition-transform duration-300 transform
-        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        ${isSidebarOpen ? "translate-x-0 open" : "-translate-x-full"}
         lg:translate-x-0 lg:flex
         w-[280px] bg-white border-r border-[var(--border-subtle)] flex flex-col pt-6 px-6 pb-[calc(1.5rem+var(--safe-bottom))]
       `}>
@@ -146,6 +146,17 @@ export function AdminLayoutWrapper({
             padding-left: 56px;
             padding-right: 56px;
             padding-top: 96px;
+          }
+        }
+        @media (max-width: 1023px) {
+          .sidebar {
+            transform: translateX(-100%) !important;
+            position: fixed !important;
+            visibility: hidden !important;
+          }
+          .sidebar.open {
+            visibility: visible !important;
+            transform: translateX(0) !important;
           }
         }
       `}</style>

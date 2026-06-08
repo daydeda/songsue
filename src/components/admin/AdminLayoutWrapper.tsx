@@ -117,7 +117,7 @@ export function AdminLayoutWrapper({
       </aside>
 
       <main className="admin-main">
-        <div className="max-w-[1400px] mx-auto w-full">
+        <div className="w-full">
           {children}
         </div>
       </main>

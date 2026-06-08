@@ -8,8 +8,13 @@ export function LanguageWrapper({ children }: { children: React.ReactNode }) {
 
   return (
     <div 
+      className={`lang-${lang}`}
       style={{ 
-        fontFamily: lang === "th" ? "var(--font-thai), sans-serif" : "var(--font-inter), sans-serif",
+        fontFamily: 
+          lang === "th" ? "var(--font-ibm-thai), sans-serif" : 
+          lang === "mm" ? "var(--font-noto-myanmar), sans-serif" : 
+          lang === "cn" ? "var(--font-noto-sc), sans-serif" : 
+          "var(--font-ibm-sans), sans-serif",
         minHeight: "100%",
         display: "flex",
         flexDirection: "column",

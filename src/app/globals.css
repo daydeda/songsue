@@ -374,3 +374,19 @@ select.input { cursor: pointer; }
 .alert-warning { background: rgba(234,179,8,0.08);  border: 1px solid rgba(234,179,8,0.2);  color: #facc15; }
 .alert-error   { background: rgba(239,68,68,0.08);  border: 1px solid rgba(239,68,68,0.2);  color: #f87171; }
 .alert-info    { background: rgba(255,107,0,0.08); border: 1px solid rgba(255,107,0,0.2); color: #fb923c; }
+
+/* ── Thai Typography Fixes ─────────────────────────────────────────────────── */
+.lang-th,
+.lang-th * {
+  letter-spacing: normal !important;
+}
+.lang-th h1,
+.lang-th h2,
+.lang-th h3,
+.lang-th h4,
+.lang-th h5,
+.lang-th h6,
+.lang-th .text-fluid-h1,
+.lang-th .gradient-text {
+  line-height: 1.35 !important;
+}

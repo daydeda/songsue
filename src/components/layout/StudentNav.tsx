@@ -4,612 +4,639 @@ import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LogOut,
-  User,
-  ShieldCheck,
-  History,
-  Trophy,
-  Menu,
-  X,
-  Settings,
-  LayoutDashboard
+LogOut,
+User,
+ShieldCheck,
+History,
+Trophy,
+Menu,
+X,
+Settings,
+LayoutDashboard
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 export function StudentNav() {
-  const { data: session } = useSession();
-  const { t } = useLanguage();
-  const pathname = usePathname();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+const { data: session } = useSession();
+const { t } = useLanguage();
+const pathname = usePathname();
+const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
 
-  const user = session?.user;
+const mobileProfileRef = useRef<HTMLDivElement>(null);
+const desktopProfileRef = useRef<HTMLDivElement>(null);
 
-  const links = [
-    { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
-    { href: "/dashboard/history", label: t.eventHistory, icon: History },
-    { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
-    { href: "/dashboard/profile", label: t.editProfile, icon: Settings },
-  ];
+useEffect(() => {
+function handleClickOutside(event: MouseEvent) {
+const target = event.target as Node;
+const clickedOutsideMobile = !mobileProfileRef.current || !mobileProfileRef.current.contains(target);
+const clickedOutsideDesktop = !desktopProfileRef.current || !desktopProfileRef.current.contains(target);
+if (clickedOutsideMobile && clickedOutsideDesktop) {
+setIsProfileDropdownOpen(false);
+}
+}
+document.addEventListener("mousedown", handleClickOutside);
+return () => document.removeEventListener("mousedown", handleClickOutside);
+}, []);
 
-  return (
-    <nav className="student-nav">
-      <div className="nav-content">
-        
-        {/* Mobile Left: Hamburger and Profile Icon */}
-        <div className="mobile-controls">
-          <button
-            className="mobile-toggle touch-target"
-            onClick={() => setIsMobileMenuOpen(true)}
-            aria-label="Open Menu"
-          >
-            <Menu size={24} />
-          </button>
-          
-          <div className="mobile-profile-wrapper">
-            <button
-              className="avatar-btn"
-              onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-              aria-label="User Menu"
-            >
-              <div className="avatar">
-                {user?.image ? (
-                  <img
-                    src={user.image}
-                    alt={user.name || "User Avatar"}
-                    className="avatar-img"
-                    style={{
-                      transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
-                    }}
-                  />
-                ) : (
-                  <User size={18} color="var(--text-secondary)" />
-                )}
-              </div>
-            </button>
-            
-            {/* Mobile Profile Dropdown (GitHub style) */}
-            {isProfileDropdownOpen && (
-              <>
-                <div className="dropdown-backdrop" onClick={() => setIsProfileDropdownOpen(false)} />
-                <div className="profile-dropdown mobile-dropdown-pos">
-                  <div className="dropdown-header">
-                    <p className="dropdown-name">{user?.name}</p>
-                    <p className="dropdown-sub">
-                      {user?.role === "super_admin" ? t.roleSuperAdmin :
-                       user?.role === "admin" ? t.roleAdmin :
-                       user?.role === "registration" ? t.roleRegistration :
-                       user?.role === "organizer" ? t.roleOrganizer :
-                       user?.role === "staff" ? t.roleStaff :
-                       (user?.studentId || t.roleStudent)}
-                    </p>
-                  </div>
-                  <div className="dropdown-divider" />
-                  <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-                    <Settings size={14} />
-                    {t.editProfile}
-                  </Link>
-                  {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
-                    <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
-                      <ShieldCheck size={14} />
-                      {t.adminPanel}
-                    </Link>
-                  )}
-                  <div className="dropdown-divider" />
-                  <button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
-                    <LogOut size={14} />
-                    {t.signOut}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+const user = session?.user;
 
-        {/* Brand/Logo (Desktop Left, Mobile Right) */}
-        <div className="nav-left">
-          <Link href="/dashboard" className="logo">
-            <img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" />
-            <div className="logo-text">
-              <span className="gradient-text">ActiveCAMT</span>
-            </div>
-          </Link>
-        </div>
+const links = [
+{ href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
+{ href: "/dashboard/history", label: t.eventHistory, icon: History },
+{ href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
+{ href: "/dashboard/profile", label: t.editProfile, icon: Settings },
+];
 
-        {/* Center: Desktop Nav (Hidden on Mobile) */}
-        <div className="nav-center desktop-links">
-          {links.map((link) => {
-            const Icon = link.icon;
-            const isActive = pathname === link.href;
-            return (
-              <Link 
-                key={link.href} 
-                href={link.href} 
-                className={`nav-link ${isActive ? "active" : ""}`}
-              >
-                <Icon size={16} />
-                {link.label}
-              </Link>
-            );
-          })}
-        </div>
+return (
+<>
+<nav className="student-nav">
+<div className="nav-content">
 
-        {/* Right: Desktop Actions & User */}
-        <div className="nav-right desktop-links">
-          <LanguageSwitcher />
+{/* Mobile Left: Hamburger and Profile Icon */}
+<div className="mobile-controls">
+<button
+className="mobile-toggle touch-target"
+onClick={() => setIsMobileMenuOpen(true)}
+aria-label="Open Menu"
+>
+<Menu size={24} />
+</button>
 
-          <div className="user-section">
-            <div className="user-info">
-              <p className="user-name">{user?.name}</p>
-              <p className="user-role">
-                {user?.role === "super_admin" ? t.roleSuperAdmin :
-                 user?.role === "admin" ? t.roleAdmin :
-                 user?.role === "registration" ? t.roleRegistration :
-                 user?.role === "organizer" ? t.roleOrganizer :
-                 user?.role === "staff" ? t.roleStaff :
-                 (user?.studentId || t.roleStudent)}
-              </p>
-            </div>
+<div className="mobile-profile-wrapper" ref={mobileProfileRef}>
+<button
+className="avatar-btn"
+onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+aria-label="User Menu"
+>
+<div className="avatar">
+{user?.image ? (
+<img
+src={user.image}
+alt={user.name || "User Avatar"}
+className="avatar-img"
+style={{
+transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
+}}
+/>
+) : (
+<User size={18} color="var(--text-secondary)" />
+)}
+</div>
+</button>
 
-            <div className="desktop-profile-wrapper">
-              <button
-                className="avatar-btn"
-                onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-                aria-label="User Menu"
-              >
-                <div className="avatar">
-                  {user?.image ? (
-                    <img
-                      src={user.image}
-                      alt={user.name || "User Avatar"}
-                      className="avatar-img"
-                      style={{
-                        transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
-                      }}
-                    />
-                  ) : (
-                    <User size={18} color="var(--text-secondary)" />
-                  )}
-                </div>
-              </button>
+{/* Mobile Profile Dropdown (GitHub style) */}
+{isProfileDropdownOpen && (
+<div className="profile-dropdown mobile-dropdown-pos">
+<div className="dropdown-header">
+<p className="dropdown-name">{user?.name}</p>
+<p className="dropdown-sub">
+{user?.role === "super_admin" ? t.roleSuperAdmin :
+user?.role === "admin" ? t.roleAdmin :
+user?.role === "registration" ? t.roleRegistration :
+user?.role === "organizer" ? t.roleOrganizer :
+user?.role === "staff" ? t.roleStaff :
+(user?.studentId || t.roleStudent)}
+</p>
+</div>
+<div className="dropdown-divider" />
+<Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+<User size={16} />
+{t.editProfile}
+</Link>
+{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+<Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
+<ShieldCheck size={16} />
+{t.adminPanel}
+</Link>
+)}
+<div className="dropdown-divider" />
+<button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
+<LogOut size={16} />
+{t.signOut}
+</button>
+</div>
+)}
+</div>
+</div>
 
-              {/* Desktop Profile Dropdown (GitHub style) */}
-              {isProfileDropdownOpen && (
-                <>
-                  <div className="dropdown-backdrop" onClick={() => setIsProfileDropdownOpen(false)} />
-                  <div className="profile-dropdown desktop-dropdown-pos">
-                    <div className="dropdown-header">
-                      <p className="dropdown-name">{user?.name}</p>
-                      <p className="dropdown-sub">
-                        {user?.role === "super_admin" ? t.roleSuperAdmin :
-                         user?.role === "admin" ? t.roleAdmin :
-                         user?.role === "registration" ? t.roleRegistration :
-                         user?.role === "organizer" ? t.roleOrganizer :
-                         user?.role === "staff" ? t.roleStaff :
-                         (user?.studentId || t.roleStudent)}
-                      </p>
-                    </div>
-                    <div className="dropdown-divider" />
-                    <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-                      <Settings size={14} />
-                      {t.editProfile}
-                    </Link>
-                    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
-                      <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
-                        <ShieldCheck size={14} />
-                        {t.adminPanel}
-                      </Link>
-                    )}
-                    <div className="dropdown-divider" />
-                    <button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
-                      <LogOut size={14} />
-                      {t.signOut}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+{/* Brand/Logo (Desktop Left, Mobile Right) */}
+<div className="nav-left">
+<Link href="/dashboard" className="logo">
+<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" />
+<div className="logo-text">
+<span className="gradient-text">ActiveCAMT</span>
+</div>
+</Link>
+</div>
 
-      {/* Mobile Sidebar (Drawer sliding from Left) */}
-      <div className={`mobile-sidebar-overlay ${isMobileMenuOpen ? "open" : ""}`} onClick={() => setIsMobileMenuOpen(false)} />
-      <aside className={`mobile-sidebar ${isMobileMenuOpen ? "open" : ""}`}>
-        <div className="sidebar-header">
-          <div className="logo">
-            <img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" />
-            <div className="logo-text">
-              <span className="gradient-text">ActiveCAMT</span>
-            </div>
-          </div>
-          <button
-            className="sidebar-close touch-target"
-            onClick={() => setIsMobileMenuOpen(false)}
-            aria-label="Close Menu"
-          >
-            <X size={24} />
-          </button>
-        </div>
-        
-        <div className="sidebar-body">
-          {links.map((link) => {
-            const Icon = link.icon;
-            const isActive = pathname === link.href;
-            return (
-              <Link 
-                key={link.href} 
-                href={link.href} 
-                className={`nav-link ${isActive ? "active" : ""}`}
-                onClick={() => setIsMobileMenuOpen(false)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  padding: "14px 20px",
-                  color: isActive ? "var(--accent-primary)" : "var(--text-secondary)",
-                  fontWeight: 600,
-                  fontSize: "15px",
-                  borderRadius: "12px",
-                  textDecoration: "none",
-                  marginBottom: "4px",
-                  background: isActive ? "var(--accent-glow)" : "transparent",
-                  border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
-                }}
-              >
-                <Icon size={16} />
-                {link.label}
-              </Link>
-            );
-          })}
-          {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
-            <Link 
-              href="/admin/dashboard" 
-              className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`} 
-              onClick={() => setIsMobileMenuOpen(false)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                padding: "14px 20px",
-                color: "var(--accent-primary)",
-                fontWeight: 600,
-                fontSize: "15px",
-                borderRadius: "12px",
-                textDecoration: "none",
-                marginBottom: "4px",
-                background: pathname.startsWith("/admin") ? "var(--accent-glow)" : "rgba(255,107,0,0.05)",
-                border: pathname.startsWith("/admin") ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
-              }}
-            >
-              <ShieldCheck size={16} /> {t.adminPanel}
-            </Link>
-          )}
-        </div>
+{/* Center: Desktop Nav (Hidden on Mobile) */}
+<div className="nav-center desktop-links">
+{links.map((link) => {
+const Icon = link.icon;
+const isActive = pathname === link.href;
+return (
+<Link 
+key={link.href} 
+href={link.href} 
+className={`nav-link ${isActive ? "active" : ""}`}
+>
+<Icon size={16} />
+{link.label}
+</Link>
+);
+})}
+</div>
 
-        <div className="sidebar-footer">
-          <LanguageSwitcher />
-          <button className="btn btn-danger btn-sm rounded-full w-full" onClick={() => signOut({ callbackUrl: "/" })} style={{ gap: 8, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <LogOut size={14} /> {t.signOut}
-          </button>
-        </div>
-      </aside>
+{/* Right: Desktop Actions & User */}
+<div className="nav-right desktop-links">
+<LanguageSwitcher />
 
-      <style jsx>{`
-        .student-nav {
-          background: rgba(255, 255, 255, 0.85);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border-bottom: 1px solid var(--border-subtle);
-          position: sticky;
-          top: 0;
-          z-index: 1000;
-          padding: 0 24px;
-        }
-        .nav-content {
-          max-width: 1400px;
-          margin: 0 auto;
-          height: 72px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .nav-left {
-          display: flex;
-          align-items: center;
-          flex-shrink: 0;
-        }
-        .nav-center {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .nav-right {
-          display: flex;
-          align-items: center;
-          gap: 20px;
-        }
-        .logo {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          text-decoration: none;
-          color: inherit;
-        }
-        .logo-icon {
-          width: 32px;
-          height: 32px;
-          object-fit: contain;
-        }
-        .logo-text {
-          font-weight: 800;
-          font-size: 20px;
-          letter-spacing: -0.03em;
-        }
-        .user-section {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-        .user-info {
-          text-align: right;
-        }
-        .user-name {
-          font-size: 13px;
-          font-weight: 700;
-          color: var(--text-primary);
-          line-height: 1;
-          margin: 0;
-        }
-        .user-role {
-          font-size: 11px;
-          color: var(--text-muted);
-          margin-top: 3px;
-          text-transform: capitalize;
-        }
-        .avatar {
-          width: 38px;
-          height: 38px;
-          border-radius: 50%;
-          border: 2px solid var(--accent-primary);
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: var(--bg-elevated);
-        }
-        .avatar-img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-        .avatar-btn {
-          background: none;
-          border: none;
-          padding: 0;
-          cursor: pointer;
-          display: block;
-        }
-        
-        /* Dropdown style */
-        .dropdown-backdrop {
-          position: fixed;
-          inset: 0;
-          z-index: 998;
-          background: transparent;
-        }
-        .mobile-profile-wrapper,
-        .desktop-profile-wrapper {
-          position: relative;
-        }
-        .profile-dropdown {
-          position: absolute;
-          width: 220px;
-          background: white;
-          border-radius: 16px;
-          border: 1px solid var(--border-subtle);
-          box-shadow: 0 10px 40px rgba(0,0,0,0.12);
-          z-index: 999;
-          padding: 8px 0;
-          margin-top: 8px;
-          display: flex;
-          flex-direction: column;
-        }
-        .profile-dropdown::before {
-          content: '';
-          position: absolute;
-          top: -6px;
-          width: 10px;
-          height: 10px;
-          background: white;
-          border-left: 1px solid var(--border-subtle);
-          border-top: 1px solid var(--border-subtle);
-          transform: rotate(45deg);
-        }
-        .desktop-dropdown-pos {
-          right: 0;
-          top: 100%;
-        }
-        .desktop-dropdown-pos::before {
-          right: 14px;
-        }
-        .mobile-dropdown-pos {
-          left: 0;
-          top: 100%;
-        }
-        .mobile-dropdown-pos::before {
-          left: 14px;
-        }
-        .dropdown-header {
-          padding: 12px 16px 10px;
-          text-align: left;
-        }
-        .dropdown-name {
-          font-size: 14px;
-          font-weight: 700;
-          color: var(--text-primary);
-          margin: 0;
-          line-height: 1.2;
-        }
-        .dropdown-sub {
-          font-size: 11px;
-          color: var(--text-muted);
-          margin: 4px 0 0;
-          font-weight: 600;
-        }
-        .dropdown-divider {
-          height: 1px;
-          background: var(--border-subtle);
-          margin: 6px 0;
-        }
-        .dropdown-item {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 16px;
-          font-size: 13px;
-          font-weight: 700;
-          color: var(--text-secondary);
-          text-decoration: none;
-          border: none;
-          background: none;
-          width: 100%;
-          text-align: left;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-        .dropdown-item:hover {
-          background: rgba(255, 107, 0, 0.05);
-          color: var(--accent-primary);
-        }
-        .dropdown-item.admin-item {
-          color: var(--accent-primary);
-        }
-        .dropdown-item.text-danger {
-          color: #ef4444;
-        }
-        .dropdown-item.text-danger:hover {
-          background: rgba(239, 68, 68, 0.05);
-        }
+<div className="user-section">
+<div className="user-info">
+<p className="user-name">{user?.name}</p>
+<p className="user-role">
+{user?.role === "super_admin" ? t.roleSuperAdmin :
+user?.role === "admin" ? t.roleAdmin :
+user?.role === "registration" ? t.roleRegistration :
+user?.role === "organizer" ? t.roleOrganizer :
+user?.role === "staff" ? t.roleStaff :
+(user?.studentId || t.roleStudent)}
+</p>
+</div>
 
-        /* Mobile Controls */
-        .mobile-controls {
-          display: none;
-          align-items: center;
-          gap: 12px;
-        }
-        .mobile-toggle {
-          padding: 8px;
-          border-radius: 12px;
-          background: rgba(0,0,0,0.03);
-          border: none;
-          cursor: pointer;
-          color: var(--text-primary);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
+<div className="desktop-profile-wrapper" ref={desktopProfileRef}>
+<button
+className="avatar-btn"
+onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+aria-label="User Menu"
+>
+<div className="avatar">
+{user?.image ? (
+<img
+src={user.image}
+alt={user.name || "User Avatar"}
+className="avatar-img"
+style={{
+transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
+}}
+/>
+) : (
+<User size={18} color="var(--text-secondary)" />
+)}
+</div>
+</button>
 
-        /* Mobile Sidebar Drawer styling */
-        .mobile-sidebar-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.4);
-          backdrop-filter: blur(4px);
-          -webkit-backdrop-filter: blur(4px);
-          z-index: 2000;
-          opacity: 0;
-          visibility: hidden;
-          transition: opacity 0.3s ease, visibility 0.3s ease;
-        }
-        .mobile-sidebar-overlay.open {
-          opacity: 1;
-          visibility: visible;
-        }
-        .mobile-sidebar {
-          position: fixed;
-          top: 0;
-          bottom: 0;
-          left: 0;
-          width: 280px;
-          background: white;
-          box-shadow: 20px 0 40px rgba(0, 0, 0, 0.1);
-          z-index: 2001;
-          transform: translateX(-100%);
-          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          display: flex;
-          flex-direction: column;
-          padding: 24px;
-        }
-        .mobile-sidebar.open {
-          transform: translateX(0);
-        }
-        .sidebar-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 32px;
-        }
-        .sidebar-close {
-          border: none;
-          background: none;
-          cursor: pointer;
-          color: var(--text-primary);
-          padding: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .sidebar-body {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          flex: 1;
-          overflow-y: auto;
-        }
-        .sidebar-footer {
-          margin-top: auto;
-          padding-top: 20px;
-          border-top: 1px solid var(--border-subtle);
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
+{/* Desktop Profile Dropdown (GitHub style) */}
+{isProfileDropdownOpen && (
+<div className="profile-dropdown desktop-dropdown-pos">
+<div className="dropdown-header">
+<p className="dropdown-name">{user?.name}</p>
+<p className="dropdown-sub">
+{user?.role === "super_admin" ? t.roleSuperAdmin :
+user?.role === "admin" ? t.roleAdmin :
+user?.role === "registration" ? t.roleRegistration :
+user?.role === "organizer" ? t.roleOrganizer :
+user?.role === "staff" ? t.roleStaff :
+(user?.studentId || t.roleStudent)}
+</p>
+</div>
+<div className="dropdown-divider" />
+<Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+<User size={16} />
+{t.editProfile}
+</Link>
+{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+<Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
+<ShieldCheck size={16} />
+{t.adminPanel}
+</Link>
+)}
+<div className="dropdown-divider" />
+<button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
+<LogOut size={16} />
+{t.signOut}
+</button>
+</div>
+)}
+</div>
+</div>
+</div>
+</div>
+</nav>
 
-        :global(.nav-link) {
-          font-size: 14px;
-          font-weight: 700;
-          color: var(--text-secondary);
-          text-decoration: none;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          transition: all 0.2s;
-          padding: 12px 20px;
-          border-radius: 12px;
-          min-height: 44px;
-        }
-        :global(.nav-link:hover) {
-          color: var(--accent-primary);
-          background: rgba(255,107,0,0.05);
-        }
-        :global(.nav-link.active) {
-          background: var(--accent-glow) !important;
-          color: var(--accent-primary) !important;
-          border: 1px solid rgba(255, 107, 0, 0.15) !important;
-        }
+{/* Mobile Sidebar (Drawer sliding from Left) */}
+<div className={`mobile-sidebar-overlay ${isMobileMenuOpen ? "open" : ""}`} onClick={() => setIsMobileMenuOpen(false)} />
+<aside className={`mobile-sidebar ${isMobileMenuOpen ? "open" : ""}`}>
+<div className="sidebar-header">
+<div className="logo">
+<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" />
+<div className="logo-text">
+<span className="gradient-text">ActiveCAMT</span>
+</div>
+</div>
+<button
+className="sidebar-close touch-target"
+onClick={() => setIsMobileMenuOpen(false)}
+aria-label="Close Menu"
+>
+<X size={24} />
+</button>
+</div>
 
-        @media (max-width: 1100px) {
-          .desktop-links {
-            display: none !important;
-          }
-          .mobile-controls {
-            display: flex;
-          }
-        }
-      `}</style>
-    </nav>
-  );
+<div className="sidebar-body">
+{links.map((link) => {
+const Icon = link.icon;
+const isActive = pathname === link.href;
+return (
+<Link 
+key={link.href} 
+href={link.href} 
+className={`nav-link ${isActive ? "active" : ""}`}
+onClick={() => setIsMobileMenuOpen(false)}
+style={{
+display: "flex",
+alignItems: "center",
+gap: "12px",
+padding: "14px 20px",
+color: isActive ? "var(--accent-primary)" : "var(--text-secondary)",
+fontWeight: 600,
+fontSize: "15px",
+borderRadius: "12px",
+textDecoration: "none",
+marginBottom: "4px",
+background: isActive ? "var(--accent-glow)" : "transparent",
+border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
+}}
+>
+<Icon size={16} style={{ flexShrink: 0 }} />
+{link.label}
+</Link>
+);
+})}
+{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+<Link 
+href="/admin/dashboard" 
+className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`} 
+onClick={() => setIsMobileMenuOpen(false)}
+style={{
+display: "flex",
+alignItems: "center",
+gap: "12px",
+padding: "14px 20px",
+color: "var(--accent-primary)",
+fontWeight: 600,
+fontSize: "15px",
+borderRadius: "12px",
+textDecoration: "none",
+marginBottom: "4px",
+background: pathname.startsWith("/admin") ? "var(--accent-glow)" : "rgba(255,107,0,0.05)",
+border: pathname.startsWith("/admin") ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
+}}
+>
+<ShieldCheck size={16} style={{ flexShrink: 0 }} /> {t.adminPanel}
+</Link>
+)}
+</div>
+
+<div className="sidebar-footer">
+<LanguageSwitcher position="top" align="left" />
+<button className="btn btn-danger btn-sm rounded-full w-full" onClick={() => signOut({ callbackUrl: "/" })} style={{ gap: 8, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
+<LogOut size={14} /> {t.signOut}
+</button>
+</div>
+</aside>
+
+<style jsx>{`
+.student-nav {
+background: rgba(255, 255, 255, 0.85);
+backdrop-filter: blur(16px);
+-webkit-backdrop-filter: blur(16px);
+border-bottom: 1px solid var(--border-subtle);
+position: sticky;
+top: 0;
+z-index: 1000;
+padding: 0 24px;
+}
+.nav-content {
+max-width: 1400px;
+margin: 0 auto;
+height: 72px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.nav-left {
+display: flex;
+align-items: center;
+flex-shrink: 0;
+}
+.nav-center {
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.nav-right {
+display: flex;
+align-items: center;
+gap: 20px;
+}
+.logo {
+display: flex;
+align-items: center;
+gap: 12px;
+text-decoration: none;
+color: inherit;
+}
+.logo-icon {
+width: 32px;
+height: 32px;
+object-fit: contain;
+}
+.logo-text {
+font-weight: 800;
+font-size: 20px;
+letter-spacing: -0.03em;
+}
+.user-section {
+display: flex;
+align-items: center;
+gap: 12px;
+}
+.user-info {
+text-align: right;
+}
+.user-name {
+font-size: 13px;
+font-weight: 700;
+color: var(--text-primary);
+line-height: 1;
+margin: 0;
+}
+.user-role {
+font-size: 11px;
+color: var(--text-muted);
+margin-top: 3px;
+text-transform: capitalize;
+}
+.avatar {
+width: 38px;
+height: 38px;
+border-radius: 50%;
+border: 2px solid var(--accent-primary);
+overflow: hidden;
+display: flex;
+align-items: center;
+justify-content: center;
+background: var(--bg-elevated);
+}
+.avatar-img {
+width: 100%;
+height: 100%;
+object-fit: cover;
+}
+.avatar-btn {
+background: none;
+border: none;
+padding: 0;
+cursor: pointer;
+display: block;
+}
+
+/* Dropdown style */
+.mobile-profile-wrapper,
+.desktop-profile-wrapper {
+position: relative;
+}
+.profile-dropdown {
+position: absolute;
+min-width: 220px;
+width: max-content;
+background: rgba(255, 255, 255, 0.96);
+backdrop-filter: blur(16px);
+-webkit-backdrop-filter: blur(16px);
+border-radius: 16px;
+border: 1px solid var(--border-subtle);
+box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+z-index: 999;
+padding: 8px 0;
+margin-top: 8px;
+display: flex;
+flex-direction: column;
+animation: fade-in-up 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.profile-dropdown::before {
+content: '';
+position: absolute;
+top: -6px;
+width: 10px;
+height: 10px;
+background: rgba(255, 255, 255, 0.96);
+border-left: 1px solid var(--border-subtle);
+border-top: 1px solid var(--border-subtle);
+transform: rotate(45deg);
+}
+.desktop-dropdown-pos {
+right: 0;
+top: 100%;
+}
+.desktop-dropdown-pos::before {
+right: 14px;
+}
+.mobile-dropdown-pos {
+left: 0;
+top: 100%;
+}
+.mobile-dropdown-pos::before {
+left: 14px;
+}
+.dropdown-header {
+padding: 12px 16px;
+text-align: left;
+display: flex;
+flex-direction: column;
+gap: 2px;
+}
+.dropdown-name {
+font-size: 14px;
+font-weight: 800;
+color: var(--text-primary);
+margin: 0;
+line-height: 1.2;
+}
+.dropdown-sub {
+font-size: 11px;
+color: var(--text-muted);
+margin: 0;
+font-weight: 600;
+letter-spacing: 0.02em;
+}
+.dropdown-divider {
+height: 1px;
+background: var(--border-subtle);
+margin: 6px 0;
+}
+:global(.dropdown-item) {
+display: flex;
+align-items: center;
+gap: 12px;
+padding: 10px 16px;
+font-size: 14px;
+font-weight: 600;
+color: var(--text-secondary);
+text-decoration: none;
+border: none;
+background: none;
+width: 100%;
+text-align: left;
+cursor: pointer;
+transition: all 0.2s ease;
+}
+:global(.dropdown-item:hover) {
+background: var(--accent-glow);
+color: var(--accent-primary);
+padding-left: 18px;
+}
+:global(.dropdown-item.admin-item) {
+color: var(--accent-primary);
+background: rgba(255, 107, 0, 0.03);
+}
+:global(.dropdown-item.admin-item:hover) {
+background: var(--accent-glow);
+}
+:global(.dropdown-item.text-danger) {
+color: #ef4444;
+}
+:global(.dropdown-item.text-danger:hover) {
+background: rgba(239, 68, 68, 0.05);
+padding-left: 18px;
+}
+
+/* Mobile Controls */
+.mobile-controls {
+display: none;
+align-items: center;
+gap: 12px;
+}
+.mobile-toggle {
+padding: 8px;
+border-radius: 12px;
+background: rgba(0,0,0,0.03);
+border: none;
+cursor: pointer;
+color: var(--text-primary);
+display: flex;
+align-items: center;
+justify-content: center;
+}
+
+/* Mobile Sidebar Drawer styling */
+.mobile-sidebar-overlay {
+position: fixed;
+inset: 0;
+background: rgba(0, 0, 0, 0.4);
+backdrop-filter: blur(4px);
+-webkit-backdrop-filter: blur(4px);
+z-index: 2000;
+opacity: 0;
+visibility: hidden;
+transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+.mobile-sidebar-overlay.open {
+opacity: 1;
+visibility: visible;
+}
+.mobile-sidebar {
+position: fixed;
+top: 0;
+bottom: 0;
+left: 0;
+width: 300px;
+background: white;
+box-shadow: 20px 0 40px rgba(0, 0, 0, 0.1);
+z-index: 2001;
+transform: translateX(-100%);
+transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+display: flex;
+flex-direction: column;
+padding: 24px;
+}
+.mobile-sidebar.open {
+transform: translateX(0);
+}
+.sidebar-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 32px;
+}
+.sidebar-close {
+border: none;
+background: none;
+cursor: pointer;
+color: var(--text-primary);
+padding: 4px;
+display: flex;
+align-items: center;
+justify-content: center;
+}
+.sidebar-body {
+display: flex;
+flex-direction: column;
+gap: 8px;
+flex: 1;
+overflow-y: auto;
+}
+.sidebar-footer {
+margin-top: auto;
+padding-top: 20px;
+border-top: 1px solid var(--border-subtle);
+display: flex;
+flex-direction: column;
+gap: 16px;
+}
+
+:global(.nav-link) {
+font-size: 14px;
+font-weight: 700;
+color: var(--text-secondary);
+text-decoration: none;
+display: flex;
+align-items: center;
+gap: 8px;
+transition: all 0.2s;
+padding: 12px 20px;
+border-radius: 12px;
+min-height: 44px;
+}
+.desktop-links :global(.nav-link) {
+white-space: nowrap;
+}
+:global(.nav-link:hover) {
+color: var(--accent-primary);
+background: rgba(255,107,0,0.05);
+}
+:global(.nav-link.active) {
+background: var(--accent-glow) !important;
+color: var(--accent-primary) !important;
+border: 1px solid rgba(255, 107, 0, 0.15) !important;
+}
+
+@media (max-width: 1100px) {
+.desktop-links {
+display: none !important;
+}
+.mobile-controls {
+display: flex;
+}
+}
+@keyframes fade-in-up {
+from { opacity: 0; transform: translateY(10px); }
+to { opacity: 1; transform: translateY(0); }
+}
+`}</style>
+</>
+);
 }

@@ -1,6 +1,5 @@
-
 "use client";
-
+ 
 import { useSession } from "next-auth/react";
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
@@ -12,14 +11,14 @@ import {
 import { useLanguage } from "@/lib/LanguageContext";
 import { useRouter } from "next/navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-
+ 
 type EmergencyContact = { name: string; relationship: string; phone: string };
-
+ 
 export default function ProfilePage() {
   const { data: session, update } = useSession();
   const { t } = useLanguage();
   const router = useRouter();
-
+ 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -28,7 +27,7 @@ export default function ProfilePage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [validationTriggered, setValidationTriggered] = useState(false);
   const [isProfileCompleted, setIsProfileCompleted] = useState(false);
-
+ 
   const [formData, setFormData] = useState({
     studentId: "",
     prefix: "นาย",
@@ -52,7 +51,7 @@ export default function ProfilePage() {
       { name: "", relationship: "", phone: "" },
     ] as EmergencyContact[],
   });
-
+ 
   useEffect(() => {
     fetch("/api/profile")
       .then(r => r.json())
@@ -91,34 +90,34 @@ export default function ProfilePage() {
         setLoading(false);
       });
   }, []);
-
+ 
   const set = <K extends keyof typeof formData>(key: K, value: typeof formData[K]) => setFormData((p) => ({ ...p, [key]: value }));
-
+ 
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
     contacts[idx] = { ...contacts[idx], [key]: value };
     set("emergencyContacts", contacts);
   };
-
+ 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
+ 
     // Validate size (max 5MB)
     const MAX_SIZE = 5 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
       setError(t.fileTooLarge);
       return;
     }
-
+ 
     const localUrl = URL.createObjectURL(file);
     setPreviewUrl(localUrl);
     setUploading(true);
     setError(null);
-
+ 
     const fd = new FormData();
     fd.append("file", file);
-
+ 
     try {
       const res = await fetch("/api/upload", {
         method: "POST",
@@ -136,13 +135,13 @@ export default function ProfilePage() {
       setUploading(false);
     }
   };
-
+ 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     setSuccess(false);
-
+ 
     const isTh = t.back === "กลับ";
     if (!formData.name.trim() || !formData.nickname.trim() || !formData.phone.trim() || !formData.contactChannels.trim()) {
       setError(isTh ? "กรุณากรอกข้อมูลส่วนตัวที่จำเป็นให้ครบถ้วน" : "Please fill out all required personal information fields.");
@@ -150,14 +149,14 @@ export default function ProfilePage() {
       setValidationTriggered(true);
       return;
     }
-
+ 
     if (!/^[0-9]{10}$/.test(formData.phone.trim())) {
       setError(isTh ? "เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลักเท่านั้น" : "Phone number must be exactly 10 digits and contain only numbers.");
       setSaving(false);
       setValidationTriggered(true);
       return;
     }
-
+ 
     const ec1 = formData.emergencyContacts[0];
     if (!ec1 || !ec1.name.trim() || !ec1.relationship.trim() || !ec1.phone.trim()) {
       setError(isTh ? "กรุณากรอกข้อมูลผู้ติดต่อฉุกเฉินคนที่ 1 ให้ครบถ้วน" : "Please fill out all fields for Emergency Contact #1.");
@@ -171,7 +170,7 @@ export default function ProfilePage() {
       setValidationTriggered(true);
       return;
     }
-
+ 
     const ec2 = formData.emergencyContacts[1];
     if (ec2 && (ec2.name.trim() || ec2.relationship.trim() || ec2.phone.trim())) {
       if (!ec2.name.trim() || !ec2.relationship.trim() || !ec2.phone.trim()) {
@@ -188,14 +187,14 @@ export default function ProfilePage() {
       }
     }
     setValidationTriggered(false);
-
+ 
     try {
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData)
       });
-
+ 
       if (res.ok) {
         setSuccess(true);
         await update(); // Refresh session
@@ -210,7 +209,7 @@ export default function ProfilePage() {
       setSaving(false);
     }
   };
-
+ 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
@@ -219,48 +218,32 @@ export default function ProfilePage() {
     );
   }
 
-  const labelCls = "label";
-
   return (
-    <div style={{ background: "var(--bg-base)", minHeight: "100vh", padding: "40px 20px" }}>
-      <div style={{ maxWidth: 800, margin: "0 auto" }}>
+    <div className="profile-page">
+      <div className="profile-wrapper">
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 40 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <Link href="/dashboard" className="btn btn-ghost" style={{ width: 48, height: 48, padding: 0, borderRadius: "50%" }}>
+        <div className="profile-header">
+          <div className="header-title-section">
+            <Link href="/dashboard" className="btn btn-ghost back-btn">
               <ArrowLeft size={24} />
             </Link>
             <div>
-              <h1 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 900, letterSpacing: "-0.04em" }}>{t.profileSummary}</h1>
-              <p style={{ color: "var(--text-muted)", fontWeight: 500 }}>Update your profile information and safety settings.</p>
+              <h1 className="title-text">{t.profileSummary}</h1>
+              <p className="subtitle-text">Update your profile information and safety settings.</p>
             </div>
           </div>
           <LanguageSwitcher variant="segmented" />
         </div>
 
         <form onSubmit={handleSubmit} className="animate-fade-in-up">
-          <div style={{ display: "grid", gap: 32 }}>
+          <div className="form-container">
 
             {/* Section: Profile Photo & Adjustments */}
-            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
-              <div style={{ position: "relative" }}>
-                <div
-                  style={{
-                    width: 160,
-                    height: 160,
-                    borderRadius: "50%",
-                    backgroundColor: "var(--bg-elevated)",
-                    border: "4px solid white",
-                    boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    position: "relative",
-                    overflow: "hidden"
-                  }}
-                >
+            <div className="form-card photo-card">
+              <div className="photo-avatar-container">
+                <div className="avatar-preview-box">
                   {uploading && (
-                    <div style={{ position: "absolute", inset: 0, zIndex: 20, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div className="avatar-loading-overlay">
                       <Loader2 className="animate-spin text-white" size={24} />
                     </div>
                   )}
@@ -281,154 +264,143 @@ export default function ProfilePage() {
                     <User size={70} className="text-muted opacity-30" />
                   )}
                 </div>
-                <label
-                  style={{
-                    position: "absolute",
-                    bottom: 4,
-                    right: 4,
-                    width: 44,
-                    height: 44,
-                    background: "var(--border-medium)",
-                    color: "var(--text-muted)",
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "not-allowed",
-                    border: "3px solid white"
-                  }}
-                  title={t.profilePhotoDisabledNote}
-                >
+                <label className="camera-upload-btn" title={t.profilePhotoDisabledNote}>
                   <Camera size={20} />
                   <input type="file" hidden accept="image/*" onChange={handleImageUpload} disabled={true} />
                 </label>
               </div>
 
-              {/* Note: Profile photo upload temporarily disabled */}
-              <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", maxWidth: 280, marginTop: -8 }}>
-                {t.profilePhotoDisabledNote}
-              </div>
-
-
-              {previewUrl && (
-                <div style={{ width: "100%", maxWidth: 300, display: "flex", flexDirection: "column", gap: 16, padding: "16px 24px", background: "var(--bg-elevated)", borderRadius: 24, border: "1px solid var(--border-subtle)" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
-                        <Maximize size={12} /> Zoom
-                      </span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-primary)" }}>{Math.round(formData.imageTransform.scale * 100)}%</span>
-                    </div>
-                    <input
-                      type="range" min="1" max="3" step="0.05"
-                      value={formData.imageTransform.scale}
-                      onChange={(e) => set("imageTransform", { ...formData.imageTransform, scale: parseFloat(e.target.value) })}
-                      style={{ accentColor: "var(--accent-primary)" }}
-                    />
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
-                        <Move size={12} /> Horizontal
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={-(formData.imageTransform.scale - 1) * 50}
-                      max={(formData.imageTransform.scale - 1) * 50}
-                      step="1"
-                      value={formData.imageTransform.x}
-                      onChange={(e) => set("imageTransform", { ...formData.imageTransform, x: parseInt(e.target.value) })}
-                      style={{ accentColor: "var(--accent-primary)" }}
-                    />
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
-                        <Move size={12} style={{ transform: "rotate(90deg)" }} /> Vertical
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={-(formData.imageTransform.scale - 1) * 50}
-                      max={(formData.imageTransform.scale - 1) * 50}
-                      step="1"
-                      value={formData.imageTransform.y}
-                      onChange={(e) => set("imageTransform", { ...formData.imageTransform, y: parseInt(e.target.value) })}
-                      style={{ accentColor: "var(--accent-primary)" }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: 11, marginTop: 4 }}
-                    onClick={() => set("imageTransform", { scale: 1, x: 0, y: 0 })}
-                  >
-                    Reset Framing
-                  </button>
+              <div className="photo-info-container">
+                {/* Note: Profile photo upload temporarily disabled */}
+                <div className="photo-disabled-note">
+                  {t.profilePhotoDisabledNote}
                 </div>
-              )}
+
+                {previewUrl && (
+                  <div className="photo-controls">
+                    <div className="control-group">
+                      <div className="control-header">
+                        <span className="control-label">
+                          <Maximize size={12} /> Zoom
+                        </span>
+                        <span className="control-value">{Math.round(formData.imageTransform.scale * 100)}%</span>
+                      </div>
+                      <input
+                        type="range" min="1" max="3" step="0.05"
+                        value={formData.imageTransform.scale}
+                        onChange={(e) => set("imageTransform", { ...formData.imageTransform, scale: parseFloat(e.target.value) })}
+                        className="range-input"
+                      />
+                    </div>
+
+                    <div className="control-group">
+                      <div className="control-header">
+                        <span className="control-label">
+                          <Move size={12} /> Horizontal
+                        </span>
+                        <span className="control-value">{formData.imageTransform.x}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={-(formData.imageTransform.scale - 1) * 50}
+                        max={(formData.imageTransform.scale - 1) * 50}
+                        step="1"
+                        value={formData.imageTransform.x}
+                        onChange={(e) => set("imageTransform", { ...formData.imageTransform, x: parseInt(e.target.value) })}
+                        className="range-input"
+                      />
+                    </div>
+
+                    <div className="control-group">
+                      <div className="control-header">
+                        <span className="control-label">
+                          <Move size={12} style={{ transform: "rotate(90deg)" }} /> Vertical
+                        </span>
+                        <span className="control-value">{formData.imageTransform.y}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={-(formData.imageTransform.scale - 1) * 50}
+                        max={(formData.imageTransform.scale - 1) * 50}
+                        step="1"
+                        value={formData.imageTransform.y}
+                        onChange={(e) => set("imageTransform", { ...formData.imageTransform, y: parseInt(e.target.value) })}
+                        className="range-input"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm reset-btn"
+                      onClick={() => set("imageTransform", { scale: 1, x: 0, y: 0 })}
+                    >
+                      Reset Framing
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Section: Basic Info */}
-            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="form-card">
+              <h2 className="section-title">
                 <User size={20} style={{ color: "var(--accent-primary)" }} />
                 {t.personalInfo}
               </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                <div className={labelCls} style={{ gridColumn: "span 2" }}>
+              <div className="form-grid">
+                <div className="field col-span-12">
                   <label className="label">{t.studentId} (Locked)</label>
                   <input className="input" disabled value={formData.studentId} style={{ background: "var(--bg-elevated)", cursor: "not-allowed", opacity: 0.7 }} />
                 </div>
-                <div className="field">
-                  <label className="label">
-                    {t.prefix} {isProfileCompleted && "(Locked)"}
-                  </label>
-                  <select
-                    className="input"
-                    disabled={isProfileCompleted}
-                    value={formData.prefix}
-                    onChange={(e) => set("prefix", e.target.value)}
-                    style={{
-                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
-                      cursor: isProfileCompleted ? "not-allowed" : undefined,
-                      opacity: isProfileCompleted ? 0.7 : undefined,
-                    }}
-                  >
-                    <option value="นาย">นาย (Mr.)</option>
-                    <option value="นางสาว">นางสาว (Ms.)</option>
-                    <option value="นาง">นาง (Mrs.)</option>
-                  </select>
+                <div className="col-span-12 flex gap-3 sm:gap-4">
+                  <div className="field flex-shrink-0" style={{ width: 100 }}>
+                    <label className="label">
+                      {t.prefix} {isProfileCompleted && "(Locked)"}
+                    </label>
+                    <select
+                      className="input"
+                      disabled={isProfileCompleted}
+                      value={formData.prefix}
+                      onChange={(e) => set("prefix", e.target.value)}
+                      style={{
+                        background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
+                        cursor: isProfileCompleted ? "not-allowed" : undefined,
+                        opacity: isProfileCompleted ? 0.7 : undefined,
+                        width: "100%"
+                      }}
+                    >
+                      <option value="นาย">{t.back === "กลับ" ? "นาย" : "Mr."}</option>
+                      <option value="นางสาว">{t.back === "กลับ" ? "น.ส." : "Ms."}</option>
+                      <option value="นาง">{t.back === "กลับ" ? "นาง" : "Mrs."}</option>
+                    </select>
+                  </div>
+                  <div className="field flex-grow">
+                    <label className="label">
+                      {t.fullName} {isProfileCompleted ? "(Locked)" : <span style={{ color: "#ef4444" }}>*</span>}
+                    </label>
+                    <input
+                      className="input"
+                      name="name"
+                      required
+                      disabled={isProfileCompleted}
+                      value={formData.name}
+                      onChange={(e) => set("name", e.target.value)}
+                      style={{
+                        background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
+                        cursor: isProfileCompleted ? "not-allowed" : undefined,
+                        opacity: isProfileCompleted ? 0.7 : undefined,
+                        borderColor: validationTriggered && !formData.name.trim() ? "#ef4444" : undefined,
+                        boxShadow: validationTriggered && !formData.name.trim() ? "0 0 0 1px #ef4444" : undefined
+                      }}
+                    />
+                    {validationTriggered && !formData.name.trim() && (
+                      <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
+                        {t.back === "กลับ" ? "⚠️ กรุณากรอกชื่อ-นามสกุล" : "⚠️ This field is required"}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="field">
-                  <label className="label">
-                    {t.fullName} {isProfileCompleted ? "(Locked)" : <span style={{ color: "#ef4444" }}>*</span>}
-                  </label>
-                  <input
-                    className="input"
-                    name="name"
-                    required
-                    disabled={isProfileCompleted}
-                    value={formData.name}
-                    onChange={(e) => set("name", e.target.value)}
-                    style={{
-                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
-                      cursor: isProfileCompleted ? "not-allowed" : undefined,
-                      opacity: isProfileCompleted ? 0.7 : undefined,
-                      borderColor: validationTriggered && !formData.name.trim() ? "#ef4444" : undefined,
-                      boxShadow: validationTriggered && !formData.name.trim() ? "0 0 0 1px #ef4444" : undefined
-                    }}
-                  />
-                  {validationTriggered && !formData.name.trim() && (
-                    <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                      {t.back === "กลับ" ? "⚠️ กรุณากรอกชื่อ-นามสกุล" : "⚠️ This field is required"}
-                    </span>
-                  )}
-                </div>
-                <div className="field">
+                <div className="field col-span-4">
                   <label className="label">{t.nickname} <span style={{ color: "#ef4444" }}>*</span></label>
                   <input
                     className="input"
@@ -446,7 +418,7 @@ export default function ProfilePage() {
                     </span>
                   )}
                 </div>
-                <div className="field">
+                <div className="field col-span-8">
                   <label className="label">
                     {t.major} {isProfileCompleted && "(Locked)"}
                   </label>
@@ -468,7 +440,7 @@ export default function ProfilePage() {
                     <option value="SE">SE - Software Engineering</option>
                   </select>
                 </div>
-                <div className="field">
+                <div className="field col-span-6">
                   <label className="label">
                     {t.phone} {isProfileCompleted ? "(Locked)" : <span style={{ color: "#ef4444" }}>*</span>}
                   </label>
@@ -495,7 +467,7 @@ export default function ProfilePage() {
                     </span>
                   )}
                 </div>
-                <div className="field">
+                <div className="field col-span-6">
                   <label className="label">{t.contactChannels} <span style={{ color: "#ef4444" }}>*</span></label>
                   <input
                     className="input"
@@ -515,7 +487,7 @@ export default function ProfilePage() {
                     </span>
                   )}
                 </div>
-                <div className="field" style={{ gridColumn: "span 2" }}>
+                <div className="field col-span-12">
                   <label className="label">{t.religion}</label>
                   <select
                     className="input"
@@ -561,33 +533,22 @@ export default function ProfilePage() {
             </div>
 
             {/* Section: Parent / Emergency Info */}
-            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="form-card">
+              <h2 className="section-title">
                 <ShieldAlert size={20} style={{ color: "var(--accent-secondary)" }} />
                 {t.emergencyContacts}
               </h2>
-              <div style={{ display: "grid", gap: 24 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 {formData.emergencyContacts.map((contact, i) => {
                   const isFirst = i === 0;
                   const isSecondPartiallyFilled = i === 1 && !!(contact.name.trim() || contact.relationship.trim() || contact.phone.trim());
                   const isFieldRequired = isFirst || isSecondPartiallyFilled;
 
                   return (
-                    <div
-                      key={i}
-                      style={{
-                        padding: 24,
-                        background: "rgba(255, 255, 255, 0.02)",
-                        border: "1px solid var(--border-medium)",
-                        borderRadius: 24,
-                        boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
-                        backdropFilter: "blur(10px)"
-                      }}
-                      className="mb-4"
-                    >
+                    <div key={i} className="emergency-contact-box">
                       <p style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 16 }}>Contact #{i + 1}</p>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                        <div className="field">
+                      <div className="form-grid">
+                        <div className="field col-span-12">
                           <label className="label">{t.fullName} {isFieldRequired && <span style={{ color: "#ef4444" }}>*</span>}</label>
                           <input
                             className="input"
@@ -605,7 +566,7 @@ export default function ProfilePage() {
                             </span>
                           )}
                         </div>
-                        <div className="field">
+                        <div className="field col-span-6">
                           <label className="label">{t.relationship} {isFieldRequired && <span style={{ color: "#ef4444" }}>*</span>}</label>
                           <input
                             className="input"
@@ -623,7 +584,7 @@ export default function ProfilePage() {
                             </span>
                           )}
                         </div>
-                        <div className="field" style={{ gridColumn: "span 2" }}>
+                        <div className="field col-span-6">
                           <label className="label">{t.phone} {isFieldRequired && <span style={{ color: "#ef4444" }}>*</span>}</label>
                           <input
                             className="input"
@@ -651,89 +612,88 @@ export default function ProfilePage() {
             </div>
 
             {/* Section: Health & Safety */}
-            <div style={{ background: "var(--bg-surface)", padding: 32, borderRadius: 32, border: "1px solid var(--border-medium)", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="form-card">
+              <h2 className="section-title">
                 <HeartPulse size={20} style={{ color: "#ef4444" }} />
                 {t.medicalInfo}
               </h2>
-              <div style={{ display: "grid", gap: 20 }}>
-                <div className="field">
+              <div className="form-grid">
+                <div className="field col-span-12">
                   <label className="label">{t.medicalHistory} / {t.chronicDiseases}</label>
                   <textarea className="input" rows={2} value={formData.medicalHistory} onChange={(e) => set("medicalHistory", e.target.value)} style={{ resize: "vertical" }} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                  <div className="field">
-                    <label className="label">{t.drugAllergies}</label>
-                    <input className="input" value={formData.drugAllergies} onChange={(e) => set("drugAllergies", e.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label className="label">{t.foodAllergies}</label>
-                    <input className="input" value={formData.foodAllergies} onChange={(e) => set("foodAllergies", e.target.value)} />
-                  </div>
+                <div className="field col-span-6">
+                  <label className="label">{t.drugAllergies}</label>
+                  <input className="input" value={formData.drugAllergies} onChange={(e) => set("drugAllergies", e.target.value)} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                  <div className="field">
-                    <label className="label">{t.dietaryRestrictions}</label>
-                    <select
-                      className="input"
-                      value={
-                        ["", "Vegetarian", "Vegan", "Halal", "Kosher"].includes(formData.dietaryRestrictions)
-                          ? formData.dietaryRestrictions
-                          : "Other"
+                <div className="field col-span-6">
+                  <label className="label">{t.foodAllergies}</label>
+                  <input className="input" value={formData.foodAllergies} onChange={(e) => set("foodAllergies", e.target.value)} />
+                </div>
+                <div className="field col-span-6">
+                  <label className="label">{t.dietaryRestrictions}</label>
+                  <select
+                    className="input"
+                    value={
+                      ["", "Vegetarian", "Vegan", "Halal", "Kosher"].includes(formData.dietaryRestrictions)
+                        ? formData.dietaryRestrictions
+                        : "Other"
+                    }
+                    onChange={(e) => {
+                      if (e.target.value === "Other") {
+                        set("dietaryRestrictions", "Other:");
+                      } else {
+                        set("dietaryRestrictions", e.target.value);
                       }
-                      onChange={(e) => {
-                        if (e.target.value === "Other") {
-                          set("dietaryRestrictions", "Other:");
-                        } else {
-                          set("dietaryRestrictions", e.target.value);
-                        }
-                      }}
-                    >
-                      <option value="">{t.none}</option>
-                      <option value="Vegetarian">{t.veg}</option>
-                      <option value="Vegan">{t.vegan}</option>
-                      <option value="Halal">{t.halal}</option>
-                      <option value="Kosher">{t.kosher}</option>
-                      <option value="Other">{t.other}</option>
-                    </select>
-                    {(!["", "Vegetarian", "Vegan", "Halal", "Kosher"].includes(formData.dietaryRestrictions) || formData.dietaryRestrictions.startsWith("Other:")) && (
-                      <input
-                        type="text"
-                        className="input"
-                        style={{ marginTop: 8 }}
-                        placeholder={t.back === "กลับ" ? "กรุณาระบุข้อจำกัดอาหาร..." : "Please specify dietary restrictions..."}
-                        value={
-                          formData.dietaryRestrictions.startsWith("Other:")
-                            ? formData.dietaryRestrictions.substring(6)
-                            : formData.dietaryRestrictions
-                        }
-                        onChange={(e) => set("dietaryRestrictions", "Other:" + e.target.value)}
-                      />
-                    )}
-                  </div>
-                  <div className="field">
-                    <label className="label">{t.emergencyMed}</label>
+                    }}
+                  >
+                    <option value="">{t.none}</option>
+                    <option value="Vegetarian">{t.veg}</option>
+                    <option value="Vegan">{t.vegan}</option>
+                    <option value="Halal">{t.halal}</option>
+                    <option value="Kosher">{t.kosher}</option>
+                    <option value="Other">{t.other}</option>
+                  </select>
+                  {(!["", "Vegetarian", "Vegan", "Halal", "Kosher"].includes(formData.dietaryRestrictions) || formData.dietaryRestrictions.startsWith("Other:")) && (
                     <input
+                      type="text"
                       className="input"
-                      value={formData.emergencyMedication}
-                      onChange={(e) => set("emergencyMedication", e.target.value)}
+                      style={{ marginTop: 8 }}
+                      placeholder={t.back === "กลับ" ? "กรุณาระบุข้อจำกัดอาหาร..." : "Please specify dietary restrictions..."}
+                      value={
+                        formData.dietaryRestrictions.startsWith("Other:")
+                          ? formData.dietaryRestrictions.substring(6)
+                          : formData.dietaryRestrictions
+                      }
+                      onChange={(e) => set("dietaryRestrictions", "Other:" + e.target.value)}
                     />
-                  </div>
+                  )}
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-                  <input type="checkbox" checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />
-                  <span style={{ fontSize: 14 }}>{t.faintingHistory}</span>
-                </label>
+                <div className="field col-span-6">
+                  <label className="label">{t.emergencyMed}</label>
+                  <input
+                    className="input"
+                    value={formData.emergencyMedication}
+                    onChange={(e) => set("emergencyMedication", e.target.value)}
+                  />
+                </div>
+                <div className="field col-span-12" style={{ marginTop: 8 }}>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+                    <input type="checkbox" style={{ marginTop: 3, flexShrink: 0 }} checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />
+                    <span style={{ fontSize: 14, lineHeight: 1.4 }}>{t.faintingHistory}</span>
+                  </label>
+                </div>
               </div>
             </div>
 
             {/* Footer Actions */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20, paddingBottom: 60 }}>
-              {error && <p style={{ color: "var(--accent-primary)", fontWeight: 600 }}>⚠️ {error}</p>}
-              {success && <p style={{ color: "#10b981", fontWeight: 600 }}>✓ {t.complete}</p>}
-              {!error && !success && <div />}
+            <div className="form-footer">
+              <div className="status-msg-box">
+                {error && <p style={{ color: "var(--accent-primary)", fontWeight: 600, margin: 0 }}>⚠️ {error}</p>}
+                {success && <p style={{ color: "#10b981", fontWeight: 600, margin: 0 }}>✓ {t.complete}</p>}
+              </div>
 
-              <button type="submit" disabled={saving || uploading} className="btn btn-primary btn-lg" style={{ minWidth: 200, borderRadius: 99, boxShadow: "0 10px 20px var(--accent-glow)" }}>
+              <button type="submit" disabled={saving || uploading} className="btn btn-primary btn-lg submit-btn">
                 {saving ? <Loader2 className="animate-spin" size={20} /> : <><Save size={20} /> {t.save}</>}
               </button>
             </div>
@@ -741,6 +701,288 @@ export default function ProfilePage() {
           </div>
         </form>
       </div>
+
+      <style jsx>{`
+        .profile-page {
+          background: var(--bg-base);
+          min-height: 100vh;
+          padding: 40px 24px;
+        }
+        .profile-wrapper {
+          max-width: 800px;
+          margin: 0 auto;
+        }
+        .profile-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 40px;
+          gap: 24px;
+        }
+        .header-title-section {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+        .back-btn {
+          width: 48px;
+          height: 48px;
+          padding: 0;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .title-text {
+          font-size: clamp(24px, 4vw, 32px);
+          font-weight: 900;
+          letter-spacing: -0.04em;
+          margin: 0;
+          line-height: 1.15;
+        }
+        .subtitle-text {
+          color: var(--text-muted);
+          font-weight: 500;
+          margin: 4px 0 0;
+          font-size: 14px;
+        }
+        .form-container {
+          display: grid;
+          gap: 32px;
+        }
+        .form-card {
+          background: var(--bg-surface);
+          padding: 32px;
+          border-radius: 32px;
+          border: 1px solid var(--border-medium);
+          box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+        }
+        .photo-card {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 32px;
+          padding: 32px;
+        }
+        .photo-avatar-container {
+          position: relative;
+          flex-shrink: 0;
+        }
+        .avatar-preview-box {
+          width: 160px;
+          height: 160px;
+          border-radius: 50%;
+          background-color: var(--bg-elevated);
+          border: 4px solid white;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          overflow: hidden;
+        }
+        .avatar-loading-overlay {
+          position: absolute;
+          inset: 0;
+          z-index: 20;
+          background: rgba(0,0,0,0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .camera-upload-btn {
+          position: absolute;
+          bottom: 4px;
+          right: 4px;
+          width: 44px;
+          height: 44px;
+          background: var(--border-medium);
+          color: var(--text-muted);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: not-allowed;
+          border: 3px solid white;
+        }
+        .photo-info-container {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          flex-grow: 1;
+          width: 100%;
+        }
+        .photo-disabled-note {
+          font-size: 13px;
+          color: var(--text-muted);
+          line-height: 1.5;
+        }
+        .photo-controls {
+          width: 100%;
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 16px;
+          padding: 20px;
+          background: var(--bg-elevated);
+          border-radius: var(--radius-lg);
+          border: 1px solid var(--border-subtle);
+        }
+        .control-group {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .control-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .control-label {
+          font-size: 11px;
+          font-weight: 800;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .control-value {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--accent-primary);
+        }
+        .range-input {
+          width: 100%;
+          accent-color: var(--accent-primary);
+          cursor: pointer;
+        }
+        .reset-btn {
+          grid-column: span 2;
+          justify-self: center;
+          margin-top: 8px;
+        }
+        .section-title {
+          font-size: 18px;
+          font-weight: 800;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .form-grid {
+          display: grid;
+          grid-template-columns: repeat(12, 1fr);
+          gap: 20px;
+        }
+        .col-span-12 { grid-column: span 12; }
+        .col-span-9  { grid-column: span 9; }
+        .col-span-8  { grid-column: span 8; }
+        .col-span-6  { grid-column: span 6; }
+        .col-span-4  { grid-column: span 4; }
+        .col-span-3  { grid-column: span 3; }
+        
+        .emergency-contact-box {
+          padding: 24px;
+          background: rgba(255, 255, 255, 0.01);
+          border: 1px solid var(--border-medium);
+          border-radius: 24px;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.03);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+        }
+        .form-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 20px;
+          padding-bottom: 60px;
+          gap: 24px;
+        }
+        .status-msg-box {
+          flex: 1;
+        }
+        .submit-btn {
+          min-width: 200px;
+          border-radius: 99px;
+          box-shadow: 0 10px 20px var(--accent-glow);
+        }
+
+        /* iPad and Tablets (max-width: 1024px) */
+        @media (max-width: 1024px) {
+          .profile-page {
+            padding: 32px 6vw;
+          }
+          .form-card {
+            padding: 24px;
+            border-radius: 24px;
+          }
+        }
+
+        /* Portrait iPad and smaller (max-width: 820px) */
+        @media (max-width: 820px) {
+          .profile-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 20px;
+          }
+        }
+
+        /* Phones (max-width: 640px) */
+        @media (max-width: 640px) {
+          .profile-page {
+            padding: 24px 8vw;
+          }
+          .form-card {
+            padding: 20px 16px;
+            border-radius: 20px;
+          }
+          .form-container {
+            gap: 20px;
+          }
+          .header-title-section {
+            align-items: flex-start;
+          }
+          .photo-card {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 24px;
+            padding: 24px 16px;
+          }
+          .photo-info-container {
+            align-items: center;
+          }
+          .photo-disabled-note {
+            text-align: center;
+          }
+          .photo-controls {
+            grid-template-columns: 1fr;
+            padding: 16px;
+          }
+          .reset-btn {
+            grid-column: span 1;
+            width: 100%;
+          }
+          .form-grid > * {
+            grid-column: span 12 !important;
+          }
+          .emergency-contact-box {
+            padding: 16px;
+            border-radius: 20px;
+          }
+          .form-footer {
+            flex-direction: column;
+            align-items: stretch;
+            text-align: center;
+            gap: 16px;
+          }
+          .submit-btn {
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   );
 }

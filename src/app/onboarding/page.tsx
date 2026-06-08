@@ -181,7 +181,7 @@ export default function OnboardingPage() {
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col items-center py-6 sm:py-12 px-4 overflow-y-auto relative"
+      className="min-h-screen w-full flex flex-col items-center py-8 sm:py-12 px-[8vw] sm:px-12 overflow-y-auto relative"
       style={{ background: "var(--bg-base)" }}
     >
       {/* Top Header / Language Switcher Row */}
@@ -256,7 +256,7 @@ export default function OnboardingPage() {
             background: "var(--bg-surface)",
             border: "1px solid var(--border-subtle)",
             borderRadius: "var(--radius-xl)",
-            padding: 32,
+            padding: "clamp(20px, 5vw, 32px)",
             boxShadow: "0 16px 48px rgba(0,0,0,0.4)",
           }}
         >
@@ -373,25 +373,26 @@ export default function OnboardingPage() {
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="field" style={{ width: 140 }}>
+              <div className="flex gap-3 sm:gap-4">
+                <div className="field flex-shrink-0" style={{ width: 100 }}>
                   <label className={labelCls}>{t.prefix}</label>
                   <select
                     className={inputCls}
                     value={formData.prefix}
                     onChange={(e) => set("prefix", e.target.value)}
+                    style={{ width: "100%" }}
                   >
-                    <option value="นาย">นาย (Mr.)</option>
-                    <option value="นางสาว">นางสาว (Ms.)</option>
-                    <option value="นาง">นาง (Mrs.)</option>
+                    <option value="นาย">{lang === "th" ? "นาย" : "Mr."}</option>
+                    <option value="นางสาว">{lang === "th" ? "น.ส." : "Ms."}</option>
+                    <option value="นาง">{lang === "th" ? "นาง" : "Mrs."}</option>
                   </select>
                 </div>
-                <div className="field flex-1">
+                <div className="field flex-grow">
                   <label className={labelCls}>{t.fullName} <span style={{ color: "#ef4444" }}>*</span></label>
                   <input
                     className={inputCls}
                     required
-                    placeholder="ชื่อ-สกุล / Full Name"
+                    placeholder={lang === "th" ? "ชื่อ-นามสกุล / Full Name" : "Full Name"}
                     value={formData.name}
                     onChange={(e) => set("name", e.target.value)}
                     style={{
@@ -663,7 +664,7 @@ export default function OnboardingPage() {
               <label
                 style={{
                   display: "flex",
-                  alignItems: "center",
+                  alignItems: "flex-start",
                   gap: 12,
                   padding: "14px 16px",
                   background: "var(--bg-elevated)",
@@ -674,11 +675,11 @@ export default function OnboardingPage() {
               >
                 <input
                   type="checkbox"
-                  style={{ width: 18, height: 18, accentColor: "var(--accent-primary)" }}
+                  style={{ width: 18, height: 18, accentColor: "var(--accent-primary)", flexShrink: 0, marginTop: 2 }}
                   checked={formData.faintingHistory}
                   onChange={(e) => set("faintingHistory", e.target.checked)}
                 />
-                <span style={{ fontSize: 14, color: "var(--text-secondary)" }}>
+                <span style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.4 }}>
                   {t.faintingHistory}
                 </span>
               </label>
@@ -701,7 +702,7 @@ export default function OnboardingPage() {
                       background: "rgba(255, 255, 255, 0.02)",
                       border: "1px solid var(--border-medium)",
                       borderRadius: "var(--radius-xl)",
-                      padding: 28,
+                      padding: "clamp(16px, 4vw, 28px)",
                       boxShadow: "0 10px 30px rgba(0,0,0,0.05)",
                       backdropFilter: "blur(10px)",
                     }}
@@ -889,12 +890,16 @@ export default function OnboardingPage() {
 
           {/* Navigation buttons */}
           <div
-            className="flex flex-col sm:flex-row gap-3"
-            style={{ marginTop: 32, justifyContent: step === 0 ? "flex-end" : "space-between" }}
+            className="flex gap-3"
+            style={{ 
+              marginTop: 32, 
+              justifyContent: step === 0 ? "flex-end" : "space-between",
+              flexDirection: "row"
+            }}
           >
             {step > 0 && (
               <button
-                className="btn btn-ghost"
+                className="btn btn-ghost flex-1 sm:flex-none"
                 onClick={() => { setStep((s) => s - 1); setValidationTriggered(false); }}
                 disabled={submitting}
               >
@@ -902,18 +907,18 @@ export default function OnboardingPage() {
               </button>
             )}
             {step < STEPS.length - 1 ? (
-              <button className="btn btn-primary" onClick={handleContinue}>
+              <button className="btn btn-primary flex-grow sm:flex-none" onClick={handleContinue}>
                 {t.continue} →
               </button>
             ) : (
               <button
-                className="btn btn-primary"
+                className="btn btn-primary flex-grow sm:flex-none"
                 onClick={handleSubmit}
                 disabled={submitting || !formData.pdpaConsent}
               >
                 {submitting ? (
                   <>
-                    <div className="spinner" />
+                    <Loader2 className="animate-spin text-white mr-2 inline" size={16} />
                     Submitting...
                   </>
                 ) : (

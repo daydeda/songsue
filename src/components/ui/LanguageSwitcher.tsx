@@ -140,7 +140,7 @@ export function LanguageSwitcher({ align = "right", position = "bottom", variant
   }
 
   return (
-    <div style={{ position: "relative" }} ref={dropdownRef}>
+    <div style={{ position: "relative", width: "fit-content" }} ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="listbox"

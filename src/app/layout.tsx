@@ -1,17 +1,32 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Sans_Thai } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Sans_Thai, Noto_Sans_Myanmar, Noto_Sans_SC } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const ibmPlexSans = IBM_Plex_Sans({
+  weight: ["300", "400", "500", "600", "700"],
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-ibm-sans",
   display: "swap",
 });
 
-const thaiFont = IBM_Plex_Sans_Thai({
+const ibmPlexSansThai = IBM_Plex_Sans_Thai({
   weight: ["300", "400", "500", "600", "700"],
   subsets: ["thai", "latin"],
-  variable: "--font-thai",
+  variable: "--font-ibm-thai",
+  display: "swap",
+});
+
+const notoSansMyanmar = Noto_Sans_Myanmar({
+  weight: ["300", "400", "500", "600", "700"],
+  subsets: ["myanmar", "latin"],
+  variable: "--font-noto-myanmar",
+  display: "swap",
+});
+
+const notoSansSC = Noto_Sans_SC({
+  weight: ["300", "400", "500", "700"],
+  subsets: ["latin"],
+  variable: "--font-noto-sc",
   display: "swap",
 });
 
@@ -35,7 +50,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${thaiFont.variable} h-full`} data-scroll-behavior="smooth">
+    <html lang="en" className={`${ibmPlexSans.variable} ${ibmPlexSansThai.variable} ${notoSansMyanmar.variable} ${notoSansSC.variable} h-full`} data-scroll-behavior="smooth">
       <body className="min-h-full flex flex-col antialiased">
         <LanguageProvider>
           <LanguageWrapper>

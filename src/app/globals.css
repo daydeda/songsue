@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
 @import "tailwindcss";
 
 /* ── Design Tokens ─────────────────────────────────────────────────────────── */
@@ -45,7 +44,7 @@ html, body {
   min-height: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: "Inter", "Geist", sans-serif;
+  font-family: var(--font-ibm-sans), var(--font-ibm-thai), var(--font-noto-myanmar), var(--font-noto-sc), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   scroll-behavior: smooth;
 }
@@ -142,6 +141,7 @@ html, body {
 /* ── Input System ───────────────────────────────────────────────────────────── */
 .input {
   width: 100%;
+  max-width: 100%;
   padding: 11px 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);

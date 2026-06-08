@@ -60,6 +60,15 @@ export default function DashboardPage() {
     title: "",
     message: "",
   });
+  const [successModal, setSuccessModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+  }>({
+    show: false,
+    title: "",
+    message: "",
+  });
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
   
@@ -120,9 +129,24 @@ export default function DashboardPage() {
     const method = registered ? "DELETE" : "POST";
     const res = await fetch(`/api/events/${eventId}/register`, { method });
     if (res.ok) {
+      const targetEvent = events.find(e => e.id === eventId);
       setEvents((evts) =>
         evts.map((e) => (e.id === eventId ? { ...e, isRegistered: !registered } : e))
       );
+      if (!registered) {
+        const eventTitle = targetEvent ? targetEvent.title : "";
+        setSuccessModal({
+          show: true,
+          title: lang === "th" ? "ลงทะเบียนสำเร็จ!" : lang === "cn" ? "注册成功！" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း အောင်မြင်သည်!" : "Registration Complete!",
+          message: lang === "th"
+            ? `คุณได้ลงทะเบียนเข้าร่วมกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
+            : lang === "cn"
+            ? `您已成功注册活动 "${eventTitle}"`
+            : lang === "mm"
+            ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် အောင်မြင်စွာ မှတ်ပုံတင်ပြီးပါပြီ`
+            : `You have successfully registered for the event "${eventTitle}".`
+        });
+      }
     } else {
       const errorData = await res.json();
       const errorMsg = errorData.error || t.registrationFailed;
@@ -632,6 +656,58 @@ export default function DashboardPage() {
               onClick={() => setErrorModal(prev => ({ ...prev, show: false }))}
             >
               {lang === "th" ? "ปิด" : "Close"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {successModal.show && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 1350,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setSuccessModal(prev => ({ ...prev, show: false }))}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "90%",
+            maxWidth: 440,
+            borderRadius: 28,
+            padding: 32,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "rgba(16, 185, 129, 0.1)",
+              color: "#10b981",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <CheckCircle2 size={28} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
+              {successModal.title}
+            </h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              {successModal.message}
+            </p>
+            <button
+              className="btn btn-success-solid"
+              style={{ width: "100%", height: 46, borderRadius: 12, fontSize: 14, fontWeight: 800, background: "#10b981", color: "#fff", border: "none", boxShadow: "0 10px 25px rgba(16,185,129,0.3)" }}
+              onClick={() => setSuccessModal(prev => ({ ...prev, show: false }))}
+            >
+              {lang === "th" ? "ตกลง" : "OK"}
             </button>
           </div>
         </div>

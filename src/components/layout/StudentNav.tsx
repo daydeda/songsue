@@ -125,7 +125,7 @@ user?.role === "staff" ? t.roleStaff :
 {/* Brand/Logo (Desktop Left, Mobile Right) */}
 <div className="nav-left">
 <Link href="/dashboard" className="logo">
-<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" />
+<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
 <div className="logo-text">
 <span className="gradient-text">ActiveCAMT</span>
 </div>
@@ -232,7 +232,7 @@ user?.role === "staff" ? t.roleStaff :
 <aside className={`mobile-sidebar ${isMobileMenuOpen ? "open" : ""}`}>
 <div className="sidebar-header">
 <div className="logo">
-<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" />
+<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
 <div className="logo-text">
 <span className="gradient-text">ActiveCAMT</span>
 </div>

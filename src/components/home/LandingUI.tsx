@@ -87,7 +87,7 @@ export function LandingUI({
       <main className="relative z-10 w-full mx-auto px-6 sm:px-12 lg:px-16 py-[12vh] lg:py-0 flex-1 flex flex-col lg:flex-row gap-12 lg:gap-24 items-center justify-center max-w-5xl">
         
         {/* Left: Branding & Value Prop */}
-        <div className="flex flex-col gap-6 lg:gap-12 text-left items-start w-full max-w-[400px] lg:max-w-[480px]">
+        <div className="flex flex-col gap-6 lg:gap-12 text-center sm:text-left items-center sm:items-start w-full max-w-[400px] lg:max-w-[480px]">
           <div className="flex flex-col gap-3 lg:gap-8">
             <h1 style={{ fontSize: "clamp(40px, 8vw, 84px)", fontWeight: 950, letterSpacing: "-0.05em", lineHeight: 0.85, color: "var(--text-primary)" }}>
               Experience <br />

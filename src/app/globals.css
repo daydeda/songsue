@@ -42,6 +42,8 @@
 
 html, body {
   min-height: 100%;
+  width: 100%;
+  overflow-x: hidden;
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-ibm-sans), var(--font-ibm-thai), var(--font-noto-myanmar), var(--font-noto-sc), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

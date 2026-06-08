@@ -693,7 +693,9 @@ export default function AdminStudentsDirectory() {
                               <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent-primary)" }} />
                               <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)" }}>{c.name}</p>
                             </div>
-                            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase" }}>{c.relationship}</p>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase" }}>
+                              {c.relationship.startsWith("Other:") ? c.relationship.substring(6) : c.relationship}
+                            </p>
                             <a href={`tel:${c.phone}`} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, color: "var(--accent-primary)", fontWeight: 800, textDecoration: "none", fontSize: 16 }}>
                               <Phone size={16} />
                               {c.phone}

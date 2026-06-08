@@ -1246,7 +1246,9 @@ export default function AdminEventsPage() {
                   {selectedStudent.emergencyContacts.map((c: EmergencyContact, i: number) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div>
-                        <p style={{ fontWeight: 700, fontSize: 14 }}>{c.name} ({c.relationship})</p>
+                        <p style={{ fontWeight: 700, fontSize: 14 }}>
+                          {c.name} ({c.relationship.startsWith("Other:") ? c.relationship.substring(6) : c.relationship})
+                        </p>
                         <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{c.phone}</p>
                       </div>
                       <a href={`tel:${c.phone}`} className="btn btn-ghost" style={{ borderRadius: "50%", width: 36, height: 36, padding: 0 }}><Phone size={14} /></a>

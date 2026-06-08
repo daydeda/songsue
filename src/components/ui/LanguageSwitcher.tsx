@@ -112,26 +112,24 @@ export function LanguageSwitcher({ align = "right", position = "bottom", variant
               key={l.code}
               onClick={() => setLang(l.code)}
               aria-label={`Switch to ${l.label}`}
+              title={l.label}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                padding: "8px 12px",
-                borderRadius: 12,
-                fontSize: 12,
-                fontWeight: 800,
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                borderRadius: 10,
                 cursor: "pointer",
                 transition: "all 0.2s ease",
                 border: "none",
                 background: isActive ? "#ffffff" : "transparent",
-                color: isActive ? "var(--accent-primary)" : "var(--text-secondary)",
                 boxShadow: isActive ? "0 4px 12px rgba(255,107,0,0.08), 0 2px 4px rgba(0,0,0,0.04)" : "none",
                 touchAction: "manipulation",
                 WebkitTapHighlightColor: "transparent",
               }}
             >
               {renderFlag(l.code)}
-              <span style={{ fontSize: 11, letterSpacing: "0.05em" }}>{l.code.toUpperCase()}</span>
             </button>
           );
         })}

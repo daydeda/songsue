@@ -39,7 +39,7 @@ export async function GET(
       `"${a.user.nickname || ""}"`,
       `"${a.method}"`,
       `"${a.status}"`,
-      `"${a.checkInTime ? a.checkInTime.toLocaleString() : ""}"`
+      `"${a.checkInTime ? a.checkInTime.toLocaleString("en-GB", { timeZone: "Asia/Bangkok" }) : ""}"`
     ]);
 
     const summaryHeaders = ["Metric", "Value"];

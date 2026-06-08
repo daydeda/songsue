@@ -6,33 +6,12 @@ import { ArrowRight, ShieldCheck, Zap, UserCheck, Sparkles } from "lucide-react"
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { signIn } from "next-auth/react";
 
-function AvatarImage({ src }: { src: string }) {
-  const [hasError, setHasError] = useState(false);
 
-  if (hasError || !src) {
-    return (
-      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-elevated)', color: 'var(--text-muted)', fontSize: '10px', fontWeight: '900' }}>
-        ?
-      </div>
-    );
-  }
-
-  return (
-    <img 
-      src={src} 
-      alt="Student" 
-      className="w-full h-full object-cover"
-      onError={() => setHasError(true)}
-    />
-  );
-}
 
 export function LandingUI({ 
-  userCount = 0, 
-  sampleImages = [] 
+  userCount = 0 
 }: { 
   userCount?: number; 
-  sampleImages?: string[];
 }) {
   const { t } = useLanguage();
 
@@ -172,34 +151,8 @@ export function LandingUI({
             </div>
 
             <div className="mt-2 pt-8 lg:pt-12 border-t border-black/[0.04] flex flex-col gap-6 lg:gap-8">
-              <div className="flex items-center gap-4 justify-center">
-                <div className="flex -space-x-3">
-                  {sampleImages.length > 0 ? (
-                    sampleImages.map((img, i) => (
-                      <div 
-                        key={i} 
-                        style={{ 
-                          width: 36, 
-                          height: 36, 
-                          borderRadius: "50%", 
-                          background: "var(--bg-elevated)", 
-                          border: "3px solid white", 
-                          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                          overflow: "hidden",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}
-                      >
-                        <AvatarImage src={img} />
-                      </div>
-                    ))
-                  ) : (
-                    [1,2,3,4].map(i => (
-                      <div key={i} style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--bg-elevated)", border: "3px solid white", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
-                    ))
-                  )}
-                </div>
+              <div className="flex items-center gap-3 justify-center">
+                <UserCheck size={18} className="text-gray-400" />
                 <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>
                   Join {displayCount} active {joinText}
                 </p>

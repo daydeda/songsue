@@ -152,11 +152,10 @@ export default function DashboardPage() {
   const qrValue = user?.qrToken ?? user?.id ?? "no-token";
 
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   
-  // Events that are either happening today or in the future
-  const upcoming = events.filter((e) => new Date(e.endTime) >= startOfToday);
-  const past = events.filter((e) => new Date(e.endTime) < startOfToday);
+  // Events that are either happening now or in the future
+  const upcoming = events.filter((e) => new Date(e.endTime) >= now);
+  const past = events.filter((e) => new Date(e.endTime) < now);
 
   const getEventStatus = (evt: Event) => {
     const dNow = new Date();

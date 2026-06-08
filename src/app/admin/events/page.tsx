@@ -2007,15 +2007,12 @@ export default function AdminEventsPage() {
                     {/* Contest End Actions */}
                     {!formIsAwarded && (
                       <div 
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
                         style={{ 
                           background: "linear-gradient(135deg, rgba(255,107,0,0.08) 0%, rgba(255,50,0,0.08) 100%)", 
                           border: "1px solid rgba(255,107,0,0.2)", 
                           borderRadius: 24, 
-                          padding: "24px 32px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 24
+                          padding: "24px 32px"
                         }}
                       >
                         <div>
@@ -2025,7 +2022,7 @@ export default function AdminEventsPage() {
                           </p>
                         </div>
                         <button
-                          className="btn"
+                          className="btn w-full sm:w-auto justify-center"
                           style={{
                             background: "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
                             color: "#fff",
@@ -2053,18 +2050,15 @@ export default function AdminEventsPage() {
                     {/* Closed Status Banner */}
                     {!formIsActive && (
                       <div 
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
                         style={{ 
                           background: "var(--bg-elevated)", 
                           border: "1px solid var(--border-subtle)", 
                           borderRadius: 24, 
-                          padding: "24px 32px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 16
+                          padding: "24px 32px"
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                           <div style={{ 
                             display: "flex", 
                             alignItems: "center", 
@@ -2073,7 +2067,8 @@ export default function AdminEventsPage() {
                             height: 44, 
                             borderRadius: "50%", 
                             background: formIsAwarded ? "rgba(16,185,129,0.1)" : "rgba(255,107,0,0.1)", 
-                            color: formIsAwarded ? "#10b981" : "var(--accent-primary)" 
+                            color: formIsAwarded ? "#10b981" : "var(--accent-primary)",
+                            flexShrink: 0
                           }}>
                             {formIsAwarded ? <CheckCircle2 size={22} /> : <AlertCircle size={22} />}
                           </div>
@@ -2092,7 +2087,7 @@ export default function AdminEventsPage() {
                         {!formIsAwarded ? (
                           <button
                             type="button"
-                            className="btn btn-ghost"
+                            className="btn btn-ghost w-full sm:w-auto justify-center"
                             style={{
                               height: 38,
                               borderRadius: 10,
@@ -2108,17 +2103,20 @@ export default function AdminEventsPage() {
                             🔓 Re-open Form
                           </button>
                         ) : (
-                          <div style={{
-                            padding: "8px 16px",
-                            borderRadius: 10,
-                            background: "rgba(16,185,129,0.1)",
-                            color: "#10b981",
-                            fontSize: 12,
-                            fontWeight: 900,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6
-                          }}>
+                          <div 
+                            className="w-full sm:w-auto justify-center"
+                            style={{
+                              padding: "8px 16px",
+                              borderRadius: 10,
+                              background: "rgba(16,185,129,0.1)",
+                              color: "#10b981",
+                              fontSize: 12,
+                              fontWeight: 900,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6
+                            }}
+                          >
                             🔒 Permanent Lock
                           </div>
                         )}

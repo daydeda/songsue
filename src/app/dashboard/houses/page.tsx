@@ -23,7 +23,7 @@ type Activity = {
   delta: number;
   reason: string;
   timestamp: string;
-  house: { name: string, color: string };
+  house: { id: string; name: string; color: string };
   event?: { title: string };
 };
  
@@ -32,6 +32,14 @@ export default function HousesPage() {
   const [houses, setHouses] = useState<House[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const getTranslatedHouseName = (id: string, defaultName: string) => {
+    if (id === "red") return t.houseMom || "Mom";
+    if (id === "green") return t.houseTo || "To";
+    if (id === "yellow") return t.houseLuang || "Luang";
+    if (id === "blue") return t.houseMakara || "Makara";
+    return defaultName;
+  };
  
   useEffect(() => {
     Promise.all([
@@ -81,7 +89,7 @@ export default function HousesPage() {
                   <div className="podium-avatar" style={{ background: `${houses[1].color}10`, color: houses[1].color }}>
                     <Trophy size={28} />
                   </div>
-                  <h3 className="podium-name">{houses[1].name}</h3>
+                  <h3 className="podium-name">{getTranslatedHouseName(houses[1].id, houses[1].name)}</h3>
                   <div className="podium-points">
                     <span className="points-num">{houses[1].points}</span>
                     <span className="points-unit">{t.points}</span>
@@ -99,7 +107,7 @@ export default function HousesPage() {
                   <div className="podium-avatar" style={{ background: `${houses[0].color}10`, color: houses[0].color, boxShadow: `0 10px 25px ${houses[0].color}25` }}>
                     <Trophy size={36} />
                   </div>
-                  <h3 className="podium-name">{houses[0].name}</h3>
+                  <h3 className="podium-name">{getTranslatedHouseName(houses[0].id, houses[0].name)}</h3>
                   <div className="podium-points">
                     <span className="points-num highlight-points">{houses[0].points}</span>
                     <span className="points-unit">{t.points}</span>
@@ -114,7 +122,7 @@ export default function HousesPage() {
                   <div className="podium-avatar" style={{ background: `${houses[2].color}10`, color: houses[2].color }}>
                     <Trophy size={24} />
                   </div>
-                  <h3 className="podium-name">{houses[2].name}</h3>
+                  <h3 className="podium-name">{getTranslatedHouseName(houses[2].id, houses[2].name)}</h3>
                   <div className="podium-points">
                     <span className="points-num">{houses[2].points}</span>
                     <span className="points-unit">{t.points}</span>
@@ -139,9 +147,11 @@ export default function HousesPage() {
                   <Trophy size={18} />
                 </div>
                 <div className="standings-info">
-                  <span className="standings-name">{h.name}</span>
+                  <span className="standings-name">
+                    {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}
+                  </span>
                   <span className="standings-subtitle" style={{ color: h.color }}>
-                    {h.id === 'red' ? 'Lanna' : h.id === 'green' ? 'Mengrai' : h.id === 'yellow' ? 'Kawila' : 'Dara'} House
+                    {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name} House
                   </span>
                 </div>
                 <div className="standings-progress-container">
@@ -193,7 +203,7 @@ export default function HousesPage() {
                      </p>
                    </div>
                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>
-                      <span style={{ color: a.house.color }}>{a.house.name}</span>
+                      <span style={{ color: a.house.color }}>{getTranslatedHouseName(a.house.id, a.house.name)}</span>
                       <span>•</span>
                       <span>{a.event?.title || "Special Points"}</span>
                       <span>•</span>

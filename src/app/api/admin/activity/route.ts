@@ -24,7 +24,7 @@ export async function GET() {
       limit: 100,
       orderBy: (scoreHistory, { desc }) => [desc(scoreHistory.timestamp)],
       with: {
-        house: { columns: { name: true, color: true } },
+        house: { columns: { id: true, name: true, color: true } },
       },
     });
 
@@ -39,6 +39,7 @@ export async function GET() {
       })),
       ...recentScores.map(s => ({
         type: "score" as const,
+        houseId: s.house?.id,
         houseName: s.house?.name ?? "Unknown",
         houseColor: s.house?.color ?? "var(--accent-primary)",
         delta: s.delta,

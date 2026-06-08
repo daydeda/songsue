@@ -28,6 +28,7 @@ type ScanResult = {
     nickname: string; 
     studentId?: string; 
     house?: string; 
+    houseId?: string;
     houseColor?: string;
     hasMedicalCondition?: boolean;
     chronicDiseases?: string | null;
@@ -666,7 +667,7 @@ export default function QRScannerPage() {
                     }}>
                       <House size={16} color={scanResult.student.houseColor} />
                       <span style={{ fontSize: 14, fontWeight: 700, color: scanResult.student.houseColor }}>
-                        {scanResult.student.house}
+                        {scanResult.student.houseId === 'red' ? t.houseMom : scanResult.student.houseId === 'green' ? t.houseTo : scanResult.student.houseId === 'yellow' ? t.houseLuang : scanResult.student.houseId === 'blue' ? t.houseMakara : scanResult.student.house}
                       </span>
                     </div>
                   </div>

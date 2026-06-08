@@ -64,10 +64,10 @@ export default function DashboardPage() {
   const [loadingHouses, setLoadingHouses] = useState(true);
   
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
-    red:    { name: "Lanna",   color: "#ef4444" },
-    green:  { name: "Mengrai", color: "#14b8a6" },
-    yellow: { name: "Kawila",  color: "#f59e0b" },
-    blue:   { name: "Dara",    color: "#6366f1" },
+    red:    { name: t.houseMom || "Mom",   color: "#ef4444" },
+    green:  { name: t.houseTo || "To",      color: "#14b8a6" },
+    yellow: { name: t.houseLuang || "Luang",  color: "#f59e0b" },
+    blue:   { name: t.houseMakara || "Makara", color: "#6366f1" },
   };
 
   const fetchEvents = () => {
@@ -184,12 +184,12 @@ export default function DashboardPage() {
         
         {/* Header Section */}
         <section className="animate-fade-in-up" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 24 }}>
-          <div>
-            <h1 className="text-fluid-h1" style={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
+          <div style={{ minWidth: 280, maxWidth: "100%" }}>
+            <h1 className="text-fluid-h1" style={{ fontWeight: 900, letterSpacing: "-0.04em", wordBreak: "break-word", overflowWrap: "break-word" }}>
               {t.hey}, <span className="gradient-text">{user?.name?.split(" ")[0] || "Student"}!</span>
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
-              <p style={{ color: "var(--text-secondary)", fontSize: 17, fontWeight: 500 }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: 17, fontWeight: 500, wordBreak: "break-word", overflowWrap: "break-word" }}>
                 {t.upcomingEventsCount.replace("{count}", upcoming.length.toString())}
               </p>
             </div>
@@ -441,7 +441,7 @@ export default function DashboardPage() {
               <div
                 className="stat-card animate-fade-in-up"
                 style={{ 
-                  padding: "clamp(20px, 5vw, 32px)", 
+                  padding: "24px", 
                   background: "var(--bg-surface)",
                   display: "flex", 
                   flexDirection: "column", 
@@ -449,24 +449,26 @@ export default function DashboardPage() {
                   gap: 24,
                   boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
                   border: "1px solid var(--border-medium)",
-                  width: "100%"
+                  width: "100%",
+                  maxWidth: "340px",
+                  alignSelf: "center"
                 }}
               >
-                <div
-                  style={{
-                    background: "#fff",
-                    padding: "clamp(12px, 3vw, 24px)",
-                    borderRadius: 28,
-                    border: "1px solid var(--border-medium)",
-                    boxShadow: "0 0 50px rgba(0,0,0,0.03)",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 16,
-                    width: "100%",
-                    maxWidth: 300
-                  }}
-                >
+                 <div
+                   style={{
+                     background: "#fff",
+                     padding: "20px",
+                     borderRadius: 28,
+                     border: "1px solid var(--border-medium)",
+                     boxShadow: "0 0 50px rgba(0,0,0,0.03)",
+                     display: "flex",
+                     flexDirection: "column",
+                     alignItems: "center",
+                     gap: 16,
+                     width: "100%",
+                     maxWidth: 300
+                   }}
+                 >
                   {user?.image ? (
                     <div style={{ width: 80, height: 80, borderRadius: 16, overflow: "hidden", border: "1px solid var(--border-subtle)", position: "relative" }}>
                       <img 
@@ -496,10 +498,10 @@ export default function DashboardPage() {
                   />
                 </div>
 
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)" }}>{user?.name}</p>
-                  <p style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 6, fontWeight: 600 }}>ID: {user?.studentId || "212110XXX"}</p>
-                </div>
+                 <div style={{ textAlign: "center", width: "100%" }}>
+                   <p style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)", wordBreak: "break-word", overflowWrap: "break-word" }}>{user?.name}</p>
+                   <p style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 6, fontWeight: 600 }}>ID: {user?.studentId || "212110XXX"}</p>
+                 </div>
               </div>
 
               {/* Leaderboard Sidebar */}
@@ -537,7 +539,9 @@ export default function DashboardPage() {
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                  <span style={{ fontSize: 12, fontWeight: 900, color: idx === 0 ? "#fbbf24" : "var(--text-muted)", width: 14 }}>{idx + 1}</span>
-                                 <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>{h.name}</span>
+                                 <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
+                                    {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}
+                                  </span>
                                  {isUserHouse && <span style={{ fontSize: 9, fontWeight: 900, background: h.color, color: "#fff", padding: "2px 6px", borderRadius: 6 }}>YOU</span>}
                               </div>
                               <span style={{ fontSize: 14, fontWeight: 900, color: h.color }}>{h.points || 0} <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)" }}>PTS</span></span>

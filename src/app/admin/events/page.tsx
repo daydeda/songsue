@@ -56,7 +56,7 @@ interface AdminStudent {
   emergencyMedication: string | null;
   emergencyContacts: EmergencyContact[];
   houseId: string | null;
-  house: { name: string; color: string } | null;
+  house: { id: string; name: string; color: string } | null;
 }
 
 interface AdminAttendance {
@@ -754,9 +754,9 @@ export default function AdminEventsPage() {
   });
 
   const groupedAttendance = filteredAttendance.reduce((acc: Record<string, AdminAttendance[]>, curr: AdminAttendance) => {
-    const houseName = curr.user?.house?.name || "Unassigned";
-    if (!acc[houseName]) acc[houseName] = [];
-    acc[houseName].push(curr);
+    const houseId = curr.user?.house?.id || "Unassigned";
+    if (!acc[houseId]) acc[houseId] = [];
+    acc[houseId].push(curr);
     return acc;
   }, {});
 
@@ -1020,7 +1020,7 @@ export default function AdminEventsPage() {
                               background: members[0]?.user?.house?.color || "var(--accent-primary)",
                               boxShadow: `0 0 15px ${members[0]?.user?.house?.color}55`
                             }} />
-                            {house}
+                            {house === "red" ? t.houseMom : house === "green" ? t.houseTo : house === "yellow" ? t.houseLuang : house === "blue" ? t.houseMakara : house}
                           </h4>
                           <span className="badge" style={{ padding: "6px 16px", borderRadius: 99, background: "var(--bg-surface)", fontWeight: 800, color: "var(--text-secondary)" }}>
                             {members.length} Members
@@ -2536,10 +2536,10 @@ export default function AdminEventsPage() {
                             blue: "var(--blue-house)"
                           };
                           const houseNames: Record<string, string> = {
-                            red: "Lanna",
-                            green: "Mengrai",
-                            yellow: "Kawila",
-                            blue: "Dara"
+                            red: t.houseMom || "Mom",
+                            green: t.houseTo || "To",
+                            yellow: t.houseLuang || "Luang",
+                            blue: t.houseMakara || "Makara"
                           };
                           const count = formStats?.[hId] || 0;
                           return (

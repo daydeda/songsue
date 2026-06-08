@@ -7,7 +7,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 
 type Activity = 
   | { type: "checkin"; studentName: string; studentId: string; eventTitle: string; timestamp: string }
-  | { type: "score"; houseName: string; houseColor: string; delta: number; reason: string; timestamp: string };
+  | { type: "score"; houseId?: string; houseName: string; houseColor: string; delta: number; reason: string; timestamp: string };
 
 export default function AdminActivityPage() {
   const { t, lang } = useLanguage();
@@ -27,7 +27,8 @@ export default function AdminActivityPage() {
     if (a.type === "checkin") {
       return a.studentName.toLowerCase().includes(q) || a.eventTitle.toLowerCase().includes(q) || a.studentId.includes(q);
     } else {
-      return a.houseName.toLowerCase().includes(q) || a.reason.toLowerCase().includes(q);
+      const houseTranslated = a.houseId === "red" ? t.houseMom : a.houseId === "green" ? t.houseTo : a.houseId === "yellow" ? t.houseLuang : a.houseId === "blue" ? t.houseMakara : a.houseName;
+      return houseTranslated.toLowerCase().includes(q) || a.reason.toLowerCase().includes(q);
     }
   });
 
@@ -94,7 +95,9 @@ export default function AdminActivityPage() {
                         </div>
                       ) : (
                         <div>
-                          <p style={{ fontWeight: 700, fontSize: 14, color: a.houseColor }}>{a.houseName}</p>
+                          <p style={{ fontWeight: 700, fontSize: 14, color: a.houseColor }}>
+                            {a.houseId === "red" ? t.houseMom : a.houseId === "green" ? t.houseTo : a.houseId === "yellow" ? t.houseLuang : a.houseId === "blue" ? t.houseMakara : a.houseName}
+                          </p>
                           <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{t.labelManualAdjustment}</p>
                         </div>
                       )}

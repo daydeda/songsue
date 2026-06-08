@@ -19,7 +19,7 @@ type Student = {
   major?: string;
   phone?: string;
   houseId?: string;
-  house?: { name: string; color?: string } | null;
+  house?: { id: string; name: string; color?: string } | null;
   profileCompleted?: boolean;
   role?: string;
   chronicDiseases?: string | null;
@@ -250,11 +250,19 @@ export default function AdminStudentsDirectory() {
     return fields.some(isMeaningful) || user.faintingHistory === true;
   };
 
+  const getHouseName = (id: string, defaultName: string) => {
+    if (id === "red") return t.houseMom || "Mom";
+    if (id === "green") return t.houseTo || "To";
+    if (id === "yellow") return t.houseLuang || "Luang";
+    if (id === "blue") return t.houseMakara || "Makara";
+    return defaultName;
+  };
+
   const houseOptions = [
     { value: "all", label: t.allHouses },
     ...houses.map(h => ({
       value: h.id,
-      label: h.name,
+      label: getHouseName(h.id, h.name),
       color: h.id === "red" ? "#ef4444" : h.id === "blue" ? "#3b82f6" : h.id === "green" ? "#10b981" : h.id === "yellow" ? "#f59e0b" : "var(--accent-primary)"
     }))
   ];
@@ -289,7 +297,7 @@ export default function AdminStudentsDirectory() {
     { value: "", label: t.unassignedLabel, icon: <X size={16} className="text-muted" /> },
     ...houses.map(h => ({
       value: h.id,
-      label: h.name,
+      label: getHouseName(h.id, h.name),
       color: h.id === "red" ? "#ef4444" : h.id === "blue" ? "#3b82f6" : h.id === "green" ? "#10b981" : h.id === "yellow" ? "#f59e0b" : "var(--accent-primary)"
     }))
   ];
@@ -474,7 +482,7 @@ export default function AdminStudentsDirectory() {
                               background: s.house.color || "var(--accent-primary)",
                               boxShadow: `0 0 10px ${s.house.color}44`
                             }} />
-                            <span style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 14 }}>{s.house.name}</span>
+                            <span style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 14 }}>{getHouseName(s.house.id, s.house.name)}</span>
                           </div>
                         ) : (
                           <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: 13 }}>Unassigned</span>

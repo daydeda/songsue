@@ -78,6 +78,7 @@ export class ScannerService {
       nickname: student.nickname,
       studentId: student.studentId,
       house: student.house?.name ?? "UNASSIGNED",
+      houseId: student.house?.id,
       houseColor: student.house?.color ?? "#6366f1",
       hasMedicalCondition,
       chronicDiseases: student.chronicDiseases,

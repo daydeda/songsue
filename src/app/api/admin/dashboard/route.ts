@@ -77,12 +77,13 @@ export async function GET(req: Request) {
       limit: 10,
       orderBy: (scoreHistory, { desc }) => [desc(scoreHistory.timestamp)],
       columns: {
+        id: true,
         delta: true,
         reason: true,
         timestamp: true,
       },
       with: {
-        house: { columns: { name: true, color: true } },
+        house: { columns: { id: true, name: true, color: true } },
       },
     });
 
@@ -97,6 +98,7 @@ export async function GET(req: Request) {
       })),
       ...recentScores.map(s => ({
         type: "score" as const,
+        houseId: s.house?.id,
         houseName: s.house?.name ?? "Unknown",
         houseColor: s.house?.color ?? "var(--accent-primary)",
         delta: s.delta,

@@ -77,6 +77,10 @@ export const translations = {
     halal: "Halal",
     kosher: "Kosher",
     other: "Other",
+    houseMom: "Mom",
+    houseTo: "To",
+    houseLuang: "Luang",
+    houseMakara: "Makara",
     // Dashboard
     hey: "Hey",
     upcomingEvents: "Upcoming Events",
@@ -320,6 +324,10 @@ export const translations = {
     halal: "ฮาลาล",
     kosher: "โคเชอร์",
     other: "อื่นๆ",
+    houseMom: "มอม",
+    houseTo: "โต",
+    houseLuang: "ลวง",
+    houseMakara: "มกร",
     // Dashboard
     hey: "สวัสดี",
     upcomingEvents: "กิจกรรมที่กำลังจะมาถึง",
@@ -563,6 +571,10 @@ export const translations = {
     halal: "ဟလာလ်",
     kosher: "ကိုရှာ",
     other: "အခြား",
+    houseMom: "Mom",
+    houseTo: "To",
+    houseLuang: "Luang",
+    houseMakara: "Makara",
     // Dashboard
     hey: "မင်္ဂလာပါ",
     upcomingEvents: "လာမည့်ပွဲများ",
@@ -806,6 +818,10 @@ export const translations = {
     halal: "清真",
     kosher: "犹太洁食",
     other: "其他",
+    houseMom: "Mom",
+    houseTo: "To",
+    houseLuang: "Luang",
+    houseMakara: "Makara",
     // Dashboard
     hey: "你好",
     upcomingEvents: "即将举行的活动",

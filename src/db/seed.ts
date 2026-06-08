@@ -10,10 +10,10 @@ import { houses, users } from "./schema";
 import { eq } from "drizzle-orm";
 
 const HOUSES = [
-  { id: "red",    name: "Lanna",   color: "#ef4444" },
-  { id: "green",  name: "Mengrai", color: "#14b8a6" },
-  { id: "yellow", name: "Kawila",  color: "#f59e0b" },
-  { id: "blue",   name: "Dara",    color: "#6366f1" },
+  { id: "red",    name: "Mom",   color: "#ef4444" },
+  { id: "green",  name: "To",      color: "#14b8a6" },
+  { id: "yellow", name: "Luang",  color: "#f59e0b" },
+  { id: "blue",   name: "Makara", color: "#6366f1" },
 ];
 
 const SUPER_ADMINS = [

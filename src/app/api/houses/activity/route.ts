@@ -11,6 +11,7 @@ export async function GET() {
       with: {
         house: {
           columns: {
+            id: true,
             name: true,
             color: true,
           }

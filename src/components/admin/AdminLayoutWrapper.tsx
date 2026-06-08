@@ -21,7 +21,7 @@ export function AdminLayoutWrapper({
 
   return (
     <LanguageProvider>
-      <div className="flex h-screen bg-[var(--bg-base)] overflow-hidden relative">
+      <div className="flex h-dvh bg-[var(--bg-base)] overflow-hidden relative">
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-[var(--border-subtle)] flex items-center justify-between px-6 z-[1000] backdrop-blur-md bg-white/80">
         <div className="flex items-center gap-3">
@@ -51,7 +51,7 @@ export function AdminLayoutWrapper({
         transition-transform duration-300 transform
         ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0 lg:flex
-        w-[280px] bg-white border-r border-[var(--border-subtle)] flex flex-col p-6
+        w-[280px] bg-white border-r border-[var(--border-subtle)] flex flex-col pt-6 px-6 pb-[calc(1.5rem+var(--safe-bottom))]
       `}>
         <div style={{ marginBottom: 40, display: "flex", alignItems: "center" }}>
           <Link href="/admin/dashboard" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>

@@ -314,12 +314,13 @@ select.input { cursor: pointer; }
 /* ── Sidebar ─────────────────────────────────────────────────────────────────── */
 .sidebar {
   width: 240px;
-  height: 100vh;
+  height: 100dvh;
   background: var(--bg-surface);
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   padding: 24px 16px;
+  padding-bottom: calc(24px + var(--safe-bottom));
   flex-shrink: 0;
 }
 .sidebar-logo {

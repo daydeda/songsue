@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, X, User, ChevronLeft } from "lucide-react";
+import { Menu, X, User } from "lucide-react";
 import { AdminNav } from "./AdminNav";
 import { LanguageProvider } from "@/lib/LanguageContext";
 import Link from "next/link";
@@ -53,7 +53,7 @@ export function AdminLayoutWrapper({
         lg:translate-x-0 lg:flex
         w-[280px] bg-white border-r border-[var(--border-subtle)] flex flex-col p-6
       `}>
-        <div style={{ marginBottom: 40, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ marginBottom: 40, display: "flex", alignItems: "center" }}>
           <Link href="/admin/dashboard" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
             <img 
               src="/smocamt-logo.png" 
@@ -84,13 +84,6 @@ export function AdminLayoutWrapper({
               }}>Admin Panel</span>
             </div>
           </Link>
-          <button 
-            className="lg:hidden flex items-center justify-center text-[var(--text-secondary)]" 
-            onClick={() => setIsSidebarOpen(false)}
-            style={{ width: 44, height: 44, borderRadius: 12, border: "none", background: "var(--bg-elevated)", touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
-          >
-            <ChevronLeft size={20} style={{ pointerEvents: "none" }} />
-          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">

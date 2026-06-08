@@ -234,6 +234,33 @@ export default function QRScannerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events.length > 0]);
 
+  // Restart scanner on window resize or device orientation change
+  useEffect(() => {
+    let resizeTimeout: NodeJS.Timeout | null = null;
+
+    const handleResize = () => {
+      if (!isScanning) return;
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+
+      resizeTimeout = setTimeout(() => {
+        if (isMountedRef.current && isScanning) {
+          console.log("Orientation/size changed. Restarting scanner...");
+          startScanner();
+        }
+      }, 500); // 500ms debounce to let rotate animations settle
+    };
+
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+
+    return () => {
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isScanning]);
+
   const closeModal = () => {
     setShowModal(false);
     setTimeout(() => {

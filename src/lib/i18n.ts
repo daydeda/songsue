@@ -126,8 +126,8 @@ export const translations = {
     failedToLoadEvaluation: "Failed to load evaluation form.",
     failedToSubmitFeedback: "Failed to submit feedback.",
     // Admin Panel
-    adminStudentsDirectory: "Students Directory",
-    searchPlaceholder: "Search by name, nickname, or student ID...",
+    adminStudentsDirectory: "User Directory",
+    searchPlaceholder: "Search by name, nickname, or ID...",
     allHouses: "All Houses",
     allRoles: "All Roles",
     systemRole: "System Role",
@@ -373,8 +373,8 @@ export const translations = {
     failedToLoadEvaluation: "โหลดแบบประเมินล้มเหลว",
     failedToSubmitFeedback: "ส่งแบบประเมินล้มเหลว",
     // Admin Panel
-    adminStudentsDirectory: "รายชื่อนักศึกษา",
-    searchPlaceholder: "ค้นหาด้วยชื่อ ชื่อเล่น หรือรหัสนักศึกษา...",
+    adminStudentsDirectory: "รายชื่อผู้ใช้งาน",
+    searchPlaceholder: "ค้นหาด้วยชื่อ ชื่อเล่น หรือรหัสประจำตัว...",
     allHouses: "ทุกบ้าน",
     allRoles: "ทุกบทบาท",
     systemRole: "บทบาทระบบ",
@@ -620,8 +620,8 @@ export const translations = {
     failedToLoadEvaluation: "အကဲဖြတ်မှုပုံစံ ဖွင့်၍မရပါ",
     failedToSubmitFeedback: "အကြံပြုချက် တင်သွင်း၍မရပါ",
     // Admin Panel
-    adminStudentsDirectory: "ကျောင်းသားများစာရင်း",
-    searchPlaceholder: "နာမည်၊ နာမည်ပြောင် သို့မဟုတ် ကျောင်းသားနံပါတ်ဖြင့် ရှာဖွေပါ...",
+    adminStudentsDirectory: "အသုံးပြုသူများစာရင်း",
+    searchPlaceholder: "နာမည်၊ နာမည်ပြောင် သို့မဟုတ် ID ဖြင့် ရှာဖွေပါ...",
     allHouses: "အိမ်တော်အားလုံး",
     allRoles: "အခန်းကဏ္ဍအားလုံး",
     systemRole: "စနစ်အခန်းကဏ္ဍ",
@@ -867,8 +867,8 @@ export const translations = {
     failedToLoadEvaluation: "无法加载评估表单",
     failedToSubmitFeedback: "无法提交反馈",
     // Admin Panel
-    adminStudentsDirectory: "学生目录",
-    searchPlaceholder: "按姓名、昵称或学号搜索...",
+    adminStudentsDirectory: "用户目录",
+    searchPlaceholder: "按姓名、昵称或ID/工号/学号搜索...",
     allHouses: "所有学院",
     allRoles: "所有角色",
     systemRole: "系统角色",

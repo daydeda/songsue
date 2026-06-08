@@ -136,6 +136,7 @@ export default function AdminEventsPage() {
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
+  const [filterNotCheckedIn, setFilterNotCheckedIn] = useState(false);
   const [filterThai, setFilterThai] = useState(true);
   const [filterInternational, setFilterInternational] = useState(true);
 
@@ -725,6 +726,9 @@ export default function AdminEventsPage() {
     if (filterMedical && !hasActualMedicalInfo(m.user)) {
       return false;
     }
+    if (filterNotCheckedIn && m.status !== "registered") {
+      return false;
+    }
     
     const studentId = m.user?.studentId || "";
     const cleanId = studentId.trim();
@@ -752,6 +756,9 @@ export default function AdminEventsPage() {
     
     return true;
   });
+
+  const checkInCount = attendance.filter(m => m.status === "attended").length;
+  const registeredCount = attendance.length;
 
   const groupedAttendance = filteredAttendance.reduce((acc: Record<string, AdminAttendance[]>, curr: AdminAttendance) => {
     const houseId = curr.user?.house?.id || "Unassigned";
@@ -2481,7 +2488,7 @@ export default function AdminEventsPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Users size={16} className="text-muted" />
                     <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 15 }}>
-                      <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{attendance.length}</span> Check-ins
+                      <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{checkInCount}</span> / <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{registeredCount}</span> checked in
                     </p>
                   </div>
                   <div style={{ width: 1, height: 16, background: "var(--border-medium)" }} />
@@ -2522,6 +2529,27 @@ export default function AdminEventsPage() {
                   >
                     <HeartPulse size={16} />
                     {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
+                  </button>
+
+                  <button
+                    onClick={() => setFilterNotCheckedIn(!filterNotCheckedIn)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 99,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "all 0.2s",
+                      border: filterNotCheckedIn ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                      background: filterNotCheckedIn ? "var(--accent-glow)" : "var(--bg-surface)",
+                      color: filterNotCheckedIn ? "var(--accent-primary)" : "var(--text-secondary)"
+                    }}
+                  >
+                    <Clock size={16} />
+                    {filterNotCheckedIn ? "Showing: Not Checked In Only" : "Filter: Not Checked In Only"}
                   </button>
 
                   <label style={{
@@ -2570,7 +2598,7 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || !filterThai || !filterInternational) && (
+                {(filterMedical || filterNotCheckedIn || !filterThai || !filterInternational) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
                     Filtered: Showing {filteredAttendance.length} of {attendance.length} students
@@ -2616,19 +2644,29 @@ export default function AdminEventsPage() {
                       width: 100,
                       height: 100,
                       borderRadius: "50%",
-                      background: "rgba(239, 68, 68, 0.05)",
+                      background: "var(--bg-elevated)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      color: "#ef4444",
-                      border: "1px solid rgba(239, 68, 68, 0.1)"
+                      color: "var(--text-muted)",
+                      border: "1px solid var(--border-subtle)"
                     }}>
-                      <HeartPulse size={40} />
+                      {filterMedical ? <HeartPulse size={40} style={{ color: "#ef4444" }} /> : <Search size={40} />}
                     </div>
                     <div>
-                      <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>No medical conditions reported</h3>
+                      <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>
+                        {filterMedical 
+                          ? "No medical conditions reported" 
+                          : filterNotCheckedIn 
+                          ? "All registered students checked in!" 
+                          : "No students match the filters"}
+                      </h3>
                       <p style={{ color: "var(--text-muted)", marginTop: 8, maxWidth: 400, margin: "8px auto 0" }}>
-                        None of the {attendance.length} checked-in students have reported any medical conditions or allergies for this event.
+                        {filterMedical 
+                          ? `None of the ${attendance.length} checked-in students have reported any medical conditions or allergies for this event.` 
+                          : filterNotCheckedIn 
+                          ? "Great! Every student registered for this event has successfully checked in."
+                          : "Try adjusting your filters to see more students."}
                       </p>
                     </div>
                   </div>
@@ -2762,10 +2800,23 @@ export default function AdminEventsPage() {
                                   onClick={() => setSelectedStudent(m.user || null)}
                                 >
                                   <Info size={18} />
-                                </button>
-                                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }}>
-                                  <CheckCircle2 size={16} />
-                                </div>
+                                </button>{m.status === "attended" ? (
+
+                                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }} title="Checked In">
+
+                                    <CheckCircle2 size={16} />
+
+                                  </div>
+
+                                ) : (
+
+                                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", border: "1px dashed var(--accent-primary)" }} title="Registered (Not Checked In)">
+
+                                    <Clock size={14} className="animate-pulse" />
+
+                                  </div>
+
+                                )}
                               </div>
                             </div>
                           ))}

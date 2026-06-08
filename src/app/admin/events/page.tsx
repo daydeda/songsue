@@ -786,40 +786,10 @@ export default function AdminEventsPage() {
     <div className="animate-fade-in-up" style={{ paddingBottom: 100 }}>
       {/* Attendance Modal */}
       {showAttendance && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.8)",
-          backdropFilter: "blur(24px)",
-          zIndex: 1000,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24
-        }}>
-          <div className="animate-fade-in-up" style={{
-            background: "var(--bg-surface)",
-            width: "95%",
-            maxWidth: 1100,
-            maxHeight: "90vh",
-            borderRadius: 40,
-            padding: 0,
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            border: "1px solid var(--border-medium)",
-            boxShadow: "0 50px 120px rgba(0,0,0,0.4)",
-            position: "relative"
-          }}>
+        <div className="attendance-modal-overlay">
+          <div className="animate-fade-in-up attendance-modal-container">
             {/* Modal Header */}
-            <div style={{
-              padding: "32px 40px",
-              borderBottom: "1px solid var(--border-subtle)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              background: "linear-gradient(to right, var(--bg-surface), var(--bg-elevated))"
-            }}>
+            <div className="attendance-modal-header">
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                   <div style={{
@@ -832,7 +802,7 @@ export default function AdminEventsPage() {
                   }} />
                   <p className="section-title" style={{ margin: 0, color: "#10b981", fontWeight: 800, fontSize: 12 }}>REAL-TIME ATTENDANCE</p>
                 </div>
-                <h2 style={{ fontSize: 32, fontWeight: 900, letterSpacing: "-0.04em" }}>
+                <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
                   {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
                 </h2>
                 <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
@@ -859,15 +829,7 @@ export default function AdminEventsPage() {
 
             {/* Filter Bar */}
             {!loadingAttendance && attendance.length > 0 && (
-              <div style={{
-                padding: "16px 40px",
-                background: "var(--bg-elevated)",
-                borderBottom: "1px solid var(--border-subtle)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 16
-              }}>
+              <div className="attendance-modal-filter-bar">
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <button
                     onClick={() => setFilterMedical(!filterMedical)}
@@ -953,7 +915,7 @@ export default function AdminEventsPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ overflowY: "auto", flex: 1, padding: "40px" }} className="custom-scrollbar">
+              <div className="attendance-modal-list custom-scrollbar">
                 {attendance.length === 0 ? (
                   <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
                     <div style={{
@@ -2013,6 +1975,80 @@ export default function AdminEventsPage() {
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: var(--text-muted);
+        }
+
+        /* Attendance Modal Responsive Styles */
+        .attendance-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.85);
+          backdrop-filter: blur(24px);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+        }
+        .attendance-modal-container {
+          background: var(--bg-surface);
+          width: 100%;
+          height: 100%;
+          max-width: 100vw;
+          max-height: 100vh;
+          border-radius: 0;
+          padding: 0;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          border: none;
+          position: relative;
+        }
+        .attendance-modal-header {
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border-subtle);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: linear-gradient(to right, var(--bg-surface), var(--bg-elevated));
+          flex-shrink: 0;
+        }
+        .attendance-modal-header h2 {
+          font-size: clamp(18px, 4vw, 28px);
+          font-weight: 900;
+          letter-spacing: -0.04em;
+          margin: 0;
+        }
+        .attendance-modal-filter-bar {
+          padding: 12px 20px;
+          background: var(--bg-elevated);
+          border-bottom: 1px solid var(--border-subtle);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          flex-shrink: 0;
+        }
+        .attendance-modal-list {
+          overflow-y: auto;
+          flex: 1;
+          padding: 20px;
+        }
+
+        @media (min-width: 1024px) {
+          .attendance-modal-header {
+            padding: 24px 40px;
+          }
+          .attendance-modal-header h2 {
+            font-size: 32px;
+          }
+          .attendance-modal-filter-bar {
+            padding: 16px 40px;
+            gap: 16px;
+          }
+          .attendance-modal-list {
+            padding: 40px;
+          }
         }
       `}</style>
 

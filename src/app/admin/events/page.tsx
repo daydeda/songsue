@@ -1026,7 +1026,7 @@ export default function AdminEventsPage() {
                             {members.length} Members
                           </span>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
                           {members.map((m: AdminAttendance) => (
                             <div key={m.id} className="attendance-card" style={{
                               padding: "20px",
@@ -1334,8 +1334,8 @@ export default function AdminEventsPage() {
           style={{
             background: "var(--bg-surface)",
             border: "1px solid var(--border-medium)",
-            borderRadius: 40,
-            padding: 48,
+            borderRadius: "clamp(20px, 4vw, 32px)",
+            padding: "clamp(20px, 5vw, 40px)",
             marginBottom: 48,
             boxShadow: "0 40px 80px rgba(0,0,0,0.1)",
             position: "relative",
@@ -1345,8 +1345,8 @@ export default function AdminEventsPage() {
           {/* Form Background Decor */}
           <div style={{ position: "absolute", top: 0, right: 0, width: 300, height: 300, background: "radial-gradient(circle at top right, var(--accent-glow), transparent)", pointerEvents: "none" }} />
 
-          <h2 style={{ fontSize: 28, fontWeight: 900, marginBottom: 40, display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 12, height: 32, background: "var(--accent-primary)", borderRadius: 6 }} />
+          <h2 style={{ fontSize: "clamp(22px, 5vw, 28px)", fontWeight: 900, marginBottom: 32, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 10, height: 28, background: "var(--accent-primary)", borderRadius: 5 }} />
             {editingId ? t.editEventTitle : t.newEventTitle}
           </h2>
 
@@ -1359,7 +1359,7 @@ export default function AdminEventsPage() {
                   <input className="input" required value={formData.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. IT Freshy Night 2026" style={{ fontSize: 16, padding: "16px 20px", borderRadius: 16 }} />
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventLocationLabel}</label>
                     <div style={{ position: "relative" }}>
@@ -1376,7 +1376,7 @@ export default function AdminEventsPage() {
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventStartTimeLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
                     <input
@@ -1405,7 +1405,7 @@ export default function AdminEventsPage() {
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventQuotaLabel}</label>
                     <div style={{ position: "relative" }}>
@@ -1453,7 +1453,7 @@ export default function AdminEventsPage() {
 
                 <div className="field" style={{ marginTop: 20 }}>
                   <label className="label">{t.targetAudience}</label>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div
                       onClick={() => {
                         const nextVal = !formData.targetThai;
@@ -1539,11 +1539,8 @@ export default function AdminEventsPage() {
 
                   {/* Cohort Quota Limits */}
                   {(formData.targetThai || formData.targetInternational) && (
-                    <div style={{ 
-                      display: "grid", 
-                      gridTemplateColumns: formData.targetThai && formData.targetInternational ? "1fr 1fr" : "1fr", 
-                      gap: 20, 
-                      marginTop: 20 
+                    <div className="grid gap-5 mt-5" style={{ 
+                      gridTemplateColumns: formData.targetThai && formData.targetInternational ? "repeat(auto-fit, minmax(200px, 1fr))" : "1fr"
                     }}>
                       {formData.targetThai && (
                         <div className="field">
@@ -1708,17 +1705,17 @@ export default function AdminEventsPage() {
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, height: 220 }}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-auto md:h-[240px]">
                     <textarea
                       ref={textareaRef}
-                      className="input"
-                      style={{ resize: "none", borderRadius: 16, background: "var(--bg-elevated)", border: "none", height: "100%", fontSize: 14, padding: 16 }}
+                      className="input h-[180px] md:h-full"
+                      style={{ resize: "none", borderRadius: 16, background: "var(--bg-elevated)", border: "none", fontSize: 14, padding: 16 }}
                       value={formData.description}
                       onChange={(e) => set("description", e.target.value)}
                       placeholder={lang === "th" ? "อธิบายรายละเอียดเกี่ยวกับกิจกรรม..." : "Tell them about the event..."}
                     />
                     <div
-                      className="custom-scrollbar"
+                      className="custom-scrollbar h-[180px] md:h-full"
                       style={{
                         background: "var(--bg-elevated)",
                         borderRadius: 16,
@@ -1738,13 +1735,13 @@ export default function AdminEventsPage() {
               </div>
             </div>
 
-            <div style={{ marginTop: 40, paddingTop: 32, borderTop: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6" style={{ marginTop: 40, paddingTop: 32, borderTop: "1px solid var(--border-subtle)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {error && <div style={{ color: "#ef4444", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} /> {error}</div>}
               </div>
-              <div style={{ display: "flex", gap: 16 }}>
-                <button type="button" className="btn btn-ghost btn-lg" style={{ borderRadius: 16 }} onClick={() => setShowForm(false)}>{t.discardBtn}</button>
-                <button type="submit" className="btn btn-primary btn-lg" style={{ borderRadius: 16, minWidth: 200 }} disabled={submitting}>
+              <div className="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
+                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => setShowForm(false)}>{t.discardBtn}</button>
+                <button type="submit" className="btn btn-primary btn-lg w-full sm:w-auto" style={{ borderRadius: 16, minWidth: 200 }} disabled={submitting}>
                   {submitting ? <>{lang === "th" ? "กำลังบันทึก..." : "Saving..."}</> : editingId ? t.updateSystemBtn : t.activateEventBtn}
                 </button>
               </div>
@@ -1781,7 +1778,7 @@ export default function AdminEventsPage() {
           <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 32 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))", gap: 32 }}>
           {filteredEvents.map((evt) => {
             const status = getEventStatus(evt);
             const isLive = status === "live";
@@ -2142,7 +2139,7 @@ export default function AdminEventsPage() {
                 {formTab === "edit" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                     {/* General Settings */}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 24 }}>
                       {/* Left Panel */}
                       <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 16 }}>
                         <div className="field">

@@ -429,10 +429,7 @@ export default function OnboardingPage() {
                         className={inp}
                         value={["", "Father", "Mother", "Guardian", "Sibling", "Relative", "Friend"].includes(contact.relationship) ? contact.relationship : (contact.relationship ? "Other" : "")}
                         onChange={(e) => setEC(i, "relationship", e.target.value === "Other" ? "Other:" : e.target.value)}
-                        style={{
-                          minHeight: 48,
-                          ...errStyle(validationTriggered && required && (!contact.relationship.trim() || contact.relationship === "Other:"))
-                        }}
+                        style={errStyle(validationTriggered && required && (!contact.relationship.trim() || contact.relationship === "Other:"))}
                       >
                         <option value="">{t.selectRelationship}</option>
                         <option value="Father">{t.father}</option>
@@ -449,7 +446,6 @@ export default function OnboardingPage() {
                           className={inp}
                           style={{
                             marginTop: 8,
-                            minHeight: 48,
                             ...errStyle(validationTriggered && required && (!contact.relationship.trim() || contact.relationship === "Other:"))
                           }}
                           placeholder={isTh ? "กรุณาระบุความสัมพันธ์..." : "Please specify relationship..."}

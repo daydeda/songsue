@@ -59,7 +59,7 @@ export function StudentNav() {
         {/* Left: Brand */}
         <div className="nav-left">
           <Link href="/dashboard" className="logo">
-            <div className="logo-icon">A</div>
+            <img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" />
             <div className="logo-text">
               <span className="gradient-text">ActiveCAMT</span>
             </div>
@@ -201,14 +201,7 @@ export function StudentNav() {
         .logo-icon {
           width: 32px;
           height: 32px;
-          background: var(--accent-primary);
-          border-radius: 9px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 900;
-          font-size: 18;
-          color: #fff;
+          object-fit: contain;
         }
         .logo-text {
           font-weight: 800;

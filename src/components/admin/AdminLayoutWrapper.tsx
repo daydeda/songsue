@@ -25,7 +25,7 @@ export function AdminLayoutWrapper({
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-[var(--border-subtle)] flex items-center justify-between px-6 z-[1000] backdrop-blur-md bg-white/80">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[var(--accent-primary)] rounded-lg flex items-center justify-center text-white font-black">A</div>
+          <img src="/smocamt-logo.png" className="w-8 h-8 object-contain" alt="SMOCAMT Logo" />
           <span className="gradient-text font-black text-xl">ActiveCAMT</span>
         </div>
         <button 
@@ -55,19 +55,15 @@ export function AdminLayoutWrapper({
       `}>
         <div style={{ marginBottom: 40, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link href="/admin/dashboard" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
-            <div style={{ 
-              width: 44, 
-              height: 44, 
-              background: "var(--accent-primary)", 
-              borderRadius: "50%", 
-              display: "flex", 
-              alignItems: "center", 
-              justifyContent: "center", 
-              color: "white", 
-              fontWeight: 900, 
-              fontSize: 20,
-              boxShadow: "0 4px 12px var(--accent-primary)44"
-            }}>A</div>
+            <img 
+              src="/smocamt-logo.png" 
+              className="object-contain" 
+              alt="SMOCAMT Logo"
+              style={{ 
+                width: 44, 
+                height: 44, 
+              }} 
+            />
             <div style={{ display: "flex", flexDirection: "column" }}>
               <span style={{ 
                 fontSize: 22, 

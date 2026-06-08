@@ -20,6 +20,9 @@ export const metadata: Metadata = {
   description:
     "The official student activity management platform for CAMT, Chiang Mai University. Register for events, track your house points, and manage attendance.",
   keywords: ["CAMT", "CMU", "student activities", "house points", "attendance"],
+  icons: {
+    icon: "/smocamt-logo.png",
+  },
 };
 
 import { SessionProvider } from "@/components/providers/SessionProvider";

@@ -766,7 +766,7 @@ export default function ProfilePage() {
           font-weight: 900;
           letter-spacing: -0.04em;
           margin: 0;
-          line-height: 1.15;
+          line-height: 1.35;
         }
         .subtitle-text {
           color: var(--text-muted);

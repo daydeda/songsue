@@ -268,7 +268,7 @@ export default function AdminDashboardOverview() {
 
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 48 }}>
-        <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1 }}>{t.dashboard}</h1>
+        <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1.3 }}>{t.dashboard}</h1>
         <div className="flex gap-3 flex-wrap">
           <button
             id="refresh-stats-btn"

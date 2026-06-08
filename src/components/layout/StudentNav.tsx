@@ -373,7 +373,7 @@ flex-shrink: 0;
 font-size: 13px;
 font-weight: 700;
 color: var(--text-primary);
-line-height: 1;
+line-height: 1.4;
 margin: 0;
 white-space: nowrap;
 }
@@ -470,7 +470,7 @@ font-size: 14px;
 font-weight: 800;
 color: var(--text-primary);
 margin: 0;
-line-height: 1.2;
+line-height: 1.4;
 }
 .dropdown-sub {
 font-size: 11px;

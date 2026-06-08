@@ -216,7 +216,7 @@ export default function HistoryPage() {
                     )}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 900, fontSize: 17, color: "var(--text-primary)", letterSpacing: "-0.01em", lineHeight: 1.3 }}>{h.eventTitle}</p>
+                    <p style={{ fontWeight: 900, fontSize: 17, color: "var(--text-primary)", letterSpacing: "-0.01em", lineHeight: 1.35 }}>{h.eventTitle}</p>
                     <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                       {h.checkInTime ? (
                         <>Completed on {new Date(h.checkInTime).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}</>

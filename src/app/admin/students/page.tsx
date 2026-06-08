@@ -110,7 +110,7 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
                 {currentOption.icon}
               </span>
             )}
-            <span className="text-sm font-extrabold text-[var(--text-primary)] leading-tight truncate max-w-[140px]">
+            <span className="text-sm font-extrabold text-[var(--text-primary)] leading-normal truncate max-w-[140px]">
               {currentOption ? currentOption.label : placeholder}
             </span>
           </div>

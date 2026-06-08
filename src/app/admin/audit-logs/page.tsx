@@ -28,7 +28,7 @@ export default function AdminAuditLogsPage() {
     <div className="pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 40 }}>
-        <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1 }}>{t.auditTrailsTitle}</h1>
+        <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1.3 }}>{t.auditTrailsTitle}</h1>
         <div className="flex gap-3 items-center flex-wrap">
           <button 
             className="btn btn-ghost" 

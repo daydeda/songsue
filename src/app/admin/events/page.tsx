@@ -1873,7 +1873,7 @@ export default function AdminEventsPage() {
                 {/* Card Content */}
                 <div style={{ padding: "28px", flex: 1, display: "flex", flexDirection: "column" }}>
                   <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 20, fontWeight: 900, marginBottom: 8, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.2 }}>{evt.title}</h3>
+                    <h3 style={{ fontSize: 20, fontWeight: 900, marginBottom: 8, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.35 }}>{evt.title}</h3>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", fontSize: 13, fontWeight: 600 }}>
                         <MapPin size={14} style={{ color: "var(--accent-primary)" }} />

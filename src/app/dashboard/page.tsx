@@ -64,10 +64,12 @@ export default function DashboardPage() {
     show: boolean;
     title: string;
     message: string;
+    type?: "success" | "info";
   }>({
     show: false,
     title: "",
     message: "",
+    type: "success",
   });
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
@@ -133,8 +135,8 @@ export default function DashboardPage() {
       setEvents((evts) =>
         evts.map((e) => (e.id === eventId ? { ...e, isRegistered: !registered } : e))
       );
+      const eventTitle = targetEvent ? targetEvent.title : "";
       if (!registered) {
-        const eventTitle = targetEvent ? targetEvent.title : "";
         setSuccessModal({
           show: true,
           title: lang === "th" ? "ลงทะเบียนสำเร็จ!" : lang === "cn" ? "注册成功！" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း အောင်မြင်သည်!" : "Registration Complete!",
@@ -144,7 +146,21 @@ export default function DashboardPage() {
             ? `您已成功注册活动 "${eventTitle}"`
             : lang === "mm"
             ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် အောင်မြင်စွာ မှတ်ပုံတင်ပြီးပါပြီ`
-            : `You have successfully registered for the event "${eventTitle}".`
+            : `You have successfully registered for the event "${eventTitle}".`,
+          type: "success"
+        });
+      } else {
+        setSuccessModal({
+          show: true,
+          title: lang === "th" ? "ยกเลิกการลงทะเบียนสำเร็จ" : lang === "cn" ? "取消注册成功" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း ပယ်ဖျက်ပြီးပါပြီ" : "Registration Cancelled",
+          message: lang === "th"
+            ? `คุณได้ยกเลิกการลงทะเบียนสำหรับกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
+            : lang === "cn"
+            ? `您已成功取消活动 "${eventTitle}" 的注册`
+            : lang === "mm"
+            ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် မှတ်ပုံတင်ခြင်းကို အောင်မြင်စွာ ပယ်ဖျက်ပြီးပါပြီ`
+            : `You have successfully cancelled your registration for the event "${eventTitle}".`,
+          type: "info"
         });
       }
     } else {
@@ -687,14 +703,14 @@ export default function DashboardPage() {
               width: 56,
               height: 56,
               borderRadius: "50%",
-              background: "rgba(16, 185, 129, 0.1)",
-              color: "#10b981",
+              background: successModal.type === "info" ? "rgba(245, 158, 11, 0.1)" : "rgba(16, 185, 129, 0.1)",
+              color: successModal.type === "info" ? "#f59e0b" : "#10b981",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               margin: "0 auto 20px"
             }}>
-              <CheckCircle2 size={28} />
+              {successModal.type === "info" ? <AlertCircle size={28} /> : <CheckCircle2 size={28} />}
             </div>
             <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
               {successModal.title}
@@ -703,8 +719,18 @@ export default function DashboardPage() {
               {successModal.message}
             </p>
             <button
-              className="btn btn-success-solid"
-              style={{ width: "100%", height: 46, borderRadius: 12, fontSize: 14, fontWeight: 800, background: "#10b981", color: "#fff", border: "none", boxShadow: "0 10px 25px rgba(16,185,129,0.3)" }}
+              className="btn"
+              style={{
+                width: "100%",
+                height: 46,
+                borderRadius: 12,
+                fontSize: 14,
+                fontWeight: 800,
+                background: successModal.type === "info" ? "#f59e0b" : "#10b981",
+                color: "#fff",
+                border: "none",
+                boxShadow: successModal.type === "info" ? "0 10px 25px rgba(245,158,11,0.3)" : "0 10px 25px rgba(16,185,129,0.3)"
+              }}
               onClick={() => setSuccessModal(prev => ({ ...prev, show: false }))}
             >
               {lang === "th" ? "ตกลง" : "OK"}

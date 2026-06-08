@@ -42,7 +42,7 @@ export function LandingUI({
 
   return (
     <div
-      className="min-h-screen relative flex flex-col overflow-x-hidden"
+      className="min-h-screen relative flex flex-col items-center overflow-x-hidden"
       style={{ background: "#f8fafc" }}
     >
       {/* Dynamic Background Elements - Hidden on mobile for performance & click safety */}
@@ -84,10 +84,10 @@ export function LandingUI({
         />
       </div>
 
-      <main className="relative z-10 w-full mx-auto px-[10vw] sm:px-[12vw] lg:px-12 py-[12vh] lg:py-0 flex-1 flex flex-col lg:flex-row gap-12 lg:gap-24 items-center justify-center max-w-7xl">
+      <main className="relative z-10 w-full mx-auto px-6 sm:px-12 lg:px-16 py-[12vh] lg:py-0 flex-1 flex flex-col lg:flex-row gap-12 lg:gap-24 items-center justify-center max-w-5xl">
         
         {/* Left: Branding & Value Prop */}
-        <div className="flex flex-col gap-6 lg:gap-12 text-center lg:text-left items-center lg:items-start w-full lg:w-auto max-w-[400px] lg:max-w-[600px]">
+        <div className="flex flex-col gap-6 lg:gap-12 text-left items-start w-full max-w-[400px] lg:max-w-[480px]">
           <div className="flex flex-col gap-3 lg:gap-8">
             <h1 style={{ fontSize: "clamp(40px, 8vw, 84px)", fontWeight: 950, letterSpacing: "-0.05em", lineHeight: 0.85, color: "var(--text-primary)" }}>
               Experience <br />
@@ -98,7 +98,7 @@ export function LandingUI({
             </p>
           </div>
 
-          <div className="hidden sm:flex flex-col sm:flex-row gap-6 lg:gap-12 mt-2 lg:mt-4">
+          <div className="hidden sm:flex flex-row flex-nowrap gap-6 lg:gap-8 mt-2 lg:mt-4">
             <div className="flex items-center gap-3 lg:gap-4 group">
               <div 
                 style={{ borderRadius: 16, background: "white", boxShadow: "0 8px 20px rgba(0,0,0,0.06)", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.3s ease" }} 
@@ -121,7 +121,7 @@ export function LandingUI({
         </div>
 
         {/* Right: Auth Card */}
-        <div className="flex justify-center w-full lg:w-auto max-w-[360px] lg:max-w-[500px]">
+        <div className="flex justify-center w-full lg:w-full max-w-[360px] lg:max-w-[500px]">
           <div
             style={{
               background: "#ffffff",
@@ -172,7 +172,7 @@ export function LandingUI({
             </div>
 
             <div className="mt-2 pt-8 lg:pt-12 border-t border-black/[0.04] flex flex-col gap-6 lg:gap-8">
-              <div className="flex items-center gap-4 justify-center lg:justify-start">
+              <div className="flex items-center gap-4 justify-center">
                 <div className="flex -space-x-3">
                   {sampleImages.length > 0 ? (
                     sampleImages.map((img, i) => (
@@ -206,7 +206,7 @@ export function LandingUI({
               </div>
 
               {/* Language Switcher in the Card */}
-              <div className="pt-1 flex justify-center lg:justify-start">
+              <div className="pt-1 flex justify-center">
                 <LanguageSwitcher variant="segmented" />
               </div>
             </div>

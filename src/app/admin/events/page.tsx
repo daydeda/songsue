@@ -783,451 +783,10 @@ export default function AdminEventsPage() {
   };
 
   return (
-    <div className="animate-fade-in-up" style={{ paddingBottom: 100 }}>
-      {/* Attendance Modal */}
-      {showAttendance && (
-        <div className="attendance-modal-overlay">
-          <div className="animate-fade-in-up attendance-modal-container">
-            {/* Modal Header */}
-            <div className="attendance-modal-header">
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                  <div style={{
-                    width: 12,
-                    height: 12,
-                    borderRadius: "50%",
-                    background: "#10b981",
-                    boxShadow: "0 0 15px rgba(16,185,129,0.5)",
-                    animation: "pulse-glow 2s infinite"
-                  }} />
-                  <p className="section-title" style={{ margin: 0, color: "#10b981", fontWeight: 800, fontSize: 12 }}>REAL-TIME ATTENDANCE</p>
-                </div>
-                <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
-                  {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
-                </h2>
-                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} className="text-muted" />
-                    <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 15 }}>
-                      <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{attendance.length}</span> Check-ins
-                    </p>
-                  </div>
-                  <div style={{ width: 1, height: 16, background: "var(--border-medium)" }} />
-                  <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                    Event ID: <span style={{ fontFamily: "monospace" }}>{activeEventId?.slice(0, 8)}</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                className="btn btn-ghost"
-                style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }}
-                onClick={() => setShowAttendance(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Filter Bar */}
-            {!loadingAttendance && attendance.length > 0 && (
-              <div className="attendance-modal-filter-bar">
-                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => setFilterMedical(!filterMedical)}
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: 99,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      transition: "all 0.2s",
-                      border: filterMedical ? "1px solid #ef4444" : "1px solid var(--border-subtle)",
-                      background: filterMedical ? "rgba(239, 68, 68, 0.1)" : "var(--bg-surface)",
-                      color: filterMedical ? "#ef4444" : "var(--text-secondary)"
-                    }}
-                  >
-                    <HeartPulse size={16} />
-                    {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
-                  </button>
-
-                  <label style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: filterThai ? "var(--text-primary)" : "var(--text-muted)",
-                    cursor: "pointer",
-                    padding: "8px 16px",
-                    borderRadius: 99,
-                    background: filterThai ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
-                    border: filterThai ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
-                    transition: "all 0.2s"
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={filterThai}
-                      onChange={(e) => setFilterThai(e.target.checked)}
-                      style={{ accentColor: "var(--accent-primary)", width: 15, height: 15, cursor: "pointer" }}
-                    />
-                    Thai Students
-                  </label>
-
-                  <label style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: filterInternational ? "var(--text-primary)" : "var(--text-muted)",
-                    cursor: "pointer",
-                    padding: "8px 16px",
-                    borderRadius: 99,
-                    background: filterInternational ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
-                    border: filterInternational ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
-                    transition: "all 0.2s"
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={filterInternational}
-                      onChange={(e) => setFilterInternational(e.target.checked)}
-                      style={{ accentColor: "var(--accent-primary)", width: 15, height: 15, cursor: "pointer" }}
-                    />
-                    International Students
-                  </label>
-                </div>
-                {(filterMedical || !filterThai || !filterInternational) && (
-                  <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                    <Activity size={14} className="animate-pulse" />
-                    Filtered: Showing {filteredAttendance.length} of {attendance.length} students
-                  </p>
-                )}
-              </div>
-            )}
-
-            {loadingAttendance ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
-                  <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
-                  <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 16 }}>Synchronizing records...</p>
-                </div>
-              </div>
-            ) : (
-              <div className="attendance-modal-list custom-scrollbar">
-                {attendance.length === 0 ? (
-                  <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
-                    <div style={{
-                      width: 100,
-                      height: 100,
-                      borderRadius: "50%",
-                      background: "var(--bg-elevated)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "var(--text-muted)",
-                      border: "1px solid var(--border-subtle)"
-                    }}>
-                      <Search size={40} />
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>Waiting for first entry</h3>
-                      <p style={{ color: "var(--text-muted)", marginTop: 8, maxWidth: 400, margin: "8px auto 0" }}>
-                        Scanning hasn&apos;t started yet. Once students begin checking in via QR code, they will appear here live.
-                      </p>
-                    </div>
-                  </div>
-                ) : filteredAttendance.length === 0 ? (
-                  <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
-                    <div style={{
-                      width: 100,
-                      height: 100,
-                      borderRadius: "50%",
-                      background: "rgba(239, 68, 68, 0.05)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#ef4444",
-                      border: "1px solid rgba(239, 68, 68, 0.1)"
-                    }}>
-                      <HeartPulse size={40} />
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>No medical conditions reported</h3>
-                      <p style={{ color: "var(--text-muted)", marginTop: 8, maxWidth: 400, margin: "8px auto 0" }}>
-                        None of the {attendance.length} checked-in students have reported any medical conditions or allergies for this event.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                    {Object.entries(groupedAttendance).map(([house, members]: [string, AdminAttendance[]]) => (
-                      <div key={house}>
-                        <div style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          marginBottom: 20,
-                          padding: "12px 20px",
-                          background: "var(--bg-elevated)",
-                          borderRadius: 16,
-                          border: "1px solid var(--border-subtle)"
-                        }}>
-                          <h4 style={{ fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 12 }}>
-                            <span style={{
-                              width: 16,
-                              height: 16,
-                              borderRadius: 4,
-                              background: members[0]?.user?.house?.color || "var(--accent-primary)",
-                              boxShadow: `0 0 15px ${members[0]?.user?.house?.color}55`
-                            }} />
-                            {house === "red" ? t.houseMom : house === "green" ? t.houseTo : house === "yellow" ? t.houseLuang : house === "blue" ? t.houseMakara : house}
-                          </h4>
-                          <span className="badge" style={{ padding: "6px 16px", borderRadius: 99, background: "var(--bg-surface)", fontWeight: 800, color: "var(--text-secondary)" }}>
-                            {members.length} Members
-                          </span>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
-                          {members.map((m: AdminAttendance) => (
-                            <div key={m.id} className="attendance-card" style={{
-                              padding: "20px",
-                              background: "var(--bg-surface)",
-                              borderRadius: 24,
-                              border: "1px solid var(--border-subtle)",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 16,
-                              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                              boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
-                            }}>
-                              <div style={{
-                                width: 52,
-                                height: 52,
-                                borderRadius: 16,
-                                background: "var(--bg-elevated)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 18,
-                                fontWeight: 900,
-                                color: "var(--accent-primary)",
-                                border: "1px solid var(--border-subtle)"
-                              }}>
-                                {m.user?.name?.charAt(0)}
-                              </div>
-                              <div style={{ flex: 1 }}>
-                                <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)" }}>{m.user?.name}</p>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-                                  <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>{m.user?.studentId || "No ID"}</p>
-                                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
-                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <Clock size={12} className="text-muted" />
-                                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
-                                      {m.checkInTime ? new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : "-"}
-                                    </p>
-                                  </div>
-                                </div>
-                                {m.medsCheckOption && (
-                                  <div style={{ 
-                                    display: "inline-flex", 
-                                    alignItems: "center", 
-                                    gap: 6, 
-                                    marginTop: 6, 
-                                    padding: "4px 10px", 
-                                    borderRadius: 8, 
-                                    fontSize: 11, 
-                                    fontWeight: 800,
-                                    textTransform: "uppercase",
-                                    background: m.medsCheckOption === "brought" 
-                                      ? "rgba(16, 185, 129, 0.12)" 
-                                      : m.medsCheckOption === "forgot" 
-                                      ? "rgba(239, 68, 68, 0.12)" 
-                                      : "rgba(59, 130, 246, 0.12)",
-                                    color: m.medsCheckOption === "brought" 
-                                      ? "#10b981" 
-                                      : m.medsCheckOption === "forgot" 
-                                      ? "#ef4444" 
-                                      : "#3b82f6",
-                                    border: m.medsCheckOption === "brought"
-                                      ? "1px solid rgba(16, 185, 129, 0.2)"
-                                      : m.medsCheckOption === "forgot"
-                                      ? "1px solid rgba(239, 68, 68, 0.2)"
-                                      : "1px solid rgba(59, 130, 246, 0.2)"
-                                  }}>
-                                    <span style={{ 
-                                      width: 6, 
-                                      height: 6, 
-                                      borderRadius: "50%", 
-                                      background: m.medsCheckOption === "brought" 
-                                        ? "#10b981" 
-                                        : m.medsCheckOption === "forgot" 
-                                        ? "#ef4444" 
-                                        : "#3b82f6",
-                                      boxShadow: m.medsCheckOption === "brought"
-                                        ? "0 0 8px #10b981"
-                                        : m.medsCheckOption === "forgot"
-                                        ? "0 0 8px #ef4444"
-                                        : "0 0 8px #3b82f6"
-                                    }} />
-                                    {m.medsCheckOption === "brought" 
-                                      ? "Brought Meds / พกยามาด้วย" 
-                                      : m.medsCheckOption === "forgot" 
-                                      ? "No Meds (Risk) / ไม่ได้พกยา (รับความเสี่ยง)" 
-                                      : "Acknowledged / รับทราบข้อมูล"}
-                                  </div>
-                                )}
-                              </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                {hasActualMedicalInfo(m.user) && (
-                                  <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
-                                    <Activity size={20} />
-                                  </div>
-                                )}
-                                <button
-                                  className="btn btn-ghost"
-                                  style={{ padding: 8, borderRadius: 10 }}
-                                  onClick={() => setSelectedStudent(m.user || null)}
-                                >
-                                  <Info size={18} />
-                                </button>
-                                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }}>
-                                  <CheckCircle2 size={16} />
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Modal Footer */}
-            <div style={{ padding: "20px 40px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", background: "var(--bg-elevated)" }}>
-              <button className="btn btn-primary" onClick={() => setShowAttendance(false)}>Done Tracking</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Student Profile Modal */}
-      {selectedStudent && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.4)",
-          backdropFilter: "blur(8px)",
-          zIndex: 1100,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24
-        }} onClick={() => setSelectedStudent(null)}>
-          <div className="animate-fade-in-up" style={{
-            background: "var(--bg-surface)",
-            width: "100%",
-            maxWidth: 500,
-            borderRadius: 32,
-            overflow: "hidden",
-            boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
-            border: "1px solid var(--border-medium)"
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: 32, borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ fontSize: 20, fontWeight: 900 }}>Student Profile</h3>
-              <button className="btn btn-ghost" onClick={() => setSelectedStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={18} /></button>
-            </div>
-            <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24 }}>
-              {/* Header Info */}
-              <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-                <div style={{ width: 64, height: 64, borderRadius: 20, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 900, color: "var(--accent-primary)" }}>
-                  {selectedStudent.name?.charAt(0)}
-                </div>
-                <div>
-                  <p style={{ fontSize: 22, fontWeight: 900 }}>{selectedStudent.name}</p>
-                  <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>{selectedStudent.studentId} • {selectedStudent.major}</p>
-                </div>
-              </div>
-
-              {/* Contact */}
-              <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
-                <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Contact Information</p>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <Phone size={16} color="var(--accent-primary)" />
-                  <span style={{ fontWeight: 700 }}>{selectedStudent.phone || "No phone provided"}</span>
-                </div>
-              </div>
-
-              {/* Medical */}
-              <div style={{
-                background: hasActualMedicalInfo(selectedStudent)
-                  ? "rgba(239, 68, 68, 0.05)"
-                  : "var(--bg-elevated)",
-                padding: 20,
-                borderRadius: 20,
-                border: hasActualMedicalInfo(selectedStudent)
-                  ? "1px solid rgba(239, 68, 68, 0.1)"
-                  : "1px solid transparent"
-              }}>
-                <p style={{
-                  fontSize: 12,
-                  fontWeight: 800,
-                  color: hasActualMedicalInfo(selectedStudent) ? "#ef4444" : "var(--text-muted)",
-                  textTransform: "uppercase",
-                  marginBottom: 12,
-                  letterSpacing: "0.05em",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8
-                }}>
-                  <HeartPulse size={14} />
-                  Medical & Health Info
-                </p>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Chronic:</b> {selectedStudent.chronicDiseases}</p>}
-                  {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>History:</b> {selectedStudent.medicalHistory}</p>}
-                  {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Drug Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
-                  {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Food Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
-                  {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Dietary:</b> {selectedStudent.dietaryRestrictions}</p>}
-                  {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Emergency Medication:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
-                  {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ History of fainting</p>}
-
-                  {!hasActualMedicalInfo(selectedStudent) && (
-                    <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Emergency Contact */}
-              {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (
-                <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
-                  <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Emergency Contact</p>
-                  {selectedStudent.emergencyContacts.map((c: EmergencyContact, i: number) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <p style={{ fontWeight: 700, fontSize: 14 }}>
-                          {c.name} ({c.relationship.startsWith("Other:") ? c.relationship.substring(6) : c.relationship})
-                        </p>
-                        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{c.phone}</p>
-                      </div>
-                      <a href={`tel:${c.phone}`} className="btn btn-ghost" style={{ borderRadius: "50%", width: 36, height: 36, padding: 0 }}><Phone size={14} /></a>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ padding: "20px 32px", background: "var(--bg-elevated)", display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn btn-primary" onClick={() => setSelectedStudent(null)}>Close Profile</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Header */}
-      <div className="mb-10">
+    <>
+      <div className="animate-fade-in-up" style={{ paddingBottom: 100 }}>
+        {/* Main Header */}
+        <div className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 20 }}>
           <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">{t.eventsTitle}</h1>
           <button
@@ -1981,26 +1540,27 @@ export default function AdminEventsPage() {
         .attendance-modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0,0,0,0.85);
-          backdrop-filter: blur(24px);
+          background: rgba(0,0,0,0.7);
+          backdrop-filter: blur(16px);
           z-index: 1000;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 0;
+          padding: clamp(12px, 3vw, 24px);
         }
         .attendance-modal-container {
           background: var(--bg-surface);
           width: 100%;
+          max-width: 1100px;
           height: 100%;
-          max-width: 100vw;
-          max-height: 100vh;
-          border-radius: 0;
+          max-height: 90vh;
+          border-radius: clamp(20px, 4vw, 40px);
           padding: 0;
           overflow: hidden;
           display: flex;
           flex-direction: column;
-          border: none;
+          border: 1px solid var(--border-medium);
+          box-shadow: 0 50px 120px rgba(0,0,0,0.4);
           position: relative;
         }
         .attendance-modal-header {
@@ -2051,6 +1611,7 @@ export default function AdminEventsPage() {
           }
         }
       `}</style>
+      </div>
 
       {/* Evaluation Form Builder Modal */}
       {showFormBuilder && (
@@ -2894,6 +2455,448 @@ export default function AdminEventsPage() {
           </div>
         </div>
       )}
-    </div>
+
+      {/* Attendance Modal */}
+      {showAttendance && (
+        <div className="attendance-modal-overlay">
+          <div className="animate-fade-in-up attendance-modal-container">
+            {/* Modal Header */}
+            <div className="attendance-modal-header">
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <div style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: "50%",
+                    background: "#10b981",
+                    boxShadow: "0 0 15px rgba(16,185,129,0.5)",
+                    animation: "pulse-glow 2s infinite"
+                  }} />
+                  <p className="section-title" style={{ margin: 0, color: "#10b981", fontWeight: 800, fontSize: 12 }}>REAL-TIME ATTENDANCE</p>
+                </div>
+                <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
+                  {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
+                </h2>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} className="text-muted" />
+                    <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 15 }}>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{attendance.length}</span> Check-ins
+                    </p>
+                  </div>
+                  <div style={{ width: 1, height: 16, background: "var(--border-medium)" }} />
+                  <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                    Event ID: <span style={{ fontFamily: "monospace" }}>{activeEventId?.slice(0, 8)}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost"
+                style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }}
+                onClick={() => setShowAttendance(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Filter Bar */}
+            {!loadingAttendance && attendance.length > 0 && (
+              <div className="attendance-modal-filter-bar">
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setFilterMedical(!filterMedical)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 99,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "all 0.2s",
+                      border: filterMedical ? "1px solid #ef4444" : "1px solid var(--border-subtle)",
+                      background: filterMedical ? "rgba(239, 68, 68, 0.1)" : "var(--bg-surface)",
+                      color: filterMedical ? "#ef4444" : "var(--text-secondary)"
+                    }}
+                  >
+                    <HeartPulse size={16} />
+                    {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
+                  </button>
+
+                  <label style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: filterThai ? "var(--text-primary)" : "var(--text-muted)",
+                    cursor: "pointer",
+                    padding: "8px 16px",
+                    borderRadius: 99,
+                    background: filterThai ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
+                    border: filterThai ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                    transition: "all 0.2s"
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={filterThai}
+                      onChange={(e) => setFilterThai(e.target.checked)}
+                      style={{ accentColor: "var(--accent-primary)", width: 15, height: 15, cursor: "pointer" }}
+                    />
+                    Thai Students
+                  </label>
+
+                  <label style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: filterInternational ? "var(--text-primary)" : "var(--text-muted)",
+                    cursor: "pointer",
+                    padding: "8px 16px",
+                    borderRadius: 99,
+                    background: filterInternational ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
+                    border: filterInternational ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                    transition: "all 0.2s"
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={filterInternational}
+                      onChange={(e) => setFilterInternational(e.target.checked)}
+                      style={{ accentColor: "var(--accent-primary)", width: 15, height: 15, cursor: "pointer" }}
+                    />
+                    International Students
+                  </label>
+                </div>
+                {(filterMedical || !filterThai || !filterInternational) && (
+                  <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Activity size={14} className="animate-pulse" />
+                    Filtered: Showing {filteredAttendance.length} of {attendance.length} students
+                  </p>
+                )}
+              </div>
+            )}
+
+            {loadingAttendance ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+                  <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
+                  <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 16 }}>Synchronizing records...</p>
+                </div>
+              </div>
+            ) : (
+              <div className="attendance-modal-list custom-scrollbar">
+                {attendance.length === 0 ? (
+                  <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
+                    <div style={{
+                      width: 100,
+                      height: 100,
+                      borderRadius: "50%",
+                      background: "var(--bg-elevated)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--text-muted)",
+                      border: "1px solid var(--border-subtle)"
+                    }}>
+                      <Search size={40} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>Waiting for first entry</h3>
+                      <p style={{ color: "var(--text-muted)", marginTop: 8, maxWidth: 400, margin: "8px auto 0" }}>
+                        Scanning hasn&apos;t started yet. Once students begin checking in via QR code, they will appear here live.
+                      </p>
+                    </div>
+                  </div>
+                ) : filteredAttendance.length === 0 ? (
+                  <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+                    <div style={{
+                      width: 100,
+                      height: 100,
+                      borderRadius: "50%",
+                      background: "rgba(239, 68, 68, 0.05)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#ef4444",
+                      border: "1px solid rgba(239, 68, 68, 0.1)"
+                    }}>
+                      <HeartPulse size={40} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)" }}>No medical conditions reported</h3>
+                      <p style={{ color: "var(--text-muted)", marginTop: 8, maxWidth: 400, margin: "8px auto 0" }}>
+                        None of the {attendance.length} checked-in students have reported any medical conditions or allergies for this event.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
+                    {Object.entries(groupedAttendance).map(([house, members]: [string, AdminAttendance[]]) => (
+                      <div key={house}>
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: 20,
+                          padding: "12px 20px",
+                          background: "var(--bg-elevated)",
+                          borderRadius: 16,
+                          border: "1px solid var(--border-subtle)"
+                        }}>
+                          <h4 style={{ fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 12 }}>
+                            <span style={{
+                              width: 16,
+                              height: 16,
+                              borderRadius: 4,
+                              background: members[0]?.user?.house?.color || "var(--accent-primary)",
+                              boxShadow: `0 0 15px ${members[0]?.user?.house?.color}55`
+                            }} />
+                            {house === "red" ? t.houseMom : house === "green" ? t.houseTo : house === "yellow" ? t.houseLuang : house === "blue" ? t.houseMakara : house}
+                          </h4>
+                          <span className="badge" style={{ padding: "6px 16px", borderRadius: 99, background: "var(--bg-surface)", fontWeight: 800, color: "var(--text-secondary)" }}>
+                            {members.length} Members
+                          </span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
+                          {members.map((m: AdminAttendance) => (
+                            <div key={m.id} className="attendance-card" style={{
+                              padding: "20px",
+                              background: "var(--bg-surface)",
+                              borderRadius: 24,
+                              border: "1px solid var(--border-subtle)",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 16,
+                              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                              boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
+                            }}>
+                              <div style={{
+                                width: 52,
+                                height: 52,
+                                borderRadius: 16,
+                                background: "var(--bg-elevated)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 18,
+                                fontWeight: 900,
+                                color: "var(--accent-primary)",
+                                border: "1px solid var(--border-subtle)"
+                              }}>
+                                {m.user?.name?.charAt(0)}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)" }}>{m.user?.name}</p>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                                  <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>{m.user?.studentId || "No ID"}</p>
+                                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
+                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <Clock size={12} className="text-muted" />
+                                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                                      {m.checkInTime ? new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : "-"}
+                                    </p>
+                                  </div>
+                                </div>
+                                {m.medsCheckOption && (
+                                  <div style={{ 
+                                    display: "inline-flex", 
+                                    alignItems: "center", 
+                                    gap: 6, 
+                                    marginTop: 6, 
+                                    padding: "4px 10px", 
+                                    borderRadius: 8, 
+                                    fontSize: 11, 
+                                    fontWeight: 800,
+                                    textTransform: "uppercase",
+                                    background: m.medsCheckOption === "brought" 
+                                      ? "rgba(16, 185, 129, 0.12)" 
+                                      : m.medsCheckOption === "forgot" 
+                                      ? "rgba(239, 68, 68, 0.12)" 
+                                      : "rgba(59, 130, 246, 0.12)",
+                                    color: m.medsCheckOption === "brought" 
+                                      ? "#10b981" 
+                                      : m.medsCheckOption === "forgot" 
+                                      ? "#ef4444" 
+                                      : "#3b82f6",
+                                    border: m.medsCheckOption === "brought"
+                                      ? "1px solid rgba(16, 185, 129, 0.2)"
+                                      : m.medsCheckOption === "forgot"
+                                      ? "1px solid rgba(239, 68, 68, 0.2)"
+                                      : "1px solid rgba(59, 130, 246, 0.2)"
+                                  }}>
+                                    <span style={{ 
+                                      width: 6, 
+                                      height: 6, 
+                                      borderRadius: "50%", 
+                                      background: m.medsCheckOption === "brought" 
+                                        ? "#10b981" 
+                                        : m.medsCheckOption === "forgot" 
+                                        ? "#ef4444" 
+                                        : "#3b82f6",
+                                      boxShadow: m.medsCheckOption === "brought"
+                                        ? "0 0 8px #10b981"
+                                        : m.medsCheckOption === "forgot"
+                                        ? "0 0 8px #ef4444"
+                                        : "0 0 8px #3b82f6"
+                                    }} />
+                                    {m.medsCheckOption === "brought" 
+                                      ? "Brought Meds / พกยามาด้วย" 
+                                      : m.medsCheckOption === "forgot" 
+                                      ? "No Meds (Risk) / ไม่ได้พกยา (รับความเสี่ยง)" 
+                                      : "Acknowledged / รับทราบข้อมูล"}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                {hasActualMedicalInfo(m.user) && (
+                                  <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
+                                    <Activity size={20} />
+                                  </div>
+                                )}
+                                <button
+                                  className="btn btn-ghost"
+                                  style={{ padding: 8, borderRadius: 10 }}
+                                  onClick={() => setSelectedStudent(m.user || null)}
+                                >
+                                  <Info size={18} />
+                                </button>
+                                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }}>
+                                  <CheckCircle2 size={16} />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Modal Footer */}
+            <div style={{ padding: "20px 40px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", background: "var(--bg-elevated)" }}>
+              <button className="btn btn-primary" onClick={() => setShowAttendance(false)}>Done Tracking</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Profile Modal */}
+      {selectedStudent && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.4)",
+          backdropFilter: "blur(8px)",
+          zIndex: 1100,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setSelectedStudent(null)}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "100%",
+            maxWidth: 500,
+            borderRadius: 32,
+            overflow: "hidden",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: 32, borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ fontSize: 20, fontWeight: 900 }}>Student Profile</h3>
+              <button className="btn btn-ghost" onClick={() => setSelectedStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={18} /></button>
+            </div>
+            <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24 }}>
+              {/* Header Info */}
+              <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+                <div style={{ width: 64, height: 64, borderRadius: 20, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 900, color: "var(--accent-primary)" }}>
+                  {selectedStudent.name?.charAt(0)}
+                </div>
+                <div>
+                  <p style={{ fontSize: 22, fontWeight: 900 }}>{selectedStudent.name}</p>
+                  <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>{selectedStudent.studentId} • {selectedStudent.major}</p>
+                </div>
+              </div>
+
+              {/* Contact */}
+              <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
+                <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Contact Information</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <Phone size={16} color="var(--accent-primary)" />
+                  <span style={{ fontWeight: 700 }}>{selectedStudent.phone || "No phone provided"}</span>
+                </div>
+              </div>
+
+              {/* Medical */}
+              <div style={{
+                background: hasActualMedicalInfo(selectedStudent)
+                  ? "rgba(239, 68, 68, 0.05)"
+                  : "var(--bg-elevated)",
+                padding: 20,
+                borderRadius: 20,
+                border: hasActualMedicalInfo(selectedStudent)
+                  ? "1px solid rgba(239, 68, 68, 0.1)"
+                  : "1px solid transparent"
+              }}>
+                <p style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: hasActualMedicalInfo(selectedStudent) ? "#ef4444" : "var(--text-muted)",
+                  textTransform: "uppercase",
+                  marginBottom: 12,
+                  letterSpacing: "0.05em",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8
+                }}>
+                  <HeartPulse size={14} />
+                  Medical & Health Info
+                </p>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Chronic:</b> {selectedStudent.chronicDiseases}</p>}
+                  {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>History:</b> {selectedStudent.medicalHistory}</p>}
+                  {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Drug Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
+                  {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Food Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
+                  {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Dietary:</b> {selectedStudent.dietaryRestrictions}</p>}
+                  {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Emergency Medication:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
+                  {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ History of fainting</p>}
+
+                  {!hasActualMedicalInfo(selectedStudent) && (
+                    <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Emergency Contact */}
+              {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (
+                <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
+                  <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Emergency Contact</p>
+                  {selectedStudent.emergencyContacts.map((c: EmergencyContact, i: number) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 14 }}>
+                          {c.name} ({c.relationship.startsWith("Other:") ? c.relationship.substring(6) : c.relationship})
+                        </p>
+                        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{c.phone}</p>
+                      </div>
+                      <a href={`tel:${c.phone}`} className="btn btn-ghost" style={{ borderRadius: "50%", width: 36, height: 36, padding: 0 }}><Phone size={14} /></a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "20px 32px", background: "var(--bg-elevated)", display: "flex", justifyContent: "flex-end" }}>
+              <button className="btn btn-primary" onClick={() => setSelectedStudent(null)}>Close Profile</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

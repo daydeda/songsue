@@ -1542,7 +1542,7 @@ export default function AdminEventsPage() {
           inset: 0;
           background: rgba(0,0,0,0.7);
           backdrop-filter: blur(16px);
-          z-index: 1000;
+          z-index: 2000;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1620,7 +1620,7 @@ export default function AdminEventsPage() {
           inset: 0,
           background: "rgba(0,0,0,0.4)",
           backdropFilter: "blur(8px)",
-          zIndex: 1100,
+          zIndex: 2200,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2261,7 +2261,7 @@ export default function AdminEventsPage() {
           inset: 0,
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(12px)",
-          zIndex: 1200,
+          zIndex: 2300,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2334,7 +2334,7 @@ export default function AdminEventsPage() {
           inset: 0,
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(12px)",
-          zIndex: 1300,
+          zIndex: 2400,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2410,7 +2410,7 @@ export default function AdminEventsPage() {
           inset: 0,
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(12px)",
-          zIndex: 1350,
+          zIndex: 2500,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2792,7 +2792,7 @@ export default function AdminEventsPage() {
           inset: 0,
           background: "rgba(0,0,0,0.4)",
           backdropFilter: "blur(8px)",
-          zIndex: 1100,
+          zIndex: 2100,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",

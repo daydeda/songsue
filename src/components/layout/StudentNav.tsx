@@ -2,6 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LogOut,
   User,
@@ -16,43 +17,22 @@ import {
 import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState } from "react";
-import { translations } from "@/lib/i18n";
-
-interface NavLinksProps {
-  t: typeof translations.en;
-  onLinkClick: () => void;
-}
-
-function NavLinks({ t, onLinkClick }: NavLinksProps) {
-  return (
-    <>
-      <Link href="/dashboard" className="nav-link" onClick={onLinkClick}>
-        <LayoutDashboard size={16} />
-        {t.upcomingEvents}
-      </Link>
-      <Link href="/dashboard/history" className="nav-link" onClick={onLinkClick}>
-        <History size={16} />
-        {t.eventHistory}
-      </Link>
-      <Link href="/dashboard/houses" className="nav-link" onClick={onLinkClick}>
-        <Trophy size={16} />
-        {t.leaderboard}
-      </Link>
-      <Link href="/dashboard/profile" className="nav-link" onClick={onLinkClick}>
-        <Settings size={16} />
-        {t.editProfile}
-      </Link>
-    </>
-  );
-}
 
 export function StudentNav() {
   const { data: session } = useSession();
   const { t } = useLanguage();
+  const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
 
   const user = session?.user;
+
+  const links = [
+    { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
+    { href: "/dashboard/history", label: t.eventHistory, icon: History },
+    { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
+    { href: "/dashboard/profile", label: t.editProfile, icon: Settings },
+  ];
 
   return (
     <nav className="student-nav">
@@ -140,7 +120,20 @@ export function StudentNav() {
 
         {/* Center: Desktop Nav (Hidden on Mobile) */}
         <div className="nav-center desktop-links">
-          <NavLinks t={t} onLinkClick={() => {}} />
+          {links.map((link) => {
+            const Icon = link.icon;
+            const isActive = pathname === link.href;
+            return (
+              <Link 
+                key={link.href} 
+                href={link.href} 
+                className={`nav-link ${isActive ? "active" : ""}`}
+              >
+                <Icon size={16} />
+                {link.label}
+              </Link>
+            );
+          })}
         </div>
 
         {/* Right: Desktop Actions & User */}
@@ -242,9 +235,27 @@ export function StudentNav() {
         </div>
         
         <div className="sidebar-body">
-          <NavLinks t={t} onLinkClick={() => setIsMobileMenuOpen(false)} />
+          {links.map((link) => {
+            const Icon = link.icon;
+            const isActive = pathname === link.href;
+            return (
+              <Link 
+                key={link.href} 
+                href={link.href} 
+                className={`nav-link ${isActive ? "active" : ""}`}
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <Icon size={16} />
+                {link.label}
+              </Link>
+            );
+          })}
           {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
-            <Link href="/admin/dashboard" className="nav-link admin-link" onClick={() => setIsMobileMenuOpen(false)}>
+            <Link 
+              href="/admin/dashboard" 
+              className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`} 
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
               <ShieldCheck size={16} /> {t.adminPanel}
             </Link>
           )}
@@ -555,6 +566,11 @@ export function StudentNav() {
         :global(.nav-link:hover) {
           color: var(--accent-primary);
           background: rgba(255,107,0,0.05);
+        }
+        :global(.nav-link.active) {
+          background: var(--accent-glow) !important;
+          color: var(--accent-primary) !important;
+          border: 1px solid rgba(255, 107, 0, 0.15) !important;
         }
 
         @media (max-width: 1100px) {

@@ -91,6 +91,23 @@ export async function GET(req: Request) {
           console.warn("SSE Realtime: fs.watch is not supported in this environment, bypassing file watcher:", watchError);
         }
 
+        // Define a safe connection lifetime (8 seconds on Vercel to stay under the 10s Hobby plan timeout)
+        const streamLifetime = isVercel ? 8000 : 55000;
+
+        const cleanup = () => {
+          clearTimeout(streamTimeout);
+          clearInterval(pingInterval);
+          realtimeEmitter.off("dashboard_update", handleUpdate);
+          if (fsWatcher) {
+            try {
+              fsWatcher.close(); // Close kernel watch handle
+            } catch (e) {}
+          }
+          try {
+            controller.close();
+          } catch (e) {}
+        };
+
         // Keep-alive heartbeats every 15 seconds to prevent browser or Nginx timeouts
         const pingInterval = setInterval(() => {
           try {
@@ -98,18 +115,14 @@ export async function GET(req: Request) {
           } catch (e) {}
         }, 15000);
 
+        // Automatically close the stream after the lifetime limit to prevent Vercel execution timeouts
+        const streamTimeout = setTimeout(() => {
+          cleanup();
+        }, streamLifetime);
+
         // Clean up subscriptions and intervals when the request is aborted
         req.signal.addEventListener("abort", () => {
-          realtimeEmitter.off("dashboard_update", handleUpdate);
-          if (fsWatcher) {
-            try {
-              fsWatcher.close(); // Close kernel watch handle
-            } catch (e) {}
-          }
-          clearInterval(pingInterval);
-          try {
-            controller.close();
-          } catch (e) {}
+          cleanup();
         });
       }
     });

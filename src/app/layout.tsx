@@ -43,6 +43,8 @@ export const metadata: Metadata = {
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { LanguageProvider } from "@/lib/LanguageContext";
 import { LanguageWrapper } from "@/lib/LanguageWrapper";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export default function RootLayout({
   children,
@@ -54,7 +56,11 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col antialiased">
         <LanguageProvider>
           <LanguageWrapper>
-            <SessionProvider>{children}</SessionProvider>
+            <SessionProvider>
+              {children}
+              <Analytics />
+              <SpeedInsights />
+            </SessionProvider>
           </LanguageWrapper>
         </LanguageProvider>
       </body>

@@ -367,6 +367,7 @@ gap: 12px;
 }
 .user-info {
 text-align: right;
+flex-shrink: 0;
 }
 .user-name {
 font-size: 13px;
@@ -374,12 +375,17 @@ font-weight: 700;
 color: var(--text-primary);
 line-height: 1;
 margin: 0;
+white-space: nowrap;
 }
 .user-role {
 font-size: 11px;
 color: var(--text-muted);
 margin-top: 3px;
 text-transform: capitalize;
+white-space: nowrap;
+}
+.desktop-links {
+display: flex;
 }
 .avatar {
 width: 38px;
@@ -624,7 +630,20 @@ color: var(--accent-primary) !important;
 border: 1px solid rgba(255, 107, 0, 0.15) !important;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
+.nav-right {
+gap: 12px;
+}
+.user-section {
+gap: 8px;
+}
+:global(.nav-link) {
+padding: 6px 12px !important;
+min-height: 36px !important;
+}
+}
+
+@media (max-width: 1024px) {
 .desktop-links {
 display: none !important;
 }

@@ -228,8 +228,32 @@ user?.role === "staff" ? t.roleStaff :
 </nav>
 
 {/* Mobile Sidebar (Drawer sliding from Left) */}
-<div className={`mobile-sidebar-overlay ${isMobileMenuOpen ? "open" : ""}`} onClick={() => setIsMobileMenuOpen(false)} />
-<aside className={`mobile-sidebar ${isMobileMenuOpen ? "open" : ""}`}>
+<div 
+  className={`mobile-sidebar-overlay ${isMobileMenuOpen ? "open" : ""}`} 
+  onClick={() => setIsMobileMenuOpen(false)} 
+  style={{
+    position: "fixed",
+    inset: 0,
+    zIndex: 2000,
+    opacity: isMobileMenuOpen ? 1 : 0,
+    visibility: isMobileMenuOpen ? "visible" : "hidden"
+  }}
+/>
+<aside 
+  className={`mobile-sidebar ${isMobileMenuOpen ? "open" : ""}`}
+  style={{
+    position: "fixed",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 300,
+    zIndex: 2001,
+    transform: isMobileMenuOpen ? "translateX(0)" : "translateX(-100%)",
+    visibility: isMobileMenuOpen ? "visible" : "hidden",
+    display: "flex",
+    flexDirection: "column"
+  }}
+>
 <div className="sidebar-header">
 <div className="logo">
 <img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />

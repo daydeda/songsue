@@ -19,8 +19,15 @@ export async function GET() {
     });
 
     if (!session?.user) {
-      // For guest, show all events with false registered status
-      const enrichedEvents = allEvents.map((event) => ({
+      // For guest, filter events by allowedRoles: only show if no role limits, or if "student" is allowed
+      const eligibleEvents = allEvents.filter((event) => {
+        if (event.allowedRoles && (event.allowedRoles as string[]).length > 0) {
+          return (event.allowedRoles as string[]).includes("student");
+        }
+        return true;
+      });
+
+      const enrichedEvents = eligibleEvents.map((event) => ({
         ...event,
         isRegistered: false,
         attendanceStatus: null,

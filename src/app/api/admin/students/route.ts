@@ -15,6 +15,7 @@ export async function GET() {
         id: true,
         studentId: true,
         name: true,
+        prefix: true,
         nickname: true,
         major: true,
         phone: true,

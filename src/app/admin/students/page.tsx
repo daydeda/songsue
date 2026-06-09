@@ -14,6 +14,7 @@ import {
 type Student = {
   id: string;
   studentId?: string;
+  prefix?: string;
   name: string;
   nickname?: string;
   major?: string;
@@ -304,7 +305,8 @@ export default function AdminStudentsDirectory() {
 
   const filtered = students.filter(
     (s) => {
-      const matchesSearch = s.name?.toLowerCase().includes(search.toLowerCase()) ||
+      const fullName = `${s.prefix || ""}${s.name || ""}`.toLowerCase();
+      const matchesSearch = fullName.includes(search.toLowerCase()) ||
         s.studentId?.includes(search) ||
         s.nickname?.toLowerCase().includes(search.toLowerCase());
 
@@ -430,7 +432,9 @@ export default function AdminStudentsDirectory() {
                       </td>
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
-                          <span style={{ fontWeight: 800, color: "var(--text-primary)", fontSize: 16 }}>{s.name}</span>
+                          <span style={{ fontWeight: 800, color: "var(--text-primary)", fontSize: 16 }}>
+                            {s.prefix || ""}{s.name}
+                          </span>
                           {s.role === "super_admin" && (
                             <span className="badge" style={{ padding: "2px 8px", background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Super Administrator">
                               <Shield size={10} /> {t.roleSuperAdmin}
@@ -648,7 +652,9 @@ export default function AdminStudentsDirectory() {
                     <UserIcon size={24} />
                   </div>
                   <div>
-                    <p style={{ fontWeight: 800, fontSize: 18, color: "var(--text-primary)" }}>{sensitiveData?.name}</p>
+                    <p style={{ fontWeight: 800, fontSize: 18, color: "var(--text-primary)" }}>
+                      {sensitiveData?.prefix || ""}{sensitiveData?.name}
+                    </p>
                     <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>Member ID: {sensitiveData?.studentId}</p>
                   </div>
                 </div>

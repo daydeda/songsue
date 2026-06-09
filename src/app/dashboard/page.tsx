@@ -75,7 +75,7 @@ export default function DashboardPage() {
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
+  const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
   
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" },
@@ -429,18 +429,18 @@ export default function DashboardPage() {
                             fontSize: 14, 
                             color: "var(--text-secondary)", 
                             lineHeight: 1.6, 
-                            marginBottom: expandedEvents[e.id] ? 16 : 24, 
-                            display: expandedEvents[e.id] ? "block" : "-webkit-box", 
-                            WebkitLineClamp: expandedEvents[e.id] ? undefined : 3, 
+                            marginBottom: 24, 
+                            display: "-webkit-box", 
+                            WebkitLineClamp: 3, 
                             WebkitBoxOrient: "vertical", 
-                            overflow: expandedEvents[e.id] ? "visible" : "hidden" 
+                            overflow: "hidden" 
                           }}
                           dangerouslySetInnerHTML={{ __html: parseRichText(e.description || "") }}
                         />
                         {e.description && e.description.length > 100 && (
                           <button 
                             type="button"
-                            onClick={() => setExpandedEvents(prev => ({ ...prev, [e.id]: !prev[e.id] }))}
+                            onClick={() => setPreviewEvent(e)}
                             style={{
                               border: "none",
                               background: "transparent",
@@ -454,9 +454,7 @@ export default function DashboardPage() {
                               alignSelf: "flex-start"
                             }}
                           >
-                            {expandedEvents[e.id] 
-                              ? (lang === "th" ? "แสดงน้อยลง" : "Show less") 
-                              : (lang === "th" ? "อ่านเพิ่มเติม..." : "Read more...")}
+                            {lang === "th" ? "อ่านเพิ่มเติม..." : "Read more..."}
                           </button>
                         )}
 
@@ -844,6 +842,272 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Event Details Preview Modal */}
+      {previewEvent && (() => {
+        const liveEvent = events.find(x => x.id === previewEvent.id) || previewEvent;
+        const isPastEvent = new Date() > new Date(liveEvent.endTime);
+        const isAttended = liveEvent.attendanceStatus === "attended";
+        const canCancel = !isPastEvent && !isAttended;
+        const isDisabled = (liveEvent.isRegistered && !canCancel) || registeringId === liveEvent.id;
+
+        return (
+          <div 
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.75)",
+              backdropFilter: "blur(12px)",
+              zIndex: 1999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "16px",
+            }}
+            onClick={() => setPreviewEvent(null)}
+          >
+            <div 
+              style={{
+                width: "100%",
+                maxWidth: "600px",
+                maxHeight: "85vh",
+                background: "var(--bg-surface)",
+                borderRadius: "28px",
+                border: "1px solid var(--border-subtle)",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                position: "relative",
+                boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)"
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Banner (if image exists) */}
+              {liveEvent.imageUrl ? (
+                <div style={{ position: "relative", width: "100%", height: "240px", background: "#000", overflow: "hidden" }}>
+                  <img 
+                    src={liveEvent.imageUrl} 
+                    alt="" 
+                    style={{ 
+                      position: "absolute", 
+                      inset: 0, 
+                      width: "100%", 
+                      height: "100%", 
+                      objectFit: "cover", 
+                      filter: "blur(20px) brightness(0.4)",
+                      transform: "scale(1.1)"
+                    }} 
+                  />
+                  <img 
+                    src={liveEvent.imageUrl} 
+                    alt={liveEvent.title} 
+                    style={{ 
+                      position: "relative", 
+                      width: "100%", 
+                      height: "100%", 
+                      objectFit: "contain",
+                      zIndex: 1,
+                      cursor: "pointer"
+                    }} 
+                    onClick={() => {
+                      setPreviewImage(liveEvent.imageUrl!);
+                    }}
+                  />
+                  
+                  {/* Status Overlay */}
+                  <div style={{ position: "absolute", top: 16, left: 16, zIndex: 2 }}>
+                    <span style={{ 
+                      padding: "6px 12px", 
+                      background: getEventStatus(liveEvent) === 'live' ? "#ef4444" : "var(--accent-primary)", 
+                      color: "#fff", 
+                      borderRadius: "12px", 
+                      fontSize: "11px", 
+                      fontWeight: 900, 
+                      textTransform: "uppercase", 
+                      letterSpacing: "0.05em",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
+                    }}>
+                      {getEventStatus(liveEvent)}
+                    </span>
+                  </div>
+
+                  {/* Points Badge */}
+                  {liveEvent.pointsAwarded !== undefined && (
+                    <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
+                      <div style={{ 
+                        background: "rgba(0, 0, 0, 0.7)", 
+                        backdropFilter: "blur(8px)", 
+                        color: "#fff", 
+                        padding: "6px 12px", 
+                        borderRadius: 12, 
+                        fontSize: 11, 
+                        fontWeight: 900, 
+                        display: "inline-flex", 
+                        alignItems: "center", 
+                        gap: 6, 
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)"
+                      }}>
+                        <Trophy size={12} style={{ color: "#fbbf24" }} />
+                        <span>{liveEvent.pointsAwarded} PTS</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {/* Close Button */}
+              <button 
+                type="button"
+                onClick={() => setPreviewEvent(null)}
+                style={{
+                  position: "absolute",
+                  top: liveEvent.imageUrl ? "16px" : "20px",
+                  right: liveEvent.imageUrl ? "16px" : "20px",
+                  background: liveEvent.imageUrl ? "rgba(0,0,0,0.5)" : "var(--bg-elevated)",
+                  backdropFilter: liveEvent.imageUrl ? "blur(4px)" : undefined,
+                  border: liveEvent.imageUrl ? "1px solid rgba(255,255,255,0.2)" : "1px solid var(--border-subtle)",
+                  borderRadius: "50%",
+                  width: "36px",
+                  height: "36px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: liveEvent.imageUrl ? "#fff" : "var(--text-primary)",
+                  cursor: "pointer",
+                  zIndex: 10,
+                  transition: "all 0.2s"
+                }}
+              >
+                <X size={18} />
+              </button>
+
+              {/* Scrollable Content */}
+              <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
+                {/* Title */}
+                <h3 style={{ 
+                  fontSize: "24px", 
+                  fontWeight: 900, 
+                  color: "var(--text-primary)", 
+                  letterSpacing: "-0.03em", 
+                  marginBottom: "16px",
+                  marginTop: liveEvent.imageUrl ? "0px" : "24px",
+                  lineHeight: 1.2
+                }}>
+                  {liveEvent.title}
+                </h3>
+
+                {/* Metadata List */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                       <Clock size={16} />
+                    </div>
+                    <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, lineHeight: 1.4 }}>
+                      {(() => {
+                        const start = new Date(liveEvent.startTime);
+                        const end = new Date(liveEvent.endTime);
+                        const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' };
+                        const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
+                        
+                        return `${start.toLocaleDateString('en-GB', dateOpts)} ${start.toLocaleTimeString('en-GB', timeOpts)} — ${end.toLocaleDateString('en-GB', dateOpts)} ${end.toLocaleTimeString('en-GB', timeOpts)}`;
+                      })()}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                       <MapPin size={16} />
+                    </div>
+                    <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
+                      {liveEvent.location || "CAMT Building"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Description Divider */}
+                <div style={{ height: "1px", background: "var(--border-subtle)", marginBottom: "20px" }} />
+
+                {/* Description Body */}
+                <div 
+                  style={{ 
+                    fontSize: 15, 
+                    color: "var(--text-secondary)", 
+                    lineHeight: 1.7,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word"
+                  }}
+                  dangerouslySetInnerHTML={{ __html: parseRichText(liveEvent.description || "") }}
+                />
+              </div>
+
+              {/* Action Button Footer */}
+              <div style={{ 
+                padding: "20px 24px", 
+                borderTop: "1px solid var(--border-subtle)", 
+                background: "var(--bg-surface)",
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                alignItems: "center"
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewEvent(null)}
+                  style={{
+                    padding: "0 20px",
+                    height: 48,
+                    borderRadius: 16,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: "var(--text-primary)",
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border-subtle)",
+                    cursor: "pointer"
+                  }}
+                >
+                  {lang === "th" ? "ปิด" : "Close"}
+                </button>
+
+                <button
+                  disabled={isDisabled}
+                  onClick={() => handleRegister(liveEvent.id, !!liveEvent.isRegistered)}
+                  className={`btn ${liveEvent.isRegistered ? "btn-success-solid" : "btn-primary"}`}
+                  style={{ 
+                    borderRadius: 16, 
+                    height: 48, 
+                    padding: "0 24px",
+                    fontWeight: 800,
+                    background: liveEvent.isRegistered ? (canCancel ? "#10b981" : "var(--bg-elevated)") : undefined,
+                    color: liveEvent.isRegistered ? (canCancel ? "#fff" : "var(--text-muted)") : undefined,
+                    boxShadow: (liveEvent.isRegistered && canCancel) ? "0 10px 25px rgba(16,185,129,0.3)" : (liveEvent.isRegistered ? "none" : "0 10px 25px var(--accent-glow)"),
+                    border: liveEvent.isRegistered && !canCancel ? "1px solid var(--border-subtle)" : "none",
+                    cursor: isDisabled && !registeringId ? "not-allowed" : "pointer",
+                    opacity: liveEvent.isRegistered && !canCancel ? 0.8 : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px"
+                  }}
+                >
+                  {registeringId === liveEvent.id ? (
+                    <RefreshCw size={18} className="animate-spin" />
+                  ) : liveEvent.isRegistered ? (
+                    isAttended ? (
+                      <><CheckCircle2 size={18} /> {t.attended || "Attended"}</>
+                    ) : isPastEvent ? (
+                      <><Calendar size={18} /> {t.eventEnded || "Event Ended"}</>
+                    ) : (
+                      <><CheckCircle2 size={18} /> {t.registered || "Registered"}</>
+                    )
+                  ) : (
+                    t.registerNow || "Register Now"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
         <style jsx global>{`
           .event-card-ig:hover {

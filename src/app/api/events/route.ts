@@ -10,9 +10,6 @@ import { checkAndAwardPastEventPoints } from "@/lib/award-points";
 export async function GET() {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     // Automatically check and award past event points
     await checkAndAwardPastEventPoints();
@@ -20,6 +17,16 @@ export async function GET() {
     const allEvents = await db.query.events.findMany({
       orderBy: (events, { asc }) => [asc(events.startTime)],
     });
+
+    if (!session?.user) {
+      // For guest, show all events with false registered status
+      const enrichedEvents = allEvents.map((event) => ({
+        ...event,
+        isRegistered: false,
+        attendanceStatus: null,
+      }));
+      return NextResponse.json(enrichedEvents);
+    }
 
     const studentId = session.user.studentId || "";
     const cleanId = studentId.trim();

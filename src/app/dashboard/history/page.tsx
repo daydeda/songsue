@@ -63,7 +63,16 @@ export default function HistoryPage() {
     setLoading(true);
     fetch("/api/profile/history")
       .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d)) setHistory(d); })
+      .then((d) => {
+        if (Array.isArray(d)) {
+          const sorted = [...d].sort((a, b) => {
+            const dateA = new Date(a.checkInTime || a.eventStartTime || 0).getTime();
+            const dateB = new Date(b.checkInTime || b.eventStartTime || 0).getTime();
+            return dateB - dateA;
+          });
+          setHistory(sorted);
+        }
+      })
       .finally(() => setLoading(false));
   };
 

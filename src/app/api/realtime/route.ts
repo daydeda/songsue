@@ -8,13 +8,11 @@ import os from "os";
 
 export async function GET(req: Request) {
   try {
-    // 1. Authenticate the connection via NextAuth
+    // 1. Authenticate the connection via NextAuth (optional for guest access)
     const session = await auth();
-    if (!session?.user) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-
-    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
+    const isAdmin = session?.user
+      ? ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "")
+      : false;
     const isVercel = !!process.env.VERCEL;
     const brokerDir = isVercel
       ? path.join(os.tmpdir(), "realtime-events")

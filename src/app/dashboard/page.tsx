@@ -243,15 +243,14 @@ export default function DashboardPage() {
           </div>
 
           {/* House Stats Card */}
-          {user && (
+{user && (
             <div
-              className="glass"
+              className="glass hidden lg:flex"
               style={{
                 padding: "20px 32px",
                 textAlign: "center",
                 minWidth: 160,
                 boxShadow: `0 10px 30px rgba(0,0,0,0.04), 0 0 0 1px ${houseInfo.color}20`,
-                display: "flex",
                 flexDirection: "column",
                 gap: 4,
                 background: "rgba(255,255,255,0.6)"
@@ -517,7 +516,7 @@ export default function DashboardPage() {
             </div>
           </div>
           {/* Right Column: Sidebar Stats */}
-            <div className="order-1 lg:order-2" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+            <div className="hidden lg:flex lg:order-2" style={{ flexDirection: "column", gap: 32 }}>
               {/* Digital ID Card / Guest Promo Card */}
               {user ? (
                 <div

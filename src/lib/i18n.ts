@@ -335,7 +335,7 @@ export const translations = {
     adminPanel: "แผงควบคุมแอดมิน",
     editProfile: "แก้ไขโปรไฟล์",
     signOut: "ออกจากระบบ",
-    digitalId: "บัตรประจำตัวดิจิทัล",
+    digitalId: "คิวอาร์โค้ดประจำตัว",
     activeStudent: "นักศึกษากิจกรรม",
     upcomingEventsCount: "คุณมี {count} กิจกรรมที่กำลังจะมาถึง",
     noEvents: "ยังไม่มีกิจกรรมในขณะนี้",

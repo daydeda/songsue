@@ -10,6 +10,7 @@ export async function proxy(req: NextRequest) {
   const isPublicPath =
     pathname === "/" ||
     pathname === "/dashboard" ||
+    pathname === "/dashboard/id" ||
     pathname === "/login" ||
     pathname === "/api/events" ||
     pathname === "/api/houses" ||

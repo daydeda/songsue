@@ -30,18 +30,6 @@ export default function AdminAuditLogsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 40 }}>
         <h1 style={{ fontSize: "clamp(28px,5vw,42px)", fontWeight: 900, letterSpacing: "-0.03em", lineHeight: 1.3 }}>{t.auditTrailsTitle}</h1>
         <div className="flex gap-3 items-center flex-wrap">
-          <button 
-            className="btn btn-ghost" 
-            style={{ color: "#ef4444", fontSize: 13, fontWeight: 700, minHeight: 44, paddingInline: 20, borderRadius: 12, border: "1px solid rgba(239,68,68,0.25)" }}
-            onClick={async () => {
-              if (confirm("⚠ DANGER: Are you sure you want to PERMANENTLY delete all audit logs? This action cannot be undone.")) {
-                const res = await fetch("/api/admin/audit-logs", { method: "DELETE" });
-                if (res.ok) setLogs([]);
-              }
-            }}
-          >
-            {t.resetLogsBtn}
-          </button>
           <span className="badge badge-red">{t.immutableLogsBadge}</span>
         </div>
       </div>

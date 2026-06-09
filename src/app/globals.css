@@ -190,6 +190,7 @@ select.input { cursor: pointer; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
   line-height: 1.4;
+  white-space: nowrap;
 }
 .badge-green   { background: rgba(20,184,166,0.12);  color: #0d9488;  border: 1px solid rgba(20,184,166,0.25); }
 .badge-yellow  { background: rgba(245,158,11,0.12);  color: #b45309;  border: 1px solid rgba(245,158,11,0.25); }

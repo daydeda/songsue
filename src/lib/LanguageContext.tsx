@@ -19,9 +19,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = localStorage.getItem("app-lang") as Language;
       if (saved && ["en", "th", "mm", "cn"].includes(saved)) {
-        setTimeout(() => {
-          setLangState(saved);
-        }, 0);
+        setLangState(saved);
       }
     } catch (err) {
       console.warn("Storage access failed:", err);

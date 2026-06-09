@@ -2,7 +2,18 @@
 
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import dynamic from "next/dynamic";
+const QRCodeSVG = dynamic(
+  () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
+  { 
+    ssr: false, 
+    loading: () => (
+      <div style={{ width: 240, height: 240, background: "var(--bg-elevated)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading...</span>
+      </div>
+    ) 
+  }
+);
 import Link from "next/link";
 import { 
   Trophy, 

@@ -394,7 +394,23 @@ select.input { cursor: pointer; }
 .lang-th .text-fluid-h1,
 .lang-th .text-fluid-h2,
 .lang-th .gradient-text,
-.lang-th .title-text {
+.lang-th .title-text,
+.lang-mm h3,
+.lang-mm h4,
+.lang-mm h5,
+.lang-mm h6,
+.lang-mm .text-fluid-h1,
+.lang-mm .text-fluid-h2,
+.lang-mm .gradient-text,
+.lang-mm .title-text,
+.lang-cn h3,
+.lang-cn h4,
+.lang-cn h5,
+.lang-cn h6,
+.lang-cn .text-fluid-h1,
+.lang-cn .text-fluid-h2,
+.lang-cn .gradient-text,
+.lang-cn .title-text {
   line-height: 1.5 !important;
 }
 .lang-th p,
@@ -409,15 +425,45 @@ select.input { cursor: pointer; }
 .lang-th .btn,
 .lang-th .badge,
 .lang-th .input,
-.lang-th .label {
+.lang-th .label,
+.lang-mm p,
+.lang-mm span,
+.lang-mm label,
+.lang-mm td,
+.lang-mm th,
+.lang-mm input,
+.lang-mm select,
+.lang-mm button,
+.lang-mm a,
+.lang-mm .btn,
+.lang-mm .badge,
+.lang-mm .input,
+.lang-mm .label,
+.lang-cn p,
+.lang-cn span,
+.lang-cn label,
+.lang-cn td,
+.lang-cn th,
+.lang-cn input,
+.lang-cn select,
+.lang-cn button,
+.lang-cn a,
+.lang-cn .btn,
+.lang-cn .badge,
+.lang-cn .input,
+.lang-cn .label {
   line-height: 1.6 !important;
 }
 
 /* ── Landing Page Specific Typography Overrides ──────────────────────────────── */
 h1.landing-title,
 .lang-th h1.landing-title,
+.lang-mm h1.landing-title,
+.lang-cn h1.landing-title,
 h1.landing-title *,
-.lang-th h1.landing-title * {
+.lang-th h1.landing-title *,
+.lang-mm h1.landing-title *,
+.lang-cn h1.landing-title * {
   line-height: 0.95 !important;
   letter-spacing: -0.05em !important;
 }

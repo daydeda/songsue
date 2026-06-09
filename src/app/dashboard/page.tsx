@@ -3,7 +3,18 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import dynamic from "next/dynamic";
+const QRCodeSVG = dynamic(
+  () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
+  { 
+    ssr: false, 
+    loading: () => (
+      <div style={{ width: 240, height: 240, background: "var(--bg-elevated)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading...</span>
+      </div>
+    ) 
+  }
+);
 import Link from "next/link";
 import { 
   LogOut, 
@@ -304,8 +315,19 @@ export default function DashboardPage() {
               </div>
 
               {loadingEvents ? (
-                <div style={{ padding: 60, display: "flex", justifyContent: "center" }}>
-                  <div className="spinner" style={{ width: 32, height: 32 }} />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24 }}>
+                  {[1, 2, 3].map((i) => (
+                    <div 
+                      key={i} 
+                      className="glass animate-pulse"
+                      style={{ 
+                        height: 340, 
+                        borderRadius: 32, 
+                        background: "rgba(0,0,0,0.01)",
+                        border: "1px solid var(--border-subtle)"
+                      }}
+                    />
+                  ))}
                 </div>
               ) : upcoming.length > 0 ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24 }}>
@@ -647,10 +669,20 @@ export default function DashboardPage() {
                  </div>
                  
                  {loadingHouses ? (
-                   <div style={{ display: "flex", justifyContent: "center", padding: 20 }}>
-                     <div className="spinner" style={{ width: 24, height: 24 }} />
-                   </div>
-                 ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {[1, 2, 3, 4].map((i) => (
+                        <div 
+                          key={i} 
+                          className="animate-pulse"
+                          style={{ 
+                            height: 54, 
+                            background: "var(--bg-elevated)", 
+                            borderRadius: 16 
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ) : (
                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                       {houses.map((h, idx) => {
                         const isUserHouse = h.id === houseId;

@@ -111,17 +111,17 @@ export default function AdminAuditLogsPage() {
                         {log.action}
                       </span>
                     </td>
-                    <td>
-                      <p style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>
                         {log.target?.name ?? "—"}
-                      </p>
+                      </span>
                       {log.target?.studentId && (
-                        <code style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          {log.target.studentId}
+                        <code style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>
+                          ({log.target.studentId})
                         </code>
                       )}
                     </td>
-                    <td>
+                    <td style={{ whiteSpace: "nowrap" }}>
                       <code style={{ fontSize: 12, color: "var(--text-muted)" }}>
                         {log.ipAddress ?? "—"}
                       </code>

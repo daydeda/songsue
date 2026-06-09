@@ -728,7 +728,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
 
             {/* Language + Sign out */}
             <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 12 }}>
-              <LanguageSwitcher variant="segmented" />
+              <LanguageSwitcher variant="segmented" fullWidth />
               <button
                 onClick={() => signOut({ callbackUrl: "/" })}
                 className="btn btn-ghost btn-sm"

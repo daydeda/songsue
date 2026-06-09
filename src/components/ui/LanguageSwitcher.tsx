@@ -9,9 +9,10 @@ interface LanguageSwitcherProps {
   align?: "left" | "right";
   position?: "top" | "bottom";
   variant?: "dropdown" | "segmented";
+  fullWidth?: boolean;
 }
 
-export function LanguageSwitcher({ align = "right", position = "bottom", variant = "dropdown" }: LanguageSwitcherProps) {
+export function LanguageSwitcher({ align = "right", position = "bottom", variant = "dropdown", fullWidth = false }: LanguageSwitcherProps) {
   const { lang, setLang } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -97,7 +98,8 @@ export function LanguageSwitcher({ align = "right", position = "bottom", variant
     return (
       <div 
         style={{ 
-          display: "inline-flex", 
+          display: fullWidth ? "flex" : "inline-flex", 
+          width: fullWidth ? "100%" : "auto",
           background: "rgba(255,107,0,0.04)", 
           padding: 4, 
           borderRadius: 16, 
@@ -117,8 +119,9 @@ export function LanguageSwitcher({ align = "right", position = "bottom", variant
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                width: 34,
+                flex: fullWidth ? 1 : "0 0 auto",
                 height: 34,
+                ...(fullWidth ? {} : { width: 34 }),
                 borderRadius: 10,
                 cursor: "pointer",
                 transition: "all 0.2s ease",

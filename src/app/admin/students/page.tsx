@@ -305,7 +305,8 @@ export default function AdminStudentsDirectory() {
 
   const filtered = students.filter(
     (s) => {
-      const fullName = `${s.prefix || ""}${s.name || ""}`.toLowerCase();
+      const displayName = s.name && s.prefix && s.name.startsWith(s.prefix) ? s.name : `${s.prefix || ""}${s.name || ""}`;
+      const fullName = displayName.toLowerCase();
       const matchesSearch = fullName.includes(search.toLowerCase()) ||
         s.studentId?.includes(search) ||
         s.nickname?.toLowerCase().includes(search.toLowerCase());
@@ -433,7 +434,7 @@ export default function AdminStudentsDirectory() {
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
                           <span style={{ fontWeight: 800, color: "var(--text-primary)", fontSize: 16 }}>
-                            {s.prefix || ""}{s.name}
+                            {s.name && s.prefix && s.name.startsWith(s.prefix) ? s.name : `${s.prefix || ""}${s.name || ""}`}
                           </span>
                           {s.role === "super_admin" && (
                             <span className="badge" style={{ padding: "2px 8px", background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Super Administrator">
@@ -653,7 +654,7 @@ export default function AdminStudentsDirectory() {
                   </div>
                   <div>
                     <p style={{ fontWeight: 800, fontSize: 18, color: "var(--text-primary)" }}>
-                      {sensitiveData?.prefix || ""}{sensitiveData?.name}
+                      {sensitiveData?.name && sensitiveData?.prefix && sensitiveData.name.startsWith(sensitiveData.prefix) ? sensitiveData.name : `${sensitiveData?.prefix || ""}${sensitiveData?.name || ""}`}
                     </p>
                     <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>Member ID: {sensitiveData?.studentId}</p>
                   </div>

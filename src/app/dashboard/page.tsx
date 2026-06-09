@@ -18,7 +18,8 @@ import {
   ArrowRight,
   Settings,
   X,
-  AlertCircle
+  AlertCircle,
+  Megaphone
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -268,10 +269,12 @@ export default function DashboardPage() {
             
             {/* Featured Event / Alert */}
             <div className="alert alert-info" style={{ borderRadius: "var(--radius-lg)", padding: 20, background: "rgba(255,107,0,0.04)", border: "1px solid rgba(255,107,0,0.1)" }}>
-              <div style={{ fontSize: 24, background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}>🚀</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)", color: "var(--accent-primary)", width: 40, height: 40, flexShrink: 0 }}>
+                <Megaphone size={22} />
+              </div>
               <div>
-                <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>New Semester Kick-off!</p>
-                <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>Don&apos;t forget to register for the Freshy night and check your house points.</p>
+                <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>ประกาศสำคัญ | Important Announcement</p>
+                <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>ขณะนี้ Web Application ActiveCAMT อยู่ระหว่างการพัฒนาและทดสอบระบบเพื่อเพิ่มประสิทธิภาพในการใช้งานสูงสุด <br/> หากท่านพบข้อผิดพลาดหรือมีข้อสงสัยประการใด สามารถแจ้งปัญหาหรือติดต่อเราได้ที่ IG: smocamt.official</p>
               </div>
             </div>
 

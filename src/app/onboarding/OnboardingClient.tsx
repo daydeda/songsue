@@ -553,6 +553,8 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
           top: 0,
           left: 0,
           bottom: 0,
+          minHeight: "100dvh",
+          height: "100dvh",
           width: "280px",
           maxWidth: "85vw",
           backgroundColor: "#ffffff",
@@ -652,14 +654,15 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
       <div className="hidden lg:flex min-h-screen w-full max-w-full" style={{ width: "100%", background: "var(--bg-base)" }}>
 
         {/* Left sidebar wrapper to allow sticky positioning */}
-        <div style={{ width: "clamp(260px, 22vw, 300px)", flexShrink: 0 }}>
+        <div style={{ width: "clamp(260px, 22vw, 300px)", flexShrink: 0, minHeight: "100vh" }}>
           <aside
             className="flex flex-col"
             style={{
               width: "100%",
               position: "sticky",
               top: 0,
-              height: "100vh",
+              minHeight: "100dvh",
+              height: "100dvh",
               overflowY: "auto",
               background: "#ffffff",
               borderRight: "1px solid var(--border-subtle)",

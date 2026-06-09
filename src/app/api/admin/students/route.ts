@@ -22,6 +22,7 @@ export async function GET() {
         houseId: true,
         profileCompleted: true,
         role: true,
+        roles: true,
       },
       with: { house: true },
     });

@@ -23,6 +23,7 @@ type Student = {
   house?: { id: string; name: string; color?: string } | null;
   profileCompleted?: boolean;
   role?: string;
+  roles?: string[];
   chronicDiseases?: string | null;
   medicalHistory?: string | null;
   drugAllergies?: string | null;
@@ -286,6 +287,8 @@ export default function AdminStudentsDirectory() {
     { value: "all", label: t.allRoles },
     { value: "student", label: t.roleStudentPlural, icon: <GraduationCap size={16} className="text-muted" /> },
     { value: "staff", label: t.roleStaffPlural, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
+    { value: "smo", label: t.roleSMOPlural, icon: <Award size={16} className="text-[#8b5cf6]" /> },
+    { value: "anusmo", label: t.roleANUSMOPlural, icon: <Award size={16} className="text-[#ec4899]" /> },
     { value: "admin", label: t.roleAdminPlural, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> },
     { value: "super_admin", label: t.roleSuperAdminPlural, icon: <Shield size={16} className="text-[#ef4444]" /> },
     { value: "registration", label: t.roleRegistrationPlural, icon: <UserIcon size={16} className="text-[#3b82f6]" /> },
@@ -295,6 +298,8 @@ export default function AdminStudentsDirectory() {
   const editRoleOptions = [
     { value: "student", label: t.roleStudent, icon: <GraduationCap size={16} className="text-muted" /> },
     { value: "staff", label: t.roleStaff, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
+    { value: "smo", label: t.roleSMO, icon: <Award size={16} className="text-[#8b5cf6]" /> },
+    { value: "anusmo", label: t.roleANUSMO, icon: <Award size={16} className="text-[#ec4899]" /> },
     { value: "admin", label: t.roleAdmin, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> },
     { value: "super_admin", label: t.roleSuperAdmin, icon: <Shield size={16} className="text-[#ef4444]" /> },
     { value: "registration", label: t.roleRegistration, icon: <UserIcon size={16} className="text-[#3b82f6]" /> },
@@ -325,9 +330,13 @@ export default function AdminStudentsDirectory() {
         s.nickname?.toLowerCase().includes(debouncedSearch.toLowerCase());
 
       const matchesHouse = houseFilter === "all" || s.houseId === houseFilter;
+      
+      const studentRoles = s.roles || (s.role ? [s.role] : ["student"]);
       const matchesRole = roleFilter === "all" ||
-        (roleFilter === "staff" && ["staff", "professor", "officer"].includes(s.role || "")) ||
-        (s.role || "student") === roleFilter;
+        studentRoles.some((r: string) => {
+          if (roleFilter === "staff") return ["staff", "professor", "officer"].includes(r);
+          return r === roleFilter;
+        });
 
       return matchesSearch && matchesHouse && matchesRole;
     }
@@ -462,31 +471,47 @@ export default function AdminStudentsDirectory() {
                           <span style={{ fontWeight: 800, color: "var(--text-primary)", fontSize: 16 }}>
                             {s.name}
                           </span>
-                          {s.role === "super_admin" && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Super Administrator">
-                              <Shield size={10} /> {t.roleSuperAdmin}
-                            </span>
-                          )}
-                          {s.role === "admin" && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(249,115,22,0.1)", color: "#f97316", border: "1px solid rgba(249,115,22,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="System Administrator">
-                              <ShieldCheck size={10} /> {t.roleAdmin}
-                            </span>
-                          )}
-                          {s.role === "registration" && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Registration Staff">
-                              <UserIcon size={10} /> {t.roleRegistration}
-                            </span>
-                          )}
-                          {s.role === "organizer" && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Event Organizer">
-                              <Award size={10} /> {t.roleOrganizer}
-                            </span>
-                          )}
-                          {(s.role === "staff" || s.role === "professor" || s.role === "officer") && (
-                            <span className="badge" style={{ padding: "2px 8px", background: "rgba(20,184,166,0.1)", color: "#14b8a6", border: "1px solid rgba(20,184,166,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Staff">
-                              <Briefcase size={10} /> {t.roleStaff}
-                            </span>
-                          )}
+                          {(() => {
+                            const studentRoles = s.roles || (s.role ? [s.role] : ["student"]);
+                            return studentRoles.map((r: string, idx: number) => {
+                              if (r === "super_admin") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Super Administrator">
+                                  <Shield size={10} /> {t.roleSuperAdmin}
+                                </span>
+                              );
+                              if (r === "admin") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(249,115,22,0.1)", color: "#f97316", border: "1px solid rgba(249,115,22,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="System Administrator">
+                                  <ShieldCheck size={10} /> {t.roleAdmin}
+                                </span>
+                              );
+                              if (r === "registration") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(59,130,246,0.1)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Registration Staff">
+                                  <UserIcon size={10} /> {t.roleRegistration}
+                                </span>
+                              );
+                              if (r === "organizer") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Event Organizer">
+                                  <Award size={10} /> {t.roleOrganizer}
+                                </span>
+                              );
+                              if (r === "smo") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(139,92,246,0.1)", color: "#8b5cf6", border: "1px solid rgba(139,92,246,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Student Council (SMO)">
+                                  <Award size={10} /> {t.roleSMO}
+                                </span>
+                              );
+                              if (r === "anusmo") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(236,72,153,0.1)", color: "#ec4899", border: "1px solid rgba(236,72,153,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Junior Student Council (ANUSMO)">
+                                  <Award size={10} /> {t.roleANUSMO}
+                                </span>
+                              );
+                              if (["staff", "professor", "officer"].includes(r)) return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(20,184,166,0.1)", color: "#14b8a6", border: "1px solid rgba(20,184,166,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Staff">
+                                  <Briefcase size={10} /> {t.roleStaff}
+                                </span>
+                              );
+                              return null;
+                            });
+                          })()}
                           {s.nickname && (
                             <span className="badge" style={{ padding: "2px 8px", background: "var(--bg-elevated)", color: "var(--text-muted)", fontSize: 10, flexShrink: 0 }}>&ldquo;{s.nickname}&rdquo;</span>
                           )}
@@ -867,16 +892,7 @@ export default function AdminStudentsDirectory() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block", marginLeft: 8 }}>{t.systemRole}</label>
-                  <CustomDropdown
-                    value={editingStudent.role || "student"}
-                    options={allowedEditRoleOptions}
-                    onChange={val => setEditingStudent({ ...editingStudent, role: val })}
-                    icon={<Shield size={18} />}
-                  />
-                </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.house}</label>
                   <CustomDropdown
@@ -885,6 +901,67 @@ export default function AdminStudentsDirectory() {
                     onChange={val => setEditingStudent({ ...editingStudent, houseId: val })}
                     icon={<Home size={18} />}
                   />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, display: "block" }}>System Roles (Multi-select)</label>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                  gap: 10,
+                  padding: 12,
+                  background: "var(--bg-elevated)",
+                  borderRadius: 16,
+                  border: "1px solid var(--border-subtle)"
+                }}>
+                  {allowedEditRoleOptions.map((opt) => {
+                    const currentRoles = editingStudent.roles || (editingStudent.role ? [editingStudent.role] : ["student"]);
+                    const isChecked = currentRoles.includes(opt.value);
+                    const handleToggle = () => {
+                      if (!editingStudent) return;
+                      const updated = isChecked
+                        ? currentRoles.filter((r: string) => r !== opt.value)
+                        : [...currentRoles, opt.value];
+                      const finalRoles = updated.length > 0 ? updated : ["student"];
+                      setEditingStudent({
+                        ...editingStudent,
+                        roles: finalRoles,
+                        role: finalRoles[0] || "student"
+                      });
+                    };
+
+                    return (
+                      <label
+                        key={opt.value}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 12px",
+                          borderRadius: 10,
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          background: isChecked ? "var(--bg-surface)" : "transparent",
+                          border: isChecked ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                          boxShadow: isChecked ? "0 2px 8px rgba(0,0,0,0.05)" : "none"
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={handleToggle}
+                          style={{
+                            accentColor: "var(--accent-primary)",
+                            cursor: "pointer"
+                          }}
+                        />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: isChecked ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                          {opt.label}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 

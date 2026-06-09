@@ -26,6 +26,7 @@ interface AdminEvent {
   targetInternational: boolean;
   quotaThai: number | null;
   quotaInternational: number | null;
+  allowedRoles: string[] | null;
   attendeeCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -100,6 +101,16 @@ interface FormBuilderStats {
   }>;
 }
 
+const ALL_PARTICIPANT_ROLES = ["student", "staff", "smo", "anusmo"] as const;
+type ParticipantRole = typeof ALL_PARTICIPANT_ROLES[number];
+
+const ROLE_LABELS: Record<ParticipantRole, string> = {
+  student: "Student",
+  staff: "Staff",
+  smo: "SMO",
+  anusmo: "ANUSMO",
+};
+
 const EMPTY_FORM = {
   title: "",
   description: "",
@@ -113,7 +124,8 @@ const EMPTY_FORM = {
   targetThai: true,
   targetInternational: true,
   quotaThai: null as number | null,
-  quotaInternational: null as number | null
+  quotaInternational: null as number | null,
+  allowedRoles: [] as string[], // empty = all roles allowed
 };
 
 export default function AdminEventsPage() {
@@ -697,7 +709,8 @@ export default function AdminEventsPage() {
       targetThai: evt.targetThai !== false,
       targetInternational: evt.targetInternational !== false,
       quotaThai: evt.quotaThai || null,
-      quotaInternational: evt.quotaInternational || null
+      quotaInternational: evt.quotaInternational || null,
+      allowedRoles: evt.allowedRoles || []
     });
     setEditingId(evt.id);
     setShowForm(true);
@@ -1169,6 +1182,115 @@ export default function AdminEventsPage() {
 
               {/* Right Column: Poster & Description */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+                {/* Role Access Control */}
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} style={{ color: "var(--accent-primary)" }} />
+                    {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามบทบาท)" : "Role-Based Access Control"}
+                  </label>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
+                    {lang === "th"
+                      ? "เลือกบทบาทที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกบทบาท"
+                      : "Select which roles can see & join this event. Leave all unchecked = visible to everyone."}
+                  </p>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {ALL_PARTICIPANT_ROLES.map((role) => {
+                      const isSelected = formData.allowedRoles.includes(role);
+                      const roleColors: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+                        student: {
+                          bg: isSelected ? "rgba(99,102,241,0.12)" : "var(--bg-elevated)",
+                          border: isSelected ? "rgba(99,102,241,0.5)" : "transparent",
+                          text: isSelected ? "#6366f1" : "var(--text-secondary)",
+                          badge: "#6366f1",
+                        },
+                        staff: {
+                          bg: isSelected ? "rgba(20,184,166,0.12)" : "var(--bg-elevated)",
+                          border: isSelected ? "rgba(20,184,166,0.5)" : "transparent",
+                          text: isSelected ? "#14b8a6" : "var(--text-secondary)",
+                          badge: "#14b8a6",
+                        },
+                        smo: {
+                          bg: isSelected ? "rgba(139,92,246,0.12)" : "var(--bg-elevated)",
+                          border: isSelected ? "rgba(139,92,246,0.5)" : "transparent",
+                          text: isSelected ? "#8b5cf6" : "var(--text-secondary)",
+                          badge: "#8b5cf6",
+                        },
+                        anusmo: {
+                          bg: isSelected ? "rgba(236,72,153,0.12)" : "var(--bg-elevated)",
+                          border: isSelected ? "rgba(236,72,153,0.5)" : "transparent",
+                          text: isSelected ? "#ec4899" : "var(--text-secondary)",
+                          badge: "#ec4899",
+                        },
+                      };
+                      const c = roleColors[role];
+                      return (
+                        <div
+                          key={role}
+                          onClick={() => {
+                            const current = formData.allowedRoles;
+                            const next = current.includes(role)
+                              ? current.filter((r) => r !== role)
+                              : [...current, role];
+                            setFormData({ ...formData, allowedRoles: next });
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px 16px",
+                            borderRadius: 14,
+                            background: c.bg,
+                            border: `1px solid ${c.border}`,
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                            minWidth: 100,
+                          }}
+                        >
+                          <div style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: 6,
+                            background: isSelected ? c.badge : "transparent",
+                            border: `2px solid ${isSelected ? c.badge : "var(--border-medium)"}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            transition: "all 0.15s",
+                          }}>
+                            {isSelected && <CheckCircle2 size={13} color="white" />}
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: c.text }}>
+                            {ROLE_LABELS[role as ParticipantRole]}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Summary tag */}
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 12px",
+                      borderRadius: 99,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      background: formData.allowedRoles.length === 0
+                        ? "rgba(16,185,129,0.1)"
+                        : "rgba(99,102,241,0.1)",
+                      color: formData.allowedRoles.length === 0 ? "#10b981" : "#6366f1",
+                      border: `1px solid ${formData.allowedRoles.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(99,102,241,0.2)"}`,
+                    }}>
+                      {formData.allowedRoles.length === 0
+                        ? (lang === "th" ? "✓ เปิดให้ทุกบทบาท" : "✓ Open to all roles")
+                        : `✓ ${lang === "th" ? "จำกัดเฉพาะ: " : "Restricted to: "}${formData.allowedRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="field">
                   <label className="label">{t.eventPosterLabel}</label>
                   <div style={{
@@ -1432,6 +1554,31 @@ export default function AdminEventsPage() {
                       <div className="badge" style={{ background: "rgba(0,0,0,0.4)", color: "#fff", border: "none", padding: "6px 12px", backdropFilter: "blur(4px)" }}>{t.statusPast.toUpperCase()}</div>
                     )}
                   </div>
+
+                  {/* Role Restriction Badge */}
+                  {evt.allowedRoles && evt.allowedRoles.length > 0 && (
+                    <div style={{ position: "absolute", top: 28, left: 28 }}>
+                      <div style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        background: "rgba(99,102,241,0.85)",
+                        backdropFilter: "blur(6px)",
+                        color: "#fff",
+                        padding: "5px 10px",
+                        borderRadius: 99,
+                        fontSize: 10,
+                        fontWeight: 900,
+                        letterSpacing: "0.04em",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
+                        textTransform: "uppercase",
+                      }}>
+                        <Users size={10} />
+                        {evt.allowedRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r.toUpperCase()).join(" • ")}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Points Badge */}
                   {evt.pointsAwarded !== undefined && (

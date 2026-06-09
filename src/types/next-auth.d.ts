@@ -5,6 +5,7 @@ declare module "next-auth" {
     user: {
       id: string;
       role: string;
+      roles: string[];
       profileCompleted: boolean;
       houseId: string | null;
       imageTransform: { scale: number; x: number; y: number } | null;
@@ -16,6 +17,7 @@ declare module "next-auth" {
   interface User extends DefaultUser {
     id: string;
     role: string;
+    roles: string[];
     profileCompleted: boolean;
     houseId: string | null;
     imageTransform: { scale: number; x: number; y: number } | null;

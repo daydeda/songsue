@@ -19,10 +19,21 @@ export async function PATCH(
     const body = await req.json();
 
     // Fields that can be updated by admin
-    const { name, role, major, houseId, studentId, nickname } = body;
+    let { name, role, roles, major, houseId, studentId, nickname } = body;
+
+    const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
+    if (roles && Array.isArray(roles)) {
+      // Find the primary role based on priority
+      const primary = ROLE_PRIORITY.find(r => roles.includes(r));
+      role = primary || roles[0] || "student";
+    } else if (role) {
+      // If only single role is provided, make sure roles array contains it
+      roles = [role];
+    }
 
     // FE-Security: non-super_admin cannot award super_admin role
-    if (role === "super_admin" && session.user.role !== "super_admin") {
+    const isAssigningSuperAdmin = role === "super_admin" || (roles && roles.includes("super_admin"));
+    if (isAssigningSuperAdmin && session.user.role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden: Only Super Admins can assign the Super Admin role" }, { status: 403 });
     }
 
@@ -30,7 +41,8 @@ export async function PATCH(
     const targetUser = await db.query.users.findFirst({
       where: eq(users.id, userId),
     });
-    if (targetUser?.role === "super_admin" && session.user.role !== "super_admin") {
+    const isTargetSuperAdmin = targetUser?.role === "super_admin" || (targetUser?.roles as string[] | null)?.includes("super_admin");
+    if (isTargetSuperAdmin && session.user.role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden: Cannot edit Super Admin accounts" }, { status: 403 });
     }
 
@@ -38,6 +50,7 @@ export async function PATCH(
       .set({
         name,
         role,
+        roles,
         major,
         houseId,
         studentId,

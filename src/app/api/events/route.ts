@@ -41,6 +41,10 @@ export async function GET() {
       }
     }
 
+    const userRoles = session.user.roles || [session.user.role || "student"];
+    // Admin roles bypass all role restrictions
+    const isAdminRole = userRoles.some(r => ["super_admin", "admin", "registration", "organizer"].includes(r));
+
     const eligibleEvents = allEvents.filter((event) => {
       const targetThai = event.targetThai ?? true;
       const targetInternational = event.targetInternational ?? true;
@@ -51,6 +55,16 @@ export async function GET() {
       
       if (isThai && !effectiveThai) return false;
       if (isIntl && !effectiveIntl) return false;
+
+      // Role-based access control: skip if event has allowedRoles and user's role is not in it
+      // Admin roles always bypass this check
+      if (!isAdminRole && event.allowedRoles && (event.allowedRoles as string[]).length > 0) {
+        // Normalize staff aliases (professor, officer → staff)
+        const effectiveUserRoles = userRoles.map(r => ["professor", "officer"].includes(r) ? "staff" : r);
+        const hasMatchingRole = effectiveUserRoles.some(r => (event.allowedRoles as string[]).includes(r));
+        if (!hasMatchingRole) return false;
+      }
+
       return true;
     });
 

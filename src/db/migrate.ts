@@ -106,6 +106,26 @@ async function migrate() {
     console.log("  ⚠️ users.phone unique constraint already exists or failed to apply (make sure there are no duplicates)");
   }
 
+  // 11. Add allowed_roles column to events for role-based access control
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS allowed_roles jsonb
+  `;
+  console.log("  ✅ events.allowed_roles");
+
+  // 12. Add roles column to users (if not exists) and backfill from single role
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS roles jsonb DEFAULT '["student"]'::jsonb
+  `;
+  console.log("  ✅ users.roles");
+
+  // Backfill roles column from role column
+  await sql`
+    UPDATE users SET roles = jsonb_build_array(role) WHERE role IS NOT NULL
+  `;
+  console.log("  ✅ backfilled users.roles from users.role");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

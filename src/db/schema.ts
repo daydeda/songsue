@@ -16,7 +16,8 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
-  role: text("role").default("student"), // 'student', 'admin'
+  role: text("role").default("student"), // 'student', 'smo', 'anusmo', 'admin', 'registration', 'organizer', 'super_admin'
+  roles: jsonb("roles").$type<string[]>().default(["student"]),
   houseId: text("house_id").references(() => houses.id),
   // QR Token for secure check-in (FE-13)
   qrToken: text("qr_token").unique(),
@@ -118,6 +119,10 @@ export const events = pgTable("events", {
   targetInternational: boolean("target_international").default(true),
   quotaThai: integer("quota_thai"),
   quotaInternational: integer("quota_international"),
+  // Role-based access control: which roles can see/register for this event
+  // null or [] means all roles can access; otherwise restricted to listed roles
+  // Possible values: 'student', 'smo', 'anusmo' (admin roles always see everything)
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

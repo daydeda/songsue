@@ -29,7 +29,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const superAdminEmails = ["smocamt.official@gmail.com", "daydedaa@gmail.com"];
       if (superAdminEmails.includes(email.toLowerCase())) {
         await db.update(users)
-          .set({ role: "super_admin", profileCompleted: true })
+          .set({ role: "super_admin", roles: ["super_admin"], profileCompleted: true })
           .where(eq(users.email, email));
       }
 
@@ -74,6 +74,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: true,
           image: true,
           role: true, 
+          roles: true,
           email: true,
           profileCompleted: true, 
           houseId: true, 
@@ -83,6 +84,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         },
       });
 
+      const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
+      const getPrimaryRole = (roles: string[] | null | undefined, fallbackRole: string | null | undefined): string => {
+        const list = roles && Array.isArray(roles) && roles.length > 0 ? roles : (fallbackRole ? [fallbackRole] : ["student"]);
+        const primary = ROLE_PRIORITY.find(r => list.includes(r));
+        return primary || list[0] || "student";
+      };
+
       if (dbUser) {
         // If qrToken is missing in DB for some reason, generate it now (FE-13)
         if (!dbUser.qrToken) {
@@ -91,10 +99,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           dbUser.qrToken = newToken;
         }
 
+        const userRoles = (dbUser.roles as string[]) || (dbUser.role ? [dbUser.role] : ["student"]);
+
         session.user.name = dbUser.name ?? session.user.name;
         session.user.image = dbUser.image ?? session.user.image;
         session.user.email = dbUser.email;
-        session.user.role = dbUser.role ?? "student";
+        session.user.roles = userRoles;
+        session.user.role = getPrimaryRole(userRoles, dbUser.role);
         session.user.profileCompleted = dbUser.profileCompleted ?? false;
         session.user.houseId = dbUser.houseId ?? null;
         session.user.imageTransform = (dbUser.imageTransform as { scale: number; x: number; y: number } | null) ?? null;
@@ -108,6 +119,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       
       if (superAdmins.includes(currentEmail)) {
         session.user.role = "super_admin";
+        session.user.roles = ["super_admin"];
         session.user.profileCompleted = true;
       }
 

@@ -20,6 +20,7 @@ const eventSchema = z.object({
   targetInternational: z.boolean().optional(),
   quotaThai: z.number().int().min(0).optional().nullable(),
   quotaInternational: z.number().int().min(0).optional().nullable(),
+  allowedRoles: z.array(z.string()).optional().nullable(),
 });
 
 import { checkAndAwardPastEventPoints } from "@/lib/award-points";
@@ -86,6 +87,7 @@ export async function POST(req: Request) {
         targetInternational: data.targetInternational ?? true,
         quotaThai: data.quotaThai,
         quotaInternational: data.quotaInternational,
+        allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
       })
       .returning();
 

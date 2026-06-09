@@ -20,6 +20,7 @@ const eventUpdateSchema = z.object({
   targetInternational: z.boolean().optional(),
   quotaThai: z.number().int().min(0).optional().nullable(),
   quotaInternational: z.number().int().min(0).optional().nullable(),
+  allowedRoles: z.array(z.string()).optional().nullable(),
 });
 
 // PUT /api/admin/events/[id] — Update event
@@ -54,6 +55,9 @@ export async function PUT(
         ...(data.targetInternational !== undefined && { targetInternational: data.targetInternational }),
         ...(data.quotaThai !== undefined && { quotaThai: data.quotaThai }),
         ...(data.quotaInternational !== undefined && { quotaInternational: data.quotaInternational }),
+        ...(data.allowedRoles !== undefined && {
+          allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null
+        }),
         updatedAt: new Date(),
       })
       .where(eq(events.id, id))

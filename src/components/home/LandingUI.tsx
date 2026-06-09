@@ -78,15 +78,18 @@ export function LandingUI({
         {/* Left: Branding & Value Prop */}
         <div className="flex flex-col gap-6 lg:gap-12 text-center sm:text-left items-center sm:items-start w-full max-w-[400px] lg:max-w-[480px]">
           <div className="flex flex-col gap-3 lg:gap-8">
-            <h1 style={{ 
-              fontSize: "clamp(40px, 8vw, 84px)", 
-              fontWeight: 950, 
-              letterSpacing: h1LetterSpacing, 
-              lineHeight: h1LineHeight, 
-              color: "var(--text-primary)",
-              wordBreak: "keep-all",
-              overflowWrap: "break-word"
-            }}>
+            <h1 
+              className="landing-title"
+              style={{ 
+                fontSize: "clamp(40px, 8vw, 84px)", 
+                fontWeight: 950, 
+                letterSpacing: h1LetterSpacing, 
+                lineHeight: h1LineHeight, 
+                color: "var(--text-primary)",
+                wordBreak: "keep-all",
+                overflowWrap: "break-word"
+              }}
+            >
               Experience <br />
               <span className="gradient-text" style={{ whiteSpace: "nowrap", paddingRight: "0.05em" }}>ActiveCAMT</span>
             </h1>

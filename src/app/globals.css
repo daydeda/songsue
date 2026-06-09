@@ -412,3 +412,13 @@ select.input { cursor: pointer; }
 .lang-th .label {
   line-height: 1.6 !important;
 }
+
+/* ── Landing Page Specific Typography Overrides ──────────────────────────────── */
+h1.landing-title,
+.lang-th h1.landing-title,
+h1.landing-title *,
+.lang-th h1.landing-title * {
+  line-height: 0.95 !important;
+  letter-spacing: -0.05em !important;
+}
+

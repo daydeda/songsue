@@ -13,8 +13,18 @@ export function LandingUI({
 }: { 
   userCount?: number; 
 }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
 
+  const isEnglish = lang === "en";
+  const isBurmese = lang === "mm";
+
+  // h1 (left title) adjustments are always English since the heading is hardcoded in English
+  const h1LineHeight = 0.95;
+  const h1LetterSpacing = "-0.05em";
+
+  // h2 (welcome card title) adjustments
+  const h2LineHeight = isEnglish ? 1.3 : (isBurmese ? 1.5 : 1.4);
+  const h2LetterSpacing = isEnglish ? "-0.04em" : "normal";
 
   const displayCount = userCount > 500 ? `${userCount}+` : userCount;
   const joinText = userCount === 1 ? t.studentSingle : t.studentPlural;
@@ -68,9 +78,17 @@ export function LandingUI({
         {/* Left: Branding & Value Prop */}
         <div className="flex flex-col gap-6 lg:gap-12 text-center sm:text-left items-center sm:items-start w-full max-w-[400px] lg:max-w-[480px]">
           <div className="flex flex-col gap-3 lg:gap-8">
-            <h1 style={{ fontSize: "clamp(40px, 8vw, 84px)", fontWeight: 950, letterSpacing: "-0.05em", lineHeight: 0.95, color: "var(--text-primary)" }}>
+            <h1 style={{ 
+              fontSize: "clamp(40px, 8vw, 84px)", 
+              fontWeight: 950, 
+              letterSpacing: h1LetterSpacing, 
+              lineHeight: h1LineHeight, 
+              color: "var(--text-primary)",
+              wordBreak: "keep-all",
+              overflowWrap: "break-word"
+            }}>
               Experience <br />
-              <span className="gradient-text">ActiveCAMT</span>
+              <span className="gradient-text" style={{ whiteSpace: "nowrap", paddingRight: "0.05em" }}>ActiveCAMT</span>
             </h1>
             <p style={{ fontSize: "clamp(16px, 1.8vw, 22px)", color: "var(--text-secondary)", lineHeight: 1.6, maxWidth: "520px" }}>
               {t.signInSub}
@@ -116,7 +134,14 @@ export function LandingUI({
             }}
           >
             <div className="flex flex-col gap-3 lg:gap-4">
-              <h2 style={{ fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 850, color: "var(--text-primary)", letterSpacing: "-0.04em", lineHeight: 1.3 }}>{t.welcome}</h2>
+              <h2 style={{ 
+                fontSize: "clamp(28px, 4vw, 42px)", 
+                fontWeight: 850, 
+                color: "var(--text-primary)", 
+                letterSpacing: h2LetterSpacing, 
+                lineHeight: h2LineHeight,
+                paddingBottom: isBurmese ? "4px" : "0"
+              }}>{t.welcome}</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: "clamp(16px, 1.5vw, 18px)", fontWeight: 500, lineHeight: 1.5 }}>{t.accessDashboard}</p>
             </div>
 
@@ -133,7 +158,7 @@ export function LandingUI({
                   gap: 16,
                   touchAction: "manipulation",
                   WebkitTapHighlightColor: "transparent",
-                  lineHeight: 1.3,
+                  lineHeight: "normal",
                 }}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">

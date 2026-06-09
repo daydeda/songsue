@@ -6,15 +6,24 @@ import { useLanguage } from "./LanguageContext";
 export function LanguageWrapper({ children }: { children: React.ReactNode }) {
   const { lang } = useLanguage();
 
+  const getFontFamily = (l: string) => {
+    switch (l) {
+      case "th":
+        return "var(--font-ibm-sans), var(--font-ibm-thai), sans-serif";
+      case "mm":
+        return "var(--font-ibm-sans), var(--font-noto-myanmar), sans-serif";
+      case "cn":
+        return "var(--font-ibm-sans), var(--font-noto-sc), sans-serif";
+      default:
+        return "var(--font-ibm-sans), sans-serif";
+    }
+  };
+
   return (
     <div 
       className={`lang-${lang}`}
       style={{ 
-        fontFamily: 
-          lang === "th" ? "var(--font-ibm-thai), sans-serif" : 
-          lang === "mm" ? "var(--font-noto-myanmar), var(--font-ibm-thai), sans-serif" : 
-          lang === "cn" ? "var(--font-noto-sc), var(--font-ibm-thai), sans-serif" : 
-          "var(--font-ibm-sans), var(--font-ibm-thai), sans-serif",
+        fontFamily: getFontFamily(lang),
         minHeight: "100%",
         display: "flex",
         flexDirection: "column",

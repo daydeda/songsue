@@ -1260,9 +1260,15 @@ export default function AdminEventsPage() {
                           };
 
                           const compressedBlob = await compressImage(file);
+                          
+                          // Self-optimizing check: only use the compressed version if it is actually smaller
+                          const useCompressed = compressedBlob.size < file.size;
+                          const finalFile = useCompressed ? compressedBlob : file;
+
                           const body = new FormData();
                           const originalName = file.name.substring(0, file.name.lastIndexOf("."));
-                          body.append("file", compressedBlob, `${originalName || "poster"}.webp`);
+                          const extension = useCompressed ? "webp" : file.name.split('.').pop() || "png";
+                          body.append("file", finalFile, `${originalName || "poster"}.${extension}`);
 
                           const res = await fetch("/api/upload", { method: "POST", body });
                           if (res.ok) {

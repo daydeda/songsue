@@ -115,8 +115,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   pages: {
-    // Use our own sign-in page at root
-    signIn: "/",
-    error: "/",
+    // Use our own sign-in page at /login
+    signIn: "/login",
+    error: "/login",
   },
 })

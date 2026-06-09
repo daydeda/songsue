@@ -9,6 +9,11 @@ export async function proxy(req: NextRequest) {
   // Allow public paths and Next.js internals to pass through
   const isPublicPath =
     pathname === "/" ||
+    pathname === "/dashboard" ||
+    pathname === "/login" ||
+    pathname === "/api/events" ||
+    pathname === "/api/houses" ||
+    pathname === "/api/realtime" ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
@@ -21,9 +26,9 @@ export async function proxy(req: NextRequest) {
 
   const session = await auth();
 
-  // Not authenticated → redirect to home (sign-in page)
+  // Not authenticated → redirect to login page
   if (!session?.user) {
-    return NextResponse.redirect(new URL("/", req.url));
+    return NextResponse.redirect(new URL("/login", req.url));
   }
 
   const user = session.user;

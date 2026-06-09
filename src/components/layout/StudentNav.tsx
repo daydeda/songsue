@@ -20,7 +20,7 @@ import { useState, useRef, useEffect } from "react";
 
 export function StudentNav() {
 const { data: session } = useSession();
-const { t } = useLanguage();
+const { t, lang } = useLanguage();
 const pathname = usePathname();
 const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -43,11 +43,14 @@ return () => document.removeEventListener("mousedown", handleClickOutside);
 
 const user = session?.user;
 
-const links = [
+const links = user ? [
 { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
 { href: "/dashboard/history", label: t.eventHistory, icon: History },
 { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
 { href: "/dashboard/profile", label: t.editProfile, icon: Settings },
+] : [
+{ href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
+{ href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
 ];
 
 return (
@@ -91,32 +94,47 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 {isProfileDropdownOpen && (
 <div className="profile-dropdown mobile-dropdown-pos">
 <div className="dropdown-header">
-<p className="dropdown-name">{user?.name}</p>
+<p className="dropdown-name">{user ? user.name : (lang === "th" ? "ผู้เยี่ยมชม" : "Guest")}</p>
 <p className="dropdown-sub">
-{user?.role === "super_admin" ? t.roleSuperAdmin :
-user?.role === "admin" ? t.roleAdmin :
-user?.role === "registration" ? t.roleRegistration :
-user?.role === "organizer" ? t.roleOrganizer :
-user?.role === "staff" ? t.roleStaff :
-(user?.studentId || t.roleStudent)}
+{user ? (
+  user.role === "super_admin" ? t.roleSuperAdmin :
+  user.role === "admin" ? t.roleAdmin :
+  user.role === "registration" ? t.roleRegistration :
+  user.role === "organizer" ? t.roleOrganizer :
+  user.role === "staff" ? t.roleStaff :
+  (user.studentId || t.roleStudent)
+) : (
+  lang === "th" ? "ไม่ได้เข้าสู่ระบบ" : "Not logged in"
+)}
 </p>
 </div>
 <div className="dropdown-divider" />
-<Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-<User size={16} />
-{t.editProfile}
-</Link>
-{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
-<Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
-<ShieldCheck size={16} />
-{t.adminPanel}
-</Link>
+{user ? (
+  <>
+    <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+      <User size={16} />
+      {t.editProfile}
+    </Link>
+    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+      <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
+        <ShieldCheck size={16} />
+        {t.adminPanel}
+      </Link>
+    )}
+    <div className="dropdown-divider" />
+    <button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
+      <LogOut size={16} />
+      {t.signOut}
+    </button>
+  </>
+) : (
+  <>
+    <Link href="/login" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+      <User size={16} />
+      {lang === "th" ? "ลงทะเบียนบัญชี" : "Register Account"}
+    </Link>
+  </>
 )}
-<div className="dropdown-divider" />
-<button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
-<LogOut size={16} />
-{t.signOut}
-</button>
 </div>
 )}
 </div>
@@ -156,14 +174,18 @@ className={`nav-link ${isActive ? "active" : ""}`}
 
 <div className="user-section">
 <div className="user-info">
-<p className="user-name">{user?.name}</p>
+<p className="user-name">{user ? user.name : (lang === "th" ? "ผู้เยี่ยมชม" : "Guest")}</p>
 <p className="user-role">
-{user?.role === "super_admin" ? t.roleSuperAdmin :
-user?.role === "admin" ? t.roleAdmin :
-user?.role === "registration" ? t.roleRegistration :
-user?.role === "organizer" ? t.roleOrganizer :
-user?.role === "staff" ? t.roleStaff :
-(user?.studentId || t.roleStudent)}
+{user ? (
+  user.role === "super_admin" ? t.roleSuperAdmin :
+  user.role === "admin" ? t.roleAdmin :
+  user.role === "registration" ? t.roleRegistration :
+  user.role === "organizer" ? t.roleOrganizer :
+  user.role === "staff" ? t.roleStaff :
+  (user.studentId || t.roleStudent)
+) : (
+  lang === "th" ? "ไม่ได้เข้าสู่ระบบ" : "Not logged in"
+)}
 </p>
 </div>
 
@@ -193,32 +215,47 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 {isProfileDropdownOpen && (
 <div className="profile-dropdown desktop-dropdown-pos">
 <div className="dropdown-header">
-<p className="dropdown-name">{user?.name}</p>
+<p className="dropdown-name">{user ? user.name : (lang === "th" ? "ผู้เยี่ยมชม" : "Guest")}</p>
 <p className="dropdown-sub">
-{user?.role === "super_admin" ? t.roleSuperAdmin :
-user?.role === "admin" ? t.roleAdmin :
-user?.role === "registration" ? t.roleRegistration :
-user?.role === "organizer" ? t.roleOrganizer :
-user?.role === "staff" ? t.roleStaff :
-(user?.studentId || t.roleStudent)}
+{user ? (
+  user.role === "super_admin" ? t.roleSuperAdmin :
+  user.role === "admin" ? t.roleAdmin :
+  user.role === "registration" ? t.roleRegistration :
+  user.role === "organizer" ? t.roleOrganizer :
+  user.role === "staff" ? t.roleStaff :
+  (user.studentId || t.roleStudent)
+) : (
+  lang === "th" ? "ไม่ได้เข้าสู่ระบบ" : "Not logged in"
+)}
 </p>
 </div>
 <div className="dropdown-divider" />
-<Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-<User size={16} />
-{t.editProfile}
-</Link>
-{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
-<Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
-<ShieldCheck size={16} />
-{t.adminPanel}
-</Link>
+{user ? (
+  <>
+    <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+      <User size={16} />
+      {t.editProfile}
+    </Link>
+    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+      <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
+        <ShieldCheck size={16} />
+        {t.adminPanel}
+      </Link>
+    )}
+    <div className="dropdown-divider" />
+    <button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
+      <LogOut size={16} />
+      {t.signOut}
+    </button>
+  </>
+) : (
+  <>
+    <Link href="/login" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+      <User size={16} />
+      {lang === "th" ? "ลงทะเบียนบัญชี" : "Register Account"}
+    </Link>
+  </>
 )}
-<div className="dropdown-divider" />
-<button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
-<LogOut size={16} />
-{t.signOut}
-</button>
 </div>
 )}
 </div>
@@ -327,9 +364,15 @@ border: pathname.startsWith("/admin") ? "1px solid rgba(255, 107, 0, 0.15)" : "1
 
 <div className="sidebar-footer">
 <LanguageSwitcher position="top" align="left" />
-<button className="btn btn-danger btn-sm rounded-full w-full" onClick={() => signOut({ callbackUrl: "/" })} style={{ gap: 8, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
-<LogOut size={14} /> {t.signOut}
-</button>
+{user ? (
+  <button className="btn btn-danger btn-sm rounded-full w-full" onClick={() => signOut({ callbackUrl: "/" })} style={{ gap: 8, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <LogOut size={14} /> {t.signOut}
+  </button>
+) : (
+  <Link href="/login" className="btn btn-primary btn-sm rounded-full w-full" style={{ gap: 8, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
+    <User size={14} /> {lang === "th" ? "ลงทะเบียนบัญชี" : "Register Account"}
+  </Link>
+)}
 </div>
 </aside>
 

@@ -130,6 +130,10 @@ export default function DashboardPage() {
   }, []);
 
   const handleRegister = async (eventId: string, registered: boolean) => {
+    if (!session?.user) {
+      window.location.href = "/login";
+      return;
+    }
     setRegisteringId(eventId);
     const method = registered ? "DELETE" : "POST";
     const res = await fetch(`/api/events/${eventId}/register`, { method });
@@ -229,7 +233,7 @@ export default function DashboardPage() {
         <section className="animate-fade-in-up" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 24 }}>
           <div style={{ minWidth: 280, maxWidth: "100%" }}>
             <h1 className="text-fluid-h1" style={{ fontWeight: 900, letterSpacing: "-0.04em", wordBreak: "break-word", overflowWrap: "break-word" }}>
-              {t.hey}, <span className="gradient-text">{user?.name?.split(" ")[0] || "Student"}!</span>
+              {t.hey}, <span className="gradient-text">{user ? (user.name?.split(" ")[0] || "Student") : (lang === "th" ? "ผู้เยี่ยมชม" : "Guest")}!</span>
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
               <p style={{ color: "var(--text-secondary)", fontSize: 17, fontWeight: 500, wordBreak: "break-word", overflowWrap: "break-word" }}>
@@ -239,27 +243,29 @@ export default function DashboardPage() {
           </div>
 
           {/* House Stats Card */}
-          <div
-            className="glass"
-            style={{
-              padding: "20px 32px",
-              textAlign: "center",
-              minWidth: 160,
-              boxShadow: `0 10px 30px rgba(0,0,0,0.04), 0 0 0 1px ${houseInfo.color}20`,
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              background: "rgba(255,255,255,0.6)"
-            }}
-          >
-            <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: houseInfo.color, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <Trophy size={12} />
-              {houseInfo.name} {t.house}
-            </p>
-            <p style={{ fontSize: 32, fontWeight: 900, color: houseInfo.color, filter: "brightness(0.8)" }}>
-              {houseInfo.name.toUpperCase()}
-            </p>
-          </div>
+          {user && (
+            <div
+              className="glass"
+              style={{
+                padding: "20px 32px",
+                textAlign: "center",
+                minWidth: 160,
+                boxShadow: `0 10px 30px rgba(0,0,0,0.04), 0 0 0 1px ${houseInfo.color}20`,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                background: "rgba(255,255,255,0.6)"
+              }}
+            >
+              <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: houseInfo.color, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <Trophy size={12} />
+                {houseInfo.name} {t.house}
+              </p>
+              <p style={{ fontSize: 32, fontWeight: 900, color: houseInfo.color, filter: "brightness(0.8)" }}>
+                {houseInfo.name.toUpperCase()}
+              </p>
+            </div>
+          )}
         </section>
 
         {/* Dynamic Content Grid */}
@@ -512,72 +518,124 @@ export default function DashboardPage() {
           </div>
           {/* Right Column: Sidebar Stats */}
             <div className="order-1 lg:order-2" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              {/* Digital ID Card */}
-              <div
-                className="stat-card animate-fade-in-up"
-                style={{ 
-                  padding: "24px", 
-                  background: "var(--bg-surface)",
-                  display: "flex", 
-                  flexDirection: "column", 
-                  alignItems: "center", 
-                  gap: 24,
-                  boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
-                  border: "1px solid var(--border-medium)",
-                  width: "100%",
-                  maxWidth: "340px",
-                  alignSelf: "center"
-                }}
-              >
-                 <div
-                   style={{
-                     background: "#fff",
-                     padding: "20px",
-                     borderRadius: 28,
-                     border: "1px solid var(--border-medium)",
-                     boxShadow: "0 0 50px rgba(0,0,0,0.03)",
-                     display: "flex",
-                     flexDirection: "column",
-                     alignItems: "center",
-                     gap: 16,
-                     width: "100%",
-                     maxWidth: 300
-                   }}
-                 >
-                  {user?.image ? (
-                    <div style={{ width: 80, height: 80, borderRadius: 16, overflow: "hidden", border: "1px solid var(--border-subtle)", position: "relative" }}>
-                      <img 
-                        src={user.image} 
-                        alt="" 
-                        style={{ 
-                          position: "absolute",
-                          width: "100%", 
-                          height: "100%", 
-                          objectFit: "cover",
-                          transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
-                        }} 
-                      />
-                    </div>
-                  ) : (
-                    <div style={{ width: 80, height: 80, borderRadius: 16, background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <User size={32} color="var(--text-muted)" />
-                    </div>
-                  )}
-                  <QRCodeSVG
-                    value={qrValue}
-                    size={240}
-                    style={{ width: "100%", height: "auto", maxWidth: 240 }}
-                    level="H"
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                  />
+              {/* Digital ID Card / Guest Promo Card */}
+              {user ? (
+                <div
+                  className="stat-card animate-fade-in-up"
+                  style={{ 
+                    padding: "24px", 
+                    background: "var(--bg-surface)",
+                    display: "flex", 
+                    flexDirection: "column", 
+                    alignItems: "center", 
+                    gap: 24,
+                    boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
+                    border: "1px solid var(--border-medium)",
+                    width: "100%",
+                    maxWidth: "340px",
+                    alignSelf: "center"
+                  }}
+                >
+                   <div
+                     style={{
+                       background: "#fff",
+                       padding: "20px",
+                       borderRadius: 28,
+                       border: "1px solid var(--border-medium)",
+                       boxShadow: "0 0 50px rgba(0,0,0,0.03)",
+                       display: "flex",
+                       flexDirection: "column",
+                       alignItems: "center",
+                       gap: 16,
+                       width: "100%",
+                       maxWidth: 300
+                     }}
+                   >
+                    {user?.image ? (
+                      <div style={{ width: 80, height: 80, borderRadius: 16, overflow: "hidden", border: "1px solid var(--border-subtle)", position: "relative" }}>
+                        <img 
+                          src={user.image} 
+                          alt="" 
+                          style={{ 
+                            position: "absolute",
+                            width: "100%", 
+                            height: "100%", 
+                            objectFit: "cover",
+                            transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(${user.imageTransform.x}%, ${user.imageTransform.y}%)` : 'none'
+                          }} 
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ width: 80, height: 80, borderRadius: 16, background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <User size={32} color="var(--text-muted)" />
+                      </div>
+                    )}
+                    <QRCodeSVG
+                      value={qrValue}
+                      size={240}
+                      style={{ width: "100%", height: "auto", maxWidth: 240 }}
+                      level="H"
+                      bgColor="#ffffff"
+                      fgColor="#000000"
+                    />
+                  </div>
+ 
+                   <div style={{ textAlign: "center", width: "100%" }}>
+                     <p style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)", wordBreak: "break-word", overflowWrap: "break-word" }}>{user?.name}</p>
+                     <p style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 6, fontWeight: 600 }}>ID: {user?.studentId || "212110XXX"}</p>
+                   </div>
                 </div>
-
-                 <div style={{ textAlign: "center", width: "100%" }}>
-                   <p style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)", wordBreak: "break-word", overflowWrap: "break-word" }}>{user?.name}</p>
-                   <p style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 6, fontWeight: 600 }}>ID: {user?.studentId || "212110XXX"}</p>
-                 </div>
-              </div>
+              ) : (
+                <div
+                  className="stat-card animate-fade-in-up"
+                  style={{ 
+                    padding: "32px 24px", 
+                    display: "flex", 
+                    flexDirection: "column", 
+                    alignItems: "center", 
+                    justifyContent: "center",
+                    textAlign: "center",
+                    gap: 20,
+                    boxShadow: "0 20px 50px rgba(0,0,0,0.06)",
+                    border: "1px solid var(--border-medium)",
+                    borderRadius: "28px",
+                    width: "100%",
+                    maxWidth: "340px",
+                    alignSelf: "center",
+                    minHeight: "280px",
+                    background: "linear-gradient(135deg, rgba(255, 107, 0, 0.03) 0%, rgba(255, 255, 255, 0.8) 100%)"
+                  }}
+                >
+                   <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(255, 107, 0, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", marginBottom: 4 }}>
+                     <User size={32} />
+                   </div>
+                   <h4 style={{ fontSize: 18, fontWeight: 900, color: "var(--text-primary)", margin: 0 }}>
+                     {lang === "th" ? "สัมผัสประสบการณ์เต็มรูปแบบ" : "Get the Full Experience"}
+                   </h4>
+                   <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
+                     {lang === "th" 
+                       ? "ลงทะเบียนเข้าสู่ระบบเพื่อเช็กชั่วโมงกิจกรรม สะสมคะแนนบ้าน และรับคิวอาร์โค้ดประจำตัวนักศึกษาสำหรับเข้าร่วมงาน" 
+                       : "Sign in to track your activities, earn house points, and get your digital Student ID QR code."}
+                   </p>
+                   <Link 
+                     href="/login" 
+                     className="btn btn-primary"
+                     style={{ 
+                       width: "100%", 
+                       borderRadius: 16, 
+                       height: 48, 
+                       fontWeight: 800, 
+                       display: "flex", 
+                       alignItems: "center", 
+                       justifyContent: "center",
+                       boxShadow: "0 8px 20px var(--accent-glow)",
+                       textDecoration: "none"
+                     }}
+                   >
+                     {lang === "th" ? "ลงทะเบียน / เข้าสู่ระบบ" : "Sign In / Register"}
+                   </Link>
+                </div>
+              )}
 
               {/* Leaderboard Sidebar */}
               <div className="glass" style={{ padding: 24, borderRadius: 24, background: "rgba(255,255,255,0.6)" }}>

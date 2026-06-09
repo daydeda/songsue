@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { events } from "@/db/schema";
+import { events, auditLogs } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -63,6 +63,17 @@ export async function PUT(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Log the event update
+    await db.insert(auditLogs).values({
+      actorId: session.user.id,
+      action: `Updated Event: ${updated.title}`,
+      timestamp: new Date(),
+      ipAddress:
+        req.headers.get("x-forwarded-for")?.split(",")[0] ||
+        req.headers.get("x-real-ip") ||
+        "127.0.0.1",
+    });
+
     // Broadcast event update in real-time
     realtimeEmitter.emit("dashboard_update", {
       type: "event_updated",
@@ -101,7 +112,7 @@ export async function DELETE(
     // Delete related records manually to avoid FK constraints if cascade isn't applied
     await db.transaction(async (tx) => {
       // 1. Attendance
-      const { attendance, scoreHistory } = await import("@/db/schema");
+      const { attendance, scoreHistory, auditLogs: schemaAuditLogs } = await import("@/db/schema");
       await tx.delete(attendance).where(eq(attendance.eventId, id));
       // 2. Score History
       await tx.delete(scoreHistory).where(eq(scoreHistory.eventId, id));
@@ -109,11 +120,22 @@ export async function DELETE(
       const [deleted] = await tx
         .delete(events)
         .where(eq(events.id, id))
-        .returning({ id: events.id });
+        .returning({ id: events.id, title: events.title });
       
       if (!deleted) {
         throw new Error("Event not found");
       }
+
+      // 4. Log the deletion in audit trail
+      await tx.insert(schemaAuditLogs).values({
+        actorId: session.user.id,
+        action: `Deleted Event: ${deleted.title} (${deleted.id})`,
+        timestamp: new Date(),
+        ipAddress:
+          req.headers.get("x-forwarded-for")?.split(",")[0] ||
+          req.headers.get("x-real-ip") ||
+          "127.0.0.1",
+      });
     });
 
     // Broadcast event deletion in real-time

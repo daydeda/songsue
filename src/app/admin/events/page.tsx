@@ -1198,7 +1198,12 @@ export default function AdminEventsPage() {
                           <ImageIcon size={28} />
                         </div>
                         <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)" }}>{lang === "th" ? "อัปโหลดโปสเตอร์" : "Upload Poster"}</p>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{lang === "th" ? "แนะนำขนาดอัตราส่วน 1:1" : "1:1 Aspect Ratio Recommended"}</p>
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, fontWeight: 600 }}>
+                          {lang === "th" ? "แนะนำขนาด 1080x1350px (อัตราส่วน 4:5)" : "Recommended: 1080x1350px (4:5 Ratio)"}
+                        </p>
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                          {lang === "th" ? "ขนาดไฟล์สูงสุด 10MB (ระบบจะบีบอัดอัตโนมัติ)" : "Max file size: 10MB (Auto-compressed)"}
+                        </p>
                       </div>
                     )}
                     <input
@@ -1221,8 +1226,8 @@ export default function AdminEventsPage() {
                                 img.src = event.target?.result as string;
                                 img.onload = () => {
                                   const canvas = document.createElement("canvas");
-                                  const MAX_WIDTH = 1200;
-                                  const MAX_HEIGHT = 1200;
+                                  const MAX_WIDTH = 1080;
+                                  const MAX_HEIGHT = 1350;
                                   let width = img.width;
                                   let height = img.height;
 
@@ -1244,8 +1249,8 @@ export default function AdminEventsPage() {
                                   ctx?.drawImage(img, 0, 0, width, height);
                                   canvas.toBlob(
                                     (blob) => blob ? resolve(blob) : reject(new Error("Compression failed")),
-                                    "image/jpeg",
-                                    0.8 // 80% quality is perfect for web display
+                                    "image/webp", // Output as WebP to support PNG transparency & super high compression
+                                    0.8 // 80% WebP quality is extremely crisp
                                   );
                                 };
                                 img.onerror = reject;
@@ -1257,7 +1262,7 @@ export default function AdminEventsPage() {
                           const compressedBlob = await compressImage(file);
                           const body = new FormData();
                           const originalName = file.name.substring(0, file.name.lastIndexOf("."));
-                          body.append("file", compressedBlob, `${originalName || "poster"}.jpg`);
+                          body.append("file", compressedBlob, `${originalName || "poster"}.webp`);
 
                           const res = await fetch("/api/upload", { method: "POST", body });
                           if (res.ok) {

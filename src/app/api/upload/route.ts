@@ -17,10 +17,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // Validate file size (max 5MB)
-    const MAX_SIZE = 5 * 1024 * 1024;
+    // Validate file size (max 10MB)
+    const MAX_SIZE = 10 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: "File size exceeds the 5MB limit." }, { status: 400 });
+      return NextResponse.json({ error: "File size exceeds the 10MB limit." }, { status: 400 });
     }
 
     // Check if it's an image

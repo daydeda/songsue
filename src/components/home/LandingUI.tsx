@@ -9,11 +9,23 @@ import { signIn } from "next-auth/react";
 
 
 export function LandingUI({ 
-  userCount = 0 
+  userCount: initialUserCount = 31 
 }: { 
   userCount?: number; 
 }) {
   const { t, lang } = useLanguage();
+  const [userCount, setUserCount] = useState(initialUserCount);
+
+  useEffect(() => {
+    fetch("/api/users/count")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && typeof d.count === "number") {
+          setUserCount(d.count);
+        }
+      })
+      .catch((err) => console.error("Failed to load dynamic user count:", err));
+  }, []);
 
   const isEnglish = lang === "en";
   const isBurmese = lang === "mm";

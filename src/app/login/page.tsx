@@ -1,9 +1,8 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { LandingUI } from "@/components/home/LandingUI";
-import { db } from "@/db";
-import { users } from "@/db/schema";
-import { count } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   let session = null;
@@ -25,14 +24,5 @@ export default async function LoginPage() {
     }
   }
 
-  // Fetch real stats for social proof (FE-01)
-  let userCount = 0;
-  try {
-    const [{ count: countVal }] = await db.select({ count: count() }).from(users);
-    userCount = countVal;
-  } catch (err) {
-    console.error("Failed to fetch social proof stats from DB:", err);
-  }
-
-  return <LandingUI userCount={userCount} />;
+  return <LandingUI userCount={31} />;
 }

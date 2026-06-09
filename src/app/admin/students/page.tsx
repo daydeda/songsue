@@ -201,10 +201,13 @@ export default function AdminStudentsDirectory() {
   const canViewMedicalLog = userRole === "super_admin";
   const canEditOrDelete = userRole === "super_admin" || userRole === "admin";
 
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [sensitiveData, setSensitiveData] = useState<Student | null>(null);
   const [loadingSensitive, setLoadingSensitive] = useState(false);
@@ -214,6 +217,17 @@ export default function AdminStudentsDirectory() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, houseFilter, roleFilter]);
 
   const refreshData = () => {
     setLoading(true);
@@ -306,9 +320,9 @@ export default function AdminStudentsDirectory() {
   const filtered = students.filter(
     (s) => {
       const fullName = `${s.prefix || ""}${s.name || ""}`.toLowerCase();
-      const matchesSearch = fullName.includes(search.toLowerCase()) ||
-        s.studentId?.includes(search) ||
-        s.nickname?.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = fullName.includes(debouncedSearch.toLowerCase()) ||
+        s.studentId?.includes(debouncedSearch) ||
+        s.nickname?.toLowerCase().includes(debouncedSearch.toLowerCase());
 
       const matchesHouse = houseFilter === "all" || s.houseId === houseFilter;
       const matchesRole = roleFilter === "all" ||
@@ -317,6 +331,12 @@ export default function AdminStudentsDirectory() {
 
       return matchesSearch && matchesHouse && matchesRole;
     }
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const paginatedStudents = filtered.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
   );
 
   const viewSensitive = async (id: string) => {
@@ -402,7 +422,8 @@ export default function AdminStudentsDirectory() {
               <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>Retrieving Student Records...</p>
             </div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <>
+              <div style={{ overflowX: "auto" }}>
               <table className="data-table" style={{ borderCollapse: "separate", borderSpacing: "0 0" }}>
                 <thead>
                   <tr>
@@ -416,7 +437,7 @@ export default function AdminStudentsDirectory() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((s) => {
+                  {paginatedStudents.map((s) => {
                     const isTargetSuperAdmin = s.role === "super_admin";
                     const canModifyThisRow = canEditOrDelete && (!isTargetSuperAdmin || userRole === "super_admin");
                     return (
@@ -594,8 +615,50 @@ export default function AdminStudentsDirectory() {
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
+            {filtered.length > ITEMS_PER_PAGE && (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "20px 32px",
+                borderTop: "1px solid var(--border-subtle)",
+                flexWrap: "wrap",
+                gap: 16,
+                background: "var(--bg-elevated)",
+                borderBottomLeftRadius: 40,
+                borderBottomRightRadius: 40
+              }}>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
+                  {lang === "th"
+                    ? `กำลังแสดง ${(currentPage - 1) * ITEMS_PER_PAGE + 1} - ${Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} จากทั้งหมด ${filtered.length} คน`
+                    : `Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1} - ${Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} of ${filtered.length} members`}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ padding: "8px 16px", borderRadius: 10, fontWeight: 700 }}
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  >
+                    {lang === "th" ? "ก่อนหน้า" : "Previous"}
+                  </button>
+                  <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 800 }}>
+                    {lang === "th" ? `หน้า ${currentPage} จาก ${totalPages}` : `Page ${currentPage} of ${totalPages}`}
+                  </span>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ padding: "8px 16px", borderRadius: 10, fontWeight: 700 }}
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  >
+                    {lang === "th" ? "ถัดไป" : "Next"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
       </div>
 
       {/* Sensitive Data Modal */}

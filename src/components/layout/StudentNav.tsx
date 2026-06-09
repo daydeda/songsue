@@ -12,7 +12,8 @@ Trophy,
 Menu,
 X,
 Settings,
-LayoutDashboard
+LayoutDashboard,
+QrCode
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
@@ -45,6 +46,7 @@ const user = session?.user;
 
 const links = [
 { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
+{ href: "/dashboard/id", label: t.digitalId || "Digital ID", icon: QrCode },
 { href: "/dashboard/history", label: t.eventHistory, icon: History },
 { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
 { href: "/dashboard/profile", label: t.editProfile, icon: Settings },
@@ -102,6 +104,10 @@ user?.role === "staff" ? t.roleStaff :
 </p>
 </div>
 <div className="dropdown-divider" />
+<Link href="/dashboard/id" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+<QrCode size={16} />
+{t.digitalId || "Digital ID"}
+</Link>
 <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
 <User size={16} />
 {t.editProfile}
@@ -135,6 +141,7 @@ user?.role === "staff" ? t.roleStaff :
 {/* Center: Desktop Nav (Hidden on Mobile) */}
 <div className="nav-center desktop-links">
 {links.map((link) => {
+if (link.href === "/dashboard/id") return null;
 const Icon = link.icon;
 const isActive = pathname === link.href;
 return (
@@ -204,6 +211,10 @@ user?.role === "staff" ? t.roleStaff :
 </p>
 </div>
 <div className="dropdown-divider" />
+<Link href="/dashboard/id" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+<QrCode size={16} />
+{t.digitalId || "Digital ID"}
+</Link>
 <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
 <User size={16} />
 {t.editProfile}

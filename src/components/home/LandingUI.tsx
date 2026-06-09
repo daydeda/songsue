@@ -68,11 +68,11 @@ export function LandingUI({
         {/* Left: Branding & Value Prop */}
         <div className="flex flex-col gap-6 lg:gap-12 text-center sm:text-left items-center sm:items-start w-full max-w-[400px] lg:max-w-[480px]">
           <div className="flex flex-col gap-3 lg:gap-8">
-            <h1 style={{ fontSize: "clamp(40px, 8vw, 84px)", fontWeight: 950, letterSpacing: "-0.05em", lineHeight: 0.85, color: "var(--text-primary)" }}>
+            <h1 style={{ fontSize: "clamp(40px, 8vw, 84px)", fontWeight: 950, letterSpacing: "-0.05em", lineHeight: 0.95, color: "var(--text-primary)" }}>
               Experience <br />
               <span className="gradient-text">ActiveCAMT</span>
             </h1>
-            <p style={{ fontSize: "clamp(16px, 1.8vw, 22px)", color: "var(--text-secondary)", lineHeight: 1.5, maxWidth: "520px" }}>
+            <p style={{ fontSize: "clamp(16px, 1.8vw, 22px)", color: "var(--text-secondary)", lineHeight: 1.6, maxWidth: "520px" }}>
               {t.signInSub}
             </p>
           </div>
@@ -85,7 +85,7 @@ export function LandingUI({
               >
                 <Zap size={22} color="var(--accent-primary)" />
               </div>
-              <p style={{ fontWeight: 600, color: "var(--text-primary)" }} className="text-base lg:text-[17px]">{t.instantCheckin}</p>
+              <p style={{ fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.5 }} className="text-base lg:text-[17px]">{t.instantCheckin}</p>
             </div>
             <div className="flex items-center gap-3 lg:gap-4 group">
               <div 
@@ -94,7 +94,7 @@ export function LandingUI({
               >
                 <Sparkles size={22} color="var(--accent-secondary)" />
               </div>
-              <p style={{ fontWeight: 600, color: "var(--text-primary)" }} className="text-base lg:text-[17px]">{t.houseRewards}</p>
+              <p style={{ fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.5 }} className="text-base lg:text-[17px]">{t.houseRewards}</p>
             </div>
           </div>
         </div>
@@ -116,8 +116,8 @@ export function LandingUI({
             }}
           >
             <div className="flex flex-col gap-3 lg:gap-4">
-              <h2 style={{ fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 850, color: "var(--text-primary)", letterSpacing: "-0.04em", lineHeight: 1.1 }}>{t.welcome}</h2>
-              <p style={{ color: "var(--text-secondary)", fontSize: "clamp(16px, 1.5vw, 18px)", fontWeight: 500 }}>{t.accessDashboard}</p>
+              <h2 style={{ fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 850, color: "var(--text-primary)", letterSpacing: "-0.04em", lineHeight: 1.3 }}>{t.welcome}</h2>
+              <p style={{ color: "var(--text-secondary)", fontSize: "clamp(16px, 1.5vw, 18px)", fontWeight: 500, lineHeight: 1.5 }}>{t.accessDashboard}</p>
             </div>
 
             <div className="flex flex-col gap-5 lg:gap-6">
@@ -133,6 +133,7 @@ export function LandingUI({
                   gap: 16,
                   touchAction: "manipulation",
                   WebkitTapHighlightColor: "transparent",
+                  lineHeight: 1.3,
                 }}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -146,14 +147,14 @@ export function LandingUI({
 
               <div className="flex items-center gap-3 justify-center group cursor-default">
                 <ShieldCheck size={20} className="text-gray-400 group-hover:text-green-500 transition-colors" />
-                <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 500 }}>{t.verified}</p>
+                <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 500, lineHeight: 1.5 }}>{t.verified}</p>
               </div>
             </div>
 
             <div className="mt-2 pt-8 lg:pt-12 border-t border-black/[0.04] flex flex-col gap-6 lg:gap-8">
               <div className="flex items-center gap-3 justify-center">
                 <UserCheck size={18} className="text-gray-400" />
-                <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600 }}>
+                <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 600, lineHeight: 1.5 }}>
                   Join {displayCount} active {joinText}
                 </p>
               </div>
@@ -169,9 +170,9 @@ export function LandingUI({
 
       {/* Footer - Absolute on desktop, relative on mobile */}
       <footer className="w-full px-8 py-10 lg:py-6 lg:absolute lg:bottom-0 flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-8 border-t border-black/[0.03] bg-transparent lg:bg-white/30 lg:backdrop-blur-md lg:z-20">
-        <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "0.02em" }}>© SMO CAMT 2026</p>
+        <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "0.02em", lineHeight: 1.4 }}>© SMO CAMT 2026</p>
         <div className="hidden lg:block" style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--text-muted)" }} />
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500, textAlign: "center" }}>{t.modernizing}</p>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500, textAlign: "center", lineHeight: 1.5 }}>{t.modernizing}</p>
       </footer>
     </div>
   );

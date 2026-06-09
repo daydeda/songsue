@@ -75,6 +75,7 @@ export default function DashboardPage() {
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
   
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" },
@@ -424,9 +425,40 @@ export default function DashboardPage() {
                         </div>
 
                         <div 
-                          style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 24, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                          style={{ 
+                            fontSize: 14, 
+                            color: "var(--text-secondary)", 
+                            lineHeight: 1.6, 
+                            marginBottom: expandedEvents[e.id] ? 16 : 24, 
+                            display: expandedEvents[e.id] ? "block" : "-webkit-box", 
+                            WebkitLineClamp: expandedEvents[e.id] ? undefined : 3, 
+                            WebkitBoxOrient: "vertical", 
+                            overflow: expandedEvents[e.id] ? "visible" : "hidden" 
+                          }}
                           dangerouslySetInnerHTML={{ __html: parseRichText(e.description || "") }}
                         />
+                        {e.description && e.description.length > 100 && (
+                          <button 
+                            type="button"
+                            onClick={() => setExpandedEvents(prev => ({ ...prev, [e.id]: !prev[e.id] }))}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--accent-primary)",
+                              fontSize: 13,
+                              fontWeight: 800,
+                              cursor: "pointer",
+                              padding: 0,
+                              marginTop: -16,
+                              marginBottom: 24,
+                              alignSelf: "flex-start"
+                            }}
+                          >
+                            {expandedEvents[e.id] 
+                              ? (lang === "th" ? "แสดงน้อยลง" : "Show less") 
+                              : (lang === "th" ? "อ่านเพิ่มเติม..." : "Read more...")}
+                          </button>
+                        )}
 
                         <div style={{ marginTop: "auto", paddingTop: 8 }}>
                           {(() => {

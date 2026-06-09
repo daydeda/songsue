@@ -60,7 +60,9 @@ interface HouseItem {
 export default function DashboardClient({ initialSession }: { initialSession: any }) {
   const { data: sessionData, status: sessionStatus } = useSession();
   const session = sessionData || initialSession;
-  const status = sessionData ? sessionStatus : (initialSession ? "authenticated" : "loading");
+  const status = sessionStatus !== "loading"
+    ? sessionStatus
+    : (initialSession ? "authenticated" : "loading");
   const { t, lang } = useLanguage();
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);

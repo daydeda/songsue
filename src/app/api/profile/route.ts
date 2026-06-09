@@ -80,18 +80,11 @@ export async function POST(req: Request) {
     const sortedHouses = housesList.sort((a, b) => a.users.length - b.users.length);
     const targetHouse = sortedHouses[0]; // House with the fewest people
 
-    // Prepend prefix to name if not already present
-    let finalName = data.name;
-    if (data.prefix && !finalName.startsWith(data.prefix)) {
-      finalName = `${data.prefix}${finalName}`;
-    }
-
     // 3. Update User
     const [updated] = await db
       .update(users)
       .set({
         ...data,
-        name: finalName,
         houseId: targetHouse.id,
         profileCompleted: true,
         updatedAt: new Date(),
@@ -139,17 +132,10 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const data = profileSchema.parse(body);
 
-    // Prepend prefix to name if not already present
-    let finalName = data.name;
-    if (data.prefix && !finalName.startsWith(data.prefix)) {
-      finalName = `${data.prefix}${finalName}`;
-    }
-
     const [updated] = await db
       .update(users)
       .set({
         ...data,
-        name: finalName,
         updatedAt: new Date(),
       })
       .where(eq(users.id, session.user.id))

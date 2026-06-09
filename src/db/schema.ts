@@ -11,6 +11,7 @@ export const houses = pgTable("houses", {
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Auth.js / OAuth provider ID
+  prefix: text("prefix"),
   name: text("name").notNull().unique(),
   email: text("email").notNull().unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
@@ -21,7 +22,6 @@ export const users = pgTable("users", {
   qrToken: text("qr_token").unique(),
   // Profile specifics
   studentId: text("student_id").unique(),
-  prefix: text("prefix"),
   nickname: text("nickname"),
   major: text("major"), // ANI, DG, DII, MMIT, SE
   imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }

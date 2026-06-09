@@ -73,6 +73,7 @@ export default function DashboardPage() {
   });
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" },
@@ -322,7 +323,8 @@ export default function DashboardPage() {
                            <img 
                              src={e.imageUrl} 
                              alt={e.title} 
-                             style={{ width: "100%", height: "100%", objectFit: "contain" }} 
+                             style={{ width: "100%", height: "100%", objectFit: "contain", cursor: "pointer" }} 
+                             onClick={() => setPreviewImage(e.imageUrl!)}
                            />
                          ) : (
                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(45deg, var(--bg-elevated), var(--bg-surface))" }}>
@@ -735,6 +737,75 @@ export default function DashboardPage() {
             >
               {lang === "th" ? "ตกลง" : "OK"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Full Size Image Preview Modal */}
+      {previewImage && (
+        <div 
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(20px)",
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            cursor: "pointer"
+          }}
+          onClick={() => setPreviewImage(null)}
+        >
+          {/* Close Button */}
+          <button 
+            style={{
+              position: "absolute",
+              top: 24,
+              right: 24,
+              background: "rgba(255,255,255,0.15)",
+              border: "none",
+              borderRadius: "50%",
+              width: 48,
+              height: 48,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              cursor: "pointer",
+              transition: "background 0.2s"
+            }}
+            onClick={() => setPreviewImage(null)}
+          >
+            <X size={24} />
+          </button>
+          
+          {/* Image Container */}
+          <div 
+            style={{ 
+              position: "relative",
+              maxWidth: "90%",
+              maxHeight: "85vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 24,
+              overflow: "hidden",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.3)"
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <img 
+              src={previewImage} 
+              alt="Full Poster" 
+              style={{ 
+                maxWidth: "100%", 
+                maxHeight: "85vh", 
+                objectFit: "contain",
+                borderRadius: 24
+              }} 
+            />
           </div>
         </div>
       )}

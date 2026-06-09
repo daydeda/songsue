@@ -1209,12 +1209,63 @@ export default function AdminEventsPage() {
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        const body = new FormData();
-                        body.append("file", file);
-                        const res = await fetch("/api/upload", { method: "POST", body });
-                        if (res.ok) {
-                          const { url } = await res.json();
-                          set("imageUrl", url);
+
+                        try {
+                          // Client-side image compression helper (Canvas-based)
+                          const compressImage = (imgFile: File): Promise<Blob> => {
+                            return new Promise((resolve, reject) => {
+                              const reader = new FileReader();
+                              reader.readAsDataURL(imgFile);
+                              reader.onload = (event) => {
+                                const img = new Image();
+                                img.src = event.target?.result as string;
+                                img.onload = () => {
+                                  const canvas = document.createElement("canvas");
+                                  const MAX_WIDTH = 1200;
+                                  const MAX_HEIGHT = 1200;
+                                  let width = img.width;
+                                  let height = img.height;
+
+                                  if (width > height) {
+                                    if (width > MAX_WIDTH) {
+                                      height = Math.round((height * MAX_WIDTH) / width);
+                                      width = MAX_WIDTH;
+                                    }
+                                  } else {
+                                    if (height > MAX_HEIGHT) {
+                                      width = Math.round((width * MAX_HEIGHT) / height);
+                                      height = MAX_HEIGHT;
+                                    }
+                                  }
+
+                                  canvas.width = width;
+                                  canvas.height = height;
+                                  const ctx = canvas.getContext("2d");
+                                  ctx?.drawImage(img, 0, 0, width, height);
+                                  canvas.toBlob(
+                                    (blob) => blob ? resolve(blob) : reject(new Error("Compression failed")),
+                                    "image/jpeg",
+                                    0.8 // 80% quality is perfect for web display
+                                  );
+                                };
+                                img.onerror = reject;
+                              };
+                              reader.onerror = reject;
+                            });
+                          };
+
+                          const compressedBlob = await compressImage(file);
+                          const body = new FormData();
+                          const originalName = file.name.substring(0, file.name.lastIndexOf("."));
+                          body.append("file", compressedBlob, `${originalName || "poster"}.jpg`);
+
+                          const res = await fetch("/api/upload", { method: "POST", body });
+                          if (res.ok) {
+                            const { url } = await res.json();
+                            set("imageUrl", url);
+                          }
+                        } catch (err) {
+                          console.error("Compression / upload failed:", err);
                         }
                       }}
                     />

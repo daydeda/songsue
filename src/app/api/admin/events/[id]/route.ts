@@ -11,6 +11,7 @@ const eventUpdateSchema = z.object({
   description: z.string().optional().nullable(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
+  registrationCloseTime: z.string().datetime().optional().nullable(),
   quota: z.number().int().min(0).optional().nullable(),
   location: z.string().optional().nullable(),
   pointsAwarded: z.number().int().min(0).optional().nullable(),
@@ -46,6 +47,9 @@ export async function PUT(
         ...(data.description !== undefined && { description: data.description }),
         ...(data.startTime && { startTime: new Date(data.startTime) }),
         ...(data.endTime && { endTime: new Date(data.endTime) }),
+        ...(data.registrationCloseTime !== undefined && {
+          registrationCloseTime: data.registrationCloseTime ? new Date(data.registrationCloseTime) : null
+        }),
         ...(data.quota !== undefined && { quota: data.quota }),
         ...(data.location !== undefined && { location: data.location }),
         ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),

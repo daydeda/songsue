@@ -18,6 +18,7 @@ interface AdminEvent {
   location: string | null;
   startTime: string;
   endTime: string;
+  registrationCloseTime: string | null;
   quota: number | null;
   pointsAwarded: number;
   imageUrl: string | null;
@@ -117,6 +118,7 @@ const EMPTY_FORM = {
   location: "",
   startTime: "",
   endTime: "",
+  registrationCloseTime: "",
   quota: 0,
   pointsAwarded: 0,
   imageUrl: "",
@@ -622,6 +624,7 @@ export default function AdminEventsPage() {
           ...bodyData,
           startTime: new Date(formData.startTime).toISOString(),
           endTime: new Date(formData.endTime).toISOString(),
+          registrationCloseTime: formData.registrationCloseTime ? new Date(formData.registrationCloseTime).toISOString() : null,
         }),
       });
 
@@ -702,6 +705,7 @@ export default function AdminEventsPage() {
       location: evt.location || "",
       startTime: toLocal(evt.startTime),
       endTime: toLocal(evt.endTime),
+      registrationCloseTime: evt.registrationCloseTime ? toLocal(evt.registrationCloseTime) : "",
       quota: evt.quota || 0,
       pointsAwarded: evt.pointsAwarded || 0,
       imageUrl: evt.imageUrl || "",
@@ -943,6 +947,19 @@ export default function AdminEventsPage() {
                   <div className="field">
                     <label className="label">{t.eventEndTimeLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
                     <input className="input" required type="datetime-local" lang="en-GB" value={formData.endTime} onChange={(e) => set("endTime", e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="field">
+                    <label className="label">{t.eventRegistrationCloseLabel}</label>
+                    <input
+                      className="input"
+                      type="datetime-local"
+                      lang="en-GB"
+                      value={formData.registrationCloseTime}
+                      onChange={(e) => set("registrationCloseTime", e.target.value)}
+                    />
                   </div>
                 </div>
 
@@ -1633,6 +1650,19 @@ export default function AdminEventsPage() {
                           }
                         })()}
                       </div>
+                      {evt.registrationCloseTime && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: 12, fontWeight: 700 }}>
+                          <Clock size={14} style={{ color: "var(--accent-primary)" }} />
+                          <span>
+                            {t.eventRegistrationCloseLabel}: {(() => {
+                              const closeDate = new Date(evt.registrationCloseTime);
+                              const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' };
+                              const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
+                              return `${closeDate.toLocaleDateString('en-GB', dateOpts)} ${closeDate.toLocaleTimeString('en-GB', timeOpts)}`;
+                            })()}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

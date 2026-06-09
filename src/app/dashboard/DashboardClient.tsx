@@ -43,6 +43,7 @@ type Event = {
   location?: string;
   startTime: string;
   endTime: string;
+  registrationCloseTime?: string | null;
   quota?: number;
   isRegistered?: boolean;
   attendanceStatus?: string | null;

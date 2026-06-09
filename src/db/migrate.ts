@@ -126,6 +126,13 @@ async function migrate() {
   `;
   console.log("  ✅ backfilled users.roles from users.role");
 
+  // 13. Add registration_close_time column to events
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS registration_close_time timestamp
+  `;
+  console.log("  ✅ events.registration_close_time");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -27,6 +27,11 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Validate registration deadline if exists
+    if (event.registrationCloseTime && new Date() > new Date(event.registrationCloseTime)) {
+      return NextResponse.json({ error: "Registration for this event has closed" }, { status: 403 });
+    }
+
     // Validate target audience eligibility
     const studentId = session.user.studentId || "";
     const cleanId = studentId.trim();

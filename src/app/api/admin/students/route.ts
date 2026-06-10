@@ -2,6 +2,9 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { NextResponse } from "next/server";
 
+// Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
+export const maxDuration = 20;
+
 export async function GET() {
   try {
     const session = await auth();

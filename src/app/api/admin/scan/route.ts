@@ -4,6 +4,10 @@ import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+// Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
+// Scanning must stay responsive during the event even under load.
+export const maxDuration = 20;
+
 const scanSchema = z.object({
   qrToken: z.string(), // Allows fallback IDs as well
   eventId: z.string().uuid(),

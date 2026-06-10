@@ -4,6 +4,9 @@ import { attendance, events } from "@/db/schema";
 import { and, count, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+// Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
+export const maxDuration = 20;
+
 
 // GET /api/events — List all upcoming & past events (student-facing, FE-04)
 export async function GET() {

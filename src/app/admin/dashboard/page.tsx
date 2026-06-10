@@ -151,11 +151,6 @@ export default function AdminDashboardOverview() {
     fetch("/api/admin/dashboard")
       .then((r) => r.json())
       .then((d) => setStats(d));
-
-    // Fire-and-forget: nudge the event-winner award check. Deliberately NOT awaited
-    // and errors ignored, so it can never slow down or break the dashboard render.
-    // This is what makes the winner bonus land within ~5s of an event ending.
-    fetch("/api/admin/award-check").catch(() => {});
   };
 
   // Poll the dashboard endpoint for near-real-time updates. The endpoint already
@@ -163,6 +158,12 @@ export default function AdminDashboardOverview() {
   // replaces the previous incremental SSE logic. 5s is responsive for the handful
   // of admins watching this screen, and polling pauses when the tab is hidden.
   usePolling(fetchStats, 5000);
+
+  // Nudge the event-winner award check on its own slower cadence (every 20s), as a
+  // separate fire-and-forget request. Decoupled from the 5s data poll so it adds
+  // far less load on the DB pooler; 20s is still effectively immediate for awarding
+  // the winner bonus when an event ends. Errors are ignored on purpose.
+  usePolling(() => { fetch("/api/admin/award-check").catch(() => {}); }, 20000);
 
   const handleExportCSV = async () => {
     setExporting(true);

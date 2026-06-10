@@ -4,6 +4,12 @@ import { attendance, events, users } from "@/db/schema";
 import { count, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+// Hard ceiling: a request must never hang at the platform's 300s default. If a DB
+// call stalls (e.g. the Supabase pooler is momentarily queueing), fail fast at 20s,
+// release the connection, and let the client's next poll retry — instead of holding
+// a zombie function (and its pooled connection) for 5 minutes.
+export const maxDuration = 20;
+
 
 export async function GET(req: Request) {
   try {

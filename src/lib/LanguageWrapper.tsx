@@ -9,13 +9,13 @@ export function LanguageWrapper({ children }: { children: React.ReactNode }) {
   const getFontFamily = (l: string) => {
     switch (l) {
       case "th":
-        return "var(--font-ibm-sans), var(--font-ibm-thai), sans-serif";
+        return "var(--font-ibm-sans), var(--font-ibm-thai), var(--font-noto-myanmar), var(--font-noto-sc), sans-serif";
       case "mm":
-        return "var(--font-ibm-sans), var(--font-noto-myanmar), sans-serif";
+        return "var(--font-ibm-sans), var(--font-noto-myanmar), var(--font-ibm-thai), var(--font-noto-sc), sans-serif";
       case "cn":
-        return "var(--font-ibm-sans), var(--font-noto-sc), sans-serif";
+        return "var(--font-ibm-sans), var(--font-noto-sc), var(--font-ibm-thai), var(--font-noto-myanmar), sans-serif";
       default:
-        return "var(--font-ibm-sans), sans-serif";
+        return "var(--font-ibm-sans), var(--font-ibm-thai), var(--font-noto-myanmar), var(--font-noto-sc), sans-serif";
     }
   };
 

@@ -33,14 +33,12 @@ export async function proxy(req: NextRequest) {
   }
 
   const user = session.user;
-
   const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(user.role || "");
 
   // Authenticated but profile not complete → force onboarding
-  // (except for admins, the /onboarding page itself, and API routes)
+  // (except for the /onboarding page itself, and API routes)
   if (
     !user.profileCompleted &&
-    !isAdminRole &&
     pathname !== "/onboarding" &&
     !pathname.startsWith("/api/")
   ) {

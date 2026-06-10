@@ -12,12 +12,10 @@ export default async function LoginPage() {
     console.error("Auth failed during login page load:", err);
   }
 
-  // Already authenticated: admins always go to dashboard, 
-  // others go to dashboard if complete, onboarding if not.
+  // Already authenticated: go to dashboard if complete, onboarding if not.
   if (session?.user) {
     const user = session.user;
-    const adminRoles = ["super_admin", "admin", "registration", "organizer"];
-    if (adminRoles.includes(user.role || "") || user.profileCompleted) {
+    if (user.profileCompleted) {
       redirect("/dashboard");
     } else {
       redirect("/onboarding");

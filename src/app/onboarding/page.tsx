@@ -12,10 +12,9 @@ export default async function OnboardingPage() {
     redirect("/login");
   }
 
-  // If onboarding is already completed (or user is an admin), redirect to dashboard
+  // If onboarding is already completed, redirect to dashboard
   const user = session.user;
-  const adminRoles = ["super_admin", "admin", "registration", "organizer"];
-  if (adminRoles.includes(user.role || "") || user.profileCompleted) {
+  if (user.profileCompleted) {
     redirect("/dashboard");
   }
 

@@ -25,11 +25,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user }) {
       const email = user.email ?? "";
       
-      // Auto-promote official emails to super_admin and mark profile as complete (FE-04)
+      // Auto-promote official emails to super_admin (FE-04)
       const superAdminEmails = ["smocamt.official@gmail.com", "daydedaa@gmail.com"];
       if (superAdminEmails.includes(email.toLowerCase())) {
         await db.update(users)
-          .set({ role: "super_admin", roles: ["super_admin"], profileCompleted: true })
+          .set({ role: "super_admin", roles: ["super_admin"] })
           .where(eq(users.email, email));
       }
 
@@ -120,7 +120,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (superAdmins.includes(currentEmail)) {
         session.user.role = "super_admin";
         session.user.roles = ["super_admin"];
-        session.user.profileCompleted = true;
       }
 
       return session;

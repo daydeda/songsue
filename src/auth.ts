@@ -139,11 +139,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token;
       }
 
+      // Eager refresh while onboarding is incomplete. A brand-new user's token has
+      // profileCompleted=false; after they submit the onboarding form we must NOT
+      // depend on the client's update() call landing before it navigates (a race).
+      // Instead, every request re-reads the DB *until* the profile is complete, so
+      // the navigation to /dashboard itself picks up profileCompleted=true plus the
+      // assigned house/role and persists them. Self-limiting: once the flag flips
+      // true this path stops firing and we fall back to the periodic refresh below.
+      const profileIncomplete = !token.profileCompleted;
+
       // Periodic refresh: re-hydrate from DB at most once per interval to pick up
       // role/profile/house changes made elsewhere. The new lastDbRefresh persists
       // to the cookie, so this does NOT re-query on every subsequent request.
       const lastRefresh = (token.lastDbRefresh as number) || 0;
-      if (userId && Date.now() - lastRefresh > DB_REFRESH_INTERVAL_MS) {
+      const periodicDue = Date.now() - lastRefresh > DB_REFRESH_INTERVAL_MS;
+
+      if (userId && (profileIncomplete || periodicDue)) {
         const dbUser = await fetchUserDataFromDb(userId);
         if (dbUser) await applyDbUserToToken(token, dbUser, userId);
         token.lastDbRefresh = Date.now();

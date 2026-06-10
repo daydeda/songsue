@@ -553,8 +553,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
           top: 0,
           left: 0,
           bottom: 0,
-          minHeight: "100dvh",
-          height: "100dvh",
+          height: "100%",
           width: "280px",
           maxWidth: "85vw",
           backgroundColor: "#ffffff",
@@ -632,7 +631,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
         </nav>
 
         {/* Footer Actions */}
-        <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ marginTop: "auto", paddingTop: 16, borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 12 }}>
           <button
             onClick={() => {
               setDrawerOpen(false);
@@ -653,16 +652,19 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
       ══════════════════════════════════════════════════════════════════ */}
       <div className="hidden lg:flex min-h-screen w-full max-w-full" style={{ width: "100%", background: "var(--bg-base)" }}>
 
-        {/* Left sidebar wrapper to allow sticky positioning */}
-        <div style={{ width: "clamp(260px, 22vw, 300px)", flexShrink: 0, minHeight: "100vh" }}>
+        {/* Left sidebar wrapper to reserve space in flex layout */}
+        <div style={{ width: "clamp(260px, 22vw, 300px)", flexShrink: 0 }}>
           <aside
             className="flex flex-col"
             style={{
-              width: "100%",
-              position: "sticky",
+              width: "clamp(260px, 22vw, 300px)",
+              position: "fixed",
               top: 0,
-              minHeight: "100dvh",
-              height: "100dvh",
+              left: 0,
+              bottom: 0,
+              height: "100vh",
+              display: "flex",
+              flexDirection: "column",
               overflowY: "auto",
               background: "#ffffff",
               borderRight: "1px solid var(--border-subtle)",
@@ -727,7 +729,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
             </nav>
 
             {/* Language + Sign out */}
-            <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 12, paddingTop: 24 }}>
               <LanguageSwitcher variant="segmented" fullWidth />
               <button
                 onClick={() => signOut({ callbackUrl: "/" })}

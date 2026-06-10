@@ -2,15 +2,16 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Sans_Thai, Noto_Sans_Myanmar, Noto_Sans_SC } from "next/font/google";
 import "./globals.css";
 
-// Primary UI font (Latin). This is the only family preloaded into the critical
-// path — it covers the default English UI and is the LCP text for most users.
+// Primary UI font (Latin), preloaded into the critical path. NOTE: do not add
+// an explicit `fallback` of system fonts here — this variable sits first in the
+// font-family chain, and system fonts (e.g. -apple-system) carry Thai glyphs,
+// so they would swallow Thai text before it reaches IBM Plex Sans Thai below.
 const ibmPlexSans = IBM_Plex_Sans({
   weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
   variable: "--font-ibm-sans",
   display: "swap",
   preload: true,
-  fallback: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
 });
 
 // Thai is a primary script for this audience, so preload it into the critical
@@ -21,7 +22,6 @@ const ibmPlexSansThai = IBM_Plex_Sans_Thai({
   variable: "--font-ibm-thai",
   display: "swap",
   preload: true,
-  fallback: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
 });
 
 // Myanmar — rarely used. Trim to two weights and never preload (these glyph
@@ -32,7 +32,6 @@ const notoSansMyanmar = Noto_Sans_Myanmar({
   variable: "--font-noto-myanmar",
   display: "swap",
   preload: false,
-  fallback: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
 });
 
 // Simplified Chinese — large CJK family, rarely used. Trim weights, no preload.
@@ -42,7 +41,6 @@ const notoSansSC = Noto_Sans_SC({
   variable: "--font-noto-sc",
   display: "swap",
   preload: false,
-  fallback: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
 });
 
 export const metadata: Metadata = {

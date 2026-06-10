@@ -590,6 +590,10 @@ export default function AdminEventsPage() {
         }
       }
     } catch (err) {
+      // usePolling aborts the in-flight request on unmount / tab-hidden / overrun.
+      // That's an intentional cancellation, not a failure — don't log it (Next's
+      // dev overlay surfaces console.error) and don't wipe the list.
+      if ((err as Error)?.name === "AbortError") return;
       console.error(err);
       setEvents([]);
     } finally {

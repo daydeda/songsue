@@ -67,7 +67,7 @@ export const translations = {
     medicalInfo: "Medical Info",
     reviewSubmit: "Review & Submit",
     none: "None",
-    has: "Has",
+    has: "Yes",
     studentSingle: "student",
     studentPlural: "students",
     profileSummary: "Profile Summary",

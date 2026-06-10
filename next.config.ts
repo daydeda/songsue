@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
     : undefined,
   allowedDevOrigins: ["192.168.1.3"],
   turbopack: {},
+  // Tree-shake large barrel-export packages so each route only ships the icons
+  // it actually uses instead of the whole library.
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   webpack: (config, { dev }) => {
     if (dev) {
       config.watchOptions = {

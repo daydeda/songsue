@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
+import type { Html5Qrcode } from "html5-qrcode";
 import { 
   Search, 
   CheckCircle2, 
@@ -159,7 +159,9 @@ export default function QRScannerPage() {
       return;
     }
 
-    // 3. Initialize new instance
+    // 3. Initialize new instance (lazy-load the heavy library only when the
+    //    scanner actually starts, keeping it out of the initial page bundle)
+    const { Html5Qrcode } = await import("html5-qrcode");
     const scanner = new Html5Qrcode("qr-reader");
     scannerRef.current = scanner;
     if (isMountedRef.current) {

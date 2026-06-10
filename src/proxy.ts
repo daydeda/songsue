@@ -18,6 +18,7 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
     pathname.startsWith("/smocamt-logo.png") ||
+    pathname.startsWith("/smocamt-logo-icon.png") ||
     pathname.startsWith("/icon.png");
 
   if (isPublicPath) {
@@ -63,5 +64,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|icon.png).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|smocamt-logo-icon.png|icon.png).*)"],
 };

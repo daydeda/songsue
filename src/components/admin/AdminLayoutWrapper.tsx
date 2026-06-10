@@ -25,7 +25,7 @@ export function AdminLayoutWrapper({
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-[var(--border-subtle)] flex items-center justify-between px-6 z-[1000] backdrop-blur-md bg-white/80">
         <div className="flex items-center gap-3">
-          <img src="/smocamt-logo.png" className="w-8 h-8 object-contain" alt="SMOCAMT Logo" width={32} height={32} style={{ width: 32, height: 32 }} />
+          <img src="/smocamt-logo-icon.png" className="w-8 h-8 object-contain" alt="SMOCAMT Logo" width={32} height={32} style={{ width: 32, height: 32 }} />
           <span className="gradient-text font-black text-xl">ActiveCAMT</span>
         </div>
         <button 
@@ -56,7 +56,7 @@ export function AdminLayoutWrapper({
         <div style={{ marginBottom: 40, display: "flex", alignItems: "center" }}>
           <Link href="/admin/dashboard" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
             <img 
-              src="/smocamt-logo.png" 
+              src="/smocamt-logo-icon.png"
               className="object-contain" 
               alt="SMOCAMT Logo"
               style={{ 

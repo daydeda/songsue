@@ -153,7 +153,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 {/* Brand/Logo (Desktop Left, Mobile Right) */}
 <div className="nav-left">
 <Link href="/dashboard" className="logo">
-<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
+<img src="/smocamt-logo-icon.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
 <div className="logo-text">
 <span className="gradient-text">ActiveCAMT</span>
 </div>
@@ -312,7 +312,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 >
 <div className="sidebar-header">
 <div className="logo">
-<img src="/smocamt-logo.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
+<img src="/smocamt-logo-icon.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
 <div className="logo-text">
 <span className="gradient-text">ActiveCAMT</span>
 </div>

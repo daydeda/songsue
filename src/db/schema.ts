@@ -19,6 +19,7 @@ export const users = pgTable("users", {
   role: text("role").default("student"), // 'student', 'smo', 'anusmo', 'admin', 'registration', 'organizer', 'super_admin'
   roles: jsonb("roles").$type<string[]>().default(["student"]),
   houseId: text("house_id").references(() => houses.id),
+  points: integer("points").default(0),
   // QR Token for secure check-in (FE-13)
   qrToken: text("qr_token").unique(),
   // Profile specifics

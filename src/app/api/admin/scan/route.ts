@@ -7,8 +7,10 @@ import { z } from "zod";
 const scanSchema = z.object({
   qrToken: z.string(), // Allows fallback IDs as well
   eventId: z.string().uuid(),
-  action: z.enum(["scan", "confirm"]).default("scan"),
+  action: z.enum(["scan", "confirm", "score"]).default("scan"),
   medsCheckOption: z.string().nullish(),
+  score: z.number().int().optional(),
+  reason: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -35,7 +37,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { qrToken, eventId, action, medsCheckOption } = scanSchema.parse(body);
+    const { qrToken, eventId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
 
     // Delegate business operation to ScannerService
     const result = await ScannerService.processScan({
@@ -43,6 +45,8 @@ export async function POST(req: Request) {
       eventId,
       action,
       medsCheckOption,
+      score,
+      reason,
       actorId: session.user.id!,
       ipAddress: ip,
     });

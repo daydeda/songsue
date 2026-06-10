@@ -33,9 +33,118 @@ const HOUSE_GRADIENT: Record<string, string> = {
 };
 
 export default function AdminDashboardOverview() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [stats, setStats] = useState<DashboardStats | { error: string } | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
+    const key = idOrName.toLowerCase();
+    if (key === "red" || key === "mom") return t.houseMom || "Mom";
+    if (key === "green" || key === "to") return t.houseTo || "To";
+    if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
+    if (key === "blue" || key === "makara") return t.houseMakara || "Makara";
+    return defaultName;
+  };
+
+  const translateActivityReason = (reason: string) => {
+    if (!reason) return "";
+
+    // 1. Awarded X pts to Y - Reason: Z (from activity "W")
+    const match1 = reason.match(/^Awarded (\d+) pts to (.+?) - Reason: (.+?) \(from activity "(.+?)"\)$/);
+    if (match1) {
+      const [_, pts, student, res, activity] = match1;
+      if (lang === "th") return `มอบ ${pts} คะแนนให้กับ ${student} - เหตุผล: ${res} (จากกิจกรรม "${activity}")`;
+      if (lang === "mm") return `${student} သို့ ${pts} မှတ်ပေးအပ်သည် - အကြောင်းပြချက်: ${res} (လှုပ်ရှားမှု "${activity}" မှ)`;
+      if (lang === "cn") return `向 ${student} 奖励 ${pts} 积分 - 原因: ${res} (来自活动 "${activity}")`;
+      return reason;
+    }
+
+    // 2. Awarded X individual points to Y from activity "W"
+    const match2 = reason.match(/^Awarded (\d+) individual points to (.+?) from activity "(.+?)"$/);
+    if (match2) {
+      const [_, pts, student, activity] = match2;
+      if (lang === "th") return `มอบคะแนนรายบุคคล ${pts} คะแนนให้กับ ${student} จากกิจกรรม "${activity}"`;
+      if (lang === "mm") return `${student} သို့ လှုပ်ရှားမှု "${activity}" မှ တစ်ဦးချင်းရမှတ် ${pts} မှတ်ပေးအပ်သည်`;
+      if (lang === "cn") return `向 ${student} 奖励个人积分 ${pts} 分 (来自活动 "${activity}")`;
+      return reason;
+    }
+
+    // 3. Student Y reached 100 point milestone (+Z total points) from activity "W"
+    const match3 = reason.match(/^Student (.+?) reached 100 point milestone \(\+(\d+) total points\) from activity "(.+?)"$/);
+    if (match3) {
+      const [_, student, total, activity] = match3;
+      if (lang === "th") return `นักศึกษา ${student} สะสมคะแนนครบ 100 คะแนน (รวมเป็น ${total} คะแนน) จากกิจกรรม "${activity}"`;
+      if (lang === "mm") return `ကျောင်းသား ${student} သည် လှုပ်ရှားမှု "${activity}" မှ တစ်ဦးချင်းရမှတ် ၁၀၀ ပြည့်သွားပါသည် (စုစုပေါင်း ${total} မှတ်)`;
+      if (lang === "cn") return `学生 ${student} 累计积分达到 100 分里程碑 (共计 ${total} 分，来自活动 "${activity}")`;
+      return reason;
+    }
+
+    // 4. Event Form Contest Winner: X House completed the evaluation form "Y" most with Z submissions! Received W PTS.
+    const match4 = reason.match(/^Event Form Contest Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Received (\d+) PTS\.$/);
+    if (match4) {
+      const [_, house, formTitle, subs, pts] = match4;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: บ้าน${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံးဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动表单竞赛优胜者：${translatedHouse} 学院以 ${subs} 次提交最多完成了评估表 "${formTitle}"！获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 5. Event Form Contest Tie Winner: X House completed the evaluation form "Y" most with Z submissions! Shared W PTS.
+    const match5 = reason.match(/^Event Form Contest Tie Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Shared (\d+) PTS\.$/);
+    if (match5) {
+      const [_, house, formTitle, subs, pts] = match5;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: บ้าน${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံး ပူးတွဲဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动表单竞赛并列优胜者：${translatedHouse} 学院以 ${subs} 次提交完成了评估表 "${formTitle}"！平分获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 6. Event "X" completed! WINNER: Y House won with Z attendees! Received W PTS.
+    const match6 = reason.match(/^Event "(.+?)" completed! WINNER: (.+?) House won with (\d+) attendees! Received (\d+) PTS\.$/);
+    if (match6) {
+      const [_, eventTitle, house, atts, pts] = match6;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! บ้าน${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ အနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束！获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 7. Event "X" completed! TIE WINNER: Y House won with Z attendees! Shared W PTS.
+    const match7 = reason.match(/^Event "(.+?)" completed! TIE WINNER: (.+?) House won with (\d+) attendees! Shared (\d+) PTS\.$/);
+    if (match7) {
+      const [_, eventTitle, house, atts, pts] = match7;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: บ้าน${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ ပူးတွဲအနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束！并列获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！平分获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 8. Event "X" ended with no attendees. No points awarded.
+    const match8 = reason.match(/^Event "(.+?)" ended with no attendees\. No points awarded\.$/);
+    if (match8) {
+      const [_, eventTitle] = match8;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลงแต่ไม่มีผู้เข้าร่วม ไม่มีการมอบคะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးသော်လည်း တက်ရောက်သူမရှိပါ။ မည်သည့်အမှတ်မှ มရရှိပါ။`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束，但无到场人员。未授予积分。`;
+      return reason;
+    }
+
+    // 9. Event "X" ended but all checked-in students were unassigned. No points awarded.
+    const match9 = reason.match(/^Event "(.+?)" ended but all checked-in students were unassigned\. No points awarded\.$/);
+    if (match9) {
+      const [_, eventTitle] = match9;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลงแต่ผู้เข้าเช็คอินไม่มีสังกัดบ้าน ไม่มีการมอบคะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးသော်လည်း တက်ရောက်သူအားလုံးသည် အိမ်မသတ်မှတ်ရသေးသူများဖြစ်ကြသည်။ မည်သည့်အမှတ်မှ မရရှိပါ။`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束，但所有签到的学生均未分配学院。未授予积分。`;
+      return reason;
+    }
+
+    return reason;
+  };
 
   const fetchStats = () => {
     fetch("/api/admin/dashboard")
@@ -437,19 +546,19 @@ export default function AdminDashboardOverview() {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             <div className="stat-card" style={{ padding: 32 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <h3 style={{ fontSize: 18, fontWeight: 800 }}>Recent Activity</h3>
+                <h3 style={{ fontSize: 18, fontWeight: 800 }}>{t.recentActivity}</h3>
                 <Link
                   href="/admin/activity"
                   style={{ fontSize: 13, fontWeight: 700, color: "var(--accent-primary)", display: "flex", alignItems: "center", gap: 4, textDecoration: "none" }}
                   className="hover-opacity"
                 >
-                  View All
+                  {t.viewAll}
                   <ArrowUpRight size={14} />
                 </Link>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {!stats.recentActivity || stats.recentActivity.length === 0 ? (
-                  <p style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No recent activity.</p>
+                  <p style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t.noActivityRecorded}</p>
                 ) : (
                   stats.recentActivity.map((a, i) => (
                     <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px", background: "var(--bg-elevated)", borderRadius: 12 }}>
@@ -469,18 +578,68 @@ export default function AdminDashboardOverview() {
                       <div style={{ flex: 1 }}>
                         <p style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
                           {a.type === "checkin" ? (
-                            <><b>{a.studentName}</b> checked in at <b>{a.eventTitle}</b></>
+                            lang === "th" ? (
+                              <><b>{a.studentName}</b> เช็คอินเข้าร่วม <b>{a.eventTitle}</b></>
+                            ) : lang === "mm" ? (
+                              <><b>{a.studentName}</b> သည် <b>{a.eventTitle}</b> သို့ ချက်အင်ဝင်ခဲ့သည်</>
+                            ) : lang === "cn" ? (
+                              <><b>{a.studentName}</b> 已签到 <b>{a.eventTitle}</b></>
+                            ) : (
+                              <><b>{a.studentName}</b> checked in at <b>{a.eventTitle}</b></>
+                            )
                           ) : (
                             <>
-                              <b>{a.houseId === "red" ? t.houseMom : a.houseId === "green" ? t.houseTo : a.houseId === "yellow" ? t.houseLuang : a.houseId === "blue" ? t.houseMakara : a.houseName}</b> awarded
-                              <span style={{
-                                margin: "0 4px",
-                                color: a.delta > 0 ? "#10b981" : "#ef4444",
-                                fontWeight: 800
-                              }}>
-                                {a.delta > 0 ? `+${a.delta}` : a.delta}
-                              </span>
-                              pts: <i>&ldquo;{a.reason}&rdquo;</i>
+                              {a.delta === 0 ? (
+                                <i>&ldquo;{translateActivityReason(a.reason)}&rdquo;</i>
+                              ) : lang === "th" ? (
+                                <>
+                                  บ้าน <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> ได้รับ{" "}
+                                  <span style={{
+                                    margin: "0 4px",
+                                    color: a.delta > 0 ? "#10b981" : "#ef4444",
+                                    fontWeight: 800
+                                  }}>
+                                    {a.delta > 0 ? `+${a.delta}` : a.delta}
+                                  </span>
+                                  คะแนน: <i>&ldquo;{translateActivityReason(a.reason)}&rdquo;</i>
+                                </>
+                              ) : lang === "mm" ? (
+                                <>
+                                  <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> အိမ်သို့{" "}
+                                  <span style={{
+                                    margin: "0 4px",
+                                    color: a.delta > 0 ? "#10b981" : "#ef4444",
+                                    fontWeight: 800
+                                  }}>
+                                    {a.delta > 0 ? `+${a.delta}` : a.delta}
+                                  </span>
+                                  မှတ် ပေးအပ်သည် - <i>&ldquo;{translateActivityReason(a.reason)}&rdquo;</i>
+                                </>
+                              ) : lang === "cn" ? (
+                                <>
+                                  <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> 学院获得{" "}
+                                  <span style={{
+                                    margin: "0 4px",
+                                    color: a.delta > 0 ? "#10b981" : "#ef4444",
+                                    fontWeight: 800
+                                  }}>
+                                    {a.delta > 0 ? `+${a.delta}` : a.delta}
+                                  </span>
+                                  积分: <i>&ldquo;{translateActivityReason(a.reason)}&rdquo;</i>
+                                </>
+                              ) : (
+                                <>
+                                  <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> awarded{" "}
+                                  <span style={{
+                                    margin: "0 4px",
+                                    color: a.delta > 0 ? "#10b981" : "#ef4444",
+                                    fontWeight: 800
+                                  }}>
+                                    {a.delta > 0 ? `+${a.delta}` : a.delta}
+                                  </span>
+                                  pts: <i>&ldquo;{translateActivityReason(a.reason)}&rdquo;</i>
+                                </>
+                              )}
                             </>
                           )}
                         </p>

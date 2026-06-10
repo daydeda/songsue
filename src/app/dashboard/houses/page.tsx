@@ -7,7 +7,9 @@ import {
   Zap, 
   TrendingUp, 
   History,
-  Crown
+  Crown,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
  
@@ -26,28 +28,146 @@ type Activity = {
   house: { id: string; name: string; color: string };
   event?: { title: string };
 };
+
+type StudentRanking = {
+  id: string;
+  name: string;
+  nickname: string;
+  points: number;
+  houseId: string | null;
+  house: {
+    name: string;
+    color: string;
+  } | null;
+};
  
 export default function HousesPage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [houses, setHouses] = useState<House[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [individuals, setIndividuals] = useState<StudentRanking[]>([]);
+  const [activeTab, setActiveTab] = useState<"house" | "individual">("house");
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  const getTranslatedHouseName = (id: string, defaultName: string) => {
-    if (id === "red") return t.houseMom || "Mom";
-    if (id === "green") return t.houseTo || "To";
-    if (id === "yellow") return t.houseLuang || "Luang";
-    if (id === "blue") return t.houseMakara || "Makara";
+  const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
+    const key = idOrName.toLowerCase();
+    if (key === "red" || key === "mom") return t.houseMom || "Mom";
+    if (key === "green" || key === "to") return t.houseTo || "To";
+    if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
+    if (key === "blue" || key === "makara") return t.houseMakara || "Makara";
     return defaultName;
+  };
+
+  const translateActivityReason = (reason: string) => {
+    if (!reason) return "";
+
+    // 1. Awarded X pts to Y - Reason: Z (from activity "W")
+    const match1 = reason.match(/^Awarded (\d+) pts to (.+?) - Reason: (.+?) \(from activity "(.+?)"\)$/);
+    if (match1) {
+      const [_, pts, student, res, activity] = match1;
+      if (lang === "th") return `มอบ ${pts} คะแนนให้กับ ${student} - เหตุผล: ${res} (จากกิจกรรม "${activity}")`;
+      if (lang === "mm") return `${student} သို့ ${pts} မှတ်ပေးအပ်သည် - အကြောင်းပြချက်: ${res} (လှုပ်ရှားမှု "${activity}" မှ)`;
+      if (lang === "cn") return `向 ${student} 奖励 ${pts} 积分 - 原因: ${res} (来自活动 "${activity}")`;
+      return reason;
+    }
+
+    // 2. Awarded X individual points to Y from activity "W"
+    const match2 = reason.match(/^Awarded (\d+) individual points to (.+?) from activity "(.+?)"$/);
+    if (match2) {
+      const [_, pts, student, activity] = match2;
+      if (lang === "th") return `มอบคะแนนรายบุคคล ${pts} คะแนนให้กับ ${student} จากกิจกรรม "${activity}"`;
+      if (lang === "mm") return `${student} သို့ လှုပ်ရှားမှု "${activity}" မှ တစ်ဦးချင်းရမှတ် ${pts} မှတ်ပေးအပ်သည်`;
+      if (lang === "cn") return `向 ${student} 奖励个人积分 ${pts} 分 (来自活动 "${activity}")`;
+      return reason;
+    }
+
+    // 3. Student Y reached 100 point milestone (+Z total points) from activity "W"
+    const match3 = reason.match(/^Student (.+?) reached 100 point milestone \(\+(\d+) total points\) from activity "(.+?)"$/);
+    if (match3) {
+      const [_, student, total, activity] = match3;
+      if (lang === "th") return `นักศึกษา ${student} สะสมคะแนนครบ 100 คะแนน (รวมเป็น ${total} คะแนน) จากกิจกรรม "${activity}"`;
+      if (lang === "mm") return `ကျောင်းသား ${student} သည် လှုပ်ရှားမှု "${activity}" မှ တစ်ဦးချင်းရမှတ် ၁၀၀ ပြည့်သွားပါသည် (စုစုပေါင်း ${total} မှတ်)`;
+      if (lang === "cn") return `学生 ${student} 累计积分达到 100 分里程碑 (共计 ${total} 分，来自活动 "${activity}")`;
+      return reason;
+    }
+
+    // 4. Event Form Contest Winner: X House completed the evaluation form "Y" most with Z submissions! Received W PTS.
+    const match4 = reason.match(/^Event Form Contest Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Received (\d+) PTS\.$/);
+    if (match4) {
+      const [_, house, formTitle, subs, pts] = match4;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: บ้าน${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံးဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动表单竞赛优胜者：${translatedHouse} 学院以 ${subs} 次提交最多完成了评估表 "${formTitle}"！获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 5. Event Form Contest Tie Winner: X House completed the evaluation form "Y" most with Z submissions! Shared W PTS.
+    const match5 = reason.match(/^Event Form Contest Tie Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Shared (\d+) PTS\.$/);
+    if (match5) {
+      const [_, house, formTitle, subs, pts] = match5;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: บ้าน${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံး ပူးတွဲဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动表单竞赛并列优胜者：${translatedHouse} 学院以 ${subs} 次提交完成了评估表 "${formTitle}"！平分获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 6. Event "X" completed! WINNER: Y House won with Z attendees! Received W PTS.
+    const match6 = reason.match(/^Event "(.+?)" completed! WINNER: (.+?) House won with (\d+) attendees! Received (\d+) PTS\.$/);
+    if (match6) {
+      const [_, eventTitle, house, atts, pts] = match6;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! บ้าน${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ အနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束！获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 7. Event "X" completed! TIE WINNER: Y House won with Z attendees! Shared W PTS.
+    const match7 = reason.match(/^Event "(.+?)" completed! TIE WINNER: (.+?) House won with (\d+) attendees! Shared (\d+) PTS\.$/);
+    if (match7) {
+      const [_, eventTitle, house, atts, pts] = match7;
+      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: บ้าน${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ ပူးတွဲအနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束！并列获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！平分获得 ${pts} 积分。`;
+      return reason;
+    }
+
+    // 8. Event "X" ended with no attendees. No points awarded.
+    const match8 = reason.match(/^Event "(.+?)" ended with no attendees\. No points awarded\.$/);
+    if (match8) {
+      const [_, eventTitle] = match8;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลงแต่ไม่มีผู้เข้าร่วม ไม่มีการมอบคะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးသော်လည်း တက်ရောက်သူမရှိပါ။ မည်သည့်အမှတ်မှ မရရှိပါ။`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束，但无到场人员。未授予积分。`;
+      return reason;
+    }
+
+    // 9. Event "X" ended but all checked-in students were unassigned. No points awarded.
+    const match9 = reason.match(/^Event "(.+?)" ended but all checked-in students were unassigned\. No points awarded\.$/);
+    if (match9) {
+      const [_, eventTitle] = match9;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลงแต่ผู้เข้าเช็คอินไม่มีสังกัดบ้าน ไม่มีการมอบคะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးသော်လည်း တက်ရောက်သူအားလုံးသည် အိမ်မသတ်မှတ်ရသေးသူများဖြစ်ကြသည်။ မည်သည့်အမှတ်မှ မရရှိပါ။`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束，但所有签到的学生均未分配学院。未授予积分。`;
+      return reason;
+    }
+
+    return reason;
   };
  
   useEffect(() => {
     Promise.all([
       fetch("/api/houses").then(r => r.json()),
-      fetch("/api/houses/activity").then(r => r.json())
-    ]).then(([hData, aData]) => {
+      fetch("/api/houses/activity").then(r => r.json()),
+      fetch("/api/houses/individual").then(r => r.json())
+    ]).then(([hData, aData, iData]) => {
       if (Array.isArray(hData)) setHouses(hData);
       if (Array.isArray(aData)) setActivities(aData);
+      if (Array.isArray(iData)) setIndividuals(iData);
       setLoading(false);
     });
   }, []);
@@ -61,6 +181,14 @@ export default function HousesPage() {
   }
  
   const maxPoints = Math.max(...houses.map(h => h.points), 1);
+  
+  // Individual pagination calculations
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(individuals.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedIndividuals = individuals.slice(startIndex, startIndex + itemsPerPage);
+  const topThreeIndividuals = individuals.slice(0, 3);
+  const maxIndividualPoints = Math.max(...individuals.map(ind => ind.points), 1);
  
   return (
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", paddingBottom: 80 }}>
@@ -68,17 +196,67 @@ export default function HousesPage() {
  
       <main className="page-container" style={{ marginTop: 40 }}>
         {/* Header Section */}
-        <header className="leaderboard-header animate-fade-in" style={{ marginBottom: 40 }}>
+        <header className="leaderboard-header animate-fade-in" style={{ marginBottom: 32 }}>
           <h1 className="text-fluid-h1 font-black" style={{ letterSpacing: "-0.04em", margin: 0 }}>
             {t.leaderboard}
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 17, fontWeight: 500, marginTop: 8 }}>
-            {t.houseRankings}
+            {activeTab === "house" ? t.houseRankings : t.individualLeaderboard}
           </p>
         </header>
+
+        {/* Tab Switcher */}
+        <div style={{ 
+          display: "flex", 
+          gap: 12, 
+          marginBottom: 40,
+          background: "var(--bg-elevated)", 
+          padding: 6, 
+          borderRadius: 20,
+          maxWidth: 400,
+          border: "1px solid var(--border-subtle)",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.02)"
+        }}>
+          <button
+            onClick={() => setActiveTab("house")}
+            style={{
+              flex: 1,
+              padding: "12px 24px",
+              borderRadius: 16,
+              fontSize: 15,
+              fontWeight: 800,
+              background: activeTab === "house" ? "var(--bg-surface)" : "transparent",
+              color: activeTab === "house" ? "var(--text-primary)" : "var(--text-muted)",
+              boxShadow: activeTab === "house" ? "0 4px 12px rgba(0,0,0,0.05)" : "none",
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {t.houseRankingsTab}
+          </button>
+          <button
+            onClick={() => setActiveTab("individual")}
+            style={{
+              flex: 1,
+              padding: "12px 24px",
+              borderRadius: 16,
+              fontSize: 15,
+              fontWeight: 800,
+              background: activeTab === "individual" ? "var(--bg-surface)" : "transparent",
+              color: activeTab === "individual" ? "var(--text-primary)" : "var(--text-muted)",
+              boxShadow: activeTab === "individual" ? "0 4px 12px rgba(0,0,0,0.05)" : "none",
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {t.individualRankingsTab}
+          </button>
+        </div>
  
-        {/* Podium for Top 3 */}
-        {houses.length >= 3 && (
+        {/* Podium for Top 3 Houses */}
+        {activeTab === "house" && houses.length >= 3 && (
           <section className="podium-section animate-fade-in-up">
             <div className="podium-container">
               
@@ -134,37 +312,227 @@ export default function HousesPage() {
           </section>
         )}
  
-        {/* Full Rankings List */}
-        <section className="standings-section animate-fade-in-up" style={{ marginBottom: 56 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
-          <div className="standings-list">
-            {houses.map((h, idx) => (
-              <div className="standings-row" key={h.id}>
-                <div className={`standings-rank rank-${idx + 1}`}>
-                  {idx + 1}
+        {/* Full Rankings List for Houses */}
+        {activeTab === "house" && (
+          <section className="standings-section animate-fade-in-up" style={{ marginBottom: 56 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
+            <div className="standings-list">
+              {houses.map((h, idx) => (
+                <div className="standings-row" key={h.id}>
+                  <div className={`standings-rank rank-${idx + 1}`}>
+                    {idx + 1}
+                  </div>
+                  <div className="standings-avatar" style={{ background: `${h.color}10`, color: h.color }}>
+                    <Trophy size={18} />
+                  </div>
+                  <div className="standings-info">
+                    <span className="standings-name">
+                      {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}
+                    </span>
+                    <span className="standings-subtitle" style={{ color: h.color }}>
+                      {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name} House
+                    </span>
+                  </div>
+                  <div className="standings-progress-container">
+                    <div className="standings-progress-bar" style={{ width: `${(h.points / maxPoints) * 100}%`, background: h.color }} />
+                  </div>
+                  <div className="standings-points">
+                    <span className="points-value">{h.points}</span>
+                    <span className="points-label">{t.points}</span>
+                  </div>
                 </div>
-                <div className="standings-avatar" style={{ background: `${h.color}10`, color: h.color }}>
-                  <Trophy size={18} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Podium for Top 3 Individuals */}
+        {activeTab === "individual" && topThreeIndividuals.length > 0 && (
+          <section className="podium-section animate-fade-in-up">
+            <div className="podium-container">
+              
+              {/* 2nd Place Individual */}
+              {topThreeIndividuals[1] && (
+                <div className="podium-card second-place" style={{ borderBottom: `8px solid ${topThreeIndividuals[1].house?.color || "var(--accent-primary)"}` }}>
+                  <div className="podium-rank-badge rank-second">2</div>
+                  <div className="podium-avatar" style={{ background: `${topThreeIndividuals[1].house?.color || "#6366f1"}10`, color: topThreeIndividuals[1].house?.color || "var(--accent-primary)" }}>
+                    <Trophy size={28} />
+                  </div>
+                  <h3 className="podium-name" style={{ textAlign: "center" }}>
+                    {topThreeIndividuals[1].name}
+                    {topThreeIndividuals[1].nickname && (
+                      <span style={{ display: "block", fontSize: 13, color: "var(--text-muted)", fontWeight: 600, marginTop: 2 }}>
+                        ({topThreeIndividuals[1].nickname})
+                      </span>
+                    )}
+                  </h3>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: topThreeIndividuals[1].house?.color || "var(--text-muted)", marginTop: -4 }}>
+                    {topThreeIndividuals[1].houseId ? getTranslatedHouseName(topThreeIndividuals[1].houseId, topThreeIndividuals[1].house?.name || "") : t.unassigned}
+                  </div>
+                  <div className="podium-points">
+                    <span className="points-num">{topThreeIndividuals[1].points}</span>
+                    <span className="points-unit">{t.points}</span>
+                  </div>
                 </div>
-                <div className="standings-info">
-                  <span className="standings-name">
-                    {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}
-                  </span>
-                  <span className="standings-subtitle" style={{ color: h.color }}>
-                    {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name} House
-                  </span>
+              )}
+ 
+              {/* 1st Place Individual */}
+              {topThreeIndividuals[0] && (
+                <div className="podium-card first-place" style={{ borderBottom: `8px solid ${topThreeIndividuals[0].house?.color || "var(--accent-primary)"}` }}>
+                  <div className="crown-floating">
+                    <Crown size={32} fill="#fbbf24" strokeWidth={1.5} />
+                  </div>
+                  <div className="podium-rank-badge rank-first">1</div>
+                  <div className="podium-avatar" style={{ background: `${topThreeIndividuals[0].house?.color || "#6366f1"}10`, color: topThreeIndividuals[0].house?.color || "var(--accent-primary)", boxShadow: `0 10px 25px ${topThreeIndividuals[0].house?.color || "#6366f1"}25` }}>
+                    <Trophy size={36} />
+                  </div>
+                  <h3 className="podium-name" style={{ textAlign: "center" }}>
+                    {topThreeIndividuals[0].name}
+                    {topThreeIndividuals[0].nickname && (
+                      <span style={{ display: "block", fontSize: 14, color: "var(--text-muted)", fontWeight: 600, marginTop: 2 }}>
+                        ({topThreeIndividuals[0].nickname})
+                      </span>
+                    )}
+                  </h3>
+                  <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: topThreeIndividuals[0].house?.color || "var(--text-muted)", marginTop: -4 }}>
+                    {topThreeIndividuals[0].houseId ? getTranslatedHouseName(topThreeIndividuals[0].houseId, topThreeIndividuals[0].house?.name || "") : t.unassigned}
+                  </div>
+                  <div className="podium-points">
+                    <span className="points-num highlight-points">{topThreeIndividuals[0].points}</span>
+                    <span className="points-unit">{t.points}</span>
+                  </div>
                 </div>
-                <div className="standings-progress-container">
-                  <div className="standings-progress-bar" style={{ width: `${(h.points / maxPoints) * 100}%`, background: h.color }} />
+              )}
+ 
+              {/* 3rd Place Individual */}
+              {topThreeIndividuals[2] && (
+                <div className="podium-card third-place" style={{ borderBottom: `8px solid ${topThreeIndividuals[2].house?.color || "var(--accent-primary)"}` }}>
+                  <div className="podium-rank-badge rank-third">3</div>
+                  <div className="podium-avatar" style={{ background: `${topThreeIndividuals[2].house?.color || "#6366f1"}10`, color: topThreeIndividuals[2].house?.color || "var(--accent-primary)" }}>
+                    <Trophy size={24} />
+                  </div>
+                  <h3 className="podium-name" style={{ textAlign: "center" }}>
+                    {topThreeIndividuals[2].name}
+                    {topThreeIndividuals[2].nickname && (
+                      <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)", fontWeight: 600, marginTop: 2 }}>
+                        ({topThreeIndividuals[2].nickname})
+                      </span>
+                    )}
+                  </h3>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: topThreeIndividuals[2].house?.color || "var(--text-muted)", marginTop: -4 }}>
+                    {topThreeIndividuals[2].houseId ? getTranslatedHouseName(topThreeIndividuals[2].houseId, topThreeIndividuals[2].house?.name || "") : t.unassigned}
+                  </div>
+                  <div className="podium-points">
+                    <span className="points-num">{topThreeIndividuals[2].points}</span>
+                    <span className="points-unit">{t.points}</span>
+                  </div>
                 </div>
-                <div className="standings-points">
-                  <span className="points-value">{h.points}</span>
-                  <span className="points-label">{t.points}</span>
+              )}
+ 
+            </div>
+          </section>
+        )}
+ 
+        {/* Full Rankings List for Individuals */}
+        {activeTab === "individual" && (
+          <section className="standings-section animate-fade-in-up" style={{ marginBottom: 56 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
+            <div className="standings-list" style={{ marginBottom: 32 }}>
+              {paginatedIndividuals.map((ind, idx) => {
+                const rank = startIndex + idx + 1;
+                const progressWidth = (ind.points / maxIndividualPoints) * 100;
+                const houseColor = ind.house?.color || "var(--border-subtle)";
+                const houseName = ind.houseId ? getTranslatedHouseName(ind.houseId, ind.house?.name || "") : t.unassigned;
+                
+                return (
+                  <div className="standings-row" key={ind.id}>
+                    <div className={`standings-rank rank-${rank <= 4 ? rank : 4}`}>
+                      {rank}
+                    </div>
+                    <div className="standings-avatar" style={{ background: `${houseColor}10`, color: houseColor }}>
+                      <Trophy size={18} />
+                    </div>
+                    <div className="standings-info" style={{ flex: 2 }}>
+                      <span className="standings-name">
+                        {ind.name} {ind.nickname ? `(${ind.nickname})` : ""}
+                      </span>
+                      <span className="standings-subtitle" style={{ color: houseColor || "var(--text-muted)" }}>
+                        {houseName} {ind.houseId ? "House" : ""}
+                      </span>
+                    </div>
+                    <div className="standings-progress-container" style={{ flex: 3 }}>
+                      <div className="standings-progress-bar" style={{ width: `${progressWidth}%`, background: houseColor }} />
+                    </div>
+                    <div className="standings-points">
+                      <span className="points-value">{ind.points}</span>
+                      <span className="points-label">{t.points}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              {individuals.length === 0 && (
+                <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-muted)", fontSize: 15, fontWeight: 600 }}>
+                  No students found.
                 </div>
+              )}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "center", 
+                gap: 16,
+                marginTop: 24
+              }}>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 14,
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--bg-surface)",
+                    color: currentPage === 1 ? "var(--text-muted)" : "var(--text-primary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    opacity: currentPage === 1 ? 0.5 : 1,
+                    transition: "all 0.2s"
+                  }}
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>
+                  {lang === "th" ? `หน้า ${currentPage} จาก ${totalPages}` : `Page ${currentPage} of ${totalPages}`}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 14,
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--bg-surface)",
+                    color: currentPage === totalPages ? "var(--text-muted)" : "var(--text-primary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                    opacity: currentPage === totalPages ? 0.5 : 1,
+                    transition: "all 0.2s"
+                  }}
+                >
+                  <ChevronRight size={20} />
+                </button>
               </div>
-            ))}
-          </div>
-        </section>
+            )}
+          </section>
+        )}
  
         {/* Recent Activity */}
         <section className="glass animate-fade-in-up" style={{ padding: 40, borderRadius: 40 }}>
@@ -192,11 +560,11 @@ export default function HousesPage() {
                  <div style={{ flex: 1 }}>
                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
                      <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)", display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center" }}>
-                       <span>{a.reason}</span>
+                       <span>{translateActivityReason(a.reason)}</span>
                        <span style={{ 
                          fontSize: 16, 
                          fontWeight: 900, 
-                         color: a.delta > 0 ? "#10b981" : "#ef4444" 
+                         color: a.delta > 0 ? "#10b981" : a.delta === 0 ? "var(--text-muted)" : "#ef4444" 
                        }}>
                          {a.delta > 0 ? `+${a.delta}` : a.delta}
                        </span>

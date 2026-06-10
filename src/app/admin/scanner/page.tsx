@@ -38,6 +38,7 @@ type ScanResult = {
     dietaryRestrictions?: string | null;
     faintingHistory?: boolean;
     emergencyMedication?: string | null;
+    points?: number;
   };
   isWalkIn?: boolean;
   checkedInAt?: string;
@@ -62,6 +63,10 @@ export default function QRScannerPage() {
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [medsCheckOption, setMedsCheckOption] = useState<string | null>(null);
+  const [scanMode, setScanMode] = useState<"checkin" | "score">("checkin");
+  const [scoreInput, setScoreInput] = useState<string>("");
+  const [scoreReason, setScoreReason] = useState<string>("");
+  const [submittingScore, setSubmittingScore] = useState(false);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
@@ -268,6 +273,7 @@ export default function QRScannerPage() {
         setScanResult(null);
         lastTokenRef.current = null;
         setMedsCheckOption(null);
+        setScoreInput("");
       }
     }, 300);
   };
@@ -297,6 +303,57 @@ export default function QRScannerPage() {
     } finally {
       if (isMountedRef.current) {
         setIsConfirming(false);
+      }
+    }
+  };
+
+  const confirmScore = async (token: string) => {
+    const val = parseInt(scoreInput);
+    if (isNaN(val) || val <= 0) {
+      alert(t.invalidScoreAlert);
+      return;
+    }
+
+    setSubmittingScore(true);
+    try {
+      const res = await fetch("/api/admin/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          qrToken: token, 
+          eventId, 
+          action: "score",
+          score: val,
+          reason: scoreReason
+        }),
+      });
+      const data = await res.json();
+      if (isMountedRef.current) {
+        if (res.ok) {
+          setScanResult({ 
+            status: "success", 
+            ...data, 
+            rawToken: token 
+          });
+          setScoreInput("");
+          setScoreReason("");
+        } else {
+          setScanResult({ 
+            status: "error", 
+            error: data.error || "Failed to award score", 
+            ...data, 
+            rawToken: token 
+          });
+        }
+      }
+      if ("vibrate" in navigator) navigator.vibrate(res.ok ? [100, 50, 100] : 200);
+    } catch {
+      if (isMountedRef.current) {
+        setScanResult({ status: "error", error: "Connection error" });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setSubmittingScore(false);
       }
     }
   };
@@ -408,21 +465,83 @@ export default function QRScannerPage() {
 
   let cfg = scanResult ? (STATUS_CONFIG[scanResult.status] || STATUS_CONFIG.error) : null;
 
-  if (cfg && scanResult?.student?.hasMedicalCondition) {
+  if (cfg && scanMode === "score") {
+    if (scanResult?.status === "success") {
+      cfg = {
+        color: "#10b981",
+        icon: CheckCircle2,
+        title: lang === "th" ? "มอบคะแนนสำเร็จ" : "Score Awarded",
+        desc: lang === "th" ? "มอบคะแนนเรียบร้อยแล้ว" : "The score has been added successfully",
+        bg: "rgba(16, 185, 129, 0.1)"
+      };
+    } else {
+      cfg = {
+        color: "var(--accent-primary)",
+        icon: Zap,
+        title: lang === "th" ? "มอบคะแนนรายบุคคล" : "Individual Score",
+        desc: lang === "th" ? "กรอกคะแนนที่ต้องการมอบให้แก่นักศึกษา" : "Enter the score to award to this student",
+        bg: "rgba(99, 102, 241, 0.1)"
+      };
+    }
+  } else if (cfg && scanResult?.student?.hasMedicalCondition) {
     cfg = {
       ...cfg,
       color: "#ef4444",
       icon: AlertCircle,
       bg: "rgba(239, 68, 68, 0.12)",
       title: lang === "th" ? "คำเตือนด้านสุขภาพ!" : lang === "cn" ? "健康警告！" : lang === "mm" ? "ကျန်းမာရေး သတိပေးချက်!" : "Medical Warning!",
-      desc: lang === "th" ? "นักศึกษามีข้อมูลสุขภาพที่ลงทะเบียนไว้ โปรดตรวจสอบข้อมูลยาฉุกเฉินและข้อจำกัดสุขภาพ" : lang === "cn" ? "学生有已记录的健康状况。请核对药品与健康限制。" : lang === "mm" ? "ကျောင်းသားတွင် ကျန်းမာရေးအခြေအနေရှိသည်။ ဆေးဝါးနှင့် ကျန်းမာရေးကန့်သတ်ချက်များကို စစ်ဆေးပါ။" : "Student has a recorded health condition. Please verify medication.",
+      desc: lang === "th" ? "นักศึกษามีข้อมูลสุขภาพที่ลงทะเบียนไว้ โปรดตรวจสอบข้อมูลยาฉุกเฉินและข้อจำกัดสุขภาพ" : lang === "cn" ? "学生有已记录的健康状况。请核对药品与健康限制。" : lang === "mm" ? "ကျောင်းသားတွင် ကျန်းမာရေးအခြေအနေရှိသည်။ ဆေးဝါးและ ကျန်းမာရေးကန့်สတ်ချက်များကို สစ်ဆေးပါ။" : "Student has a recorded health condition. Please verify medication.",
     };
   }
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-10">
+      <div className="mb-10" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
         <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1.3 }}>{t.qrScanner}</h1>
+        
+        {/* Mode Selector */}
+        <div style={{ 
+          display: "flex", 
+          background: "var(--bg-elevated)", 
+          padding: 4, 
+          borderRadius: 12, 
+          border: "1px solid var(--border-subtle)" 
+        }}>
+          <button
+            onClick={() => setScanMode("checkin")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 700,
+              background: scanMode === "checkin" ? "var(--bg-surface)" : "transparent",
+              color: scanMode === "checkin" ? "var(--text-primary)" : "var(--text-muted)",
+              boxShadow: scanMode === "checkin" ? "0 4px 12px rgba(0,0,0,0.05)" : "none",
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {t.scanModeCheckin}
+          </button>
+          <button
+            onClick={() => setScanMode("score")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 700,
+              background: scanMode === "score" ? "var(--bg-surface)" : "transparent",
+              color: scanMode === "score" ? "var(--text-primary)" : "var(--text-muted)",
+              boxShadow: scanMode === "score" ? "0 4px 12px rgba(0,0,0,0.05)" : "none",
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {t.scanModeScore}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6 items-start">
@@ -697,9 +816,25 @@ export default function QRScannerPage() {
                         {scanResult.student.houseId === 'red' ? t.houseMom : scanResult.student.houseId === 'green' ? t.houseTo : scanResult.student.houseId === 'yellow' ? t.houseLuang : scanResult.student.houseId === 'blue' ? t.houseMakara : scanResult.student.house}
                       </span>
                     </div>
+                    {scanResult.student.points !== undefined && (
+                      <div style={{ 
+                        padding: "10px 20px", 
+                        borderRadius: 12, 
+                        background: "var(--bg-elevated)", 
+                        border: "1px solid var(--border-subtle)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8
+                      }}>
+                        <Zap size={16} color="var(--accent-primary)" />
+                        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                          {scanResult.student.points} {lang === "th" ? "คะแนน" : "pts"}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  {scanResult.student.hasMedicalCondition && (
+                  {scanMode === "checkin" && scanResult.student.hasMedicalCondition && (
                     <div style={{ 
                       marginTop: 8,
                       padding: 16, 
@@ -779,7 +914,7 @@ export default function QRScannerPage() {
                           </div>
                         </label>
 
-                        {/* Option 2: Didn't Bring Medication */}
+                         {/* Option 2: Didn't Bring Medication */}
                         <label style={{ 
                            display: "flex", 
                            alignItems: "center", 
@@ -808,7 +943,6 @@ export default function QRScannerPage() {
                             </p>
                           </div>
                         </label>
-
                         {/* Option 3: Acknowledge Dietary/Allergies Only */}
                         <label style={{ 
                            display: "flex", 
@@ -848,7 +982,8 @@ export default function QRScannerPage() {
                 </div>
               )}
 
-              {scanResult?.status === "pending_confirmation" && scanResult.rawToken && (
+              {/* Check-in Mode buttons and banners */}
+              {scanMode === "checkin" && scanResult?.status === "pending_confirmation" && scanResult.rawToken && (
                 <button
                   className="btn btn-primary btn-full"
                   onClick={() => confirmAttendance(scanResult.rawToken!)}
@@ -865,11 +1000,11 @@ export default function QRScannerPage() {
                     cursor: (scanResult?.student?.hasMedicalCondition && !medsCheckOption) ? "not-allowed" : "pointer"
                   }}
                 >
-                  {isConfirming ? (lang === "th" ? "กำลังดำเนินการ..." : lang === "cn" ? "处理中..." : lang === "mm" ? "လုပ်ဆောင်နေသည်..." : "Processing...") : (scanResult?.isWalkIn ? (lang === "th" ? "ยืนยันการเช็คอินแบบ Walk-in" : lang === "cn" ? "确认现场签到" : lang === "mm" ? "Walk-in ချက်အင်ဝင်ခြင်းကို အတည်ပြုရန်" : "Confirm Walk-in Presence") : (lang === "th" ? "ยืนยันการเข้าร่วมกิจกรรม" : lang === "cn" ? "确认到场签到" : lang === "mm" ? "ကိုယ်တိုင်တက်ရောက်မှုကို အတည်ပြုရန်" : "Confirm Physical Presence"))}
+                  {isConfirming ? (lang === "th" ? "กำลังดำเนินการ..." : lang === "cn" ? "处理中..." : lang === "mm" ? "လုပ်ဆောင်နေသည်..." : "Processing...") : (scanResult?.isWalkIn ? (lang === "th" ? "ยืนยันการเช็คอินแบบ Walk-in" : lang === "cn" ? "确认现场签到" : lang === "mm" ? "Walk-in ချက်အင်ဝင်ခြင်းကို อတည်ပြုရန်" : "Confirm Walk-in Presence") : (lang === "th" ? "ยืนยันการเข้าร่วมกิจกรรม" : lang === "cn" ? "确认到场签到" : lang === "mm" ? "ကိုယ်ตိုင်ตက်ရောက်မှုကို อတည်ပြုရန်" : "Confirm Physical Presence"))}
                 </button>
               )}
 
-              {(scanResult?.status === "success" || scanResult?.status === "success_walk_in" || scanResult?.status === "already_checked_in") && (
+              {scanMode === "checkin" && (scanResult?.status === "success" || scanResult?.status === "success_walk_in" || scanResult?.status === "already_checked_in") && (
                 <div 
                   style={{ 
                     marginTop: 24, 
@@ -892,8 +1027,101 @@ export default function QRScannerPage() {
                 </div>
               )}
 
+              {/* Scan Score Mode inputs and banners */}
+              {scanMode === "score" && scanResult?.status !== "success" && scanResult?.rawToken && (
+                <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
+                      {t.activityLabel}
+                    </label>
+                    <div style={{ 
+                      padding: "12px 16px", 
+                      borderRadius: 12, 
+                      background: "var(--bg-elevated)", 
+                      border: "1px solid var(--border-subtle)", 
+                      fontSize: 15, 
+                      fontWeight: 700, 
+                      color: "var(--text-primary)" 
+                    }}>
+                      {events.find(e => e.id === eventId)?.title || (lang === "th" ? "ไม่ได้เลือกกิจกรรม" : "No event selected")}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
+                      {t.scoreToAward}
+                    </label>
+                    <input
+                      type="number"
+                      className="input"
+                      placeholder="e.g. 10"
+                      min={1}
+                      value={scoreInput}
+                      onChange={(e) => setScoreInput(e.target.value)}
+                      style={{ fontSize: 24, fontWeight: 900, textAlign: "center", padding: "12px 16px" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
+                      {t.scoreReasonLabel}
+                    </label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder={t.scoreReasonPlaceholder}
+                      value={scoreReason}
+                      onChange={(e) => setScoreReason(e.target.value)}
+                      style={{ fontSize: 16, fontWeight: 600, padding: "12px 16px" }}
+                    />
+                  </div>
+                  
+                  <button
+                    className="btn btn-primary btn-full"
+                    onClick={() => confirmScore(scanResult.rawToken!)}
+                    disabled={submittingScore || !scoreInput}
+                    style={{ 
+                      background: !scoreInput ? "var(--bg-elevated)" : "var(--accent-primary)", 
+                      color: !scoreInput ? "var(--text-muted)" : "white",
+                      minHeight: 56, 
+                      borderRadius: 16, 
+                      fontSize: 16, 
+                      fontWeight: 700,
+                      opacity: !scoreInput ? 0.7 : 1,
+                      cursor: !scoreInput ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    {submittingScore ? t.scoreAwarding : t.confirmScoreBtn}
+                  </button>
+                </div>
+              )}
+
+              {scanMode === "score" && scanResult?.status === "success" && (
+                <div 
+                  style={{ 
+                    marginTop: 24, 
+                    padding: 16, 
+                    borderRadius: 16, 
+                    background: "#10b981", 
+                    color: "white", 
+                    textAlign: "center",
+                    fontWeight: 800,
+                    fontSize: 18,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 12,
+                    boxShadow: "0 10px 20px rgba(16, 185, 129, 0.3)"
+                  }}
+                >
+                  <CheckCircle2 size={24} />
+                  {t.scoreAwardedSuccess}
+                </div>
+              )}
+
               {(() => {
                 const isCloseDisabled = !!(
+                  scanMode === "checkin" &&
                   scanResult?.student?.hasMedicalCondition && 
                   !medsCheckOption && 
                   scanResult?.status !== "pending_confirmation"

@@ -133,6 +133,13 @@ async function migrate() {
   `;
   console.log("  ✅ events.registration_close_time");
 
+  // 14. Add points column to users
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS points integer DEFAULT 0
+  `;
+  console.log("  ✅ users.points");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

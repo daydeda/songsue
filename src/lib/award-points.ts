@@ -2,112 +2,132 @@ import { db } from "@/db";
 import { events, attendance, scoreHistory, houses } from "@/db/schema";
 import { eq, and, lte, sql } from "drizzle-orm";
 
+// Arbitrary constant key for the Postgres advisory lock that serialises award
+// runs across all serverless instances. Any fixed integer works.
+const AWARD_LOCK_KEY = 728193;
+
 /**
- * Automatically checks all ended (past) events, calculates the house with the most attendees,
- * awards the event points to the winning house(s), and logs it to scoreHistory exactly once.
+ * Awards the event-winner bonus to the house with the most attendees for every
+ * event that has ended and not yet been processed.
+ *
+ * Safe to call frequently (e.g. on each admin dashboard poll):
+ *
+ *  - Fast path: a single indexed query checks whether any ended event still lacks
+ *    a score_history row. In steady state this returns nothing and we exit
+ *    immediately — no transaction, no locks, negligible cost.
+ *
+ *  - When an event has just ended, we open ONE transaction and grab a
+ *    transaction-scoped advisory lock. Only one instance can hold it at a time, so
+ *    concurrent callers skip instantly instead of fighting over the `houses` rows
+ *    (the old behaviour deadlocked under `max: 1`). The lock releases automatically
+ *    when the transaction commits.
+ *
+ * Never throws — failures are logged and swallowed so callers can fire it safely.
  */
 export async function checkAndAwardPastEventPoints() {
   try {
     const now = new Date();
-    
-    // 1. Get all events that have ended (endTime <= now)
-    const pastEvents = await db.query.events.findMany({
-      where: lte(events.endTime, now),
-    });
 
-    for (const event of pastEvents) {
-      // 2. Check if points have already been awarded for this event
-      const existingAward = await db.query.scoreHistory.findFirst({
-        where: eq(scoreHistory.eventId, event.id),
+    // Fast path: is there any ended event with no score_history row yet?
+    // "has a score_history row" is the existing definition of "already processed".
+    const pending = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(
+        and(
+          lte(events.endTime, now),
+          sql`NOT EXISTS (SELECT 1 FROM ${scoreHistory} WHERE ${scoreHistory.eventId} = ${events.id})`
+        )
+      )
+      .limit(1);
+
+    if (pending.length === 0) return; // nothing to award — cheap exit
+
+    // Work exists: serialise across instances with a non-blocking advisory lock.
+    await db.transaction(async (tx) => {
+      const lockResult = await tx.execute<{ locked: unknown }>(
+        sql`SELECT pg_try_advisory_xact_lock(${AWARD_LOCK_KEY}) AS locked`
+      );
+      const raw = lockResult[0]?.locked;
+      const locked = raw === true || raw === "t" || raw === "true";
+      if (!locked) return; // another instance is already processing these events
+
+      // Re-fetch inside the lock so two racing callers can't both process an event.
+      const pastEvents = await tx.query.events.findMany({
+        where: lte(events.endTime, now),
       });
 
-      if (existingAward) {
-        // Points already processed and awarded for this event
-        continue;
-      }
+      for (const event of pastEvents) {
+        const existingAward = await tx.query.scoreHistory.findFirst({
+          where: eq(scoreHistory.eventId, event.id),
+        });
+        if (existingAward) continue; // already processed
 
-      // 3. Query all checked-in attendees for this event
-      const attendees = await db.query.attendance.findMany({
-        where: and(
-          eq(attendance.eventId, event.id),
-          eq(attendance.status, "attended")
-        ),
-        with: {
-          user: {
-            columns: {
-              houseId: true,
-            }
+        const attendees = await tx.query.attendance.findMany({
+          where: and(
+            eq(attendance.eventId, event.id),
+            eq(attendance.status, "attended")
+          ),
+          with: { user: { columns: { houseId: true } } },
+        });
+
+        const dbHouses = await tx.query.houses.findMany();
+
+        if (attendees.length === 0) {
+          // No attendees — mark processed with a 0-point row to prevent re-processing.
+          if (dbHouses.length > 0) {
+            await tx.insert(scoreHistory).values({
+              houseId: dbHouses[0].id,
+              eventId: event.id,
+              delta: 0,
+              reason: `Event "${event.title}" ended with no attendees. No points awarded.`,
+            });
           }
+          continue;
         }
-      });
 
-      if (attendees.length === 0) {
-        // No attendees, mark as processed with 0 points to prevent re-processing
-        const allHouses = await db.query.houses.findMany();
-        if (allHouses.length > 0) {
-          await db.insert(scoreHistory).values({
-            houseId: allHouses[0].id,
-            eventId: event.id,
-            delta: 0,
-            reason: `Event "${event.title}" ended with no attendees. No points awarded.`,
-          });
+        // Count attendees grouped by house.
+        const houseCounts: Record<string, { count: number; name: string; color: string }> = {};
+        const houseMap = new Map(dbHouses.map((h) => [h.id, h]));
+
+        for (const att of attendees) {
+          const houseId = att.user?.houseId;
+          if (!houseId) continue;
+          const houseObj = houseMap.get(houseId);
+          if (!houseObj) continue;
+          if (!houseCounts[houseId]) {
+            houseCounts[houseId] = { count: 0, name: houseObj.name, color: houseObj.color ?? "" };
+          }
+          houseCounts[houseId].count++;
         }
-        continue;
-      }
 
-      // 4. Count attendees grouped by house
-      const houseCounts: Record<string, { count: number; name: string; color: string }> = {};
-      const dbHouses = await db.query.houses.findMany();
-      const houseMap = new Map(dbHouses.map(h => [h.id, h]));
-
-      for (const att of attendees) {
-        const houseId = att.user?.houseId;
-        if (!houseId) continue; // Skip student without a house
-
-        const houseObj = houseMap.get(houseId);
-        if (!houseObj) continue;
-
-        if (!houseCounts[houseId]) {
-          houseCounts[houseId] = { count: 0, name: houseObj.name, color: houseObj.color ?? "" };
+        const houseList = Object.entries(houseCounts);
+        if (houseList.length === 0) {
+          // All attendees unassigned — mark processed.
+          if (dbHouses.length > 0) {
+            await tx.insert(scoreHistory).values({
+              houseId: dbHouses[0].id,
+              eventId: event.id,
+              delta: 0,
+              reason: `Event "${event.title}" ended but all checked-in students were unassigned. No points awarded.`,
+            });
+          }
+          continue;
         }
-        houseCounts[houseId].count++;
-      }
 
-      const houseList = Object.entries(houseCounts);
-      if (houseList.length === 0) {
-        // No attendees assigned to any house, mark processed
-        if (dbHouses.length > 0) {
-          await db.insert(scoreHistory).values({
-            houseId: dbHouses[0].id,
-            eventId: event.id,
-            delta: 0,
-            reason: `Event "${event.title}" ended but all checked-in students were unassigned. No points awarded.`,
-          });
+        // Winning house(s) — supports ties.
+        let maxCount = -1;
+        for (const [, data] of houseList) {
+          if (data.count > maxCount) maxCount = data.count;
         }
-        continue;
-      }
+        const winners = houseList.filter(([, data]) => data.count === maxCount);
+        const pointsToAward = event.pointsAwarded ?? 0;
 
-      // 5. Find the maximum count of attendees
-      let maxCount = -1;
-      for (const [_, data] of houseList) {
-        if (data.count > maxCount) {
-          maxCount = data.count;
-        }
-      }
-
-      // 6. Find all houses matching the maximum count (supports Ties)
-      const winners = houseList.filter(([_, data]) => data.count === maxCount);
-      const pointsToAward = event.pointsAwarded ?? 0;
-
-      // 7. Award points to the winning house(s) in a database transaction
-      await db.transaction(async (tx) => {
         for (const [winnerHouseId, data] of winners) {
           if (pointsToAward > 0) {
             await tx
               .update(houses)
-              .set({
-                points: sql`${houses.points} + ${pointsToAward}`,
-              })
+              .set({ points: sql`${houses.points} + ${pointsToAward}` })
               .where(eq(houses.id, winnerHouseId));
           }
 
@@ -123,8 +143,8 @@ export async function checkAndAwardPastEventPoints() {
             timestamp: new Date(),
           });
         }
-      });
-    }
+      }
+    });
   } catch (error) {
     console.error("Failed to automatically check and award past event points:", error);
   }

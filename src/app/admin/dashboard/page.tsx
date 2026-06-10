@@ -147,23 +147,23 @@ export default function AdminDashboardOverview() {
     return reason;
   };
 
-  const fetchStats = () => {
-    fetch("/api/admin/dashboard")
+  // Returns the fetch chain so usePolling can await it and never stack requests.
+  const fetchStats = (signal?: AbortSignal) =>
+    fetch("/api/admin/dashboard", { signal })
       .then((r) => r.json())
       .then((d) => setStats(d));
-  };
 
   // Poll the dashboard endpoint for near-real-time updates. The endpoint already
   // returns the full fresh state (counts, houses, recent activity), so a refetch
   // replaces the previous incremental SSE logic. 5s is responsive for the handful
   // of admins watching this screen, and polling pauses when the tab is hidden.
-  usePolling(fetchStats, 5000);
+  usePolling((signal) => fetchStats(signal), 5000);
 
   // Nudge the event-winner award check on its own slower cadence (every 20s), as a
   // separate fire-and-forget request. Decoupled from the 5s data poll so it adds
   // far less load on the DB pooler; 20s is still effectively immediate for awarding
   // the winner bonus when an event ends. Errors are ignored on purpose.
-  usePolling(() => { fetch("/api/admin/award-check").catch(() => {}); }, 20000);
+  usePolling((signal) => fetch("/api/admin/award-check", { signal }).catch(() => {}), 20000);
 
   const handleExportCSV = async () => {
     setExporting(true);
@@ -333,7 +333,7 @@ export default function AdminDashboardOverview() {
         <div style={{ padding: 40, background: "rgba(239, 68, 68, 0.1)", borderRadius: 24, textAlign: "center", border: "1px solid rgba(239, 68, 68, 0.2)" }}>
           <p style={{ color: "#ef4444", fontWeight: 700 }}>Failed to load dashboard data</p>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 4 }}>{(stats as { error: string }).error}</p>
-          <button className="btn btn-ghost" style={{ marginTop: 16 }} onClick={fetchStats}>Retry</button>
+          <button className="btn btn-ghost" style={{ marginTop: 16 }} onClick={() => fetchStats()}>Retry</button>
         </div>
       ) : (
         <>

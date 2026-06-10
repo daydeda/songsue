@@ -454,9 +454,9 @@ export default function AdminEventsPage() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const fetchEvents = async () => {
+  const fetchEvents = async (signal?: AbortSignal) => {
     try {
-      const res = await fetch("/api/admin/events");
+      const res = await fetch("/api/admin/events", { signal });
       const data = await res.json();
       if (Array.isArray(data)) {
         setEvents(data);

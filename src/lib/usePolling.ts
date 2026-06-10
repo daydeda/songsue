@@ -15,10 +15,26 @@ import { useEffect, useRef } from "react";
  *  - Pauses entirely when the tab is hidden, so idle background tabs don't burn
  *    function invocations or database queries.
  *
+ * Overlap-safe (this is the important part for the DB pooler): the next tick is
+ * scheduled only AFTER the current one settles, and a tick is skipped while one is
+ * still in flight. With the old setInterval, a single slow response (e.g. the
+ * pooler momentarily queueing a connection) caused requests to STACK — every
+ * `intervalMs` fired another, each opening its own pooled connections, which piled
+ * load onto the very pooler that was already struggling and turned one slow request
+ * into a site-wide wave of 504s. Awaiting each tick caps every tab at exactly one
+ * in-flight request, so polling load stays flat no matter how slow the backend is.
+ *
+ * A request that overruns is also aborted via the AbortSignal handed to the
+ * callback (pass it to `fetch`), so a stalled request is dropped — and its
+ * connection released — instead of being held until the platform 504s it.
+ *
  * The callback is read from a ref, so passing a fresh inline function each render
- * is fine — the interval always invokes the latest version without restarting.
+ * is fine — the loop always invokes the latest version without restarting.
  */
-export function usePolling(callback: () => void, intervalMs: number) {
+export function usePolling(
+  callback: (signal: AbortSignal) => void | Promise<unknown>,
+  intervalMs: number,
+) {
   const savedCallback = useRef(callback);
 
   useEffect(() => {
@@ -26,23 +42,64 @@ export function usePolling(callback: () => void, intervalMs: number) {
   }, [callback]);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let stopped = false;
+    // Bumped on every start()/stop(); a running loop whose epoch no longer matches
+    // the current one quietly exits, so we never end up with two loops scheduling.
+    let epoch = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let controller: AbortController | null = null;
+    let inFlight = false;
 
-    const stop = () => {
+    // Hard ceiling on a single request. Generous (a few intervals) so a normally
+    // slow-but-fine response is never cut off, but bounded so a truly stuck request
+    // is abandoned rather than held open indefinitely.
+    const hardStopMs = Math.max(intervalMs * 3, 15000);
+
+    const clearTimer = () => {
       if (timer) {
-        clearInterval(timer);
+        clearTimeout(timer);
         timer = null;
       }
     };
 
+    const runOnce = async () => {
+      if (stopped || inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      controller = new AbortController();
+      const ac = controller;
+      const hardStop = setTimeout(() => ac.abort(), hardStopMs);
+      try {
+        await savedCallback.current(ac.signal);
+      } catch {
+        // Best-effort polling: swallow errors (including AbortError) and try again
+        // on the next tick.
+      } finally {
+        clearTimeout(hardStop);
+        inFlight = false;
+      }
+    };
+
+    const loop = async (myEpoch: number) => {
+      if (stopped || myEpoch !== epoch) return;
+      await runOnce();
+      if (stopped || myEpoch !== epoch || document.visibilityState !== "visible") return;
+      timer = setTimeout(() => loop(myEpoch), intervalMs);
+    };
+
     const start = () => {
-      if (timer) return;
-      timer = setInterval(() => savedCallback.current(), intervalMs);
+      epoch += 1; // invalidate any prior loop before starting a fresh one
+      clearTimer();
+      loop(epoch);
+    };
+
+    const stop = () => {
+      epoch += 1; // invalidate the running loop's continuation
+      clearTimer();
+      controller?.abort();
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        savedCallback.current();
         start();
       } else {
         stop();
@@ -54,6 +111,7 @@ export function usePolling(callback: () => void, intervalMs: number) {
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
+      stopped = true;
       stop();
       document.removeEventListener("visibilitychange", handleVisibility);
     };

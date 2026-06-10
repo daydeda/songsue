@@ -10,10 +10,31 @@ import { NextResponse } from "next/server";
 // a zombie function (and its pooled connection) for 5 minutes.
 export const maxDuration = 20;
 
+// Application-level deadline, deliberately shorter than maxDuration. If the DB work
+// can't finish in time (almost always a connection that's waiting on the Supabase
+// pooler rather than a genuinely slow query — the DB is tiny), we return a fast 503
+// and let the client's poll retry, instead of holding the function (and its pooled
+// connection) hostage until the platform 504s it at 20s. The orphaned query settles
+// on its own later; the process-level unhandledRejection guard in src/db keeps a
+// late rejection from crashing the instance.
+const READ_TIMEOUT_MS = 8000;
+
+class TimeoutError extends Error {}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new TimeoutError(label)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
 
 export async function GET(req: Request) {
   try {
-    const session = await auth();
+    const session = await withTimeout(auth(), READ_TIMEOUT_MS, "auth");
     const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,7 +93,7 @@ export async function GET(req: Request) {
       memberCounts,
       recentCheckins,
       recentScores,
-    ] = await Promise.all([
+    ] = await withTimeout(Promise.all([
       db.select({ count: count() }).from(users),
       db.select({ count: count() }).from(events),
       db
@@ -109,7 +130,7 @@ export async function GET(req: Request) {
           house: { columns: { id: true, name: true, color: true } },
         },
       }),
-    ]);
+    ]), READ_TIMEOUT_MS, "overview");
 
     const memberCountMap = new Map(memberCounts.map(m => [m.houseId, m.count]));
 
@@ -147,6 +168,15 @@ export async function GET(req: Request) {
       })),
     });
   } catch (error) {
+    // A deadline miss is a transient pooler/connection stall, not a real error.
+    // Return 503 so the client's next poll retries quickly, and tell it when.
+    if (error instanceof TimeoutError) {
+      console.warn(`[dashboard] read timed out (${error.message}); returning 503`);
+      return NextResponse.json(
+        { error: "Service busy, retrying shortly" },
+        { status: 503, headers: { "Retry-After": "5" } },
+      );
+    }
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

@@ -45,12 +45,11 @@ export default function DigitalIdPage() {
     blue:   { name: t.houseMakara || "Makara", color: "#6366f1" },
   };
 
-  const fetchHouses = () => {
-    fetch("/api/houses")
+  const fetchHouses = (signal?: AbortSignal) =>
+    fetch("/api/houses", { signal })
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setHouses(d); })
       .finally(() => setLoadingHouses(false));
-  };
 
   // Poll the leaderboard. Slower interval (20s) because this is student-facing and
   // potentially many devices — a leaderboard does not need sub-second freshness,

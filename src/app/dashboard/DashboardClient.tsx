@@ -1,6 +1,7 @@
 
 "use client";
 
+import type { Session } from "next-auth";
 import { useSession, signOut } from "next-auth/react";
 import { useState } from "react";
 import { usePolling } from "@/lib/usePolling";
@@ -59,7 +60,7 @@ interface HouseItem {
   points: number;
 }
 
-export default function DashboardClient({ initialSession }: { initialSession: any }) {
+export default function DashboardClient({ initialSession }: { initialSession: Session | null }) {
   const { data: sessionData, status: sessionStatus } = useSession();
   const session = sessionData || initialSession;
   const status = sessionStatus !== "loading"
@@ -101,27 +102,23 @@ export default function DashboardClient({ initialSession }: { initialSession: an
     blue:   { name: t.houseMakara || "Makara", color: "#6366f1" },
   };
 
-  const fetchEvents = () => {
-    fetch("/api/events")
+  const fetchEvents = (signal?: AbortSignal) =>
+    fetch("/api/events", { signal })
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setEvents(d); })
       .finally(() => setLoadingEvents(false));
-  };
 
-  const fetchHouses = () => {
-    fetch("/api/houses")
+  const fetchHouses = (signal?: AbortSignal) =>
+    fetch("/api/houses", { signal })
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setHouses(d); })
       .finally(() => setLoadingHouses(false));
-  };
 
   // Poll events + leaderboard. Slower interval (20s) because this is student-facing
   // and potentially many devices; polling avoids the Supabase free-tier 200
-  // concurrent-connection cap and pauses while the tab is hidden.
-  usePolling(() => {
-    fetchEvents();
-    fetchHouses();
-  }, 20000);
+  // concurrent-connection cap and pauses while the tab is hidden. Return the
+  // combined promise so the poller awaits both and never stacks requests.
+  usePolling((signal) => Promise.all([fetchEvents(signal), fetchHouses(signal)]), 20000);
 
   const handleRegister = async (eventId: string, registered: boolean) => {
     if (!session?.user) {

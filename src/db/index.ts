@@ -4,7 +4,20 @@ import * as schema from "./schema";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
+  errorGuardsInstalled: boolean | undefined;
 };
+
+// A single rejected DB operation (e.g. a query cancelled under momentary load, or
+// a pooled socket dropped by Supabase) must NEVER crash the serverless instance.
+// Node terminates the process on an unhandled rejection by default — and on a
+// shared instance that aborts every OTHER in-flight request too, which is exactly
+// how one slow query turned into a site-wide wave of 504s. Log and keep running.
+if (!globalForDb.errorGuardsInstalled) {
+  process.on("unhandledRejection", (reason) => {
+    console.error("[db] Unhandled promise rejection (suppressed to keep instance alive):", reason);
+  });
+  globalForDb.errorGuardsInstalled = true;
+}
 
 // Production connects through the Supabase transaction pooler (port 6543), which
 // does NOT support prepared statements — postgres-js must run in "simple query"

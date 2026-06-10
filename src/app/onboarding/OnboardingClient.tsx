@@ -104,6 +104,14 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
     ] as EmergencyContact[],
   });
 
+  const [hasFields, setHasFields] = useState<Record<string, boolean>>(() => ({
+    chronicDiseases: !!formData.chronicDiseases,
+    medicalHistory: !!formData.medicalHistory,
+    drugAllergies: !!formData.drugAllergies,
+    foodAllergies: !!formData.foodAllergies,
+    emergencyMedication: !!formData.emergencyMedication,
+  }));
+
   const set = <K extends keyof typeof formData>(key: K, value: (typeof formData)[K]) =>
     setFormData((p) => ({ ...p, [key]: value }));
 
@@ -167,6 +175,16 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
         setValidationTriggered(true); return;
       }
     }
+    if (step === 1) {
+      const emptyHasFields = Object.keys(hasFields).filter(
+        (key) => hasFields[key] && !formData[key as keyof typeof formData]?.toString().trim()
+      );
+      if (emptyHasFields.length > 0) {
+        setError(isTh ? "กรุณากรอกข้อมูลสุขภาพที่คุณเลือก 'มี'" : "Please specify details for fields checked as 'Has'.");
+        setValidationTriggered(true);
+        return;
+      }
+    }
     if (step === 2) {
       const ec1 = formData.emergencyContacts[0];
       const isEc1RelEmpty = !ec1.relationship.trim() || ec1.relationship.trim() === "Other:";
@@ -200,6 +218,61 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
 
   const inp = "input";
   const lbl = "label";
+
+  const renderMedicalField = (
+    fieldKey: "chronicDiseases" | "medicalHistory" | "drugAllergies" | "foodAllergies" | "emergencyMedication",
+    label: string
+  ) => {
+    const isHas = hasFields[fieldKey];
+    return (
+      <div className="field flex-1" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <label className={lbl}>{label}</label>
+        <div style={{ display: "flex", gap: 24, alignItems: "center", minHeight: 32 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+            <input
+              type="checkbox"
+              checked={!isHas}
+              onChange={() => {
+                setHasFields((p) => ({ ...p, [fieldKey]: false }));
+                set(fieldKey, "");
+              }}
+              style={{ width: 18, height: 18, accentColor: "var(--accent-primary)", cursor: "pointer" }}
+            />
+            <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{t.none}</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+            <input
+              type="checkbox"
+              checked={isHas}
+              onChange={() => {
+                setHasFields((p) => ({ ...p, [fieldKey]: true }));
+              }}
+              style={{ width: 18, height: 18, accentColor: "var(--accent-primary)", cursor: "pointer" }}
+            />
+            <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{t.has}</span>
+          </label>
+        </div>
+        {isHas && (
+          <>
+            <input
+              className={inp}
+              placeholder={isTh ? "ระบุรายละเอียด..." : "Please specify details..."}
+              value={formData[fieldKey]}
+              onChange={(e) => set(fieldKey, e.target.value)}
+              style={{
+                marginTop: 4,
+                ...errStyle(validationTriggered && !formData[fieldKey].trim()),
+              }}
+            />
+            <ErrMsg
+              show={validationTriggered && !formData[fieldKey].trim()}
+              msg={isTh ? "⚠️ กรุณาระบุรายละเอียด" : "⚠️ Required"}
+            />
+          </>
+        )}
+      </div>
+    );
+  };
 
   /* ── Shared: field validation helpers ─────────────────────────────────── */
   const errStyle = (bad: boolean) => ({
@@ -373,12 +446,12 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
             <span>🔒</span><span>{t.medicalInfoDetail}</span>
           </div>
           <div className="flex flex-col sm:flex-row gap-4">
-            <div className="field flex-1"><label className={lbl}>{t.chronicDiseases}</label><input className={inp} placeholder={t.none} value={formData.chronicDiseases} onChange={(e) => set("chronicDiseases", e.target.value)} style={{ minHeight: 48 }} /></div>
-            <div className="field flex-1"><label className={lbl}>{t.medicalHistory}</label><input className={inp} placeholder={t.none} value={formData.medicalHistory} onChange={(e) => set("medicalHistory", e.target.value)} style={{ minHeight: 48 }} /></div>
+            {renderMedicalField("chronicDiseases", t.chronicDiseases)}
+            {renderMedicalField("medicalHistory", t.medicalHistory)}
           </div>
           <div className="flex flex-col sm:flex-row gap-4">
-            <div className="field flex-1"><label className={lbl}>{t.drugAllergies}</label><input className={inp} placeholder={t.none} value={formData.drugAllergies} onChange={(e) => set("drugAllergies", e.target.value)} style={{ minHeight: 48 }} /></div>
-            <div className="field flex-1"><label className={lbl}>{t.foodAllergies}</label><input className={inp} placeholder={t.none} value={formData.foodAllergies} onChange={(e) => set("foodAllergies", e.target.value)} style={{ minHeight: 48 }} /></div>
+            {renderMedicalField("drugAllergies", t.drugAllergies)}
+            {renderMedicalField("foodAllergies", t.foodAllergies)}
           </div>
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="field flex-1">
@@ -395,7 +468,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
                 <input type="text" className={inp} style={{ marginTop: 8, minHeight: 48 }} placeholder={isTh ? "กรุณาระบุ..." : "Please specify..."} value={formData.dietaryRestrictions.startsWith("Other:") ? formData.dietaryRestrictions.substring(6) : formData.dietaryRestrictions} onChange={(e) => set("dietaryRestrictions", "Other:" + e.target.value)} />
               )}
             </div>
-            <div className="field flex-1"><label className={lbl}>{t.emergencyMed}</label><input className={inp} placeholder={t.none} value={formData.emergencyMedication} onChange={(e) => set("emergencyMedication", e.target.value)} style={{ minHeight: 48 }} /></div>
+            {renderMedicalField("emergencyMedication", t.emergencyMed)}
           </div>
           <label style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", background: formData.faintingHistory ? "rgba(255,107,0,0.06)" : "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: `1px solid ${formData.faintingHistory ? "rgba(255,107,0,0.3)" : "var(--border-subtle)"}`, cursor: "pointer", transition: "all 0.15s", minHeight: 56 }}>
             <input type="checkbox" style={{ width: 20, height: 20, accentColor: "var(--accent-primary)", flexShrink: 0 }} checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />

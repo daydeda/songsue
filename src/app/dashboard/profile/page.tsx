@@ -27,7 +27,15 @@ export default function ProfilePage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [validationTriggered, setValidationTriggered] = useState(false);
   const [isProfileCompleted, setIsProfileCompleted] = useState(false);
- 
+
+  const [hasFields, setHasFields] = useState<Record<string, boolean>>({
+    chronicDiseases: false,
+    medicalHistory: false,
+    drugAllergies: false,
+    foodAllergies: false,
+    emergencyMedication: false,
+  });
+
   const [formData, setFormData] = useState({
     studentId: "",
     prefix: "นาย",
@@ -80,6 +88,13 @@ export default function ProfilePage() {
               { name: "", relationship: "", phone: "" },
             ],
           });
+          setHasFields({
+            chronicDiseases: !!(user.chronicDiseases && user.chronicDiseases.trim() !== "" && user.chronicDiseases.trim() !== "-" && user.chronicDiseases.trim() !== "None"),
+            medicalHistory: !!(user.medicalHistory && user.medicalHistory.trim() !== "" && user.medicalHistory.trim() !== "-" && user.medicalHistory.trim() !== "None"),
+            drugAllergies: !!(user.drugAllergies && user.drugAllergies.trim() !== "" && user.drugAllergies.trim() !== "-" && user.drugAllergies.trim() !== "None"),
+            foodAllergies: !!(user.foodAllergies && user.foodAllergies.trim() !== "" && user.foodAllergies.trim() !== "-" && user.foodAllergies.trim() !== "None"),
+            emergencyMedication: !!(user.emergencyMedication && user.emergencyMedication.trim() !== "" && user.emergencyMedication.trim() !== "-" && user.emergencyMedication.trim() !== "None"),
+          });
           if (user.image) setPreviewUrl(user.image);
           setIsProfileCompleted(!!user.profileCompleted);
         }
@@ -90,13 +105,85 @@ export default function ProfilePage() {
         setLoading(false);
       });
   }, []);
- 
   const set = <K extends keyof typeof formData>(key: K, value: typeof formData[K]) => setFormData((p) => ({ ...p, [key]: value }));
- 
+
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
     contacts[idx] = { ...contacts[idx], [key]: value };
     set("emergencyContacts", contacts);
+  };
+  const renderMedicalField = (
+    fieldKey: "chronicDiseases" | "medicalHistory" | "drugAllergies" | "foodAllergies" | "emergencyMedication",
+    label: string,
+    isFullWidth: boolean = false
+  ) => {
+    const isHas = hasFields[fieldKey];
+    return (
+      <div className={`field col-span-${isFullWidth ? 12 : 6}`} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <label className="label">{label}</label>
+        <div style={{ display: "flex", gap: 24, alignItems: "center", minHeight: 32 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+            <input
+              type="checkbox"
+              checked={!isHas}
+              onChange={() => {
+                setHasFields((p) => ({ ...p, [fieldKey]: false }));
+                set(fieldKey, "");
+              }}
+              style={{ width: 18, height: 18, accentColor: "var(--accent-primary)", cursor: "pointer" }}
+            />
+            <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{t.none}</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+            <input
+              type="checkbox"
+              checked={isHas}
+              onChange={() => {
+                setHasFields((p) => ({ ...p, [fieldKey]: true }));
+              }}
+              style={{ width: 18, height: 18, accentColor: "var(--accent-primary)", cursor: "pointer" }}
+            />
+            <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{t.has}</span>
+          </label>
+        </div>
+        {isHas && (
+          <>
+            {fieldKey === "medicalHistory" ? (
+              <textarea
+                className="input"
+                rows={2}
+                placeholder={t.back === "กลับ" ? "ระบุรายละเอียด..." : "Please specify details..."}
+                value={formData[fieldKey]}
+                onChange={(e) => set(fieldKey, e.target.value)}
+                style={{
+                  resize: "vertical",
+                  marginTop: 4,
+                  borderColor: validationTriggered && !formData[fieldKey].trim() ? "#ef4444" : undefined,
+                  boxShadow: validationTriggered && !formData[fieldKey].trim() ? "0 0 0 1px #ef4444" : undefined,
+                }}
+              />
+            ) : (
+              <input
+                className="input"
+                placeholder={t.back === "กลับ" ? "ระบุรายละเอียด..." : "Please specify details..."}
+                value={formData[fieldKey]}
+                onChange={(e) => set(fieldKey, e.target.value)}
+                style={{
+                  marginTop: 4,
+                  borderColor: validationTriggered && !formData[fieldKey].trim() ? "#ef4444" : undefined,
+                  boxShadow: validationTriggered && !formData[fieldKey].trim() ? "0 0 0 1px #ef4444" : undefined,
+                }}
+              />
+            )}
+            {validationTriggered && !formData[fieldKey].trim() && (
+              <span className="error-text" style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
+                {t.back === "กลับ" ? "⚠️ กรุณาระบุรายละเอียด" : "⚠️ Required"}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    );
   };
  
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +228,7 @@ export default function ProfilePage() {
     setSaving(true);
     setError(null);
     setSuccess(false);
-
+ 
     const isTh = t.back === "กลับ";
     if (!formData.name.trim() || !formData.nickname.trim() || !formData.phone.trim() || !formData.contactChannels.trim()) {
       setError(isTh ? "กรุณากรอกข้อมูลส่วนตัวที่จำเป็นให้ครบถ้วน" : "Please fill out all required personal information fields.");
@@ -149,14 +236,14 @@ export default function ProfilePage() {
       setValidationTriggered(true);
       return;
     }
-
+ 
     if (!/^[0-9]{10}$/.test(formData.phone.trim())) {
       setError(isTh ? "เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลักเท่านั้น" : "Phone number must be exactly 10 digits and contain only numbers.");
       setSaving(false);
       setValidationTriggered(true);
       return;
     }
-
+ 
     const ec1 = formData.emergencyContacts[0];
     const isEc1RelEmpty = !ec1 || !ec1.relationship.trim() || ec1.relationship.trim() === "Other:";
     if (!ec1 || !ec1.name.trim() || isEc1RelEmpty || !ec1.phone.trim()) {
@@ -171,7 +258,7 @@ export default function ProfilePage() {
       setValidationTriggered(true);
       return;
     }
-
+ 
     const ec2 = formData.emergencyContacts[1];
     if (ec2 && (ec2.name.trim() || ec2.relationship.trim() || ec2.phone.trim())) {
       const isEc2RelEmpty = !ec2.relationship.trim() || ec2.relationship.trim() === "Other:";
@@ -188,9 +275,16 @@ export default function ProfilePage() {
         return;
       }
     }
+    const emptyHasFields = Object.keys(hasFields).filter(
+      (key) => hasFields[key] && !formData[key as keyof typeof formData]?.toString().trim()
+    );
+    if (emptyHasFields.length > 0) {
+      setError(isTh ? "กรุณากรอกข้อมูลสุขภาพที่คุณเลือก 'มี'" : "Please specify details for fields checked as 'Has'.");
+      setSaving(false);
+      setValidationTriggered(true);
+      return;
+    }
     setValidationTriggered(false);
-
-
     try {
       const res = await fetch("/api/profile", {
         method: "PATCH",
@@ -645,18 +739,10 @@ export default function ProfilePage() {
                 {t.medicalInfo}
               </h2>
               <div className="form-grid">
-                <div className="field col-span-12">
-                  <label className="label">{t.medicalHistory} / {t.chronicDiseases}</label>
-                  <textarea className="input" rows={2} value={formData.medicalHistory} onChange={(e) => set("medicalHistory", e.target.value)} style={{ resize: "vertical" }} />
-                </div>
-                <div className="field col-span-6">
-                  <label className="label">{t.drugAllergies}</label>
-                  <input className="input" value={formData.drugAllergies} onChange={(e) => set("drugAllergies", e.target.value)} />
-                </div>
-                <div className="field col-span-6">
-                  <label className="label">{t.foodAllergies}</label>
-                  <input className="input" value={formData.foodAllergies} onChange={(e) => set("foodAllergies", e.target.value)} />
-                </div>
+                {renderMedicalField("chronicDiseases", t.chronicDiseases)}
+                {renderMedicalField("medicalHistory", t.medicalHistory)}
+                {renderMedicalField("drugAllergies", t.drugAllergies)}
+                {renderMedicalField("foodAllergies", t.foodAllergies)}
                 <div className="field col-span-6">
                   <label className="label">{t.dietaryRestrictions}</label>
                   <select
@@ -696,14 +782,7 @@ export default function ProfilePage() {
                     />
                   )}
                 </div>
-                <div className="field col-span-6">
-                  <label className="label">{t.emergencyMed}</label>
-                  <input
-                    className="input"
-                    value={formData.emergencyMedication}
-                    onChange={(e) => set("emergencyMedication", e.target.value)}
-                  />
-                </div>
+                {renderMedicalField("emergencyMedication", t.emergencyMed)}
                 <div className="field col-span-12" style={{ marginTop: 8 }}>
                   <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
                     <input type="checkbox" style={{ marginTop: 3, flexShrink: 0 }} checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />

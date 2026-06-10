@@ -92,7 +92,7 @@ export async function GET(req: Request) {
         SELECT 
           (SELECT count(*)::int FROM ${users}) AS "totalUsers",
           (SELECT count(*)::int FROM ${events}) AS "totalEvents",
-          (SELECT count(*)::int FROM ${attendance} WHERE ${attendance.checkInTime} >= ${startOfToday}) AS "checkinsToday"
+          (SELECT count(*)::int FROM ${attendance} WHERE ${attendance.checkInTime} >= ${startOfToday.toISOString()}) AS "checkinsToday"
       `),
       READ_TIMEOUT_MS,
       "counts"

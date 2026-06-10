@@ -151,6 +151,11 @@ export default function AdminDashboardOverview() {
     fetch("/api/admin/dashboard")
       .then((r) => r.json())
       .then((d) => setStats(d));
+
+    // Fire-and-forget: nudge the event-winner award check. Deliberately NOT awaited
+    // and errors ignored, so it can never slow down or break the dashboard render.
+    // This is what makes the winner bonus land within ~5s of an event ending.
+    fetch("/api/admin/award-check").catch(() => {});
   };
 
   // Poll the dashboard endpoint for near-real-time updates. The endpoint already
@@ -216,7 +221,7 @@ export default function AdminDashboardOverview() {
     : [];
 
   return (
-    <div className="animate-fade-in-up">
+    <>
       {/* House Point Modal Overlay */}
       {selectedHouse && (
         <div style={{
@@ -292,7 +297,8 @@ export default function AdminDashboardOverview() {
         </div>
       )}
 
-      {/* Page header */}
+      <div className="animate-fade-in-up">
+        {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 48 }}>
         <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1.3 }}>{t.dashboard}</h1>
         <div className="flex gap-3 flex-wrap">
@@ -599,8 +605,7 @@ export default function AdminDashboardOverview() {
           </div>
         </>
       )}
-    </div>
-
-
+      </div>
+    </>
   );
 }

@@ -7,7 +7,13 @@ import { eq } from "drizzle-orm"
 
 const SUPER_ADMIN_EMAILS = ["daydedaa@gmail.com"];
 const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
-const DB_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+// How often the session is re-hydrated from the DB to pick up role/profile/house
+// changes made elsewhere (e.g. an admin assigning a role). This refresh lives in
+// the `jwt` callback so the timestamp PERSISTS to the cookie — meaning it runs at
+// most once per interval per user. (It used to live in the `session` callback,
+// where token mutations are silently discarded, so it re-queried the DB on EVERY
+// request after the first 5 min — a big standing load with hundreds of pollers.)
+const DB_REFRESH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
 function getPrimaryRole(roles: string[] | null | undefined, fallbackRole: string | null | undefined): string {
   const list = roles && Array.isArray(roles) && roles.length > 0 ? roles : (fallbackRole ? [fallbackRole] : ["student"]);
@@ -33,6 +39,40 @@ async function fetchUserDataFromDb(userId: string) {
     },
   });
   return dbUser ?? null;
+}
+
+type DbUser = NonNullable<Awaited<ReturnType<typeof fetchUserDataFromDb>>>;
+
+/**
+ * Copy fresh DB user fields onto the JWT token. Generates a qrToken if one is
+ * missing, applies role priority, and forces super_admin for official emails.
+ * Returns the (possibly newly generated) qrToken so the caller can persist it.
+ */
+async function applyDbUserToToken(token: Record<string, unknown>, dbUser: DbUser, userId: string) {
+  let qrToken = dbUser.qrToken;
+  if (!qrToken) {
+    qrToken = crypto.randomUUID();
+    await db.update(users).set({ qrToken }).where(eq(users.id, userId));
+  }
+
+  const userRoles = (dbUser.roles as string[]) || (dbUser.role ? [dbUser.role] : ["student"]);
+
+  token.name = dbUser.name;
+  token.image = dbUser.image;
+  token.email = dbUser.email;
+  token.role = getPrimaryRole(userRoles, dbUser.role);
+  token.roles = userRoles;
+  token.profileCompleted = dbUser.profileCompleted ?? false;
+  token.houseId = dbUser.houseId ?? null;
+  token.imageTransform = dbUser.imageTransform ?? null;
+  token.qrToken = qrToken;
+  token.studentId = dbUser.studentId ?? null;
+
+  const currentEmail = (dbUser.email || "").toLowerCase();
+  if (SUPER_ADMIN_EMAILS.includes(currentEmail)) {
+    token.role = "super_admin";
+    token.roles = ["super_admin"];
+  }
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -81,75 +121,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // On sign-in: hydrate the token with all user data from DB
       if (user) {
         token.id = user.id;
-
         const dbUser = await fetchUserDataFromDb(user.id as string);
-        if (dbUser) {
-          // Generate qrToken if missing (FE-13)
-          let qrToken = dbUser.qrToken;
-          if (!qrToken) {
-            qrToken = crypto.randomUUID();
-            await db.update(users).set({ qrToken }).where(eq(users.id, user.id as string));
-          }
-
-          const userRoles = (dbUser.roles as string[]) || (dbUser.role ? [dbUser.role] : ["student"]);
-
-          token.name = dbUser.name;
-          token.image = dbUser.image;
-          token.email = dbUser.email;
-          token.role = getPrimaryRole(userRoles, dbUser.role);
-          token.roles = userRoles;
-          token.profileCompleted = dbUser.profileCompleted ?? false;
-          token.houseId = dbUser.houseId ?? null;
-          token.imageTransform = dbUser.imageTransform ?? null;
-          token.qrToken = qrToken;
-          token.studentId = dbUser.studentId ?? null;
-
-          // Super admin override
-          const currentEmail = (dbUser.email || "").toLowerCase();
-          if (SUPER_ADMIN_EMAILS.includes(currentEmail)) {
-            token.role = "super_admin";
-            token.roles = ["super_admin"];
-          }
-        }
-
+        if (dbUser) await applyDbUserToToken(token, dbUser, user.id as string);
         token.lastDbRefresh = Date.now();
+        return token;
       }
 
-      // On explicit update trigger: force a DB refresh
-      if (trigger === "update") {
+      const userId = (token.id || token.sub) as string;
+
+      // On explicit update trigger (e.g. user just completed their profile): force
+      // an immediate DB refresh. Persists because we're in the jwt callback.
+      if (trigger === "update" && userId) {
         token.updateTime = Date.now();
-        const userId = (token.id || token.sub) as string;
-        if (userId) {
-          const dbUser = await fetchUserDataFromDb(userId);
-          if (dbUser) {
-            let qrToken = dbUser.qrToken;
-            if (!qrToken) {
-              qrToken = crypto.randomUUID();
-              await db.update(users).set({ qrToken }).where(eq(users.id, userId));
-            }
+        const dbUser = await fetchUserDataFromDb(userId);
+        if (dbUser) await applyDbUserToToken(token, dbUser, userId);
+        token.lastDbRefresh = Date.now();
+        return token;
+      }
 
-            const userRoles = (dbUser.roles as string[]) || (dbUser.role ? [dbUser.role] : ["student"]);
-
-            token.name = dbUser.name;
-            token.image = dbUser.image;
-            token.email = dbUser.email;
-            token.role = getPrimaryRole(userRoles, dbUser.role);
-            token.roles = userRoles;
-            token.profileCompleted = dbUser.profileCompleted ?? false;
-            token.houseId = dbUser.houseId ?? null;
-            token.imageTransform = dbUser.imageTransform ?? null;
-            token.qrToken = qrToken;
-            token.studentId = dbUser.studentId ?? null;
-
-            const currentEmail = (dbUser.email || "").toLowerCase();
-            if (SUPER_ADMIN_EMAILS.includes(currentEmail)) {
-              token.role = "super_admin";
-              token.roles = ["super_admin"];
-            }
-          }
-
-          token.lastDbRefresh = Date.now();
-        }
+      // Periodic refresh: re-hydrate from DB at most once per interval to pick up
+      // role/profile/house changes made elsewhere. The new lastDbRefresh persists
+      // to the cookie, so this does NOT re-query on every subsequent request.
+      const lastRefresh = (token.lastDbRefresh as number) || 0;
+      if (userId && Date.now() - lastRefresh > DB_REFRESH_INTERVAL_MS) {
+        const dbUser = await fetchUserDataFromDb(userId);
+        if (dbUser) await applyDbUserToToken(token, dbUser, userId);
+        token.lastDbRefresh = Date.now();
       }
 
       return token;
@@ -163,59 +160,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return session; // No user ID, can't populate session
       }
 
-      // Check if we need a DB refresh (every 5 minutes)
-      const lastRefresh = (token.lastDbRefresh as number) || 0;
-      const needsRefresh = Date.now() - lastRefresh > DB_REFRESH_INTERVAL_MS;
-
-      if (needsRefresh) {
-        // Periodic refresh: re-fetch from DB to catch role changes, profile updates, etc.
-        const dbUser = await fetchUserDataFromDb(userId);
-        if (dbUser) {
-          let qrToken = dbUser.qrToken;
-          if (!qrToken) {
-            qrToken = crypto.randomUUID();
-            await db.update(users).set({ qrToken }).where(eq(users.id, userId));
-          }
-
-          const userRoles = (dbUser.roles as string[]) || (dbUser.role ? [dbUser.role] : ["student"]);
-
-          session.user.name = dbUser.name ?? session.user.name;
-          session.user.image = dbUser.image ?? session.user.image;
-          session.user.email = dbUser.email;
-          session.user.roles = userRoles;
-          session.user.role = getPrimaryRole(userRoles, dbUser.role);
-          session.user.profileCompleted = dbUser.profileCompleted ?? false;
-          session.user.houseId = dbUser.houseId ?? null;
-          session.user.imageTransform = (dbUser.imageTransform as { scale: number; x: number; y: number } | null) ?? null;
-          session.user.qrToken = qrToken;
-          session.user.studentId = dbUser.studentId ?? null;
-
-          // Super admin override
-          const currentEmail = (dbUser.email || "").toLowerCase();
-          if (SUPER_ADMIN_EMAILS.includes(currentEmail)) {
-            session.user.role = "super_admin";
-            session.user.roles = ["super_admin"];
-          }
-
-          // Update token's lastDbRefresh (will be persisted on next JWT encode)
-          token.lastDbRefresh = Date.now();
-          // Also sync token fields so they stay fresh
-          token.name = session.user.name;
-          token.image = session.user.image;
-          token.email = session.user.email;
-          token.role = session.user.role;
-          token.roles = session.user.roles;
-          token.profileCompleted = session.user.profileCompleted;
-          token.houseId = session.user.houseId;
-          token.imageTransform = session.user.imageTransform;
-          token.qrToken = session.user.qrToken;
-          token.studentId = session.user.studentId;
-        }
-
-        return session;
-      }
-
-      // Fast path: read from JWT token (no DB query)
+      // Pure mapping from the (already-fresh) JWT token — no DB query here. All DB
+      // refresh logic lives in the jwt callback above so its writes persist.
       session.user.name = (token.name as string) ?? session.user.name;
       session.user.image = (token.image as string) ?? session.user.image;
       session.user.email = (token.email as string) ?? session.user.email;

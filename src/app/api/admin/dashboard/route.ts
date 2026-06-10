@@ -1,9 +1,8 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events, houses, users } from "@/db/schema";
+import { attendance, events, users } from "@/db/schema";
 import { count, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { checkAndAwardPastEventPoints } from "@/lib/award-points";
 
 
 export async function GET(req: Request) {
@@ -45,11 +44,12 @@ export async function GET(req: Request) {
       });
     }
 
-    // Award the event-winner bonus for any events that just ended. Kicked off here
-    // so it runs in parallel with the dashboard queries below (zero added wall-clock).
-    // It is a cheap indexed no-op unless an event actually ended, is advisory-locked
-    // so concurrent polls can't contend, and never throws — so awaiting it is safe.
-    const awardPromise = checkAndAwardPastEventPoints();
+    // NOTE: event-winner awarding is intentionally NOT done here. This is the
+    // highest-frequency polled endpoint; doing transactional write work in its
+    // request path previously held pooled DB connections long enough to starve the
+    // Supabase pooler and 504 the whole site. Awarding now lives in its own
+    // endpoint (/api/admin/award-check), pinged fire-and-forget by the client, and
+    // in the daily cron. This route is a pure, fast read.
 
     // Default: Overview stats
     // FE-08: Check-ins today
@@ -104,10 +104,6 @@ export async function GET(req: Request) {
         },
       }),
     ]);
-
-    // Let the (already-running) award check settle so it completes within this
-    // request rather than dangling on a frozen instance. It never throws.
-    await awardPromise;
 
     const memberCountMap = new Map(memberCounts.map(m => [m.houseId, m.count]));
 

@@ -45,6 +45,16 @@ export async function checkAndAwardPastEventPoints() {
 
     // Work exists: serialise across instances with a non-blocking advisory lock.
     await db.transaction(async (tx) => {
+      // Hard safety rails: this transaction must NEVER hold a pooled DB connection
+      // for long. lock_timeout caps how long any statement waits on a row lock;
+      // statement_timeout caps total per-statement runtime. If either trips, the
+      // statement errors, the transaction rolls back, the advisory lock and the
+      // connection are released immediately, and the outer catch swallows it. This
+      // is what prevents one slow award run from starving the pooler (the cause of
+      // the site-wide 504s).
+      await tx.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
+      await tx.execute(sql`SET LOCAL statement_timeout = '8000ms'`);
+
       const lockResult = await tx.execute<{ locked: unknown }>(
         sql`SELECT pg_try_advisory_xact_lock(${AWARD_LOCK_KEY}) AS locked`
       );

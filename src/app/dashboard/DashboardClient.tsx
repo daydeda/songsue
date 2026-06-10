@@ -953,98 +953,14 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Top Banner (if image exists) */}
-              {liveEvent.imageUrl ? (
-                <div style={{ 
-                  position: "relative", 
-                  width: "100%", 
-                  maxHeight: "400px", 
-                  background: "#000", 
-                  overflow: "hidden",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}>
-                  <img 
-                    src={liveEvent.imageUrl} 
-                    alt="" 
-                    style={{ 
-                      position: "absolute", 
-                      inset: 0, 
-                      width: "100%", 
-                      height: "100%", 
-                      objectFit: "cover", 
-                      filter: "blur(20px) brightness(0.4)",
-                      transform: "scale(1.1)"
-                    }} 
-                  />
-                  <img 
-                    src={liveEvent.imageUrl} 
-                    alt={liveEvent.title} 
-                    style={{ 
-                      position: "relative", 
-                      width: "100%", 
-                      height: "auto", 
-                      maxHeight: "400px",
-                      objectFit: "contain",
-                      zIndex: 1,
-                      cursor: "pointer"
-                    }} 
-                    onClick={() => {
-                      setPreviewImage(liveEvent.imageUrl!);
-                    }}
-                  />
-                  
-                  {/* Status Overlay */}
-                  <div style={{ position: "absolute", top: 16, left: 16, zIndex: 2 }}>
-                    <span style={{ 
-                      padding: "6px 12px", 
-                      background: getEventStatus(liveEvent) === 'live' ? "#ef4444" : "var(--accent-primary)", 
-                      color: "#fff", 
-                      borderRadius: "12px", 
-                      fontSize: "11px", 
-                      fontWeight: 900, 
-                      textTransform: "uppercase", 
-                      letterSpacing: "0.05em",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
-                    }}>
-                      {getEventStatus(liveEvent)}
-                    </span>
-                  </div>
-
-                  {/* Points Badge */}
-                  {liveEvent.pointsAwarded !== undefined && (
-                    <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
-                      <div style={{ 
-                        background: "rgba(0, 0, 0, 0.7)", 
-                        backdropFilter: "blur(8px)", 
-                        color: "#fff", 
-                        padding: "6px 12px", 
-                        borderRadius: 12, 
-                        fontSize: 11, 
-                        fontWeight: 900, 
-                        display: "inline-flex", 
-                        alignItems: "center", 
-                        gap: 6, 
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                        border: "1px solid rgba(255, 255, 255, 0.1)"
-                      }}>
-                        <Trophy size={12} style={{ color: "#fbbf24" }} />
-                        <span>{liveEvent.pointsAwarded} PTS</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
               {/* Close Button */}
               <button 
                 type="button"
                 onClick={() => setPreviewEvent(null)}
                 style={{
                   position: "absolute",
-                  top: liveEvent.imageUrl ? "16px" : "20px",
-                  right: liveEvent.imageUrl ? "16px" : "20px",
+                  top: "16px",
+                  right: "16px",
                   background: liveEvent.imageUrl ? "rgba(0,0,0,0.5)" : "var(--bg-elevated)",
                   backdropFilter: liveEvent.imageUrl ? "blur(4px)" : undefined,
                   border: liveEvent.imageUrl ? "1px solid rgba(255,255,255,0.2)" : "1px solid var(--border-subtle)",
@@ -1064,64 +980,148 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               </button>
 
               {/* Scrollable Content */}
-              <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
-                {/* Title */}
-                <h3 style={{ 
-                  fontSize: "24px", 
-                  fontWeight: 900, 
-                  color: "var(--text-primary)", 
-                  letterSpacing: "-0.03em", 
-                  marginBottom: "16px",
-                  marginTop: liveEvent.imageUrl ? "0px" : "24px",
-                  lineHeight: 1.2,
-                  overflowWrap: "break-word",
-                  wordBreak: "break-word"
-                }}>
-                  {liveEvent.title}
-                </h3>
+              <div className="custom-scrollbar" style={{ overflowY: "auto", flex: 1 }}>
+                {/* Top Banner (if image exists) */}
+                {liveEvent.imageUrl ? (
+                  <div style={{ 
+                    position: "relative", 
+                    width: "100%", 
+                    background: "#000", 
+                    overflow: "hidden",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}>
+                    <img 
+                      src={liveEvent.imageUrl} 
+                      alt="" 
+                      style={{ 
+                        position: "absolute", 
+                        inset: 0, 
+                        width: "100%", 
+                        height: "100%", 
+                        objectFit: "cover", 
+                        filter: "blur(20px) brightness(0.4)",
+                        transform: "scale(1.1)"
+                      }} 
+                    />
+                    <img 
+                      src={liveEvent.imageUrl} 
+                      alt={liveEvent.title} 
+                      style={{ 
+                        position: "relative", 
+                        width: "100%", 
+                        height: "auto", 
+                        objectFit: "contain",
+                        zIndex: 1,
+                        cursor: "pointer"
+                      }} 
+                      onClick={() => {
+                        setPreviewImage(liveEvent.imageUrl!);
+                      }}
+                    />
+                    
+                    {/* Status Overlay */}
+                    <div style={{ position: "absolute", top: 16, left: 16, zIndex: 2 }}>
+                      <span style={{ 
+                        padding: "6px 12px", 
+                        background: getEventStatus(liveEvent) === 'live' ? "#ef4444" : "var(--accent-primary)", 
+                        color: "#fff", 
+                        borderRadius: "12px", 
+                        fontSize: "11px", 
+                        fontWeight: 900, 
+                        textTransform: "uppercase", 
+                        letterSpacing: "0.05em",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
+                      }}>
+                        {getEventStatus(liveEvent)}
+                      </span>
+                    </div>
 
-                {/* Metadata List */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
-                       <Clock size={16} />
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, lineHeight: 1.4 }}>
-                      {(() => {
-                        const start = new Date(liveEvent.startTime);
-                        const end = new Date(liveEvent.endTime);
-                        const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' };
-                        const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
-                        
-                        return `${start.toLocaleDateString('en-GB', dateOpts)} ${start.toLocaleTimeString('en-GB', timeOpts)} — ${end.toLocaleDateString('en-GB', dateOpts)} ${end.toLocaleTimeString('en-GB', timeOpts)}`;
-                      })()}
-                    </div>
+                    {/* Points Badge */}
+                    {liveEvent.pointsAwarded !== undefined && (
+                      <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
+                        <div style={{ 
+                          background: "rgba(0, 0, 0, 0.7)", 
+                          backdropFilter: "blur(8px)", 
+                          color: "#fff", 
+                          padding: "6px 12px", 
+                          borderRadius: 12, 
+                          fontSize: 11, 
+                          fontWeight: 900, 
+                          display: "inline-flex", 
+                          alignItems: "center", 
+                          gap: 6, 
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                          border: "1px solid rgba(255, 255, 255, 0.1)"
+                        }}>
+                          <Trophy size={12} style={{ color: "#fbbf24" }} />
+                          <span>{liveEvent.pointsAwarded} PTS</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                ) : null}
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
-                       <MapPin size={16} />
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-                      {liveEvent.location || "CAMT Building"}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Description Divider */}
-                <div style={{ height: "1px", background: "var(--border-subtle)", marginBottom: "20px" }} />
-
-                {/* Description Body */}
-                <div 
-                  style={{ 
-                    fontSize: 15, 
-                    color: "var(--text-secondary)", 
-                    lineHeight: 1.7,
-                    whiteSpace: "pre-wrap",
+                {/* Text Content */}
+                <div style={{ padding: liveEvent.imageUrl ? "24px" : "64px 24px 24px" }}>
+                  {/* Title */}
+                  <h3 style={{ 
+                    fontSize: "24px", 
+                    fontWeight: 900, 
+                    color: "var(--text-primary)", 
+                    letterSpacing: "-0.03em", 
+                    marginBottom: "16px",
+                    lineHeight: 1.2,
+                    overflowWrap: "break-word",
                     wordBreak: "break-word"
-                  }}
-                  dangerouslySetInnerHTML={{ __html: parseRichText(liveEvent.description || "") }}
-                />
+                  }}>
+                    {liveEvent.title}
+                  </h3>
+
+                  {/* Metadata List */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                         <Clock size={16} />
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, lineHeight: 1.4 }}>
+                        {(() => {
+                          const start = new Date(liveEvent.startTime);
+                          const end = new Date(liveEvent.endTime);
+                          const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' };
+                          const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
+                          
+                          return `${start.toLocaleDateString('en-GB', dateOpts)} ${start.toLocaleTimeString('en-GB', timeOpts)} — ${end.toLocaleDateString('en-GB', dateOpts)} ${end.toLocaleTimeString('en-GB', timeOpts)}`;
+                        })()}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                         <MapPin size={16} />
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
+                        {liveEvent.location || "CAMT Building"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Description Divider */}
+                  <div style={{ height: "1px", background: "var(--border-subtle)", marginBottom: "20px" }} />
+
+                  {/* Description Body */}
+                  <div 
+                    style={{ 
+                      fontSize: 15, 
+                      color: "var(--text-secondary)", 
+                      lineHeight: 1.7,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word"
+                    }}
+                    dangerouslySetInnerHTML={{ __html: parseRichText(liveEvent.description || "") }}
+                  />
+                </div>
               </div>
 
               {/* Action Button Footer */}

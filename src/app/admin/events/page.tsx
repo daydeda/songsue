@@ -5,12 +5,21 @@ import {
   Plus, Edit2, Trash2, Calendar, MapPin, Clock,
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
-  ChevronRight, AlertCircle, BarChart3, Image as ImageIcon, Zap,
+  ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, Image as ImageIcon, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
+import {
+  normalizeForm,
+  serializeForm,
+  newId,
+  BRANCH_NEXT,
+  BRANCH_SUBMIT,
+  type FormQuestion,
+  type FormSection,
+} from "@/lib/form-schema";
 
 interface AdminEvent {
   id: string;
@@ -72,14 +81,6 @@ interface AdminAttendance {
   scannedBy: string | null;
   medsCheckOption: string | null;
   user?: AdminStudent;
-}
-
-interface FormBuilderQuestion {
-  id: string;
-  type: "text" | "rating" | "multiple" | "choice";
-  label: string;
-  required?: boolean;
-  options?: string[];
 }
 
 interface FormBuilderSubmission {
@@ -163,7 +164,7 @@ export default function AdminEventsPage() {
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formPoints, setFormPoints] = useState(50);
-  const [formQuestions, setFormQuestions] = useState<FormBuilderQuestion[]>([]);
+  const [formSections, setFormSections] = useState<FormSection[]>([]);
   const [formIsActive, setFormIsActive] = useState(true);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
   const [formStats, setFormStats] = useState<Record<string, number> | null>(null);
@@ -224,7 +225,7 @@ export default function AdminEventsPage() {
         setFormTitle(data.form.title);
         setFormDescription(data.form.description || "");
         setFormPoints(data.form.pointsAwarded || 0);
-        setFormQuestions(data.form.questions || []);
+        setFormSections(normalizeForm(data.form.questions).sections);
         setFormIsActive(data.form.isActive);
         setFormIsAwarded(data.form.isAwarded || false);
         setFormStats(data.stats);
@@ -236,10 +237,16 @@ export default function AdminEventsPage() {
         setFormTitle(`${eventTitle} Evaluation`);
         setFormDescription("Thank you for attending! Please give us your feedback.");
         setFormPoints(50);
-        setFormQuestions([
-          { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
-          { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
-          { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false }
+        setFormSections([
+          {
+            id: "section-1",
+            title: "",
+            questions: [
+              { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
+              { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
+              { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
+            ],
+          },
         ]);
         setFormIsActive(true);
         setFormIsAwarded(false);
@@ -266,7 +273,7 @@ export default function AdminEventsPage() {
           title: formTitle,
           description: formDescription,
           pointsAwarded: formPoints,
-          questions: formQuestions,
+          questions: serializeForm(formSections),
           isActive: formIsActive
         })
       });
@@ -280,7 +287,7 @@ export default function AdminEventsPage() {
           setFormTitle(freshData.form.title);
           setFormDescription(freshData.form.description || "");
           setFormPoints(freshData.form.pointsAwarded || 0);
-          setFormQuestions(freshData.form.questions || []);
+          setFormSections(normalizeForm(freshData.form.questions).sections);
           setFormIsActive(freshData.form.isActive);
           setFormIsAwarded(freshData.form.isAwarded || false);
           setFormStats(freshData.stats);
@@ -312,7 +319,7 @@ export default function AdminEventsPage() {
           title: formTitle,
           description: formDescription,
           pointsAwarded: formPoints,
-          questions: formQuestions,
+          questions: serializeForm(formSections),
           isActive: newActiveState
         })
       });
@@ -374,65 +381,181 @@ export default function AdminEventsPage() {
     }
   };
 
-  const addQuestion = () => {
-    const newQ: FormBuilderQuestion = {
-      id: "q_" + Date.now(),
-      type: "text",
-      label: "New Question",
-      required: false
-    };
-    setFormQuestions([...formQuestions, newQ]);
+  // ---- Section-aware form-builder helpers ----
+  // All mutations target a question inside a specific section, identified by
+  // (secId, qId), since question ids are only unique within the whole form anyway
+  // but the section is needed to scope the update efficiently.
+  const mutateQuestion = (secId: string, qId: string, fn: (q: FormQuestion) => FormQuestion) => {
+    setFormSections(prev =>
+      prev.map(s =>
+        s.id !== secId ? s : { ...s, questions: s.questions.map(q => (q.id === qId ? fn(q) : q)) }
+      )
+    );
   };
 
-  const removeQuestion = (qId: string) => {
-    setFormQuestions(formQuestions.filter(q => q.id !== qId));
+  const addSection = () => {
+    setFormSections(prev => [
+      ...prev,
+      { id: newId("section"), title: "", description: "", questions: [] },
+    ]);
   };
 
-  const updateQuestion = (qId: string, key: string, val: string | boolean | string[]) => {
-    setFormQuestions(formQuestions.map(q => {
-      if (q.id === qId) {
-        const updated = { ...q, [key]: val };
-        // If type changed to choice or multiple and options don't exist, initialize default options
-        if (key === "type" && (val === "choice" || val === "multiple") && !updated.options) {
+  const removeSection = (secId: string) => {
+    setFormSections(prev => {
+      const next = prev.filter(s => s.id !== secId);
+      // Never leave a form with zero sections.
+      if (next.length === 0) return [{ id: newId("section"), title: "", questions: [] }];
+      // Repair any branches that pointed at the deleted section.
+      return next.map(s => ({
+        ...s,
+        questions: s.questions.map(q => {
+          if (!q.branches) return q;
+          const cleaned: Record<string, string> = {};
+          for (const [opt, target] of Object.entries(q.branches)) {
+            cleaned[opt] = target === secId ? BRANCH_NEXT : target;
+          }
+          return { ...q, branches: cleaned };
+        }),
+      }));
+    });
+  };
+
+  const updateSection = (secId: string, key: "title" | "description", val: string) => {
+    setFormSections(prev => prev.map(s => (s.id === secId ? { ...s, [key]: val } : s)));
+  };
+
+  const moveSection = (secId: string, dir: -1 | 1) => {
+    setFormSections(prev => {
+      const idx = prev.findIndex(s => s.id === secId);
+      const target = idx + dir;
+      if (idx < 0 || target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      [copy[idx], copy[target]] = [copy[target], copy[idx]];
+      return copy;
+    });
+  };
+
+  const addQuestion = (secId: string) => {
+    const newQ: FormQuestion = { id: newId("q"), type: "text", label: "New Question", required: false };
+    setFormSections(prev =>
+      prev.map(s => (s.id === secId ? { ...s, questions: [...s.questions, newQ] } : s))
+    );
+  };
+
+  const removeQuestion = (secId: string, qId: string) => {
+    setFormSections(prev =>
+      prev.map(s => (s.id === secId ? { ...s, questions: s.questions.filter(q => q.id !== qId) } : s))
+    );
+  };
+
+  const updateQuestion = (secId: string, qId: string, key: string, val: string | boolean | string[]) => {
+    mutateQuestion(secId, qId, q => {
+      const updated = { ...q, [key]: val } as FormQuestion;
+      if (key === "type") {
+        if ((val === "choice" || val === "multiple") && !updated.options) {
           updated.options = ["Option 1", "Option 2"];
         }
-        return updated;
+        // Branching is single-choice only; correct-answer shape differs per type —
+        // clear both so we never carry a stale value across a type change.
+        if (val !== "choice") delete updated.branches;
+        delete updated.correct;
       }
-      return q;
-    }));
+      return updated;
+    });
   };
 
-  const addOption = (qId: string) => {
-    setFormQuestions(formQuestions.map(q => {
-      if (q.id === qId) {
-        const opts = q.options ? [...q.options] : [];
-        opts.push(`Option ${opts.length + 1}`);
-        return { ...q, options: opts };
-      }
-      return q;
-    }));
+  const addOption = (secId: string, qId: string) => {
+    mutateQuestion(secId, qId, q => {
+      const opts = q.options ? [...q.options] : [];
+      opts.push(`Option ${opts.length + 1}`);
+      return { ...q, options: opts };
+    });
   };
 
-  const removeOption = (qId: string, optIdx: number) => {
-    setFormQuestions(formQuestions.map(q => {
-      if (q.id === qId) {
-        const opts = q.options ? q.options.filter((_, idx: number) => idx !== optIdx) : [];
-        return { ...q, options: opts };
+  const removeOption = (secId: string, qId: string, optIdx: number) => {
+    mutateQuestion(secId, qId, q => {
+      const removed = q.options?.[optIdx];
+      const opts = q.options ? q.options.filter((_, idx: number) => idx !== optIdx) : [];
+      const next: FormQuestion = { ...q, options: opts };
+      // Drop any branch/correct references to the removed option.
+      if (removed != null) {
+        if (next.branches) {
+          const b = { ...next.branches };
+          delete b[removed];
+          next.branches = b;
+        }
+        if (typeof next.correct === "string" && next.correct === removed) delete next.correct;
+        if (Array.isArray(next.correct)) next.correct = next.correct.filter(c => c !== removed);
       }
-      return q;
-    }));
+      return next;
+    });
   };
 
-  const updateOption = (qId: string, optIdx: number, val: string) => {
-    setFormQuestions(formQuestions.map(q => {
-      if (q.id === qId) {
-        const opts = q.options ? [...q.options] : [];
-        opts[optIdx] = val;
-        return { ...q, options: opts };
+  const updateOption = (secId: string, qId: string, optIdx: number, val: string) => {
+    mutateQuestion(secId, qId, q => {
+      const opts = q.options ? [...q.options] : [];
+      const prevVal = opts[optIdx];
+      opts[optIdx] = val;
+      const next: FormQuestion = { ...q, options: opts };
+      // Keep branch/correct keys aligned when an option label is renamed.
+      if (prevVal != null && prevVal !== val) {
+        if (next.branches && next.branches[prevVal] !== undefined) {
+          const b = { ...next.branches };
+          b[val] = b[prevVal];
+          delete b[prevVal];
+          next.branches = b;
+        }
+        if (typeof next.correct === "string" && next.correct === prevVal) next.correct = val;
+        if (Array.isArray(next.correct)) next.correct = next.correct.map(c => (c === prevVal ? val : c));
       }
-      return q;
-    }));
+      return next;
+    });
   };
+
+  // ---- Grading ----
+  const toggleGraded = (secId: string, qId: string) => {
+    mutateQuestion(secId, qId, q => {
+      const graded = !q.graded;
+      return { ...q, graded, points: graded ? (q.points && q.points > 0 ? q.points : 1) : q.points };
+    });
+  };
+
+  const setPoints = (secId: string, qId: string, points: number) => {
+    mutateQuestion(secId, qId, q => ({ ...q, points: Math.max(1, points || 1) }));
+  };
+
+  const setChoiceCorrect = (secId: string, qId: string, opt: string) => {
+    mutateQuestion(secId, qId, q => ({ ...q, correct: opt }));
+  };
+
+  const toggleMultipleCorrect = (secId: string, qId: string, opt: string) => {
+    mutateQuestion(secId, qId, q => {
+      const cur = Array.isArray(q.correct) ? [...q.correct] : [];
+      const updated = cur.includes(opt) ? cur.filter(c => c !== opt) : [...cur, opt];
+      return { ...q, correct: updated };
+    });
+  };
+
+  const setTextCorrect = (secId: string, qId: string, val: string) => {
+    mutateQuestion(secId, qId, q => ({ ...q, correct: val }));
+  };
+
+  // ---- Branching (single-choice): route an option to a section / next / submit ----
+  const setBranch = (secId: string, qId: string, opt: string, target: string) => {
+    mutateQuestion(secId, qId, q => {
+      const branches = { ...(q.branches || {}) };
+      if (target === BRANCH_NEXT) {
+        delete branches[opt]; // default sequential flow — no need to store
+      } else {
+        branches[opt] = target;
+      }
+      return { ...q, branches };
+    });
+  };
+
+  // Flattened view of every question across sections — used by the stats tab and
+  // the question counter.
+  const allFormQuestions = formSections.flatMap(s => s.questions);
 
   const hasActualMedicalInfo = (user: AdminStudent | null | undefined) => {
     if (!user) return false;
@@ -2041,157 +2164,252 @@ export default function AdminEventsPage() {
                       </div>
                     </div>
 
-                    {/* Questions Section */}
+                    {/* Sections & Questions */}
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                         <h4 style={{ fontSize: 16, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "var(--accent-primary)", color: "#fff", fontSize: 12 }}>{formQuestions.length}</span>
-                          Form Questions
+                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "var(--accent-primary)", color: "#fff", fontSize: 12 }}>{allFormQuestions.length}</span>
+                          {lang === "th" ? "ส่วนและคำถาม" : lang === "cn" ? "章节与问题" : lang === "mm" ? "အပိုင်းများနှင့် မေးခွန်းများ" : "Sections & Questions"}
                         </h4>
                         <button
                           type="button"
                           className="btn"
-                          style={{
-                            borderRadius: 12,
-                            padding: "8px 16px",
-                            fontSize: 13,
-                            fontWeight: 800,
-                            background: "rgba(255,107,0,0.1)",
-                            color: "var(--accent-primary)",
-                            border: "none",
-                            cursor: "pointer"
-                          }}
-                          onClick={addQuestion}
+                          style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(99,102,241,0.1)", color: "#6366f1", border: "none", cursor: "pointer" }}
+                          onClick={addSection}
                         >
-                          ➕ {t.eventAddQuestionLabel}
+                          ➕ {lang === "th" ? "เพิ่มส่วน" : lang === "cn" ? "添加章节" : lang === "mm" ? "အပိုင်းထည့်ရန်" : "Add Section"}
                         </button>
                       </div>
 
-                      {formQuestions.length === 0 ? (
-                        <div style={{ textAlign: "center", padding: "40px 20px", background: "var(--bg-elevated)", borderRadius: 20, border: "1px dashed var(--border-subtle)", color: "var(--text-muted)" }}>
-                          {lang === "th" ? "ยังไม่มีคำถาม เพิ่มคำถามแรกกันเลย!" : lang === "cn" ? "尚未添加问题，添加第一个问题吧！" : lang === "mm" ? "မေးခွန်းများမရှိသေးပါ၊ ပထမဦးဆုံးမေးခွန်းကို ထည့်ပါ" : "No questions added yet. Add your first question!"}
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                          {formQuestions.map((q, idx) => (
-                            <div 
-                              key={q.id || idx} 
-                              style={{ 
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 16,
-                                background: "var(--bg-elevated)", 
-                                padding: "20px", 
-                                borderRadius: 20,
-                                border: "1px solid var(--border-subtle)"
-                              }}
-                            >
-                              {/* Question Main Controls Row */}
-                              <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                {/* Label Input */}
-                                <div style={{ display: "flex", gap: 12, alignItems: "center", flex: "1 1 auto", width: "100%" }}>
-                                  <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20 }}>{idx + 1}.</span>
-                                  <input
-                                    type="text"
-                                    className="input"
-                                    style={{ flex: 1, height: 40, borderRadius: 10, padding: "0 12px" }}
-                                    value={q.label}
-                                    onChange={e => updateQuestion(q.id, "label", e.target.value)}
-                                    placeholder={lang === "th" ? "ข้อความคำถาม..." : lang === "cn" ? "问题内容..." : lang === "mm" ? "မေးခွန်းစာသား..." : "Question Text..."}
-                                  />
-                                </div>
-
-                                {/* Controls Container */}
-                                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }} className="md:w-auto">
-                                  {/* Type Select */}
-                                  <select
-                                    className="input"
-                                    style={{ height: 40, borderRadius: 10, padding: "0 12px", background: "var(--bg-surface)", cursor: "pointer", fontWeight: 700, fontSize: 13, flex: "1 1 auto", minWidth: 160 }}
-                                    value={q.type}
-                                    onChange={e => updateQuestion(q.id, "type", e.target.value)}
-                                  >
-                                    <option value="text">{lang === "th" ? "คำตอบแบบยาว" : lang === "cn" ? "长答题" : lang === "mm" ? "စာသားအဖြေရှည်" : "Long Answer"}</option>
-                                    <option value="rating">{lang === "th" ? "คะแนนเรตติ้ง (1-5 ดาว)" : lang === "cn" ? "评分 (1-5 星)" : lang === "mm" ? "ကြယ်ပွင့်အဆင့်သတ်မှတ်ချက် (၁-၅)" : "Rating (1-5 Star)"}</option>
-                                    <option value="choice">{lang === "th" ? "หลายตัวเลือก (เลือกได้ 1 ข้อ)" : lang === "cn" ? "单选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (တစ်ခုရွေးရန်)" : "Multiple Choice"}</option>
-                                    <option value="multiple">{lang === "th" ? "เครื่องหมายเลือก (เลือกได้หลายข้อ)" : lang === "cn" ? "多选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (အများကြီးရွေးရန်)" : "Checkbox"}</option>
-                                  </select>
-
-                                  {/* Required Toggle */}
-                                  <button
-                                    type="button"
-                                    style={{
-                                      padding: "6px 12px",
-                                      height: 40,
-                                      borderRadius: 10,
-                                      border: "none",
-                                      background: q.required ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.03)",
-                                      color: q.required ? "#10b981" : "var(--text-muted)",
-                                      whiteSpace: "nowrap",
-                                      fontWeight: 800,
-                                      fontSize: 11,
-                                      cursor: "pointer"
-                                    }}
-                                    onClick={() => updateQuestion(q.id, "required", !q.required)}
-                                  >
-                                    {q.required ? t.eventRequiredLabel : (lang === "th" ? "ไม่บังคับ" : lang === "cn" ? "选填" : lang === "mm" ? "ရွေးချယ်နိုင်သည်" : "Optional")}
-                                  </button>
-
-                                  {/* Delete Button */}
-                                  <button
-                                    type="button"
-                                    className="btn btn-danger"
-                                    style={{ width: 40, height: 40, padding: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                                    onClick={() => removeQuestion(q.id)}
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                        {formSections.map((section, sIdx) => (
+                          <div key={section.id} style={{ background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 24, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+                            {/* Section header */}
+                            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                                <span style={{ fontSize: 11, fontWeight: 900, color: "#6366f1", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                  {(lang === "th" ? "ส่วนที่ " : lang === "cn" ? "第 " : lang === "mm" ? "အပိုင်း " : "Section ")}{sIdx + 1}{formSections.length > 1 ? ` / ${formSections.length}` : ""}
+                                </span>
+                                <input
+                                  type="text"
+                                  className="input"
+                                  style={{ height: 40, borderRadius: 10, padding: "0 12px", fontWeight: 800 }}
+                                  value={section.title || ""}
+                                  onChange={e => updateSection(section.id, "title", e.target.value)}
+                                  placeholder={lang === "th" ? "ชื่อส่วน (ไม่บังคับ)" : lang === "cn" ? "章节标题（可选）" : lang === "mm" ? "အပိုင်းခေါင်းစဉ် (ရွေးချယ်ႏိုင်)" : "Section title (optional)"}
+                                />
+                                <input
+                                  type="text"
+                                  className="input"
+                                  style={{ height: 36, borderRadius: 10, padding: "0 12px", fontSize: 13 }}
+                                  value={section.description || ""}
+                                  onChange={e => updateSection(section.id, "description", e.target.value)}
+                                  placeholder={lang === "th" ? "คำอธิบายส่วน (ไม่บังคับ)" : lang === "cn" ? "章节描述（可选）" : lang === "mm" ? "အပိုင်းဖော်ပြချက် (ရွေးချယ်ႏိုင်)" : "Section description (optional)"}
+                                />
                               </div>
-
-                              {/* Google Forms-like Options Builder */}
-                              {(q.type === "choice" || q.type === "multiple") && (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
-                                  <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                    {lang === "th" ? "ตัวเลือกคำตอบ" : lang === "cn" ? "选项设置" : lang === "mm" ? "ရွေးချယ်စရာများ" : "Answer Options"}
-                                  </span>
-                                  {q.options?.map((opt: string, optIdx: number) => (
-                                    <div key={optIdx} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                      <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
-                                        {q.type === "choice" ? "○" : "□"}
-                                      </span>
-                                      <input
-                                        type="text"
-                                        className="input"
-                                        style={{ flex: 1, height: 36, borderRadius: 8, padding: "0 12px", fontSize: 13 }}
-                                        value={opt}
-                                        onChange={e => updateOption(q.id, optIdx, e.target.value)}
-                                        placeholder={`Option ${optIdx + 1}`}
-                                      />
-                                      <button
-                                        type="button"
-                                        className="btn btn-ghost"
-                                        style={{ width: 36, height: 36, padding: 0, color: "#ef4444", borderRadius: 8, fontSize: 14, fontWeight: 800 }}
-                                        onClick={() => removeOption(q.id, optIdx)}
-                                        disabled={!q.options || q.options.length <= 1}
-                                      >
-                                        ✕
-                                      </button>
-                                    </div>
-                                  ))}
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost"
-                                    style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 800, color: "var(--accent-primary)", padding: "4px 12px", height: 32, borderRadius: 8, marginTop: 4 }}
-                                    onClick={() => addOption(q.id)}
-                                  >
-                                    ➕ {lang === "th" ? "เพิ่มตัวเลือก" : lang === "cn" ? "添加选项" : lang === "mm" ? "ရွေးချယ်စရာထည့်ရန်" : "Add Option"}
-                                  </button>
-                                </div>
-                              )}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                <button type="button" className="btn btn-ghost" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }} disabled={sIdx === 0} onClick={() => moveSection(section.id, -1)} title="Move up">
+                                  <ChevronUp size={16} />
+                                </button>
+                                <button type="button" className="btn btn-ghost" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }} disabled={sIdx === formSections.length - 1} onClick={() => moveSection(section.id, 1)} title="Move down">
+                                  <ChevronDown size={16} />
+                                </button>
+                                <button type="button" className="btn btn-danger" style={{ width: 36, height: 32, padding: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => removeSection(section.id)} title="Delete section">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      )}
+
+                            {/* Questions in this section */}
+                            {section.questions.length === 0 ? (
+                              <div style={{ textAlign: "center", padding: "24px 16px", background: "var(--bg-elevated)", borderRadius: 16, border: "1px dashed var(--border-subtle)", color: "var(--text-muted)", fontSize: 13 }}>
+                                {lang === "th" ? "ยังไม่มีคำถามในส่วนนี้" : lang === "cn" ? "本章节暂无问题" : lang === "mm" ? "ဤအပိုင်းတွင် မေးခွန်းမရှိသေးပါ" : "No questions in this section yet."}
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                                {section.questions.map((q, idx) => {
+                                  const gradable = q.type === "choice" || q.type === "multiple" || q.type === "text";
+                                  return (
+                                  <div
+                                    key={q.id || idx}
+                                    style={{ display: "flex", flexDirection: "column", gap: 16, background: "var(--bg-elevated)", padding: "20px", borderRadius: 20, border: q.graded ? "1px solid rgba(16,185,129,0.4)" : "1px solid var(--border-subtle)" }}
+                                  >
+                                    {/* Question Main Controls Row */}
+                                    <div className="flex flex-col md:flex-row md:items-center gap-4">
+                                      <div style={{ display: "flex", gap: 12, alignItems: "center", flex: "1 1 auto", width: "100%" }}>
+                                        <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20 }}>{idx + 1}.</span>
+                                        <input
+                                          type="text"
+                                          className="input"
+                                          style={{ flex: 1, height: 40, borderRadius: 10, padding: "0 12px" }}
+                                          value={q.label}
+                                          onChange={e => updateQuestion(section.id, q.id, "label", e.target.value)}
+                                          placeholder={lang === "th" ? "ข้อความคำถาม..." : lang === "cn" ? "问题内容..." : lang === "mm" ? "မေးခွန်းစာသား..." : "Question Text..."}
+                                        />
+                                      </div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }} className="md:w-auto">
+                                        <select
+                                          className="input"
+                                          style={{ height: 40, borderRadius: 10, padding: "0 12px", background: "var(--bg-surface)", cursor: "pointer", fontWeight: 700, fontSize: 13, flex: "1 1 auto", minWidth: 160 }}
+                                          value={q.type}
+                                          onChange={e => updateQuestion(section.id, q.id, "type", e.target.value)}
+                                        >
+                                          <option value="text">{lang === "th" ? "คำตอบแบบยาว" : lang === "cn" ? "长答题" : lang === "mm" ? "စာသားအဖြေရှည်" : "Long Answer"}</option>
+                                          <option value="rating">{lang === "th" ? "คะแนนเรตติ้ง (1-5 ดาว)" : lang === "cn" ? "评分 (1-5 星)" : lang === "mm" ? "ကြယ်ပွင့်အဆင့်သတ်မှတ်ချက် (၁-၅)" : "Rating (1-5 Star)"}</option>
+                                          <option value="choice">{lang === "th" ? "หลายตัวเลือก (เลือกได้ 1 ข้อ)" : lang === "cn" ? "单选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (တစ်ခုရွေးရန်)" : "Multiple Choice"}</option>
+                                          <option value="multiple">{lang === "th" ? "เครื่องหมายเลือก (เลือกได้หลายข้อ)" : lang === "cn" ? "多选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (အများကြီးရွေးရန်)" : "Checkbox"}</option>
+                                        </select>
+                                        <button
+                                          type="button"
+                                          style={{ padding: "6px 12px", height: 40, borderRadius: 10, border: "none", background: q.required ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.03)", color: q.required ? "#10b981" : "var(--text-muted)", whiteSpace: "nowrap", fontWeight: 800, fontSize: 11, cursor: "pointer" }}
+                                          onClick={() => updateQuestion(section.id, q.id, "required", !q.required)}
+                                        >
+                                          {q.required ? t.eventRequiredLabel : (lang === "th" ? "ไม่บังคับ" : lang === "cn" ? "选填" : lang === "mm" ? "ရွေးချယ်နိုင်သည်" : "Optional")}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-danger"
+                                          style={{ width: 40, height: 40, padding: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                                          onClick={() => removeQuestion(section.id, q.id)}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Options builder (choice/multiple) with correct-answer marking + branching */}
+                                    {(q.type === "choice" || q.type === "multiple") && (
+                                      <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
+                                        <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                          {lang === "th" ? "ตัวเลือกคำตอบ" : lang === "cn" ? "选项设置" : lang === "mm" ? "ရွေးချယ်စရာများ" : "Answer Options"}
+                                          {q.graded && <span style={{ color: "#10b981", marginLeft: 8 }}>{lang === "th" ? "• แตะวงกลมเพื่อตั้งคำตอบที่ถูก" : lang === "cn" ? "• 点击圆圈设为正确答案" : lang === "mm" ? "• မှန်ကန်သောအဖြေသတ်မှတ်ရန် နှိပ်ပါ" : "• tap the circle to mark the correct answer"}</span>}
+                                        </span>
+                                        {q.options?.map((opt: string, optIdx: number) => {
+                                          const isCorrect = q.type === "choice" ? q.correct === opt : Array.isArray(q.correct) && q.correct.includes(opt);
+                                          return (
+                                          <div key={optIdx} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (!q.graded) return;
+                                                if (q.type === "choice") setChoiceCorrect(section.id, q.id, opt);
+                                                else toggleMultipleCorrect(section.id, q.id, opt);
+                                              }}
+                                              title={q.graded ? "Mark correct" : undefined}
+                                              style={{ width: 22, height: 22, borderRadius: q.type === "choice" ? "50%" : 6, border: `2px solid ${isCorrect ? "#10b981" : "var(--border-medium)"}`, background: isCorrect ? "#10b981" : "transparent", color: "#fff", cursor: q.graded ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}
+                                            >
+                                              {isCorrect ? "✓" : ""}
+                                            </button>
+                                            <input
+                                              type="text"
+                                              className="input"
+                                              style={{ flex: "1 1 160px", height: 36, borderRadius: 8, padding: "0 12px", fontSize: 13 }}
+                                              value={opt}
+                                              onChange={e => updateOption(section.id, q.id, optIdx, e.target.value)}
+                                              placeholder={`Option ${optIdx + 1}`}
+                                            />
+                                            {/* Per-option branching (single-choice only) */}
+                                            {q.type === "choice" && formSections.length > 1 && (
+                                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                <CornerDownRight size={14} style={{ color: "var(--text-muted)" }} />
+                                                <select
+                                                  className="input"
+                                                  style={{ height: 36, borderRadius: 8, padding: "0 8px", fontSize: 12, background: "var(--bg-surface)", cursor: "pointer", maxWidth: 200 }}
+                                                  value={q.branches?.[opt] ?? BRANCH_NEXT}
+                                                  onChange={e => setBranch(section.id, q.id, opt, e.target.value)}
+                                                >
+                                                  <option value={BRANCH_NEXT}>{lang === "th" ? "ไปส่วนถัดไป" : lang === "cn" ? "继续下一节" : lang === "mm" ? "နောက်အပိုင်းသို့" : "Continue to next section"}</option>
+                                                  {formSections.map((s, i) => (
+                                                    <option key={s.id} value={s.id} disabled={s.id === section.id}>
+                                                      {(lang === "th" ? "ไปส่วนที่ " : lang === "cn" ? "前往第 " : lang === "mm" ? "အပိုင်း " : "Go to section ")}{i + 1}{s.title ? `: ${s.title}` : ""}
+                                                    </option>
+                                                  ))}
+                                                  <option value={BRANCH_SUBMIT}>{lang === "th" ? "ส่งแบบฟอร์ม" : lang === "cn" ? "提交表单" : lang === "mm" ? "ဖောင်တင်ရန်" : "Submit form"}</option>
+                                                </select>
+                                              </div>
+                                            )}
+                                            <button
+                                              type="button"
+                                              className="btn btn-ghost"
+                                              style={{ width: 36, height: 36, padding: 0, color: "#ef4444", borderRadius: 8, fontSize: 14, fontWeight: 800 }}
+                                              onClick={() => removeOption(section.id, q.id, optIdx)}
+                                              disabled={!q.options || q.options.length <= 1}
+                                            >
+                                              ✕
+                                            </button>
+                                          </div>
+                                          );
+                                        })}
+                                        <button
+                                          type="button"
+                                          className="btn btn-ghost"
+                                          style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 800, color: "var(--accent-primary)", padding: "4px 12px", height: 32, borderRadius: 8, marginTop: 4 }}
+                                          onClick={() => addOption(section.id, q.id)}
+                                        >
+                                          ➕ {lang === "th" ? "เพิ่มตัวเลือก" : lang === "cn" ? "添加选项" : lang === "mm" ? "ရွေးချယ်စရာထည့်ရန်" : "Add Option"}
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {/* Grading controls */}
+                                    {gradable && (
+                                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleGraded(section.id, q.id)}
+                                          style={{ padding: "6px 14px", height: 36, borderRadius: 10, border: "none", background: q.graded ? "rgba(16,185,129,0.12)" : "rgba(0,0,0,0.03)", color: q.graded ? "#10b981" : "var(--text-muted)", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                                        >
+                                          {q.graded ? "✓ " : ""}{lang === "th" ? "ให้คะแนน" : lang === "cn" ? "计分" : lang === "mm" ? "အမှတ်ပေး" : "Graded"}
+                                        </button>
+                                        {q.graded && (
+                                          <>
+                                            <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+                                              {lang === "th" ? "คะแนน" : lang === "cn" ? "分值" : lang === "mm" ? "အမှတ်" : "Points"}
+                                              <input
+                                                type="number"
+                                                min={1}
+                                                className="input"
+                                                style={{ width: 72, height: 36, borderRadius: 8, padding: "0 10px", fontSize: 13, fontWeight: 800 }}
+                                                value={q.points ?? 1}
+                                                onChange={e => setPoints(section.id, q.id, parseInt(e.target.value))}
+                                              />
+                                            </label>
+                                            {q.type === "text" && (
+                                              <input
+                                                type="text"
+                                                className="input"
+                                                style={{ flex: "1 1 200px", height: 36, borderRadius: 8, padding: "0 12px", fontSize: 13 }}
+                                                value={typeof q.correct === "string" ? q.correct : ""}
+                                                onChange={e => setTextCorrect(section.id, q.id, e.target.value)}
+                                                placeholder={lang === "th" ? "คำตอบที่ถูกต้อง (ไม่สนตัวพิมพ์ใหญ่เล็ก)" : lang === "cn" ? "正确答案（不区分大小写）" : lang === "mm" ? "မှန်ကန်သောအဖြေ" : "Correct answer (case-insensitive)"}
+                                              />
+                                            )}
+                                            {(q.type === "choice" || q.type === "multiple") && (
+                                              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+                                                {lang === "th" ? "เลือกคำตอบที่ถูกจากวงกลมด้านบน" : lang === "cn" ? "请在上方标记正确答案" : lang === "mm" ? "အပေါ်တွင် မှန်ကန်သောအဖြေကို မှတ်သားပါ" : "Mark the correct option(s) above"}
+                                              </span>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{ alignSelf: "flex-start", borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)", border: "none", cursor: "pointer" }}
+                              onClick={() => addQuestion(section.id)}
+                            >
+                              ➕ {t.eventAddQuestionLabel}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Footer Actions */}
@@ -2415,7 +2633,7 @@ export default function AdminEventsPage() {
 
                               {/* Answers */}
                               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                {formQuestions.map((q) => {
+                                {allFormQuestions.map((q) => {
                                   const ans = sub.answers?.[q.id];
                                   return (
                                     <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>

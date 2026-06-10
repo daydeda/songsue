@@ -96,7 +96,13 @@ export async function POST(
     const { id: eventId } = await params;
     const { title, description, questions, pointsAwarded, isActive } = await req.json();
 
-    if (!title || !questions || !Array.isArray(questions)) {
+    // `questions` is stored as jsonb and may be either a legacy flat array or the
+    // v2 section model ({ version, sections: [...] }). Accept both.
+    const isValidQuestions =
+      Array.isArray(questions) ||
+      (questions && typeof questions === "object" && Array.isArray(questions.sections));
+
+    if (!title || !isValidQuestions) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 

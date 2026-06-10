@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { Calendar, History, Trophy, ArrowRight, X, Star, CheckCircle2, ClipboardList } from "lucide-react";
+import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
+import {
+  normalizeForm,
+  allQuestions,
+  resolveNextSection,
+  type NormalizedForm,
+  type FormQuestion as Question,
+  type AnswerMap,
+} from "@/lib/form-schema";
 
 interface HistoryItem {
   id: string;
@@ -22,20 +30,12 @@ interface HistoryItem {
   method?: string | null;
 }
 
-interface Question {
-  id: string;
-  type: "text" | "rating" | "multiple" | "choice";
-  label: string;
-  required?: boolean;
-  options?: string[];
-}
-
 interface ActiveForm {
   id: string;
   eventId: string;
   title: string;
   description: string | null;
-  questions: Question[];
+  questions: unknown; // raw jsonb; normalized via normalizeForm()
 }
 
 export default function HistoryPage() {
@@ -46,6 +46,13 @@ export default function HistoryPage() {
   // Form states for student submission
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [activeForm, setActiveForm] = useState<ActiveForm | null>(null);
+  // Sections + branching navigation (Google Forms style).
+  const [normForm, setNormForm] = useState<NormalizedForm | null>(null);
+  const [sectionIndex, setSectionIndex] = useState(0);
+  const [navStack, setNavStack] = useState<number[]>([]); // visited indices, for Back
+  // Quiz score shown after submit (display-only). null when the form has no graded
+  // questions or before submission.
+  const [scoreResult, setScoreResult] = useState<{ score: number; maxScore: number } | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string | number | string[]>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -90,7 +97,10 @@ export default function HistoryPage() {
     setFormErrors({});
     setGeneralError(null);
     setGeneralSuccess(null);
-    
+    setSectionIndex(0);
+    setNavStack([]);
+    setScoreResult(null);
+
     try {
       const res = await fetch(`/api/events/${eventId}/form`);
       const data = await res.json();
@@ -111,8 +121,10 @@ export default function HistoryPage() {
           return;
         }
         setActiveForm({ ...data.form, eventId });
+        const nf = normalizeForm(data.form.questions);
+        setNormForm(nf);
         const initialAnswers: Record<string, string | number | string[]> = {};
-        data.form.questions.forEach((q: Question) => {
+        allQuestions(nf).forEach((q) => {
           initialAnswers[q.id] = q.type === "rating" ? 5 : q.type === "multiple" ? [] : "";
         });
         setAnswers(initialAnswers);
@@ -127,24 +139,68 @@ export default function HistoryPage() {
     }
   };
 
-  const submitAnswers = async () => {
-    if (!activeForm) return;
-    
-    setFormErrors({});
-    setGeneralError(null);
-
+  // Validate the required questions of one section. Returns true if the section
+  // is complete. We validate per-section (not the whole form) because branching
+  // means later sections may never be shown to this student.
+  const validateSection = (idx: number): boolean => {
+    const section = normForm?.sections[idx];
+    if (!section) return true;
     const newErrors: Record<string, string> = {};
-    for (const q of activeForm.questions) {
-      if (q.required && (!answers[q.id] || answers[q.id].toString().trim() === "")) {
-        newErrors[q.id] = t.fieldRequired;
-      }
+    for (const q of section.questions) {
+      const a = answers[q.id];
+      const empty =
+        a === undefined ||
+        a === null ||
+        (Array.isArray(a) ? a.length === 0 : a.toString().trim() === "");
+      if (q.required && empty) newErrors[q.id] = t.fieldRequired;
     }
-
     if (Object.keys(newErrors).length > 0) {
       setFormErrors(newErrors);
       setGeneralError(t.completeRequiredFields);
+      return false;
+    }
+    return true;
+  };
+
+  // The destination after the current section: a section index, or "submit".
+  const nextDestination = (): number | "submit" =>
+    normForm ? resolveNextSection(normForm, sectionIndex, answers as AnswerMap) : "submit";
+
+  const goBack = () => {
+    setFormErrors({});
+    setGeneralError(null);
+    setNavStack((stack) => {
+      if (stack.length === 0) return stack;
+      const copy = [...stack];
+      const prev = copy.pop()!;
+      setSectionIndex(prev);
+      return copy;
+    });
+  };
+
+  // Advance: validate the current section, then either move to the next section
+  // (following branches) or submit if this is the end of the student's path.
+  const goNext = () => {
+    setFormErrors({});
+    setGeneralError(null);
+    if (!validateSection(sectionIndex)) return;
+    const dest = nextDestination();
+    if (dest === "submit") {
+      submitAnswers();
       return;
     }
+    setNavStack((stack) => [...stack, sectionIndex]);
+    setSectionIndex(dest);
+  };
+
+  const submitAnswers = async () => {
+    if (!activeForm) return;
+
+    setFormErrors({});
+    setGeneralError(null);
+
+    // Final guard: the current (last) section must be complete.
+    if (!validateSection(sectionIndex)) return;
 
     setSubmitting(true);
     try {
@@ -156,6 +212,9 @@ export default function HistoryPage() {
       const data = await res.json();
       
       if (res.ok) {
+        if (data.result?.hasGraded) {
+          setScoreResult({ score: data.result.score, maxScore: data.result.maxScore });
+        }
         setGeneralSuccess("Submitted");
         fetchHistory();
       } else {
@@ -476,6 +535,25 @@ export default function HistoryPage() {
                     <CheckCircle2 size={36} />
                   </div>
                   <h4 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>{t.feedbackSubmitted}</h4>
+
+                  {scoreResult && (
+                    <div className="animate-scale-in" style={{
+                      maxWidth: 320,
+                      margin: "0 auto 24px",
+                      padding: "20px 24px",
+                      borderRadius: 20,
+                      background: "var(--bg-elevated)",
+                      border: "1px solid var(--border-subtle)",
+                    }}>
+                      <p style={{ fontSize: 12, fontWeight: 900, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                        {lang === "th" ? "คะแนนของคุณ" : lang === "cn" ? "您的得分" : lang === "mm" ? "သင့်ရမှတ်" : "Your Score"}
+                      </p>
+                      <p style={{ fontSize: 40, fontWeight: 900, color: "var(--accent-primary)", lineHeight: 1 }}>
+                        {scoreResult.score}<span style={{ fontSize: 22, color: "var(--text-muted)" }}> / {scoreResult.maxScore}</span>
+                      </p>
+                    </div>
+                  )}
+
                   <p style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 420, margin: "0 auto 32px", lineHeight: 1.6 }}>
                     {t.feedbackSuccessDetail}
                   </p>
@@ -518,14 +596,34 @@ export default function HistoryPage() {
                     </div>
                   )}
 
-                  {activeForm?.description && (
+                  {/* Form-level intro shown only on the first step */}
+                  {activeForm?.description && sectionIndex === 0 && navStack.length === 0 && (
                     <p style={{ color: "var(--text-secondary)", fontSize: 14, fontWeight: 500, lineHeight: 1.5, marginBottom: 28, background: "var(--bg-elevated)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
                       {activeForm.description}
                     </p>
                   )}
 
+                  {/* Section header (only meaningful when the form has >1 section) */}
+                  {normForm && normForm.sections.length > 1 && (
+                    <div style={{ marginBottom: 24 }}>
+                      <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                        {(lang === "th" ? "ส่วนที่ " : lang === "cn" ? "第 " : lang === "mm" ? "အပိုင်း " : "Step ")}{navStack.length + 1}
+                      </span>
+                      {normForm.sections[sectionIndex]?.title && (
+                        <h4 style={{ fontSize: 18, fontWeight: 900, color: "var(--text-primary)", marginTop: 2 }}>
+                          {normForm.sections[sectionIndex].title}
+                        </h4>
+                      )}
+                      {normForm.sections[sectionIndex]?.description && (
+                        <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500, lineHeight: 1.5, marginTop: 6 }}>
+                          {normForm.sections[sectionIndex].description}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                    {activeForm?.questions.map((q: Question) => (
+                    {normForm?.sections[sectionIndex]?.questions.map((q: Question) => (
                       <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         <label style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
                           {q.label === "Overall Satisfaction" ? t.overallSatisfaction : q.label} {q.required && <span style={{ color: "#ef4444" }}>*</span>}
@@ -695,15 +793,20 @@ export default function HistoryPage() {
                     ))}
                   </div>
 
-                  {/* Footer */}
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 32 }}>
+                  {/* Footer — Back / (Next | Submit), driven by section branching */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 32 }}>
                     <button
                       className="btn btn-ghost"
                       type="button"
-                      style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
-                      onClick={() => setShowStudentForm(false)}
+                      style={{ height: 46, borderRadius: 12, padding: "0 24px", display: "flex", alignItems: "center", gap: 8 }}
+                      onClick={navStack.length > 0 ? goBack : () => setShowStudentForm(false)}
+                      disabled={submitting}
                     >
-                      {t.cancel}
+                      {navStack.length > 0 ? (
+                        <><ArrowLeft size={16} /> {lang === "th" ? "ย้อนกลับ" : lang === "cn" ? "上一步" : lang === "mm" ? "နောက်သို့" : "Back"}</>
+                      ) : (
+                        t.cancel
+                      )}
                     </button>
                     <button
                       className="btn btn-primary"
@@ -715,12 +818,21 @@ export default function HistoryPage() {
                         background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
                         color: "#fff",
                         border: "none",
-                        boxShadow: "0 4px 14px rgba(255,107,0,0.3)"
+                        boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8
                       }}
                       disabled={submitting}
-                      onClick={submitAnswers}
+                      onClick={goNext}
                     >
-                      {submitting ? <div className="spinner w-4 h-4 border-2" /> : t.submitFeedback}
+                      {submitting ? (
+                        <div className="spinner w-4 h-4 border-2" />
+                      ) : nextDestination() === "submit" ? (
+                        t.submitFeedback
+                      ) : (
+                        <>{lang === "th" ? "ถัดไป" : lang === "cn" ? "下一步" : lang === "mm" ? "ရှေ့သို့" : "Next"} <ArrowRight size={16} /></>
+                      )}
                     </button>
                   </div>
                 </div>

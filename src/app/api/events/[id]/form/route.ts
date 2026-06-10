@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { forms, formSubmissions, attendance } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
 
 // GET /api/events/[id]/form — Fetch the form for students (checking if attended & submitted)
 export async function GET(
@@ -45,6 +46,18 @@ export async function GET(
       ),
     });
 
+    // If the student already submitted a graded form, recompute their score from
+    // the stored answers + the form's correct answers (score is display-only, so
+    // we never persist it — recomputing keeps it correct if the key is edited).
+    let result: { score: number; maxScore: number; hasGraded: boolean } | null = null;
+    if (existingSubmission) {
+      const { score, maxScore, hasGraded } = computeScore(
+        normalizeForm(formObj.questions),
+        (existingSubmission.answers as AnswerMap) || {},
+      );
+      if (hasGraded) result = { score, maxScore, hasGraded };
+    }
+
     return NextResponse.json({
       form: {
         id: formObj.id,
@@ -59,6 +72,7 @@ export async function GET(
       hasAttended,
       hasSubmitted: !!existingSubmission,
       answers: existingSubmission?.answers || null,
+      result,
     });
   } catch (error) {
     console.error("Failed to fetch student form:", error);
@@ -136,7 +150,17 @@ export async function POST(
       answers,
     });
 
-    return NextResponse.json({ success: true });
+    // 5. Score it (display-only — points to houses are still awarded by submission
+    // count in the award route, unaffected by quiz scores).
+    const { score, maxScore, hasGraded } = computeScore(
+      normalizeForm(formObj.questions),
+      answers as AnswerMap,
+    );
+
+    return NextResponse.json({
+      success: true,
+      result: hasGraded ? { score, maxScore, hasGraded } : null,
+    });
   } catch (error) {
     console.error("Failed to submit student form:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

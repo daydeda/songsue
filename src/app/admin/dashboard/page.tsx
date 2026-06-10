@@ -499,8 +499,8 @@ export default function AdminDashboardOverview() {
                       }}>
                         {a.type === "score" ? <Trophy size={14} /> : "👤"}
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, overflowWrap: "break-word", wordBreak: "break-word" }}>
                           {a.type === "checkin" ? (
                             lang === "th" ? (
                               <><b>{a.studentName}</b> เช็คอินเข้าร่วม <b>{a.eventTitle}</b></>

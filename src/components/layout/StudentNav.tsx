@@ -121,7 +121,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
       <User size={16} />
       {t.editProfile}
     </Link>
-    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
       <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
         {t.adminPanel}
@@ -251,7 +251,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
       <User size={16} />
       {t.editProfile}
     </Link>
-    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
       <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
         {t.adminPanel}
@@ -356,7 +356,7 @@ border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent"
 </Link>
 );
 })}
-{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "") || user?.email?.toLowerCase() === "smocamt.official@gmail.com") && (
+{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
 <Link 
 href="/admin/dashboard" 
 className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`} 

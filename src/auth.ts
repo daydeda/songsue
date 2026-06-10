@@ -26,7 +26,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const email = user.email ?? "";
       
       // Auto-promote official emails to super_admin (FE-04)
-      const superAdminEmails = ["smocamt.official@gmail.com", "daydedaa@gmail.com"];
+      const superAdminEmails = ["daydedaa@gmail.com"];
       if (superAdminEmails.includes(email.toLowerCase())) {
         await db.update(users)
           .set({ role: "super_admin", roles: ["super_admin"] })
@@ -114,7 +114,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       // Force super_admin role for the official emails - CASE INSENSITIVE (FE-04)
-      const superAdmins = ["smocamt.official@gmail.com", "daydedaa@gmail.com"];
+      const superAdmins = ["daydedaa@gmail.com"];
       const currentEmail = (session.user?.email || dbUser?.email || "").toLowerCase();
       
       if (superAdmins.includes(currentEmail)) {

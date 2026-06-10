@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 export async function GET() {
   try {
     const list = await db.query.users.findMany({
+      where: eq(users.profileCompleted, true),
       columns: {
         id: true,
         name: true,

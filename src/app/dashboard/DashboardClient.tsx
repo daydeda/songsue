@@ -955,7 +955,16 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             >
               {/* Top Banner (if image exists) */}
               {liveEvent.imageUrl ? (
-                <div style={{ position: "relative", width: "100%", height: "240px", background: "#000", overflow: "hidden" }}>
+                <div style={{ 
+                  position: "relative", 
+                  width: "100%", 
+                  maxHeight: "400px", 
+                  background: "#000", 
+                  overflow: "hidden",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
                   <img 
                     src={liveEvent.imageUrl} 
                     alt="" 
@@ -975,7 +984,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     style={{ 
                       position: "relative", 
                       width: "100%", 
-                      height: "100%", 
+                      height: "auto", 
+                      maxHeight: "400px",
                       objectFit: "contain",
                       zIndex: 1,
                       cursor: "pointer"

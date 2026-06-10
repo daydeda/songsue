@@ -287,8 +287,8 @@ export default function HistoryPage() {
                       </div>
                     )}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 900, fontSize: 17, color: "var(--text-primary)", letterSpacing: "-0.01em", lineHeight: 1.35 }}>{h.eventTitle}</p>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 900, fontSize: 17, color: "var(--text-primary)", letterSpacing: "-0.01em", lineHeight: 1.35, overflowWrap: "break-word", wordBreak: "break-word" }}>{h.eventTitle}</p>
                     <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                       {h.checkInTime ? (
                         <>Completed on {new Date(h.checkInTime).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}</>
@@ -501,10 +501,10 @@ export default function HistoryPage() {
             }} onClick={e => e.stopPropagation()}>
               
               {/* Modal Header */}
-              <div style={{ padding: "28px 40px", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10 }}>
-                <div>
+              <div style={{ padding: "28px 40px", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 16 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.housePointFeeding}</span>
-                  <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)" }}>{activeForm?.title || t.evaluation}</h3>
+                  <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{activeForm?.title || t.evaluation}</h3>
                 </div>
                 <button 
                   className="btn btn-ghost" 

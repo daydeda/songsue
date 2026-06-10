@@ -15,7 +15,8 @@ import {
   ShieldCheck,
   House,
   RotateCcw,
-  Download
+  Download,
+  ChevronDown
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 
@@ -67,6 +68,8 @@ export default function QRScannerPage() {
   const [scoreInput, setScoreInput] = useState<string>("");
   const [scoreReason, setScoreReason] = useState<string>("");
   const [submittingScore, setSubmittingScore] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
@@ -79,6 +82,19 @@ export default function QRScannerPage() {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+    };
+  }, []);
+
+  // Handle closing custom event selector dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: PointerEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handleClickOutside);
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside);
     };
   }, []);
 
@@ -549,28 +565,135 @@ export default function QRScannerPage() {
         {/* Left: Main Scanner Area */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           {/* Event Selector */}
-          <div className="stat-card" style={{ padding: 24, display: "flex", alignItems: "center", gap: 20 }}>
-            <div style={{ width: 48, height: 48, background: "var(--bg-elevated)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Zap size={24} color="var(--accent-primary)" />
+          <div 
+            className="stat-card flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5" 
+            style={{ 
+              padding: 24, 
+              position: "relative", 
+              zIndex: dropdownOpen ? 10 : 1 
+            }}
+          >
+            {/* Left Side: Icon & Dropdown Selector */}
+            <div className="flex items-center gap-4 flex-1 min-w-0 w-full">
+              <div style={{ width: 48, height: 48, background: "var(--bg-elevated)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Zap size={24} color="var(--accent-primary)" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0, position: "relative" }} ref={dropdownRef}>
+                <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>{t.eventsTitle.toUpperCase()}</label>
+                <button
+                  type="button"
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  style={{
+                    width: "100%",
+                    fontSize: 18,
+                    fontWeight: 700,
+                    padding: "4px 0",
+                    border: "none",
+                    background: "none",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  <span style={{ 
+                    flex: 1, 
+                    overflowWrap: "break-word", 
+                    wordBreak: "break-word", 
+                    whiteSpace: "normal" 
+                  }}>
+                    {events.find(e => e.id === eventId)?.title || t.noEvents || "No events available"}
+                  </span>
+                  {events.length > 0 && (
+                    <ChevronDown 
+                      size={18} 
+                      style={{ 
+                        flexShrink: 0, 
+                        opacity: 0.6, 
+                        transform: dropdownOpen ? "rotate(180deg)" : "none", 
+                        transition: "transform 0.2s" 
+                      }} 
+                    />
+                  )}
+                </button>
+
+                {dropdownOpen && events.length > 0 && (
+                  <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    zIndex: 50,
+                    marginTop: 8,
+                    background: "var(--bg-surface)",
+                    border: "1px solid var(--border-medium)",
+                    borderRadius: "var(--radius-md)",
+                    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                    maxHeight: 240,
+                    overflowY: "auto",
+                    padding: 4
+                  }}>
+                    {events.map((e) => {
+                      const isSelected = e.id === eventId;
+                      return (
+                        <button
+                          key={e.id}
+                          type="button"
+                          onClick={() => {
+                            setEventId(e.id);
+                            setDropdownOpen(false);
+                          }}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "10px 14px",
+                            borderRadius: "var(--radius-sm)",
+                            fontSize: 15,
+                            fontWeight: isSelected ? 700 : 500,
+                            background: isSelected ? "var(--bg-elevated)" : "transparent",
+                            color: isSelected ? "var(--accent-primary)" : "var(--text-primary)",
+                            border: "none",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            transition: "background 0.15s, color 0.15s",
+                            overflowWrap: "break-word",
+                            wordBreak: "break-word",
+                            whiteSpace: "normal"
+                          }}
+                          onMouseEnter={(event) => {
+                            if (event.currentTarget.style.background !== "var(--bg-elevated)") {
+                              event.currentTarget.style.background = "var(--bg-glass)";
+                            }
+                          }}
+                          onMouseLeave={(event) => {
+                            if (event.currentTarget.style.background !== "var(--bg-elevated)") {
+                              event.currentTarget.style.background = "transparent";
+                            }
+                          }}
+                        >
+                          <span style={{ flex: 1 }}>{e.title}</span>
+                          {isSelected && <CheckCircle2 size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1 }}>
-              <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>{t.eventsTitle.toUpperCase()}</label>
-              <select
-                className="input"
-                style={{ width: "100%", fontSize: 18, fontWeight: 700, padding: "4px 0", border: "none", background: "none" }}
-                value={eventId}
-                onChange={(e) => setEventId(e.target.value)}
-              >
-                {events.length === 0 && <option value="">{t.noEvents || "No events available"}</option>}
-                {events.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
-              </select>
-            </div>
+
+            {/* Right Side: Action Button */}
             {eventId && (
               <a 
                 href={`/api/admin/events/${eventId}/report`}
                 download
-                className="btn btn-ghost"
-                style={{ padding: "8px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
+                className="btn btn-ghost w-full sm:w-auto justify-center"
+                style={{ padding: "10px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}
               >
                 <Download size={16} />
                 {t.exportCSV ? t.exportCSV.replace(" CSV", "") : "Report"}
@@ -673,13 +796,19 @@ export default function QRScannerPage() {
           <div className="stat-card" style={{ padding: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
               <Search size={20} color="var(--accent-primary)" />
-              <h3 style={{ fontSize: 18, fontWeight: 800 }}>{t.manualCheckinTitle}</h3>
+              <h3 style={{ fontSize: 18, fontWeight: 800 }}>
+                {scanMode === "score"
+                  ? (lang === "th" ? "ค้นหาเพื่อมอบคะแนน" : lang === "cn" ? "搜索学生以给分" : lang === "mm" ? "အမှတ်ပေးရန် ရှာဖွေခြင်း" : "Manual Score Search")
+                  : t.manualCheckinTitle}
+              </h3>
             </div>
-            
+
             <div style={{ position: "relative" }}>
               <input
                 className="input"
-                placeholder={t.manualSearchPlaceholder}
+                placeholder={scanMode === "score"
+                  ? (lang === "th" ? "ค้นหาชื่อหรือรหัสนักศึกษาเพื่อมอบคะแนน..." : lang === "cn" ? "搜索学生姓名或学号以给分..." : lang === "mm" ? "အမှတ်ပေးရန် ကျောင်းသားအမည်/ID ရှာပါ..." : "Search student to give score...")
+                  : t.manualSearchPlaceholder}
                 style={{ paddingLeft: 12 }}
                 value={manualSearch}
                 onChange={(e) => handleManualSearch(e.target.value)}
@@ -788,7 +917,7 @@ export default function QRScannerPage() {
               {scanResult?.student ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                   <div style={{ textAlign: "center" }}>
-                    <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.04em" }}>
+                    <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.04em", overflowWrap: "break-word", wordBreak: "break-word" }}>
                       {scanResult.student.name}
                     </p>
                     <p style={{ fontSize: 18, color: "var(--text-secondary)", fontWeight: 700, marginTop: 4 }}>
@@ -1034,14 +1163,16 @@ export default function QRScannerPage() {
                     <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
                       {t.activityLabel}
                     </label>
-                    <div style={{ 
-                      padding: "12px 16px", 
-                      borderRadius: 12, 
-                      background: "var(--bg-elevated)", 
-                      border: "1px solid var(--border-subtle)", 
-                      fontSize: 15, 
-                      fontWeight: 700, 
-                      color: "var(--text-primary)" 
+                    <div style={{
+                      padding: "12px 16px",
+                      borderRadius: 12,
+                      background: "var(--bg-elevated)",
+                      border: "1px solid var(--border-subtle)",
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: "var(--text-primary)",
+                      overflowWrap: "break-word",
+                      wordBreak: "break-word"
                     }}>
                       {events.find(e => e.id === eventId)?.title || (lang === "th" ? "ไม่ได้เลือกกิจกรรม" : "No event selected")}
                     </div>

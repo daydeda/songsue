@@ -655,7 +655,13 @@ export default function AdminEventsPage() {
     ws["!cols"] = header.map(h => ({ wch: Math.min(45, Math.max(12, h.length + 2)) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Submissions");
-    const safeTitle = (formEventTitle || "form").replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+    // Keep Thai (and other Unicode) letters intact; only strip characters that
+    // are illegal in filenames, then collapse whitespace/separators to "_".
+    const safeTitle = (formEventTitle || "form")
+      .replace(/[\\/:*?"<>|]+/g, "")
+      .replace(/\s+/g, "_")
+      .slice(0, 40)
+      .replace(/^_+|_+$/g, "") || "form";
     XLSX.writeFile(wb, `submissions_${safeTitle}.xlsx`);
   };
 
@@ -1828,7 +1834,7 @@ export default function AdminEventsPage() {
                 {/* Card Content */}
                 <div style={{ padding: "28px", flex: 1, display: "flex", flexDirection: "column" }}>
                   <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 20, fontWeight: 900, marginBottom: 8, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.35 }}>{evt.title}</h3>
+                    <h3 style={{ fontSize: 20, fontWeight: 900, marginBottom: 8, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.35, overflowWrap: "break-word", wordBreak: "break-word" }}>{evt.title}</h3>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", fontSize: 13, fontWeight: 600 }}>
                         <MapPin size={14} style={{ color: "var(--accent-primary)" }} />
@@ -2088,10 +2094,10 @@ export default function AdminEventsPage() {
           }} onClick={e => e.stopPropagation()}>
             
             {/* Modal Header */}
-            <div style={{ padding: "20px clamp(16px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10 }}>
-              <div>
+            <div style={{ padding: "20px clamp(16px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 16 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{lang === "th" ? "แบบประเมินผู้เข้าร่วม" : lang === "cn" ? "互动反馈" : lang === "mm" ? "အပြန်အလှန် အကြံပြုချက်" : "Interactive Feedback"}</span>
-                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)" }}>{formEventTitle || "Event"} Form</h3>
+                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{formEventTitle || "Event"} Form</h3>
               </div>
               <button 
                 className="btn btn-ghost" 

@@ -407,7 +407,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
                       {/* Content Area */}
                       <div style={{ padding: 24, flex: 1, display: "flex", flexDirection: "column" }}>
-                        <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.03em", marginBottom: 16 }}>{e.title}</h3>
+                        <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.03em", marginBottom: 16, overflowWrap: "break-word", wordBreak: "break-word" }}>{e.title}</h3>
                         
                         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
@@ -1063,7 +1063,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                   letterSpacing: "-0.03em", 
                   marginBottom: "16px",
                   marginTop: liveEvent.imageUrl ? "0px" : "24px",
-                  lineHeight: 1.2
+                  lineHeight: 1.2,
+                  overflowWrap: "break-word",
+                  wordBreak: "break-word"
                 }}>
                   {liveEvent.title}
                 </h3>

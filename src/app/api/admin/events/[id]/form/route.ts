@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { forms } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
 
 // GET /api/admin/events/[id]/form — Fetch the custom form and submission stats
 export async function GET(
@@ -54,6 +55,9 @@ export async function GET(
       }
     }
 
+    // Normalize once, then score each submission (display-only; never persisted).
+    const normalized = normalizeForm(formObj.questions);
+
     return NextResponse.json({
       form: {
         id: formObj.id,
@@ -66,14 +70,20 @@ export async function GET(
         isAwarded: formObj.isAwarded,
       },
       stats: houseStats,
-      submissions: formObj.submissions.map((sub) => ({
-        id: sub.id,
-        studentName: sub.user?.name || "Student",
-        studentId: sub.user?.studentId || "",
-        houseId: sub.user?.houseId || "unassigned",
-        answers: sub.answers,
-        submittedAt: sub.submittedAt,
-      })),
+      submissions: formObj.submissions.map((sub) => {
+        const { score, maxScore, hasGraded } = computeScore(normalized, (sub.answers as AnswerMap) || {});
+        return {
+          id: sub.id,
+          studentName: sub.user?.name || "Student",
+          studentId: sub.user?.studentId || "",
+          houseId: sub.user?.houseId || "unassigned",
+          answers: sub.answers,
+          submittedAt: sub.submittedAt,
+          score,
+          maxScore,
+          hasGraded,
+        };
+      }),
     });
   } catch (error) {
     console.error("Failed to fetch admin form data:", error);

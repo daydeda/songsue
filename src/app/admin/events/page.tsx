@@ -90,6 +90,9 @@ interface FormBuilderSubmission {
   houseId: string;
   answers: Record<string, string | number | string[]>;
   submittedAt: string;
+  score?: number;
+  maxScore?: number;
+  hasGraded?: boolean;
 }
 
 interface FormBuilderStats {
@@ -444,24 +447,44 @@ export default function AdminEventsPage() {
 
   const removeQuestion = (secId: string, qId: string) => {
     setFormSections(prev =>
-      prev.map(s => (s.id === secId ? { ...s, questions: s.questions.filter(q => q.id !== qId) } : s))
+      prev.map(s => {
+        if (s.id !== secId) return s;
+        const questions = s.questions
+          .filter(q => q.id !== qId)
+          // Any sibling whose conditional pointed at the removed question reverts
+          // to always-visible.
+          .map(q => (q.visibleIf?.questionId === qId ? { ...q, visibleIf: undefined } : q));
+        return { ...s, questions };
+      })
     );
   };
 
   const updateQuestion = (secId: string, qId: string, key: string, val: string | boolean | string[]) => {
-    mutateQuestion(secId, qId, q => {
-      const updated = { ...q, [key]: val } as FormQuestion;
-      if (key === "type") {
-        if ((val === "choice" || val === "multiple") && !updated.options) {
-          updated.options = ["Option 1", "Option 2"];
+    setFormSections(prev =>
+      prev.map(s => {
+        if (s.id !== secId) return s;
+        let questions = s.questions.map(q => {
+          if (q.id !== qId) return q;
+          const updated = { ...q, [key]: val } as FormQuestion;
+          if (key === "type") {
+            if ((val === "choice" || val === "multiple") && !updated.options) {
+              updated.options = ["Option 1", "Option 2"];
+            }
+            // Branching is single-choice only; correct-answer shape differs per
+            // type — clear both so we never carry a stale value across a change.
+            if (val !== "choice") delete updated.branches;
+            delete updated.correct;
+          }
+          return updated;
+        });
+        // If this question is no longer a usable controller (not choice/multiple),
+        // drop sibling conditionals that depended on it.
+        if (key === "type" && val !== "choice" && val !== "multiple") {
+          questions = questions.map(q => (q.visibleIf?.questionId === qId ? { ...q, visibleIf: undefined } : q));
         }
-        // Branching is single-choice only; correct-answer shape differs per type —
-        // clear both so we never carry a stale value across a type change.
-        if (val !== "choice") delete updated.branches;
-        delete updated.correct;
-      }
-      return updated;
-    });
+        return { ...s, questions };
+      })
+    );
   };
 
   const addOption = (secId: string, qId: string) => {
@@ -473,43 +496,69 @@ export default function AdminEventsPage() {
   };
 
   const removeOption = (secId: string, qId: string, optIdx: number) => {
-    mutateQuestion(secId, qId, q => {
-      const removed = q.options?.[optIdx];
-      const opts = q.options ? q.options.filter((_, idx: number) => idx !== optIdx) : [];
-      const next: FormQuestion = { ...q, options: opts };
-      // Drop any branch/correct references to the removed option.
-      if (removed != null) {
-        if (next.branches) {
-          const b = { ...next.branches };
-          delete b[removed];
-          next.branches = b;
-        }
-        if (typeof next.correct === "string" && next.correct === removed) delete next.correct;
-        if (Array.isArray(next.correct)) next.correct = next.correct.filter(c => c !== removed);
-      }
-      return next;
-    });
+    setFormSections(prev =>
+      prev.map(s => {
+        if (s.id !== secId) return s;
+        const removed = s.questions.find(q => q.id === qId)?.options?.[optIdx];
+        const questions = s.questions.map(q => {
+          if (q.id === qId) {
+            const opts = q.options ? q.options.filter((_, idx: number) => idx !== optIdx) : [];
+            const next: FormQuestion = { ...q, options: opts };
+            // Drop any branch/correct references to the removed option.
+            if (removed != null) {
+              if (next.branches) {
+                const b = { ...next.branches };
+                delete b[removed];
+                next.branches = b;
+              }
+              if (typeof next.correct === "string" && next.correct === removed) delete next.correct;
+              if (Array.isArray(next.correct)) next.correct = next.correct.filter(c => c !== removed);
+            }
+            return next;
+          }
+          // A sibling conditioned on the removed option value reverts to always-visible.
+          if (removed != null && q.visibleIf?.questionId === qId && q.visibleIf.value === removed) {
+            return { ...q, visibleIf: undefined };
+          }
+          return q;
+        });
+        return { ...s, questions };
+      })
+    );
   };
 
   const updateOption = (secId: string, qId: string, optIdx: number, val: string) => {
-    mutateQuestion(secId, qId, q => {
-      const opts = q.options ? [...q.options] : [];
-      const prevVal = opts[optIdx];
-      opts[optIdx] = val;
-      const next: FormQuestion = { ...q, options: opts };
-      // Keep branch/correct keys aligned when an option label is renamed.
-      if (prevVal != null && prevVal !== val) {
-        if (next.branches && next.branches[prevVal] !== undefined) {
-          const b = { ...next.branches };
-          b[val] = b[prevVal];
-          delete b[prevVal];
-          next.branches = b;
-        }
-        if (typeof next.correct === "string" && next.correct === prevVal) next.correct = val;
-        if (Array.isArray(next.correct)) next.correct = next.correct.map(c => (c === prevVal ? val : c));
-      }
-      return next;
-    });
+    setFormSections(prev =>
+      prev.map(s => {
+        if (s.id !== secId) return s;
+        const prevVal = s.questions.find(q => q.id === qId)?.options?.[optIdx];
+        const questions = s.questions.map(q => {
+          if (q.id === qId) {
+            const opts = q.options ? [...q.options] : [];
+            opts[optIdx] = val;
+            const next: FormQuestion = { ...q, options: opts };
+            // Keep branch/correct keys aligned when an option label is renamed.
+            if (prevVal != null && prevVal !== val) {
+              if (next.branches && next.branches[prevVal] !== undefined) {
+                const b = { ...next.branches };
+                b[val] = b[prevVal];
+                delete b[prevVal];
+                next.branches = b;
+              }
+              if (typeof next.correct === "string" && next.correct === prevVal) next.correct = val;
+              if (Array.isArray(next.correct)) next.correct = next.correct.map(c => (c === prevVal ? val : c));
+            }
+            return next;
+          }
+          // Keep a sibling's conditional value aligned with the renamed option.
+          if (prevVal != null && prevVal !== val && q.visibleIf?.questionId === qId && q.visibleIf.value === prevVal) {
+            return { ...q, visibleIf: { questionId: qId, value: val } };
+          }
+          return q;
+        });
+        return { ...s, questions };
+      })
+    );
   };
 
   // ---- Grading ----
@@ -553,9 +602,62 @@ export default function AdminEventsPage() {
     });
   };
 
+  // ---- Conditional visibility: show a question only when a controlling
+  // choice/multiple answer matches a given option value. ----
+  const setVisibleIf = (secId: string, qId: string, controllerId: string, value: string) => {
+    mutateQuestion(secId, qId, q => {
+      if (!controllerId) {
+        const next = { ...q };
+        delete next.visibleIf;
+        return next;
+      }
+      return { ...q, visibleIf: { questionId: controllerId, value } };
+    });
+  };
+
   // Flattened view of every question across sections — used by the stats tab and
   // the question counter.
   const allFormQuestions = formSections.flatMap(s => s.questions);
+
+  // Export submissions to a real .xlsx (one row per student, one column per
+  // question, plus score) with auto-filter enabled for easy stats/filtering.
+  // xlsx is imported lazily so it never weighs on the initial admin bundle.
+  const exportSubmissionsXlsx = async () => {
+    if (formSubmissions.length === 0) return;
+    const XLSX = await import("xlsx");
+    const qcols = allFormQuestions.map((q, i) => ({ key: `Q${i + 1}: ${q.label || "Untitled"}`, q }));
+    const anyGraded = allFormQuestions.some(q => q.graded);
+    const header = [
+      "Name", "Student ID", "House", "Submitted (Bangkok)",
+      ...(anyGraded ? ["Score", "Max Score"] : []),
+      ...qcols.map(c => c.key),
+    ];
+    const fmt = (ans: string | number | string[] | undefined) =>
+      ans == null ? "" : Array.isArray(ans) ? ans.join(", ") : String(ans);
+
+    const rows = formSubmissions.map(sub => {
+      const row: Record<string, string | number> = {
+        "Name": sub.studentName,
+        "Student ID": sub.studentId,
+        "House": sub.houseId,
+        "Submitted (Bangkok)": new Date(sub.submittedAt).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" }),
+      };
+      if (anyGraded) {
+        row["Score"] = sub.score ?? 0;
+        row["Max Score"] = sub.maxScore ?? 0;
+      }
+      for (const c of qcols) row[c.key] = fmt(sub.answers?.[c.q.id]);
+      return row;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows, { header });
+    ws["!autofilter"] = { ref: ws["!ref"] || "A1" };
+    ws["!cols"] = header.map(h => ({ wch: Math.min(45, Math.max(12, h.length + 2)) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Submissions");
+    const safeTitle = (formEventTitle || "form").replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+    XLSX.writeFile(wb, `submissions_${safeTitle}.xlsx`);
+  };
 
   const hasActualMedicalInfo = (user: AdminStudent | null | undefined) => {
     if (!user) return false;
@@ -2233,6 +2335,12 @@ export default function AdminEventsPage() {
                               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                                 {section.questions.map((q, idx) => {
                                   const gradable = q.type === "choice" || q.type === "multiple" || q.type === "text";
+                                  // Questions that can drive this one's visibility: other
+                                  // choice/multiple questions in the same section that have options.
+                                  const controllers = section.questions.filter(
+                                    x => x.id !== q.id && (x.type === "choice" || x.type === "multiple") && (x.options?.length ?? 0) > 0
+                                  );
+                                  const controllerQ = q.visibleIf ? section.questions.find(x => x.id === q.visibleIf!.questionId) : undefined;
                                   return (
                                   <div
                                     key={q.id || idx}
@@ -2393,6 +2501,51 @@ export default function AdminEventsPage() {
                                                 {lang === "th" ? "เลือกคำตอบที่ถูกจากวงกลมด้านบน" : lang === "cn" ? "请在上方标记正确答案" : lang === "mm" ? "အပေါ်တွင် မှန်ကန်သောအဖြေကို မှတ်သားပါ" : "Mark the correct option(s) above"}
                                               </span>
                                             )}
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {/* Conditional visibility — show this question only when a
+                                        controlling choice/multiple answer matches a given option. */}
+                                    {controllers.length > 0 && (
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
+                                        <CornerDownRight size={14} style={{ color: "#6366f1" }} />
+                                        <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-secondary)" }}>
+                                          {lang === "th" ? "แสดงเมื่อ" : lang === "cn" ? "显示条件" : lang === "mm" ? "ပြသမည် အကယ်၍" : "Show only if"}
+                                        </span>
+                                        <select
+                                          className="input"
+                                          style={{ height: 36, borderRadius: 8, padding: "0 8px", fontSize: 12, background: "var(--bg-surface)", cursor: "pointer", maxWidth: 220 }}
+                                          value={q.visibleIf?.questionId ?? ""}
+                                          onChange={e => {
+                                            const cid = e.target.value;
+                                            if (!cid) { setVisibleIf(section.id, q.id, "", ""); return; }
+                                            const ctrl = section.questions.find(x => x.id === cid);
+                                            const firstVal = ctrl?.options?.[0] ?? "";
+                                            setVisibleIf(section.id, q.id, cid, q.visibleIf?.questionId === cid ? q.visibleIf.value : firstVal);
+                                          }}
+                                        >
+                                          <option value="">{lang === "th" ? "แสดงเสมอ" : lang === "cn" ? "始终显示" : lang === "mm" ? "အမြဲပြသ" : "Always show"}</option>
+                                          {controllers.map((c, ci) => (
+                                            <option key={c.id} value={c.id}>{c.label || `Q${ci + 1}`}</option>
+                                          ))}
+                                        </select>
+                                        {q.visibleIf && controllerQ && (
+                                          <>
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>
+                                              {lang === "th" ? "มีคำตอบเป็น" : lang === "cn" ? "等于" : lang === "mm" ? "သည်" : "is"}
+                                            </span>
+                                            <select
+                                              className="input"
+                                              style={{ height: 36, borderRadius: 8, padding: "0 8px", fontSize: 12, background: "var(--bg-surface)", cursor: "pointer", maxWidth: 220 }}
+                                              value={q.visibleIf.value}
+                                              onChange={e => setVisibleIf(section.id, q.id, q.visibleIf!.questionId, e.target.value)}
+                                            >
+                                              {(controllerQ.options ?? []).map(opt => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                              ))}
+                                            </select>
                                           </>
                                         )}
                                       </div>
@@ -2600,7 +2753,18 @@ export default function AdminEventsPage() {
 
                     {/* List of Submissions */}
                     <div>
-                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20 }}>💬 Student Submissions ({formSubmissions.length})</h4>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+                        <h4 style={{ fontSize: 16, fontWeight: 900 }}>💬 Student Submissions ({formSubmissions.length})</h4>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(16,185,129,0.12)", color: "#10b981", border: "none", cursor: formSubmissions.length === 0 ? "not-allowed" : "pointer", opacity: formSubmissions.length === 0 ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                          disabled={formSubmissions.length === 0}
+                          onClick={exportSubmissionsXlsx}
+                        >
+                          <BarChart3 size={15} /> {lang === "th" ? "ส่งออก Excel (.xlsx)" : lang === "cn" ? "导出 Excel (.xlsx)" : lang === "mm" ? "Excel (.xlsx) ထုတ်ယူရန်" : "Export Excel (.xlsx)"}
+                        </button>
+                      </div>
                       {formSubmissions.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "60px 20px", border: "1px dashed var(--border-subtle)", borderRadius: 20 }}>
                           <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>No feedback submissions yet.</p>
@@ -2629,9 +2793,14 @@ export default function AdminEventsPage() {
                                   }} />
                                   <span style={{ fontWeight: 800, fontSize: 15 }}>{sub.studentName}</span>
                                   <span style={{ fontSize: 12, color: "var(--text-muted)" }}>• {sub.studentId}</span>
+                                  {sub.hasGraded && (
+                                    <span style={{ fontSize: 12, fontWeight: 900, color: "#10b981", background: "rgba(16,185,129,0.1)", padding: "2px 10px", borderRadius: 999 }}>
+                                      {lang === "th" ? "คะแนน" : lang === "cn" ? "得分" : lang === "mm" ? "ရမှတ်" : "Score"} {sub.score}/{sub.maxScore}
+                                    </span>
+                                  )}
                                 </div>
                                 <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
-                                  {new Date(sub.submittedAt).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })}
+                                  {new Date(sub.submittedAt).toLocaleString("en-GB", { timeZone: "Asia/Bangkok", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                                 </span>
                               </div>
 

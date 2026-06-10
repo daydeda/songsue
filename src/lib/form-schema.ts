@@ -35,6 +35,12 @@ export interface FormQuestion {
   // Section branching (single-choice "choice" questions only): maps a selected
   // option value to a target section id, BRANCH_NEXT, or BRANCH_SUBMIT.
   branches?: Record<string, string>;
+
+  // Per-question conditional visibility: this question is shown only when the
+  // answer to `questionId` matches `value`. The controller must be a "choice"
+  // (answer === value) or "multiple" (answer includes value) question. Absent =>
+  // always visible.
+  visibleIf?: { questionId: string; value: string };
 }
 
 export interface FormSection {
@@ -111,6 +117,17 @@ export function isAnswerCorrect(q: FormQuestion, answer: AnswerValue | undefined
 }
 
 /**
+ * Whether a question is currently shown, given the answers so far. A question
+ * with a `visibleIf` condition appears only when its controller answer matches.
+ */
+export function isQuestionVisible(q: FormQuestion, answers: AnswerMap): boolean {
+  if (!q.visibleIf) return true;
+  const ctrl = answers[q.visibleIf.questionId];
+  if (Array.isArray(ctrl)) return ctrl.includes(q.visibleIf.value);
+  return ctrl === q.visibleIf.value;
+}
+
+/**
  * Resolve the section that follows `index`, honoring branching. Mirrors Google
  * Forms: a section's flow is governed by its choice question(s); when several
  * branch, the LAST one with a matching answer wins. Returns a section index, or
@@ -126,7 +143,8 @@ export function resolveNextSection(
 
   if (section) {
     for (const q of section.questions) {
-      if (q.type === "choice" && q.branches) {
+      // A hidden choice question can't drive branching.
+      if (q.type === "choice" && q.branches && isQuestionVisible(q, answers)) {
         const ans = answers[q.id];
         if (typeof ans === "string" && q.branches[ans]) {
           target = q.branches[ans];
@@ -185,6 +203,9 @@ export function computeScore(form: NormalizedForm, answers: AnswerMap): ScoreRes
   for (const idx of visited) {
     for (const q of form.sections[idx].questions) {
       if (!q.graded || q.correct == null) continue;
+      // A hidden graded question wasn't shown to the student — exclude it from
+      // both the earned score and the max, so conditional questions never skew it.
+      if (!isQuestionVisible(q, answers)) continue;
       const points = typeof q.points === "number" && q.points > 0 ? q.points : 1;
       maxScore += points;
       const correct = isAnswerCorrect(q, answers[q.id]);

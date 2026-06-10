@@ -9,6 +9,7 @@ import {
   normalizeForm,
   allQuestions,
   resolveNextSection,
+  isQuestionVisible,
   type NormalizedForm,
   type FormQuestion as Question,
   type AnswerMap,
@@ -147,6 +148,9 @@ export default function HistoryPage() {
     if (!section) return true;
     const newErrors: Record<string, string> = {};
     for (const q of section.questions) {
+      // Skip questions hidden by an unmet conditional — they aren't shown, so they
+      // can't be "required" right now.
+      if (!isQuestionVisible(q, answers as AnswerMap)) continue;
       const a = answers[q.id];
       const empty =
         a === undefined ||
@@ -623,7 +627,9 @@ export default function HistoryPage() {
                   )}
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                    {normForm?.sections[sectionIndex]?.questions.map((q: Question) => (
+                    {normForm?.sections[sectionIndex]?.questions
+                      .filter((q: Question) => isQuestionVisible(q, answers as AnswerMap))
+                      .map((q: Question) => (
                       <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         <label style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
                           {q.label === "Overall Satisfaction" ? t.overallSatisfaction : q.label} {q.required && <span style={{ color: "#ef4444" }}>*</span>}

@@ -37,6 +37,7 @@ import {
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
+import { useRouter } from "next/navigation";
 
 type Event = {
   id: string;
@@ -61,6 +62,7 @@ interface HouseItem {
 }
 
 export default function DashboardClient({ initialSession }: { initialSession: Session | null }) {
+  const router = useRouter();
   const { data: sessionData, status: sessionStatus } = useSession();
   const session = sessionData || initialSession;
   const status = sessionStatus !== "loading"
@@ -122,7 +124,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
   const handleRegister = async (eventId: string, registered: boolean) => {
     if (!session?.user) {
-      window.location.href = "/login";
+      router.push("/login");
       return;
     }
     setRegisteringId(eventId);

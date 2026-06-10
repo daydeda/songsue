@@ -46,7 +46,11 @@ html, body {
   overflow-x: hidden;
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: var(--font-ibm-sans), var(--font-ibm-thai), var(--font-noto-myanmar), var(--font-noto-sc), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Keep in sync with LanguageWrapper's chain. Each var() already carries its
+     own metric-adjusted fallback, so a single generic sans-serif is the only
+     tail we need — do NOT inject -apple-system here, as it carries Thai glyphs
+     and could pre-empt IBM Plex Sans Thai for Thai text. */
+  font-family: var(--font-ibm-sans), var(--font-ibm-thai), var(--font-noto-myanmar), var(--font-noto-sc), sans-serif;
   -webkit-font-smoothing: antialiased;
   scroll-behavior: smooth;
 }

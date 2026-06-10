@@ -2727,7 +2727,7 @@ export default function AdminEventsPage() {
                             red: t.houseMom || "Mom",
                             green: t.houseTo || "To",
                             yellow: t.houseLuang || "Luang",
-                            blue: t.houseMakara || "Makara"
+                            blue: t.houseMakara || "Makon"
                           };
                           const count = formStats?.[hId] || 0;
                           return (

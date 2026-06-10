@@ -80,7 +80,7 @@ export const translations = {
     houseMom: "Mom",
     houseTo: "To",
     houseLuang: "Luang",
-    houseMakara: "Makara",
+    houseMakara: "Makon",
     // Dashboard
     hey: "Hey",
     upcomingEvents: "Upcoming Events",
@@ -614,7 +614,7 @@ export const translations = {
     houseMom: "Mom",
     houseTo: "To",
     houseLuang: "Luang",
-    houseMakara: "Makara",
+    houseMakara: "Makon",
     // Dashboard
     hey: "မင်္ဂလာပါ",
     upcomingEvents: "လာမည့်ပွဲများ",
@@ -881,7 +881,7 @@ export const translations = {
     houseMom: "Mom",
     houseTo: "To",
     houseLuang: "Luang",
-    houseMakara: "Makara",
+    houseMakara: "Makon",
     // Dashboard
     hey: "你好",
     upcomingEvents: "即将举行的活动",

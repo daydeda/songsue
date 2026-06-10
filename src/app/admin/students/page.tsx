@@ -270,7 +270,7 @@ export default function AdminStudentsDirectory() {
     if (id === "red") return t.houseMom || "Mom";
     if (id === "green") return t.houseTo || "To";
     if (id === "yellow") return t.houseLuang || "Luang";
-    if (id === "blue") return t.houseMakara || "Makara";
+    if (id === "blue") return t.houseMakara || "Makon";
     return defaultName;
   };
 

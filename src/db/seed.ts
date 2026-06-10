@@ -13,7 +13,7 @@ const HOUSES = [
   { id: "red",    name: "Mom",   color: "#ef4444" },
   { id: "green",  name: "To",      color: "#14b8a6" },
   { id: "yellow", name: "Luang",  color: "#f59e0b" },
-  { id: "blue",   name: "Makara", color: "#6366f1" },
+  { id: "blue",   name: "Makon", color: "#6366f1" },
 ];
 
 const SUPER_ADMINS = [

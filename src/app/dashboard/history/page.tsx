@@ -607,11 +607,14 @@ export default function HistoryPage() {
                     </p>
                   )}
 
-                  {/* Section header (only meaningful when the form has >1 section) */}
+                  {/* Section header (only meaningful when the form has >1 section).
+                      Shows the ACTUAL section number (sectionIndex+1), not the visit
+                      count — so a branch jump to Section 3 clearly reads as Section 3. */}
                   {normForm && normForm.sections.length > 1 && (
                     <div style={{ marginBottom: 24 }}>
                       <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                        {(lang === "th" ? "ส่วนที่ " : lang === "cn" ? "第 " : lang === "mm" ? "အပိုင်း " : "Step ")}{navStack.length + 1}
+                        {(lang === "th" ? "ส่วนที่ " : lang === "cn" ? "章节 " : lang === "mm" ? "အပိုင်း " : "Section ")}{sectionIndex + 1}
+                        {(lang === "th" ? " จาก " : lang === "cn" ? " / " : lang === "mm" ? " / " : " of ")}{normForm.sections.length}
                       </span>
                       {normForm.sections[sectionIndex]?.title && (
                         <h4 style={{ fontSize: 18, fontWeight: 900, color: "var(--text-primary)", marginTop: 2 }}>

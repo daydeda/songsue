@@ -20,7 +20,7 @@ export default function AdminActivityPage() {
     if (key === "red" || key === "mom") return t.houseMom || "Mom";
     if (key === "green" || key === "to") return t.houseTo || "To";
     if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
-    if (key === "blue" || key === "makara") return t.houseMakara || "Makara";
+    if (key === "blue" || key === "makara") return t.houseMakara || "Makon";
     return defaultName;
   };
 

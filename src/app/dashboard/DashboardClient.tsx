@@ -101,7 +101,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" },
     green:  { name: t.houseTo || "To",      color: "#14b8a6" },
     yellow: { name: t.houseLuang || "Luang",  color: "#f59e0b" },
-    blue:   { name: t.houseMakara || "Makara", color: "#6366f1" },
+    blue:   { name: t.houseMakara || "Makon", color: "#6366f1" },
   };
 
   const fetchEvents = (signal?: AbortSignal) =>

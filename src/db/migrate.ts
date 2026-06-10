@@ -120,11 +120,11 @@ async function migrate() {
   `;
   console.log("  ✅ users.roles");
 
-  // Backfill roles column from role column
+  // Backfill roles column from role column only for users without any roles set
   await sql`
-    UPDATE users SET roles = jsonb_build_array(role) WHERE role IS NOT NULL
+    UPDATE users SET roles = jsonb_build_array(role) WHERE roles IS NULL AND role IS NOT NULL
   `;
-  console.log("  ✅ backfilled users.roles from users.role");
+  console.log("  ✅ backfilled users.roles from users.role where roles was NULL");
 
   // 13. Add registration_close_time column to events
   await sql`

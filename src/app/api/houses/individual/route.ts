@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 export async function GET() {
   try {
     const list = await db.query.users.findMany({
-      where: or(eq(users.role, "student"), gt(users.points, 0)),
       columns: {
         id: true,
         name: true,

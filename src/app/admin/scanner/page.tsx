@@ -159,6 +159,21 @@ export default function QRScannerPage() {
       return;
     }
 
+    // Camera APIs only exist in a secure context (HTTPS or localhost). On a
+    // plain-HTTP origin (e.g. http://192.168.x.x) the browser blocks the camera
+    // outright and never shows a permission prompt — surface that clearly.
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      if (isMountedRef.current) {
+        setScannerError(
+          typeof window !== "undefined" && window.isSecureContext === false
+            ? "Camera blocked: open this site over its https:// address (or localhost). The browser disables the camera on non-secure connections."
+            : "This browser/device does not expose a camera API."
+        );
+        setIsScanning(false);
+      }
+      return;
+    }
+
     // 3. Initialize new instance
     const scanner = new Html5Qrcode("qr-reader");
     scannerRef.current = scanner;
@@ -224,8 +239,18 @@ export default function QRScannerPage() {
     } catch (err) {
       console.error("Scanner start error:", err);
       const errorObj = err as Error;
+      let msg = errorObj?.message || "Could not start camera. Please check permissions.";
+      // The browser caches the camera permission per-origin and will NOT
+      // re-prompt once denied — tell the admin how to re-enable it manually.
+      if (errorObj?.name === "NotAllowedError" || /permission|denied/i.test(msg)) {
+        msg = "Camera permission is blocked. The browser won't ask again on its own — tap the camera/lock icon in the address bar, set Camera to \"Allow\", then press refresh.";
+      } else if (errorObj?.name === "NotFoundError" || errorObj?.name === "OverconstrainedError") {
+        msg = "No camera was found on this device.";
+      } else if (errorObj?.name === "NotReadableError") {
+        msg = "The camera is already in use by another app. Close it and press refresh.";
+      }
       if (isMountedRef.current && currentSessionId === scanSessionIdRef.current) {
-        setScannerError(errorObj?.message || "Could not start camera. Please check permissions.");
+        setScannerError(msg);
         setIsScanning(false);
         scannerRef.current = null;
       }

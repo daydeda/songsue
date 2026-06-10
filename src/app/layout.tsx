@@ -13,14 +13,14 @@ const ibmPlexSans = IBM_Plex_Sans({
   fallback: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
 });
 
-// Thai is a common script for this audience, so keep all weights but DON'T
-// preload — it loads on demand (display:swap) instead of blocking first paint.
+// Thai is a primary script for this audience, so preload it into the critical
+// path alongside the Latin font for crisp Thai LCP text without a swap flash.
 const ibmPlexSansThai = IBM_Plex_Sans_Thai({
   weight: ["400", "500", "600", "700"],
-  subsets: ["thai"],
+  subsets: ["thai", "latin"],
   variable: "--font-ibm-thai",
   display: "swap",
-  preload: false,
+  preload: true,
   fallback: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
 });
 

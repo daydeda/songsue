@@ -406,7 +406,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                       </div>
 
                       {/* Content Area */}
-                      <div style={{ padding: 24, flex: 1, display: "flex", flexDirection: "column" }}>
+                      <div 
+                        onClick={() => setPreviewEvent(e)}
+                        style={{ padding: 24, flex: 1, display: "flex", flexDirection: "column", cursor: "pointer" }}
+                      >
                         <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.03em", marginBottom: 16, overflowWrap: "break-word", wordBreak: "break-word" }}>{e.title}</h3>
                         
                         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
@@ -449,7 +452,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                         {e.description && e.description.length > 100 && (
                           <button 
                             type="button"
-                            onClick={() => setPreviewEvent(e)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPreviewEvent(e);
+                            }}
                             style={{
                               border: "none",
                               background: "transparent",
@@ -477,7 +483,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             return (
                               <button
                                 disabled={isDisabled}
-                                onClick={() => handleRegister(e.id, !!e.isRegistered)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleRegister(e.id, !!e.isRegistered);
+                                }}
                                 className={`btn btn-full ${e.isRegistered ? "btn-success-solid" : "btn-primary"}`}
                                 style={{ 
                                   borderRadius: 16, 

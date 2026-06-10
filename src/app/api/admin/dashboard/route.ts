@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { attendance, events, houses, users } from "@/db/schema";
 import { count, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { checkAndAwardPastEventPoints } from "@/lib/award-points";
 
 
 export async function GET(req: Request) {
@@ -44,14 +43,6 @@ export async function GET(req: Request) {
         },
       });
     }
-
-    // Award points for any events that have just ended. Runs in parallel with the
-    // dashboard queries so it adds zero extra latency. The function is idempotent —
-    // already-processed events are skipped instantly. This replaces the Vercel cron
-    // which only fires once/day on Hobby, meaning points would otherwise be delayed
-    // up to 24 hours. With this, points are awarded within 5 seconds of event end
-    // as long as any admin has the dashboard open (always true during events).
-    void checkAndAwardPastEventPoints();
 
     // Default: Overview stats
     // FE-08: Check-ins today

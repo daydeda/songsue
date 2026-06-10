@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { 
   Trophy, 
-  Zap, 
+  Award, 
   TrendingUp, 
   History,
   Crown,
@@ -535,48 +535,34 @@ export default function HousesPage() {
         )}
  
         {/* Recent Activity */}
-        <section className="glass animate-fade-in-up" style={{ padding: 40, borderRadius: 40 }}>
-          <h2 style={{ fontSize: 24, fontWeight: 900, marginBottom: 32, display: "flex", alignItems: "center", gap: 12 }}>
+        <section className="glass recent-activity-section animate-fade-in-up">
+          <h2 className="recent-activity-title">
             <History size={24} className="text-accent" />
             {t.recentActivity}
           </h2>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div className="activity-list">
             {activities.map((a) => (
-              <div key={a.id} style={{ display: "flex", gap: 20, padding: 20, background: "var(--bg-surface)", borderRadius: 24, border: "1px solid var(--border-subtle)", transition: "transform 0.2s ease" }} className="hover-scale">
-                 <div style={{ 
-                   width: 48, 
-                   height: 48, 
-                   borderRadius: 16, 
-                   background: `${a.house.color}10`, 
-                   display: "flex", 
-                   alignItems: "center", 
-                   justifyContent: "center",
-                   color: a.house.color,
-                   flexShrink: 0
-                 }}>
-                   <Zap size={24} />
+              <div key={a.id} className="activity-item hover-scale">
+                 <div className="activity-icon-container" style={{ color: a.house.color, background: `${a.house.color}10` }}>
+                    <Award className="activity-icon" />
                  </div>
-                 <div style={{ flex: 1 }}>
-                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                     <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)", display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center" }}>
-                       <span>{translateActivityReason(a.reason)}</span>
-                       <span style={{ 
-                         fontSize: 16, 
-                         fontWeight: 900, 
-                         color: a.delta > 0 ? "#10b981" : a.delta === 0 ? "var(--text-muted)" : "#ef4444" 
-                       }}>
-                         {a.delta > 0 ? `+${a.delta}` : a.delta}
-                       </span>
-                     </p>
-                   </div>
-                   <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>
-                      <span style={{ color: a.house.color }}>{getTranslatedHouseName(a.house.id, a.house.name)}</span>
-                      <span>•</span>
-                      <span>{a.event?.title || "Special Points"}</span>
-                      <span>•</span>
-                      <span>{new Date(a.timestamp).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })}</span>
-                   </div>
+                 <div className="activity-content">
+                    <div className="activity-header-row">
+                      <p className="activity-reason">
+                        <span>{translateActivityReason(a.reason)}</span>
+                      </p>
+                      <span className="activity-points" style={{ color: a.delta > 0 ? "#10b981" : a.delta === 0 ? "var(--text-muted)" : "#ef4444" }}>
+                        {a.delta > 0 ? `+${a.delta}` : a.delta}
+                      </span>
+                    </div>
+                    <div className="activity-sub-info">
+                       <span style={{ color: a.house.color }}>{getTranslatedHouseName(a.house.id, a.house.name)}</span>
+                       <span className="bullet">•</span>
+                       <span className="activity-event-title">{a.event?.title || "Special Points"}</span>
+                       <span className="bullet">•</span>
+                       <span>{new Date(a.timestamp).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })}</span>
+                    </div>
                  </div>
               </div>
             ))}
@@ -811,6 +797,84 @@ export default function HousesPage() {
           box-shadow: 0 10px 30px rgba(0,0,0,0.03);
           border-color: rgba(255,107,0,0.15);
         }
+
+        /* Recent Activity */
+        .recent-activity-section {
+          padding: 40px;
+          border-radius: 40px;
+        }
+        .recent-activity-title {
+          font-size: 24px;
+          font-weight: 900;
+          margin-bottom: 32px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .activity-list {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .activity-item {
+          display: flex;
+          gap: 20px;
+          padding: 20px;
+          background: var(--bg-surface);
+          border-radius: 24px;
+          border: 1px solid var(--border-subtle);
+          transition: transform 0.2s ease;
+        }
+        .activity-icon-container {
+          width: 48px;
+          height: 48px;
+          border-radius: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .activity-icon {
+          width: 24px;
+          height: 24px;
+        }
+        .activity-content {
+          flex: 1;
+          min-width: 0;
+        }
+        .activity-header-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 4px;
+          gap: 12px;
+        }
+        .activity-reason {
+          font-weight: 800;
+          font-size: 16px;
+          color: var(--text-primary);
+          margin: 0;
+          line-height: 1.4;
+          word-break: break-word;
+        }
+        .activity-points {
+          font-size: 16px;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+        .activity-sub-info {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 4px 8px;
+          font-size: 13px;
+          color: var(--text-muted);
+          font-weight: 600;
+          line-height: 1.4;
+        }
+        .bullet {
+          color: var(--text-muted);
+        }
  
         @media (max-width: 640px) {
           .podium-container {
@@ -840,6 +904,45 @@ export default function HousesPage() {
           }
           .standings-info {
             flex: 1;
+          }
+
+          /* Recent Activity Mobile */
+          .recent-activity-section {
+            padding: 24px;
+            border-radius: 24px;
+          }
+          .recent-activity-title {
+            font-size: 20px;
+            margin-bottom: 24px;
+          }
+          .activity-list {
+            gap: 12px;
+          }
+          .activity-item {
+            padding: 16px;
+            gap: 12px;
+            border-radius: 18px;
+          }
+          .activity-icon-container {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+          }
+          .activity-icon {
+            width: 20px;
+            height: 20px;
+          }
+          .activity-reason {
+            font-size: 14px;
+          }
+          .activity-points {
+            font-size: 14px;
+          }
+          .activity-sub-info {
+            font-size: 11px;
+          }
+          .activity-sub-info .bullet {
+            display: none;
           }
         }
       `}</style>

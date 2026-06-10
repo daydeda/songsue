@@ -449,7 +449,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                           }}
                           dangerouslySetInnerHTML={{ __html: parseRichText(e.description || "") }}
                         />
-                        {e.description && e.description.length > 100 && (
+                        {e.description && e.description.trim().length > 0 && (
                           <button 
                             type="button"
                             onClick={(event) => {

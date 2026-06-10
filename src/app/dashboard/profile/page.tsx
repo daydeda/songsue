@@ -785,7 +785,7 @@ export default function ProfilePage() {
                 {renderMedicalField("emergencyMedication", t.emergencyMed)}
                 <div className="field col-span-12" style={{ marginTop: 8 }}>
                   <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
-                    <input type="checkbox" style={{ marginTop: 3, flexShrink: 0 }} checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />
+                    <input type="checkbox" style={{ marginTop: 3, flexShrink: 0, width: 18, height: 18, accentColor: "var(--accent-primary)", cursor: "pointer" }} checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />
                     <span style={{ fontSize: 14, lineHeight: 1.4 }}>{t.faintingHistory}</span>
                   </label>
                 </div>

@@ -1,10 +1,10 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attendance, events, houses, users } from "@/db/schema";
-import { count, gte } from "drizzle-orm";
+import { count, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
-
 import { checkAndAwardPastEventPoints } from "@/lib/award-points";
+
 
 export async function GET(req: Request) {
   try {
@@ -14,8 +14,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Automatically check and award past event points
-    await checkAndAwardPastEventPoints();
 
     const type = new URL(req.url).searchParams.get("type") || "overview";
 
@@ -47,45 +45,69 @@ export async function GET(req: Request) {
       });
     }
 
-    // Default: Overview stats
-    const [{ count: totalUsers }] = await db.select({ count: count() }).from(users);
-    const [{ count: totalEvents }] = await db.select({ count: count() }).from(events);
+    // Award points for any events that have just ended. Runs in parallel with the
+    // dashboard queries so it adds zero extra latency. The function is idempotent —
+    // already-processed events are skipped instantly. This replaces the Vercel cron
+    // which only fires once/day on Hobby, meaning points would otherwise be delayed
+    // up to 24 hours. With this, points are awarded within 5 seconds of event end
+    // as long as any admin has the dashboard open (always true during events).
+    void checkAndAwardPastEventPoints();
 
+    // Default: Overview stats
     // FE-08: Check-ins today
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
-    const [{ count: checkinsToday }] = await db
-      .select({ count: count() })
-      .from(attendance)
-      .where(gte(attendance.checkInTime, startOfToday));
 
-    const houseList = await db.query.houses.findMany({
-      columns: { id: true, name: true, points: true, color: true },
-      with: { users: { columns: { id: true } } },
-    });
+    // These queries are independent — run them in a single parallel round-trip
+    // instead of 7 sequential ones (was ~7× the round-trip latency).
+    const [
+      [{ count: totalUsers }],
+      [{ count: totalEvents }],
+      [{ count: checkinsToday }],
+      houseList,
+      memberCounts,
+      recentCheckins,
+      recentScores,
+    ] = await Promise.all([
+      db.select({ count: count() }).from(users),
+      db.select({ count: count() }).from(events),
+      db
+        .select({ count: count() })
+        .from(attendance)
+        .where(gte(attendance.checkInTime, startOfToday)),
+      db.query.houses.findMany({
+        columns: { id: true, name: true, points: true, color: true },
+      }),
+      // Get member counts efficiently with aggregation instead of loading all user records
+      db
+        .select({ houseId: users.houseId, count: count() })
+        .from(users)
+        .where(sql`${users.houseId} IS NOT NULL`)
+        .groupBy(users.houseId),
+      db.query.attendance.findMany({
+        limit: 10,
+        orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
+        with: {
+          user: { columns: { name: true, nickname: true } },
+          event: { columns: { title: true } },
+        },
+      }),
+      db.query.scoreHistory.findMany({
+        limit: 10,
+        orderBy: (scoreHistory, { desc }) => [desc(scoreHistory.timestamp)],
+        columns: {
+          id: true,
+          delta: true,
+          reason: true,
+          timestamp: true,
+        },
+        with: {
+          house: { columns: { id: true, name: true, color: true } },
+        },
+      }),
+    ]);
 
-    const recentCheckins = await db.query.attendance.findMany({
-      limit: 10,
-      orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
-      with: {
-        user: { columns: { name: true, nickname: true } },
-        event: { columns: { title: true } },
-      },
-    });
-
-    const recentScores = await db.query.scoreHistory.findMany({
-      limit: 10,
-      orderBy: (scoreHistory, { desc }) => [desc(scoreHistory.timestamp)],
-      columns: {
-        id: true,
-        delta: true,
-        reason: true,
-        timestamp: true,
-      },
-      with: {
-        house: { columns: { id: true, name: true, color: true } },
-      },
-    });
+    const memberCountMap = new Map(memberCounts.map(m => [m.houseId, m.count]));
 
     // Merge and sort
     const mergedActivity = [
@@ -117,7 +139,7 @@ export async function GET(req: Request) {
         name: h.name,
         color: h.color,
         points: h.points ?? 0,
-        members: h.users?.length ?? 0,
+        members: memberCountMap.get(h.id) ?? 0,
       })),
     });
   } catch (error) {

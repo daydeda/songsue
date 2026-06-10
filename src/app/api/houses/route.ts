@@ -14,7 +14,11 @@ export async function GET() {
       orderBy: (houses, { desc }) => [desc(houses.points)],
     });
 
-    return NextResponse.json(list);
+    return NextResponse.json(list, {
+      headers: {
+        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+      },
+    });
   } catch (error) {
     console.error("Failed to fetch leaderboard:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

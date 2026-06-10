@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -43,7 +43,10 @@ export const users = pgTable("users", {
   profileCompleted: boolean("profile_completed").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ([
+  index("idx_users_profile_completed").on(table.profileCompleted),
+  index("idx_users_house_id").on(table.houseId),
+]));
 
 export const authenticators = pgTable(
   "authenticator",
@@ -78,11 +81,12 @@ export const accounts = pgTable(
     id_token: text("id_token"),
     session_state: text("session_state"),
   },
-  (account) => ({
-    compoundKey: primaryKey({
+  (account) => ([
+    primaryKey({
       columns: [account.provider, account.providerAccountId],
     }),
-  })
+    index("idx_account_userid").on(account.userId),
+  ])
 );
 
 export const sessions = pgTable("session", {
@@ -91,7 +95,9 @@ export const sessions = pgTable("session", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   expires: timestamp("expires", { mode: "date" }).notNull(),
-});
+}, (table) => ([
+  index("idx_session_userid").on(table.userId),
+]));
 
 export const verificationTokens = pgTable(
   "verificationToken",
@@ -138,7 +144,11 @@ export const attendance = pgTable("attendance", {
   status: text("status").default("registered"), // 'registered', 'attended'
   scannedBy: text("scanned_by").references(() => users.id),
   medsCheckOption: text("meds_check_option"),
-});
+}, (table) => ([
+  index("idx_attendance_event_student").on(table.eventId, table.studentId),
+  index("idx_attendance_student").on(table.studentId),
+  index("idx_attendance_checkin_time").on(table.checkInTime),
+]));
 
 // Score history log per house per activity (FE-08)
 export const scoreHistory = pgTable("score_history", {
@@ -148,7 +158,9 @@ export const scoreHistory = pgTable("score_history", {
   delta: integer("delta").notNull(), // positive = gain, negative = loss
   reason: text("reason").notNull(),
   timestamp: timestamp("timestamp").defaultNow(),
-});
+}, (table) => ([
+  index("idx_score_history_event").on(table.eventId),
+]));
 
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),

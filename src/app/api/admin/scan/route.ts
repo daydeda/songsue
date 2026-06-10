@@ -14,9 +14,11 @@ const scanSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  // Apply IP Rate Limiter (Max 60 requests per minute)
+  // Apply IP Rate Limiter. This is an admin-authenticated endpoint on the scanning
+  // hot path: a single check-in is 2 requests (scan + confirm), so the limit must be
+  // high enough for rapid mass check-in. 300/min ≈ 5 req/s comfortably covers it.
   const ip = getClientIp(req);
-  const limiter = rateLimit(ip, 60, 60000);
+  const limiter = rateLimit(ip, 300, 60000);
   if (!limiter.success) {
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
@@ -105,9 +107,9 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  // Apply IP Rate Limiter (Max 60 requests per minute)
+  // Manual search fires per keystroke; allow a higher ceiling than the default.
   const ip = getClientIp(req);
-  const limiter = rateLimit(ip, 60, 60000);
+  const limiter = rateLimit(ip, 120, 60000);
   if (!limiter.success) {
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },

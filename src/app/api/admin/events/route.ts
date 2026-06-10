@@ -4,7 +4,6 @@ import { events, auditLogs } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { realtimeEmitter } from "@/lib/realtime-emitter";
 
 const eventSchema = z.object({
   title: z.string().min(1),
@@ -104,14 +103,6 @@ export async function POST(req: Request) {
           req.headers.get("x-forwarded-for")?.split(",")[0] ||
           req.headers.get("x-real-ip") ||
           "127.0.0.1",
-      });
-
-      realtimeEmitter.emit("dashboard_update", {
-        type: "event_created",
-        event: {
-          id: event.id,
-          title: event.title,
-        }
       });
     }
 

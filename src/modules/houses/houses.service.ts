@@ -2,7 +2,6 @@ import { db } from "@/db";
 import { houses, scoreHistory } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { AuditService } from "../audit/audit.service";
-import { realtimeEmitter } from "@/lib/realtime-emitter";
 
 export class HousesService {
   /**
@@ -49,26 +48,8 @@ export class HousesService {
         });
       }
 
-      // 4. Resolve the house name and color for real-time broadcasts
-      const houseObj = await tx.query.houses.findFirst({
-        where: eq(houses.id, houseId),
-      });
-
-      return { historyRecord, houseObj };
+      return { historyRecord };
     });
-
-    // Broadcast points update in real-time
-    if (result?.historyRecord) {
-      realtimeEmitter.emit("dashboard_update", {
-        type: "score",
-        houseId,
-        houseName: result.houseObj?.name || houseId,
-        houseColor: result.houseObj?.color || "#6366f1",
-        delta,
-        reason,
-        timestamp: new Date().toISOString(),
-      });
-    }
 
     return result?.historyRecord;
   }

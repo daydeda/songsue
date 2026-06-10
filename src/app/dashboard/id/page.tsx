@@ -1,7 +1,8 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { usePolling } from "@/lib/usePolling";
 import dynamic from "next/dynamic";
 const QRCodeSVG = dynamic(
   () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
@@ -51,28 +52,10 @@ export default function DigitalIdPage() {
       .finally(() => setLoadingHouses(false));
   };
 
-  useEffect(() => {
-    fetchHouses();
-
-    // SSE Real-time subscription for leaderboard updates
-    const eventSource = new EventSource("/api/realtime");
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "ping") return;
-
-        if (payload.type === "score") {
-          fetchHouses();
-        }
-      } catch (err) {
-        console.error("SSE parse error in digital ID page:", err);
-      }
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
+  // Poll the leaderboard. Slower interval (20s) because this is student-facing and
+  // potentially many devices — a leaderboard does not need sub-second freshness,
+  // and polling avoids the Supabase free-tier 200 concurrent-connection cap.
+  usePolling(fetchHouses, 20000);
 
   if (status === "loading") {
     return (

@@ -4,7 +4,6 @@ import { and, eq, sql } from "drizzle-orm";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 import { AuditService } from "../audit/audit.service";
-import { realtimeEmitter } from "@/lib/realtime-emitter";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
 
@@ -49,8 +48,14 @@ export class ScannerService {
   }): Promise<ScanResult> {
     const { qrToken, eventId, action, medsCheckOption, score, reason, actorId, ipAddress } = params;
 
-    // 1. Resolve student via UsersService
-    const student = await UsersService.resolveStudentByToken(qrToken);
+    // 1 + 2. Resolve student and event in parallel — they are independent lookups,
+    // so a single round-trip instead of two sequential ones (matters most on the
+    // scan hot path, where the DB is cross-region).
+    const [student, event] = await Promise.all([
+      UsersService.resolveStudentByToken(qrToken),
+      EventsService.getEventById(eventId),
+    ]);
+
     if (!student) {
       return {
         status: "not_found",
@@ -59,8 +64,6 @@ export class ScannerService {
       };
     }
 
-    // 2. Resolve event via EventsService
-    const event = await EventsService.getEventById(eventId);
     if (!event) {
       return {
         status: "not_found",
@@ -163,35 +166,6 @@ export class ScannerService {
         });
       });
 
-      // Broadcast real-time update if house points were modified
-      const houseObj = student.houseId
-        ? await db.query.houses.findFirst({ where: eq(houses.id, student.houseId) })
-        : null;
-
-      const oldMilestones = Math.floor(previousPoints / 100);
-      const newMilestones = Math.floor(newPoints / 100);
-      const milestoneDiff = newMilestones - oldMilestones;
-
-      if (houseObj && milestoneDiff > 0) {
-        realtimeEmitter.emit("dashboard_update", {
-          type: "score",
-          houseId: student.houseId,
-          houseName: houseObj.name,
-          houseColor: houseObj.color ?? "#6366f1",
-          delta: milestoneDiff * 2,
-          reason: `Student ${student.name} reached 100 point milestone (+${newPoints} total points) from activity "${event.title}"`,
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      realtimeEmitter.emit("dashboard_update", {
-        type: "score_awarded",
-        studentName: student.name,
-        studentNickname: student.nickname,
-        pointsAwarded: parsedScore,
-        timestamp: new Date().toISOString(),
-      });
-
       return {
         status: "success",
         student: {
@@ -237,15 +211,6 @@ export class ScannerService {
             action: `Confirmed check-in for pre-registered event: ${event.title}`,
             ipAddress,
           });
-        });
-
-        // Broadcast real-time update
-        realtimeEmitter.emit("dashboard_update", {
-          type: "checkin",
-          studentName: student.name,
-          studentNickname: student.nickname,
-          eventTitle: event.title,
-          timestamp: new Date().toISOString(),
         });
 
         return {
@@ -294,15 +259,6 @@ export class ScannerService {
             action: `Recorded walk-in check-in for event: ${event.title}`,
             ipAddress,
           });
-        });
-
-        // Broadcast real-time update
-        realtimeEmitter.emit("dashboard_update", {
-          type: "checkin",
-          studentName: student.name,
-          studentNickname: student.nickname,
-          eventTitle: event.title,
-          timestamp: new Date().toISOString(),
         });
 
         return {

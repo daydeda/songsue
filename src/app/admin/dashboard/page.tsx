@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { usePolling } from "@/lib/usePolling";
 import Link from "next/link";
 import {
   Users,
@@ -152,95 +153,11 @@ export default function AdminDashboardOverview() {
       .then((d) => setStats(d));
   };
 
-  useEffect(() => {
-    fetchStats();
-
-    // Establish Server-Sent Events (SSE) Real-time subscription
-    const eventSource = new EventSource("/api/realtime");
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "ping") return; // Heartbeat ignore
-
-        if (payload.type === "checkin") {
-          setStats((prev) => {
-            if (!prev || "error" in prev) return prev;
-            return {
-              ...prev,
-              checkinsToday: prev.checkinsToday + 1,
-              recentActivity: [
-                {
-                  type: "checkin",
-                  studentName: payload.studentName,
-                  studentNickname: payload.studentNickname || "",
-                  eventTitle: payload.eventTitle,
-                  timestamp: payload.timestamp,
-                },
-                ...prev.recentActivity.slice(0, 9), // Keep top 10 logs
-              ],
-            };
-          });
-        } else if (payload.type === "score") {
-          setStats((prev) => {
-            if (!prev || "error" in prev) return prev;
-
-            // 1. Update points for the specific house
-            const updatedHouses = prev.houses.map((h) => {
-              if (h.id === payload.houseId) {
-                return { ...h, points: h.points + payload.delta };
-              }
-              return h;
-            });
-
-            // 2. Append score log to recent activity
-            return {
-              ...prev,
-              houses: updatedHouses,
-              recentActivity: [
-                {
-                  type: "score",
-                  houseId: payload.houseId,
-                  houseName: payload.houseName,
-                  houseColor: payload.houseColor,
-                  delta: payload.delta,
-                  reason: payload.reason,
-                  timestamp: payload.timestamp,
-                },
-                ...prev.recentActivity.slice(0, 9), // Keep top 10 logs
-              ],
-            };
-          });
-        } else if (payload.type === "event_created") {
-          setStats((prev) => {
-            if (!prev || "error" in prev) return prev;
-            return {
-              ...prev,
-              totalEvents: prev.totalEvents + 1,
-            };
-          });
-        } else if (payload.type === "event_deleted") {
-          setStats((prev) => {
-            if (!prev || "error" in prev) return prev;
-            return {
-              ...prev,
-              totalEvents: Math.max(0, prev.totalEvents - 1),
-            };
-          });
-        }
-      } catch (err) {
-        console.error("Failed to parse SSE payload:", err);
-      }
-    };
-
-    eventSource.onerror = () => {
-      // Browsers handle automatic reconnects for EventSource automatically
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
+  // Poll the dashboard endpoint for near-real-time updates. The endpoint already
+  // returns the full fresh state (counts, houses, recent activity), so a refetch
+  // replaces the previous incremental SSE logic. 5s is responsive for the handful
+  // of admins watching this screen, and polling pauses when the tab is hidden.
+  usePolling(fetchStats, 5000);
 
   const handleExportCSV = async () => {
     setExporting(true);

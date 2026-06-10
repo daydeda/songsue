@@ -2,7 +2,8 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { usePolling } from "@/lib/usePolling";
 import dynamic from "next/dynamic";
 const QRCodeSVG = dynamic(
   () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
@@ -114,36 +115,13 @@ export default function DashboardClient({ initialSession }: { initialSession: an
       .finally(() => setLoadingHouses(false));
   };
 
-  useEffect(() => {
+  // Poll events + leaderboard. Slower interval (20s) because this is student-facing
+  // and potentially many devices; polling avoids the Supabase free-tier 200
+  // concurrent-connection cap and pauses while the tab is hidden.
+  usePolling(() => {
     fetchEvents();
     fetchHouses();
-
-    // Establish Server-Sent Events (SSE) Real-time subscription for students
-    const eventSource = new EventSource("/api/realtime");
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "ping") return;
-
-        if (
-          payload.type === "event_created" ||
-          payload.type === "event_updated" ||
-          payload.type === "event_deleted"
-        ) {
-          fetchEvents(); // Live update the events listing on student dashboard!
-        } else if (payload.type === "score") {
-          fetchHouses(); // Live update the scoreboard/leaderboard on student dashboard!
-        }
-      } catch (err) {
-        console.error("SSE parse error in student dashboard:", err);
-      }
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
+  }, 20000);
 
   const handleRegister = async (eventId: string, registered: boolean) => {
     if (!session?.user) {

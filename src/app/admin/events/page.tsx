@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
+import { usePolling } from "@/lib/usePolling";
 
 interface AdminEvent {
   id: string;
@@ -473,35 +474,9 @@ export default function AdminEventsPage() {
     }
   };
 
-  useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
-    timer = setTimeout(() => {
-      fetchEvents();
-    }, 0);
-
-    // Establish Server-Sent Events (SSE) Real-time subscription
-    const eventSource = new EventSource("/api/realtime");
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (
-          payload.type === "event_created" ||
-          payload.type === "event_updated" ||
-          payload.type === "event_deleted"
-        ) {
-          fetchEvents(); // Live update the events listing!
-        }
-      } catch (err) {
-        console.error("SSE parse error in events admin page:", err);
-      }
-    };
-
-    return () => {
-      if (timer) clearTimeout(timer);
-      eventSource.close();
-    };
-  }, []);
+  // Poll the events listing instead of holding an SSE connection (free-tier
+  // friendly, pauses when the tab is hidden).
+  usePolling(fetchEvents, 8000);
 
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 

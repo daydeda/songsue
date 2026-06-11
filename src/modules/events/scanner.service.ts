@@ -233,12 +233,19 @@ export class ScannerService {
               .for("update");
 
             if (lockedEvent?.quota !== null) {
+              // Walk-ins are ADDITIVE capacity on top of the pre-registration quota:
+              // the total room cap is quota + quotaWalkIn (e.g. 400 registered + 20
+              // walk-in = 420 in the room). This lets walk-ins fill estimated extra
+              // space even when all pre-registered seats are taken. The walk-in
+              // sub-limit below still caps how many of those extra slots walk-ins take.
+              // (quotaWalkIn null = no explicit extra capacity → cap stays at quota.)
+              const totalCap = (lockedEvent?.quota ?? 0) + (lockedEvent?.quotaWalkIn ?? 0);
               const [{ n }] = await tx
                 .select({ n: sql<number>`count(*)` })
                 .from(attendance)
                 .where(and(eq(attendance.eventId, eventId), eq(attendance.status, "attended")));
 
-              if (Number(n) >= (lockedEvent?.quota ?? 0)) throw new QuotaFullError();
+              if (Number(n) >= totalCap) throw new QuotaFullError();
             }
 
             if (lockedEvent?.quotaWalkIn !== null) {

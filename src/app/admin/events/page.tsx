@@ -1254,10 +1254,13 @@ export default function AdminEventsPage() {
                         min={1} 
                         value={formData.quotaWalkIn || ""} 
                         onChange={(e) => set("quotaWalkIn", e.target.value ? Number(e.target.value) : null)} 
-                        placeholder={t.unlimitedIfEmpty} 
-                        style={{ paddingLeft: 44 }} 
+                        placeholder={t.unlimitedIfEmpty}
+                        style={{ paddingLeft: 44 }}
                       />
                     </div>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
+                      {t.walkInQuotaHint}
+                    </p>
                   </div>
                 )}
 
@@ -1944,7 +1947,7 @@ export default function AdminEventsPage() {
                           <span>{"Int'l Limit:"} <strong style={{ color: "var(--text-secondary)" }}>{evt.quotaInternational}</strong></span>
                         )}
                         {evt.quotaWalkIn !== null && evt.quotaWalkIn > 0 && (
-                          <span>Walk-in Limit: <strong style={{ color: "var(--text-secondary)" }}>{evt.quotaWalkIn}</strong></span>
+                          <span>Walk-in (extra): <strong style={{ color: "var(--text-secondary)" }}>+{evt.quotaWalkIn}</strong></span>
                         )}
                       </div>
                     )}

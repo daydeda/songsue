@@ -16,11 +16,12 @@ const QRCodeSVG = dynamic(
   }
 );
 import Link from "next/link";
-import { 
-  Trophy, 
-  User, 
-  ArrowLeft, 
-  RefreshCw
+import {
+  Trophy,
+  User,
+  ArrowLeft,
+  RefreshCw,
+  Star
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
@@ -38,6 +39,7 @@ export default function DigitalIdPage() {
   const { t, lang } = useLanguage();
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
+  const [myStanding, setMyStanding] = useState<{ points: number; rank: number | null; total: number } | null>(null);
 
   const { qrValue, countdownMM, countdownSS, countdownColor } = useQrToken(session?.user?.id);
 
@@ -48,11 +50,22 @@ export default function DigitalIdPage() {
     blue:   { name: t.houseMakara || "Makon", color: "#6366f1" },
   };
 
-  const fetchHouses = (signal?: AbortSignal) =>
-    fetch("/api/houses", { signal })
+  const fetchHouses = (signal?: AbortSignal) => {
+    const houseReq = fetch("/api/houses", { signal })
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setHouses(d); })
       .finally(() => setLoadingHouses(false));
+
+    // Only signed-in students have an individual standing to fetch.
+    const standingReq = session?.user?.id
+      ? fetch("/api/houses/individual/me", { signal })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => { if (d && typeof d.points === "number") setMyStanding(d); })
+          .catch(() => {})
+      : Promise.resolve();
+
+    return Promise.all([houseReq, standingReq]);
+  };
 
   // Poll the leaderboard. Slower interval (20s) because this is student-facing and
   // potentially many devices — a leaderboard does not need sub-second freshness,
@@ -137,6 +150,54 @@ export default function DigitalIdPage() {
             <p style={{ fontSize: 32, fontWeight: 900, color: houseInfo.color, filter: "brightness(0.8)" }}>
               {houseInfo.name.toUpperCase()}
             </p>
+          </div>
+        )}
+
+        {/* My Individual Score Card */}
+        {user && myStanding && (
+          <div
+            className="glass animate-fade-in-up"
+            style={{
+              padding: "18px 20px",
+              borderRadius: 24,
+              background: "linear-gradient(135deg, rgba(255,107,0,0.08), rgba(255,255,255,0.7))",
+              border: "1px solid rgba(255,107,0,0.25)",
+              boxShadow: "0 10px 30px rgba(255,107,0,0.06)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+                <Star size={12} />
+                {lang === "th" ? "คะแนนรายบุคคลของคุณ" : "Your Individual Score"}
+              </span>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <span style={{ fontSize: 34, fontWeight: 900, color: "var(--text-primary)", lineHeight: 1 }}>
+                  {myStanding.points}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  {t.points}
+                </span>
+              </div>
+            </div>
+            {myStanding.rank && (
+              <div style={{ textAlign: "center", flexShrink: 0, padding: "8px 16px", borderRadius: 16, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border-subtle)" }}>
+                <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", display: "block" }}>
+                  {lang === "th" ? "อันดับ" : "Rank"}
+                </span>
+                <span style={{ fontSize: 24, fontWeight: 900, color: "var(--accent-primary)", lineHeight: 1.1 }}>
+                  #{myStanding.rank}
+                </span>
+                {myStanding.total > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "block" }}>
+                    {lang === "th" ? `จาก ${myStanding.total}` : `of ${myStanding.total}`}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
 

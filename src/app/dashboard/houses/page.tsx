@@ -1,6 +1,7 @@
 "use client";
  
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { 
   Trophy, 
@@ -43,6 +44,8 @@ type StudentRanking = {
  
 export default function HousesPage() {
   const { t, lang } = useLanguage();
+  const { data: session } = useSession();
+  const myId = session?.user?.id;
   const [houses, setHouses] = useState<House[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [individuals, setIndividuals] = useState<StudentRanking[]>([]);
@@ -189,6 +192,12 @@ export default function HousesPage() {
   const paginatedIndividuals = individuals.slice(startIndex, startIndex + itemsPerPage);
   const topThreeIndividuals = individuals.slice(0, 3);
   const maxIndividualPoints = Math.max(...individuals.map(ind => ind.points), 1);
+
+  // Locate the current user within the individual leaderboard
+  const myIndex = myId ? individuals.findIndex(ind => ind.id === myId) : -1;
+  const myRank = myIndex >= 0 ? myIndex + 1 : null;
+  const myEntry = myIndex >= 0 ? individuals[myIndex] : null;
+  const myPage = myRank ? Math.ceil(myRank / itemsPerPage) : null;
  
   return (
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", paddingBottom: 80 }}>
@@ -437,15 +446,43 @@ export default function HousesPage() {
         {activeTab === "individual" && (
           <section className="standings-section animate-fade-in-up" style={{ marginBottom: 56 }}>
             <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
+
+            {/* "Your rank" banner — lets a student spot their position even when paginated away */}
+            {myEntry && myRank && (
+              <button
+                onClick={() => myPage && setCurrentPage(myPage)}
+                className="my-rank-banner"
+                title={lang === "th" ? "ไปยังอันดับของฉัน" : "Jump to my position"}
+              >
+                <div className="my-rank-badge">#{myRank}</div>
+                <div className="my-rank-info">
+                  <span className="my-rank-label">{lang === "th" ? "อันดับของคุณ" : "Your rank"}</span>
+                  <span className="my-rank-name">
+                    {myEntry.name} {myEntry.nickname ? `(${myEntry.nickname})` : ""}
+                  </span>
+                </div>
+                <div className="my-rank-points">
+                  <span className="points-value">{myEntry.points}</span>
+                  <span className="points-label">{t.points}</span>
+                </div>
+                <span className="my-rank-jump">
+                  {currentPage === myPage
+                    ? (lang === "th" ? "อยู่หน้านี้" : "On this page")
+                    : (lang === "th" ? "ไปดู →" : "View →")}
+                </span>
+              </button>
+            )}
+
             <div className="standings-list" style={{ marginBottom: 32 }}>
               {paginatedIndividuals.map((ind, idx) => {
                 const rank = startIndex + idx + 1;
                 const progressWidth = (ind.points / maxIndividualPoints) * 100;
                 const houseColor = ind.house?.color || "var(--border-subtle)";
                 const houseName = ind.houseId ? getTranslatedHouseName(ind.houseId, ind.house?.name || "") : t.unassigned;
-                
+                const isMe = ind.id === myId;
+
                 return (
-                  <div className="standings-row" key={ind.id}>
+                  <div className={`standings-row${isMe ? " is-me" : ""}`} key={ind.id}>
                     <div className={`standings-rank rank-${rank <= 4 ? rank : 4}`}>
                       {rank}
                     </div>
@@ -455,6 +492,7 @@ export default function HousesPage() {
                     <div className="standings-info" style={{ flex: 2 }}>
                       <span className="standings-name">
                         {ind.name} {ind.nickname ? `(${ind.nickname})` : ""}
+                        {isMe && <span className="you-badge">{lang === "th" ? "คุณ" : "YOU"}</span>}
                       </span>
                       <span className="standings-subtitle" style={{ color: houseColor || "var(--text-muted)" }}>
                         {houseName} {ind.houseId ? "House" : ""}
@@ -716,6 +754,92 @@ export default function HousesPage() {
           box-shadow: 0 10px 30px rgba(0,0,0,0.03);
           border-color: rgba(255,107,0,0.15);
         }
+        .standings-row.is-me {
+          border-color: var(--accent-primary);
+          background: rgba(255,107,0,0.05);
+          box-shadow: 0 0 0 1px var(--accent-primary), 0 8px 24px rgba(255,107,0,0.08);
+        }
+        .you-badge {
+          display: inline-block;
+          margin-left: 8px;
+          padding: 2px 8px;
+          border-radius: 999px;
+          background: var(--accent-primary);
+          color: #fff;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          vertical-align: middle;
+        }
+
+        /* "Your rank" banner */
+        .my-rank-banner {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          width: 100%;
+          text-align: left;
+          padding: 16px 24px;
+          margin-bottom: 20px;
+          background: linear-gradient(135deg, rgba(255,107,0,0.10), rgba(255,107,0,0.03));
+          border: 1.5px solid var(--accent-primary);
+          border-radius: 20px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .my-rank-banner:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 30px rgba(255,107,0,0.12);
+        }
+        .my-rank-badge {
+          min-width: 44px;
+          height: 44px;
+          padding: 0 10px;
+          border-radius: 14px;
+          background: var(--accent-primary);
+          color: #fff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 900;
+          font-size: 16px;
+          flex-shrink: 0;
+        }
+        .my-rank-info {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-width: 0;
+        }
+        .my-rank-label {
+          font-size: 10px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--accent-primary);
+        }
+        .my-rank-name {
+          font-size: 15px;
+          font-weight: 800;
+          color: var(--text-primary);
+          margin-top: 2px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .my-rank-points {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          flex-shrink: 0;
+        }
+        .my-rank-jump {
+          font-size: 13px;
+          font-weight: 800;
+          color: var(--accent-primary);
+          flex-shrink: 0;
+          white-space: nowrap;
+        }
         .standings-rank {
           width: 32px;
           height: 32px;
@@ -900,6 +1024,13 @@ export default function HousesPage() {
             gap: 12px;
           }
           .standings-progress-container {
+            display: none;
+          }
+          .my-rank-banner {
+            padding: 12px 16px;
+            gap: 12px;
+          }
+          .my-rank-points {
             display: none;
           }
           .standings-info {

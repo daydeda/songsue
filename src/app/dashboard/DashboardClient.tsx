@@ -176,6 +176,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     setRegisteringId(null);
   };
 
+  // Hooks must run on every render, before any early return (Rules of Hooks).
+  // Seed from session?.user?.id directly — `user` is derived after the guard below.
+  const { qrValue, countdownMM, countdownSS, countdownColor } = useQrToken(session?.user?.id);
+
   if (status === "loading") {
     return (
       <div
@@ -190,7 +194,6 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const user = session?.user;
   const houseId = user?.houseId ?? null;
   const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
-  const { qrValue, countdownMM, countdownSS, countdownColor } = useQrToken(user?.id);
 
   const now = new Date();
   

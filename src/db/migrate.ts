@@ -3,7 +3,6 @@
  * Adds new columns and tables introduced in this session.
  * Safe to run on an existing DB — uses IF NOT EXISTS and ADD COLUMN IF NOT EXISTS.
  */
-import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 const connectionString = process.env.DATABASE_URL!;
@@ -12,9 +11,14 @@ if (!connectionString) {
   process.exit(1);
 }
 
+// The Supabase transaction pooler (port 6543) runs in transaction mode and does
+// NOT support prepared statements — postgres-js must use the simple query
+// protocol there, or every DDL statement fails. Mirrors src/db/index.ts.
+const usingTransactionPooler = connectionString.includes(":6543");
+
 async function migrate() {
   console.log("🔄 Applying incremental migration...");
-  const sql = postgres(connectionString, { max: 1 });
+  const sql = postgres(connectionString, { max: 1, prepare: !usingTransactionPooler });
 
   // 1. Add qr_token column to users (if not exists)
   await sql`
@@ -176,6 +180,73 @@ async function migrate() {
     ADD COLUMN IF NOT EXISTS quota_walk_in integer
   `;
   console.log("  ✅ events.quota_walk_in");
+
+  // 19. Convert all naive `timestamp` columns to `timestamptz` (timestamp with
+  // time zone) so stored values are unambiguous instants instead of bare
+  // wall-clock with no offset.
+  //
+  // SAFETY / NON-DESTRUCTIVE:
+  //  - Idempotent: each column is only altered while it is still
+  //    `timestamp without time zone`. Re-running is a no-op (so it never
+  //    double-converts a timestamptz back to naive).
+  //  - Instant-preserving: existing naive values are reinterpreted with
+  //    `AT TIME ZONE 'UTC'`. In production the DB session is UTC and
+  //    postgres-js already reads these naive values AS UTC, so the absolute
+  //    instant is unchanged — nothing in the app shifts. The UI keeps
+  //    converting to Asia/Bangkok at render time exactly as before.
+  await sql`
+    DO $$
+    DECLARE
+      r record;
+    BEGIN
+      FOR r IN
+        SELECT * FROM (VALUES
+          ('users', 'emailVerified'),
+          ('users', 'created_at'),
+          ('users', 'updated_at'),
+          ('session', 'expires'),
+          ('verificationToken', 'expires'),
+          ('events', 'start_time'),
+          ('events', 'end_time'),
+          ('events', 'registration_open_time'),
+          ('events', 'registration_close_time'),
+          ('events', 'created_at'),
+          ('events', 'updated_at'),
+          ('attendance', 'check_in_time'),
+          ('score_history', 'timestamp'),
+          ('audit_logs', 'timestamp'),
+          ('forms', 'created_at'),
+          ('forms', 'updated_at'),
+          ('form_submissions', 'submitted_at')
+        ) AS t(tbl, col)
+      LOOP
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = r.tbl
+            AND column_name = r.col
+            AND data_type = 'timestamp without time zone'
+        ) THEN
+          EXECUTE format(
+            'ALTER TABLE %I ALTER COLUMN %I TYPE timestamptz USING %I AT TIME ZONE ''UTC''',
+            r.tbl, r.col, r.col
+          );
+        END IF;
+      END LOOP;
+    END $$;
+  `;
+  console.log("  ✅ converted timestamp columns to timestamptz (instant-preserving)");
+
+  // 20. Default new DB sessions (psql, Supabase Studio, the app's pooled
+  // connections) to Asia/Bangkok so raw timestamptz values DISPLAY as Bangkok
+  // local time. Changes only how instants are rendered to text, never the
+  // stored instant — safe and reversible. Affects sessions opened AFTER this runs.
+  await sql`
+    DO $$
+    BEGIN
+      EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'Asia/Bangkok');
+    END $$;
+  `;
+  console.log("  ✅ database default timezone set to Asia/Bangkok");
 
   console.log("✅ Migration complete!");
   await sql.end();

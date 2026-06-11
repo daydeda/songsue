@@ -14,7 +14,7 @@ export const users = pgTable("users", {
   prefix: text("prefix"),
   name: text("name").notNull().unique(),
   email: text("email").notNull().unique(),
-  emailVerified: timestamp("emailVerified", { mode: "date" }),
+  emailVerified: timestamp("emailVerified", { mode: "date", withTimezone: true }),
   image: text("image"),
   role: text("role").default("student"), // 'student', 'smo', 'anusmo', 'admin', 'registration', 'organizer', 'super_admin'
   roles: jsonb("roles").$type<string[]>().default(["student"]),
@@ -41,8 +41,8 @@ export const users = pgTable("users", {
   emergencyContacts: jsonb("emergency_contacts"), // [{name, relationship, phone}]
   pdpaConsent: boolean("pdpa_consent").default(false),
   profileCompleted: boolean("profile_completed").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ([
   index("idx_users_profile_completed").on(table.profileCompleted),
   index("idx_users_house_id").on(table.houseId),
@@ -94,7 +94,7 @@ export const sessions = pgTable("session", {
   userId: text("userId")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  expires: timestamp("expires", { mode: "date" }).notNull(),
+  expires: timestamp("expires", { mode: "date", withTimezone: true }).notNull(),
 }, (table) => ([
   index("idx_session_userid").on(table.userId),
 ]));
@@ -104,7 +104,7 @@ export const verificationTokens = pgTable(
   {
     identifier: text("identifier").notNull(),
     token: text("token").notNull(),
-    expires: timestamp("expires", { mode: "date" }).notNull(),
+    expires: timestamp("expires", { mode: "date", withTimezone: true }).notNull(),
   },
   (vt) => ({
     compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
@@ -115,10 +115,10 @@ export const events = pgTable("events", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
-  startTime: timestamp("start_time").notNull(),
-  endTime: timestamp("end_time").notNull(),
-  registrationOpenTime: timestamp("registration_open_time"),
-  registrationCloseTime: timestamp("registration_close_time"),
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }).notNull(),
+  registrationOpenTime: timestamp("registration_open_time", { withTimezone: true }),
+  registrationCloseTime: timestamp("registration_close_time", { withTimezone: true }),
   quota: integer("quota"),
   location: text("location"),
   pointsAwarded: integer("points_awarded").default(0),
@@ -133,15 +133,15 @@ export const events = pgTable("events", {
   // null or [] means all roles can access; otherwise restricted to listed roles
   // Possible values: 'student', 'smo', 'anusmo' (admin roles always see everything)
   allowedRoles: jsonb("allowed_roles").$type<string[]>(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
 export const attendance = pgTable("attendance", {
   id: uuid("id").defaultRandom().primaryKey(),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
   studentId: text("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  checkInTime: timestamp("check_in_time"),
+  checkInTime: timestamp("check_in_time", { withTimezone: true }),
   method: text("method"), // 'qr', 'manual', 'walk-in', 'pre-registered'
   status: text("status").default("registered"), // 'registered', 'attended'
   scannedBy: text("scanned_by").references(() => users.id, { onDelete: "set null" }),
@@ -159,14 +159,14 @@ export const scoreHistory = pgTable("score_history", {
   eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
   delta: integer("delta").notNull(), // positive = gain, negative = loss
   reason: text("reason").notNull(),
-  timestamp: timestamp("timestamp").defaultNow(),
+  timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
 }, (table) => ([
   index("idx_score_history_event").on(table.eventId),
 ]));
 
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
-  timestamp: timestamp("timestamp").defaultNow(),
+  timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
   actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
   targetId: text("target_id").references(() => users.id, { onDelete: "set null" }),
   action: text("action").notNull(),
@@ -245,8 +245,8 @@ export const forms = pgTable("forms", {
   pointsAwarded: integer("points_awarded").default(0),
   isActive: boolean("is_active").default(true),
   isAwarded: boolean("is_awarded").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
 export const formSubmissions = pgTable("form_submissions", {
@@ -254,7 +254,7 @@ export const formSubmissions = pgTable("form_submissions", {
   formId: uuid("form_id").references(() => forms.id, { onDelete: "cascade" }).notNull(),
   studentId: text("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   answers: jsonb("answers").notNull(), // Map of questionId -> studentAnswer
-  submittedAt: timestamp("submitted_at").defaultNow(),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow(),
 });
 
 export const formsRelations = relations(forms, ({ one, many }) => ({

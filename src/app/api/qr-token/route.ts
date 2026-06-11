@@ -7,8 +7,9 @@ export async function GET() {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const token = signQrToken(session.user.id);
-  return NextResponse.json({ token }, {
+  const { token, expiresAt } = signQrToken(session.user.id);
+  const expiresIn = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+  return NextResponse.json({ token, expiresIn }, {
     headers: { "Cache-Control": "no-store, max-age=0" },
   });
 }

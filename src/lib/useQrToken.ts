@@ -2,32 +2,45 @@
 
 import { useState, useEffect } from "react";
 
-const REFRESH_SECS = 240; // refresh every 4 min; token valid 5 min
+const RETRY_SECS = 30; // retry delay when the token endpoint is unreachable
 
 export function useQrToken(userId: string | undefined) {
   const [qrValue, setQrValue] = useState<string>("loading");
-  const [secsLeft, setSecsLeft] = useState(REFRESH_SECS);
+  const [secsLeft, setSecsLeft] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
+    let timer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
 
+    // Tokens are pinned to fixed 5-min windows server-side, so we refetch just
+    // after the window rolls — the countdown shows true remaining validity and
+    // a page refresh mid-window returns the same QR without resetting it.
     const fetchToken = async () => {
       try {
         const res = await fetch("/api/qr-token");
         if (res.ok) {
-          const { token } = await res.json();
+          const { token, expiresIn } = await res.json();
+          if (cancelled) return;
           setQrValue(token);
-          setSecsLeft(REFRESH_SECS);
+          setSecsLeft(expiresIn);
+          timer = setTimeout(fetchToken, expiresIn * 1000 + 500);
+          return;
         }
       } catch {
-        setQrValue(userId);
-        setSecsLeft(REFRESH_SECS);
+        // fall through to retry
       }
+      if (cancelled) return;
+      setQrValue(userId); // legacy fallback: scanner resolves raw user IDs
+      setSecsLeft(RETRY_SECS);
+      timer = setTimeout(fetchToken, RETRY_SECS * 1000);
     };
 
     fetchToken();
-    const interval = setInterval(fetchToken, REFRESH_SECS * 1000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [userId]);
 
   // Countdown ticks every second; resets when qrValue changes

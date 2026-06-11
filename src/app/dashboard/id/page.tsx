@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePolling } from "@/lib/usePolling";
 import dynamic from "next/dynamic";
 const QRCodeSVG = dynamic(
@@ -71,6 +71,19 @@ export default function DigitalIdPage() {
   // potentially many devices — a leaderboard does not need sub-second freshness,
   // and polling avoids the Supabase free-tier 200 concurrent-connection cap.
   usePolling(fetchHouses, 20000);
+
+  // Fetch the user's individual standing immediately once the session is ready,
+  // rather than waiting for the next 20s poll tick (the first poll fires before
+  // the session has loaded, so without this the score card lags on first paint).
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const ac = new AbortController();
+    fetch("/api/houses/individual/me", { signal: ac.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && typeof d.points === "number") setMyStanding(d); })
+      .catch(() => {});
+    return () => ac.abort();
+  }, [session?.user?.id]);
 
   if (status === "loading") {
     return (

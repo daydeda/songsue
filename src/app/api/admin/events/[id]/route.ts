@@ -17,6 +17,7 @@ const eventUpdateSchema = z.object({
   pointsAwarded: z.number().int().min(0).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
+  quotaWalkIn: z.number().int().min(0).optional().nullable(),
   targetThai: z.boolean().optional(),
   targetInternational: z.boolean().optional(),
   quotaThai: z.number().int().min(0).optional().nullable(),
@@ -48,16 +49,17 @@ export async function PUT(
         ...(data.startTime && { startTime: new Date(data.startTime) }),
         ...(data.endTime && { endTime: new Date(data.endTime) }),
         ...(data.registrationOpenTime !== undefined && {
-          registrationOpenTime: data.registrationOpenTime ? new Date(data.registrationOpenTime) : null
+            registrationOpenTime: data.registrationOpenTime ? new Date(data.registrationOpenTime) : null
         }),
         ...(data.registrationCloseTime !== undefined && {
-          registrationCloseTime: data.registrationCloseTime ? new Date(data.registrationCloseTime) : null
+            registrationCloseTime: data.registrationCloseTime ? new Date(data.registrationCloseTime) : null
         }),
         ...(data.quota !== undefined && { quota: data.quota }),
         ...(data.location !== undefined && { location: data.location }),
         ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
         ...(data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled }),
+        ...(data.quotaWalkIn !== undefined && { quotaWalkIn: data.quotaWalkIn }),
         ...(data.targetThai !== undefined && { targetThai: data.targetThai }),
         ...(data.targetInternational !== undefined && { targetInternational: data.targetInternational }),
         ...(data.quotaThai !== undefined && { quotaThai: data.quotaThai }),

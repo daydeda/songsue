@@ -10,13 +10,17 @@ import {
   UserCheck, 
   UserMinus,
   RefreshCcw,
-  Zap,
   ArrowRight,
   ShieldCheck,
   House,
   RotateCcw,
   Download,
-  ChevronDown
+  ChevronDown,
+  Calendar,
+  Users,
+  UserX,
+  Award,
+  Plus
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 
@@ -455,7 +459,7 @@ export default function QRScannerPage() {
     },
     success_walk_in: { 
       color: "#10b981", 
-      icon: Zap, 
+      icon: UserCheck, 
       title: t.scanSuccess + " (Walk-in)", 
       desc: t.scanSuccess,
       bg: "rgba(16, 185, 129, 0.1)"
@@ -490,7 +494,7 @@ export default function QRScannerPage() {
     },
     quota_full: { 
       color: "#f59e0b", 
-      icon: Zap, 
+      icon: UserX, 
       title: t.eventFull || "Event Full", 
       desc: t.eventFull || "Event Full",
       bg: "rgba(245, 158, 11, 0.1)"
@@ -518,7 +522,7 @@ export default function QRScannerPage() {
     } else {
       cfg = {
         color: "var(--accent-primary)",
-        icon: Zap,
+        icon: Award,
         title: lang === "th" ? "มอบคะแนนรายบุคคล" : "Individual Score",
         desc: lang === "th" ? "กรอกคะแนนที่ต้องการมอบให้แก่นักศึกษา" : "Enter the score to award to this student",
         bg: "rgba(99, 102, 241, 0.1)"
@@ -601,7 +605,7 @@ export default function QRScannerPage() {
             {/* Left Side: Icon & Dropdown Selector */}
             <div className="flex items-center gap-4 flex-1 min-w-0 w-full">
               <div style={{ width: 48, height: 48, background: "var(--bg-elevated)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Zap size={24} color="var(--accent-primary)" />
+                <Calendar size={24} color="var(--accent-primary)" />
               </div>
               <div style={{ flex: 1, minWidth: 0, position: "relative" }} ref={dropdownRef}>
                 <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>{t.eventsTitle.toUpperCase()}</label>
@@ -776,7 +780,7 @@ export default function QRScannerPage() {
                   You must define at least one event in the database before you can scan student QR codes.
                 </p>
                 <a href="/admin/events" className="btn btn-primary" style={{ borderRadius: 12, display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px" }}>
-                  <Zap size={16} /> Create Event
+                  <Plus size={16} /> Create Event
                 </a>
               </div>
             )}
@@ -980,7 +984,7 @@ export default function QRScannerPage() {
                         alignItems: "center",
                         gap: 8
                       }}>
-                        <Zap size={16} color="var(--accent-primary)" />
+                        <Award size={16} color="var(--accent-primary)" />
                         <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
                           {scanResult.student.points} {lang === "th" ? "คะแนน" : "pts"}
                         </span>
@@ -1132,7 +1136,15 @@ export default function QRScannerPage() {
                 </div>
               ) : (
                 <div style={{ textAlign: "center", color: cfg.color, fontWeight: 700 }}>
-                  {scanResult?.error || "Unknown Student"}
+                  {scanResult?.error === "Walk-in quota is full. Walk-ins cannot be accepted."
+                    ? t.walkInQuotaFullError
+                    : scanResult?.error === "Event is full. Walk-ins cannot be accepted."
+                    ? t.eventFullError
+                    : scanResult?.error === "Walk-ins are not enabled for this event and student is not pre-registered."
+                    ? t.walkInsDisabledError
+                    : scanResult?.error === "Student not found in the system."
+                    ? t.studentNotFoundError
+                    : scanResult?.error || "Unknown Student"}
                 </div>
               )}
 

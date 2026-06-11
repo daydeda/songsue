@@ -34,6 +34,7 @@ interface AdminEvent {
   pointsAwarded: number;
   imageUrl: string | null;
   walkInsEnabled: boolean;
+  quotaWalkIn: number | null;
   targetThai: boolean;
   targetInternational: boolean;
   quotaThai: number | null;
@@ -130,6 +131,7 @@ const EMPTY_FORM = {
   pointsAwarded: 0,
   imageUrl: "",
   walkInsEnabled: false,
+  quotaWalkIn: null as number | null,
   targetThai: true,
   targetInternational: true,
   quotaThai: null as number | null,
@@ -924,6 +926,7 @@ export default function AdminEventsPage() {
       pointsAwarded: evt.pointsAwarded || 0,
       imageUrl: evt.imageUrl || "",
       walkInsEnabled: evt.walkInsEnabled || false,
+      quotaWalkIn: evt.quotaWalkIn || null,
       targetThai: evt.targetThai !== false,
       targetInternational: evt.targetInternational !== false,
       quotaThai: evt.quotaThai || null,
@@ -1198,7 +1201,14 @@ export default function AdminEventsPage() {
 
                   <div className="field" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
                     <div
-                      onClick={() => set("walkInsEnabled", !formData.walkInsEnabled)}
+                      onClick={() => {
+                        const nextVal = !formData.walkInsEnabled;
+                        setFormData({
+                          ...formData,
+                          walkInsEnabled: nextVal,
+                          ...(!nextVal && { quotaWalkIn: null })
+                        });
+                      }}
                       style={{
                         height: 48,
                         background: "var(--bg-elevated)",
@@ -1232,6 +1242,24 @@ export default function AdminEventsPage() {
                     </div>
                   </div>
                 </div>
+
+                {formData.walkInsEnabled && (
+                  <div className="field" style={{ marginTop: 20 }}>
+                    <label className="label">{t.walkInQuota}</label>
+                    <div style={{ position: "relative" }}>
+                      <Users size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                      <input 
+                        className="input" 
+                        type="number" 
+                        min={1} 
+                        value={formData.quotaWalkIn || ""} 
+                        onChange={(e) => set("quotaWalkIn", e.target.value ? Number(e.target.value) : null)} 
+                        placeholder={t.unlimitedIfEmpty} 
+                        style={{ paddingLeft: 44 }} 
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="field" style={{ marginTop: 20 }}>
                   <label className="label">{t.targetAudience}</label>
@@ -1907,13 +1935,16 @@ export default function AdminEventsPage() {
                         transition: "width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)"
                       }} />
                     </div>
-                    {((evt.quotaThai !== null && evt.quotaThai > 0) || (evt.quotaInternational !== null && evt.quotaInternational > 0)) && (
-                      <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 11, fontWeight: 700, color: "var(--text-muted)" }}>
+                    {((evt.quotaThai !== null && evt.quotaThai > 0) || (evt.quotaInternational !== null && evt.quotaInternational > 0) || (evt.quotaWalkIn !== null && evt.quotaWalkIn > 0)) && (
+                      <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 11, fontWeight: 700, color: "var(--text-muted)", flexWrap: "wrap" }}>
                         {evt.quotaThai !== null && evt.quotaThai > 0 && (
                           <span>Thai Limit: <strong style={{ color: "var(--text-secondary)" }}>{evt.quotaThai}</strong></span>
                         )}
                         {evt.quotaInternational !== null && evt.quotaInternational > 0 && (
                           <span>{"Int'l Limit:"} <strong style={{ color: "var(--text-secondary)" }}>{evt.quotaInternational}</strong></span>
+                        )}
+                        {evt.quotaWalkIn !== null && evt.quotaWalkIn > 0 && (
+                          <span>Walk-in Limit: <strong style={{ color: "var(--text-secondary)" }}>{evt.quotaWalkIn}</strong></span>
                         )}
                       </div>
                     )}

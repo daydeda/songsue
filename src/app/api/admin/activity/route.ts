@@ -13,6 +13,11 @@ export async function GET() {
 
     const recentCheckins = await db.query.attendance.findMany({
       limit: 100, // Show more for "View All"
+      // Only genuine check-ins. Registration rows have checkInTime = null, and
+      // `ORDER BY ... DESC` is NULLS FIRST in Postgres, so without this filter
+      // those un-checked-in rows sort to the top and fall back to new Date()
+      // below — making every entry show the current time.
+      where: (attendance, { isNotNull }) => isNotNull(attendance.checkInTime),
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
       with: {
         user: { columns: { name: true, nickname: true, studentId: true } },

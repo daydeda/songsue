@@ -170,7 +170,12 @@ async function migrate() {
     ALTER TABLE events
     ADD COLUMN IF NOT EXISTS registration_open_time timestamp
   `;
-  console.log("  ✅ events.registration_open_time");
+  // 18. Add quota_walk_in column to events
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS quota_walk_in integer
+  `;
+  console.log("  ✅ events.quota_walk_in");
 
   console.log("✅ Migration complete!");
   await sql.end();

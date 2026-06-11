@@ -38,6 +38,10 @@ class QuotaFullError extends Error {
   constructor() { super("QUOTA_FULL"); }
 }
 
+class WalkInQuotaFullError extends Error {
+  constructor() { super("WALK_IN_QUOTA_FULL"); }
+}
+
 export class ScannerService {
   static async processScan(params: {
     qrToken: string;
@@ -216,21 +220,41 @@ export class ScannerService {
     if (action === "confirm") {
       try {
         await db.transaction(async (tx) => {
-          if (event.quota !== null) {
+          if (event.quota !== null || event.quotaWalkIn !== null) {
             // Lock the event row so concurrent confirms serialize here, then
             // recount — preventing the quota bypass TOCTOU window.
             const [lockedEvent] = await tx
-              .select({ quota: events.quota })
+              .select({
+                quota: events.quota,
+                quotaWalkIn: events.quotaWalkIn,
+              })
               .from(events)
               .where(eq(events.id, eventId))
               .for("update");
 
-            const [{ n }] = await tx
-              .select({ n: sql<number>`count(*)` })
-              .from(attendance)
-              .where(and(eq(attendance.eventId, eventId), eq(attendance.status, "attended")));
+            if (lockedEvent?.quota !== null) {
+              const [{ n }] = await tx
+                .select({ n: sql<number>`count(*)` })
+                .from(attendance)
+                .where(and(eq(attendance.eventId, eventId), eq(attendance.status, "attended")));
 
-            if (Number(n) >= (lockedEvent?.quota ?? 0)) throw new QuotaFullError();
+              if (Number(n) >= (lockedEvent?.quota ?? 0)) throw new QuotaFullError();
+            }
+
+            if (lockedEvent?.quotaWalkIn !== null) {
+              const [{ nWalkIn }] = await tx
+                .select({ nWalkIn: sql<number>`count(*)` })
+                .from(attendance)
+                .where(
+                  and(
+                    eq(attendance.eventId, eventId),
+                    eq(attendance.status, "attended"),
+                    eq(attendance.method, "walk-in")
+                  )
+                );
+
+              if (Number(nWalkIn) >= (lockedEvent?.quotaWalkIn ?? 0)) throw new WalkInQuotaFullError();
+            }
           }
 
           // ON CONFLICT DO NOTHING handles a race where the student was registered
@@ -261,6 +285,9 @@ export class ScannerService {
       } catch (e) {
         if (e instanceof QuotaFullError) {
           return { status: "quota_full", student: null, error: "Event is full. Walk-ins cannot be accepted." };
+        }
+        if (e instanceof WalkInQuotaFullError) {
+          return { status: "quota_full", student: null, error: "Walk-in quota is full. Walk-ins cannot be accepted." };
         }
         if (e instanceof Error && e.message === "ALREADY_CHECKED_IN") {
           return { status: "already_checked_in", student: baseStudentInfo };

@@ -383,6 +383,11 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
             <div className="field flex-grow" style={{ minWidth: 0 }}>
               <label className={lbl}>{t.fullName} <span style={{ color: "#ef4444" }}>*</span></label>
               <input className={inp} placeholder={lang === "th" ? "ชื่อ-นามสกุล" : "Full Name"} value={formData.name} onChange={(e) => set("name", e.target.value)} style={errStyle(validationTriggered && !formData.name.trim())} />
+              <span style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.45 }}>
+                {isTh
+                  ? "หากคุณเป็นคนไทย กรุณาเขียนชื่อเป็นภาษาไทย"
+                  : "If you are a Thai citizen, please write your name in Thai (ให้เขียนชื่อเป็นภาษาไทย)"}
+              </span>
               <ErrMsg show={validationTriggered && !formData.name.trim()} msg={isTh ? "⚠️ กรุณากรอกชื่อ-นามสกุล" : "⚠️ This field is required"} />
             </div>
           </div>

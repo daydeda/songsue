@@ -139,11 +139,11 @@ export const events = pgTable("events", {
 export const attendance = pgTable("attendance", {
   id: uuid("id").defaultRandom().primaryKey(),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
-  studentId: text("student_id").references(() => users.id).notNull(),
+  studentId: text("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   checkInTime: timestamp("check_in_time"),
   method: text("method"), // 'qr', 'manual', 'walk-in', 'pre-registered'
   status: text("status").default("registered"), // 'registered', 'attended'
-  scannedBy: text("scanned_by").references(() => users.id),
+  scannedBy: text("scanned_by").references(() => users.id, { onDelete: "set null" }),
   medsCheckOption: text("meds_check_option"),
 }, (table) => ([
   uniqueIndex("idx_attendance_event_student").on(table.eventId, table.studentId),
@@ -166,8 +166,8 @@ export const scoreHistory = pgTable("score_history", {
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   timestamp: timestamp("timestamp").defaultNow(),
-  actorId: text("actor_id").references(() => users.id),
-  targetId: text("target_id").references(() => users.id),
+  actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+  targetId: text("target_id").references(() => users.id, { onDelete: "set null" }),
   action: text("action").notNull(),
   ipAddress: text("ip_address"),
   prevHash: text("prev_hash").notNull().default(""),

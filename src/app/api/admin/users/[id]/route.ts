@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { users, attendance, auditLogs } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -92,7 +92,22 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden: Cannot delete Super Admin accounts" }, { status: 403 });
     }
 
-    await db.delete(users).where(eq(users.id, userId));
+    // Some foreign keys referencing users.id lack ON DELETE CASCADE in the
+    // production schema (attendance.student_id / scanned_by, audit_logs.actor_id
+    // / target_id). Clean those up in a transaction first, otherwise Postgres
+    // rejects the delete with a FK violation. accounts / sessions /
+    // authenticators / form_submissions already cascade.
+    await db.transaction(async (tx) => {
+      // Remove this user's own event registrations/attendance.
+      await tx.delete(attendance).where(eq(attendance.studentId, userId));
+      // Preserve other students' attendance that this user scanned in.
+      await tx.update(attendance).set({ scannedBy: null }).where(eq(attendance.scannedBy, userId));
+      // Preserve the audit trail; just detach the references to this user.
+      await tx.update(auditLogs).set({ actorId: null }).where(eq(auditLogs.actorId, userId));
+      await tx.update(auditLogs).set({ targetId: null }).where(eq(auditLogs.targetId, userId));
+
+      await tx.delete(users).where(eq(users.id, userId));
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

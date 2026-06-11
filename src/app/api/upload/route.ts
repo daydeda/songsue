@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { writeFile, mkdir } from "fs/promises";
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import path from "path";
 
 export async function POST(req: Request) {
@@ -36,10 +37,33 @@ export async function POST(req: Request) {
     }
 
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    let buffer: Buffer = Buffer.from(bytes);
+    let outputExt = ext;
+    let outputContentType = file.type;
 
-    // Create unique filename
-    const filename = `${Date.now()}-${file.name.replace(/\s+/g, "-")}`;
+    // Compress on upload to protect the Supabase free-tier egress wall (5GB/mo).
+    // Raw 10MB posters served to ~1,500 devices blow the cap in a day. Re-encode to
+    // WebP at max 1600px — typically a 5–20× size cut — except animated GIFs, which
+    // we leave untouched to preserve animation. Falls back to the original on error.
+    if (ext !== ".gif") {
+      try {
+        const sharp = (await import("sharp")).default;
+        buffer = await sharp(buffer)
+          .rotate() // honor EXIF orientation before stripping metadata
+          .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer();
+        outputExt = ".webp";
+        outputContentType = "image/webp";
+      } catch (e) {
+        console.error("Image compression failed, storing original:", e);
+      }
+    }
+
+    // Server-generated filename. Never derive from client file.name — that allows
+    // path traversal in the disk fallback and lets a known name be targeted for
+    // overwrite. The validated extension is the only client-derived part kept.
+    const filename = `${randomUUID()}${outputExt}`;
 
     // --- PRODUCTION: Supabase Storage ---
     if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -52,8 +76,8 @@ export async function POST(req: Request) {
       const { data, error } = await supabase.storage
         .from("uploads")
         .upload(filename, buffer, {
-          contentType: file.type,
-          upsert: true,
+          contentType: outputContentType,
+          upsert: false,
         });
 
       if (error) {

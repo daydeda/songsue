@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { forms, houses, scoreHistory, auditLogs } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { forms, houses, scoreHistory } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { AuditService } from "@/modules/audit/audit.service";
 
 // POST /api/admin/events/[id]/form/award — Close form and award points to house with most completions
 export async function POST(
@@ -81,12 +82,22 @@ export async function POST(
     const pointsToAward = formObj.pointsAwarded ?? 0;
 
     // 5. Award points in a transaction
+    let alreadyAwarded = false;
     await db.transaction(async (tx) => {
-      // Close form and mark as awarded
-      await tx
+      // Close form and mark as awarded. The WHERE is_awarded = false makes this the
+      // atomic gate: two concurrent award calls both pass the check above, but only
+      // the first flips the flag and gets a row back — the loser updates 0 rows and
+      // bails before granting points, so points can never be awarded twice.
+      const flipped = await tx
         .update(forms)
         .set({ isActive: false, isAwarded: true, updatedAt: new Date() })
-        .where(eq(forms.id, formObj.id));
+        .where(and(eq(forms.id, formObj.id), eq(forms.isAwarded, false)))
+        .returning({ id: forms.id });
+
+      if (flipped.length === 0) {
+        alreadyAwarded = true;
+        return;
+      }
 
       for (const winnerId of winningHouseIds) {
         const houseName = houseNameMap.get(winnerId) || winnerId;
@@ -114,18 +125,21 @@ export async function POST(
           timestamp: new Date(),
         });
 
-        // Audit Log
-        await tx.insert(auditLogs).values({
-          actorId: session.user?.id,
+        // Audit Log (through the service so the hash chain stays intact)
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user!.id!,
           action: `Awarded ${pointsToAward} PTS to house ${winnerId} for evaluation form completion winner for event ${eventId}.`,
-          timestamp: new Date(),
-          ipAddress: 
+          ipAddress:
             req.headers.get("x-forwarded-for")?.split(",")[0] ||
             req.headers.get("x-real-ip") ||
             "127.0.0.1",
         });
       }
     });
+
+    if (alreadyAwarded) {
+      return NextResponse.json({ error: "Points have already been awarded for this event's evaluation form contest." }, { status: 400 });
+    }
 
     return NextResponse.json({ 
       success: true, 

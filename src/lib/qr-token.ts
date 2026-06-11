@@ -2,6 +2,12 @@ import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 const WINDOW_MS = 5 * 60 * 1000;
 const SIG_LEN = 24;
+// Accept a token for a short grace period past its expiry. A student's screen
+// shows a code that expires at the window boundary; a scan begun a second before
+// expiry can reach the server just after it. Without grace, verification fails and
+// the lookup falls through to legacy resolution, surfacing the confusing "Student
+// not found" error. 30s comfortably covers scan + network latency.
+const GRACE_MS = 30 * 1000;
 
 function secret(): string {
   const s = process.env.AUTH_SECRET;
@@ -44,7 +50,7 @@ export function verifyQrToken(token: string): string | null {
   if (parts.length !== 3) return null;
   const [userId, expStr, sig] = parts;
   const exp = Number(expStr);
-  if (!userId || isNaN(exp) || Date.now() > exp) return null;
+  if (!userId || isNaN(exp) || Date.now() > exp + GRACE_MS) return null;
   const payload = `${userId}.${exp}`;
   const expected = createHmac("sha256", secret()).update(payload).digest("hex").slice(0, SIG_LEN);
   try {

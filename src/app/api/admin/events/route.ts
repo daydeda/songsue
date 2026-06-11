@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { events, auditLogs } from "@/db/schema";
+import { events } from "@/db/schema";
+import { AuditService } from "@/modules/audit/audit.service";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -98,11 +99,10 @@ export async function POST(req: Request) {
 
     // Broadcast event creation in real-time
     if (event) {
-      // Log the event creation
-      await db.insert(auditLogs).values({
-        actorId: session.user.id,
+      // Log the event creation (through the service so the hash chain stays intact)
+      await AuditService.logAction({
+        actorId: session.user.id!,
         action: `Created Event: ${event.title}`,
-        timestamp: new Date(),
         ipAddress:
           req.headers.get("x-forwarded-for")?.split(",")[0] ||
           req.headers.get("x-real-ip") ||

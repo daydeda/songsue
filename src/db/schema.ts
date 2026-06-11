@@ -6,20 +6,20 @@ export const houses = pgTable("houses", {
   id: text("id").primaryKey(), // e.g. 'red', 'blue', 'green', 'yellow'
   name: text("name").notNull(),
   color: text("color").default("#6366f1"), // Hex color for display
-  points: integer("points").default(0),
+  points: integer("points").notNull().default(0),
 });
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Auth.js / OAuth provider ID
   prefix: text("prefix"),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   email: text("email").notNull().unique(),
   emailVerified: timestamp("emailVerified", { mode: "date", withTimezone: true }),
   image: text("image"),
   role: text("role").default("student"), // 'student', 'smo', 'anusmo', 'admin', 'registration', 'organizer', 'super_admin'
   roles: jsonb("roles").$type<string[]>().default(["student"]),
   houseId: text("house_id").references(() => houses.id),
-  points: integer("points").default(0),
+  points: integer("points").notNull().default(0),
   // QR Token for secure check-in (FE-13)
   qrToken: text("qr_token").unique(),
   // Profile specifics
@@ -133,6 +133,10 @@ export const events = pgTable("events", {
   // null or [] means all roles can access; otherwise restricted to listed roles
   // Possible values: 'student', 'smo', 'anusmo' (admin roles always see everything)
   allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  // Set once the event-winner house bonus has been awarded. This is the single
+  // source of truth for "already processed" — never infer it from score_history,
+  // because mid-event individual/milestone/manual rows also carry this eventId.
+  winnerAwardedAt: timestamp("winner_awarded_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -255,7 +259,10 @@ export const formSubmissions = pgTable("form_submissions", {
   studentId: text("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   answers: jsonb("answers").notNull(), // Map of questionId -> studentAnswer
   submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow(),
-});
+}, (table) => ([
+  // One submission per student per form — blocks duplicate-submission point farming.
+  uniqueIndex("idx_form_submissions_form_student").on(table.formId, table.studentId),
+]));
 
 export const formsRelations = relations(forms, ({ one, many }) => ({
   event: one(events, {

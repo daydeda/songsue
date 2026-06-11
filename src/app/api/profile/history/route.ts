@@ -29,16 +29,25 @@ export async function GET() {
       userAttendances.map(async (att) => {
         if (!att.event) return null;
 
-        // Count how many people checked in before or at the same time as this student
-        const [{ value: rank }] = await db
-          .select({ value: count() })
-          .from(attendance)
-          .where(
-            and(
-              eq(attendance.eventId, att.eventId),
-              lt(attendance.checkInTime, att.checkInTime!)
-            )
-          );
+        // Rank = the order this student physically checked in (QR scan or walk-in
+        // scan), among everyone who attended this event. check_in_time is only set at
+        // scan-in, so a student who has registered but NOT yet checked in has no rank
+        // — we leave it null rather than showing a misleading "rank 1". Counting rows
+        // with an earlier check_in_time naturally ignores not-yet-attended rows, whose
+        // check_in_time is null (NULL comparisons are never true in SQL).
+        let rank: number | null = null;
+        if (att.checkInTime) {
+          const [{ value: earlier }] = await db
+            .select({ value: count() })
+            .from(attendance)
+            .where(
+              and(
+                eq(attendance.eventId, att.eventId),
+                lt(attendance.checkInTime, att.checkInTime)
+              )
+            );
+          rank = (earlier || 0) + 1; // 1st, 2nd, … to physically check in
+        }
 
         // Check if there is an evaluation form for the event
         const formObj = await db.query.forms.findFirst({
@@ -79,7 +88,7 @@ export async function GET() {
           eventEndTime: att.event.endTime,
           checkInTime: att.checkInTime,
           method: att.method,
-          rank: (rank || 0) + 1, // 1st, 2nd, etc.
+          rank, // check-in order; null when registered but not yet checked in
           formStatus,
           formId,
           formPoints,

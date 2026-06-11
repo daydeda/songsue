@@ -24,7 +24,7 @@ interface HistoryItem {
   eventStartTime: string;
   eventEndTime?: string;
   eventQuota: number | null;
-  rank: number;
+  rank: number | null; // check-in order; null when registered but not yet checked in
   formStatus: "none" | "available" | "submitted" | "closed";
   formId?: string | null;
   formPoints?: number;
@@ -300,22 +300,42 @@ export default function HistoryPage() {
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ 
-                    display: "inline-flex", 
-                    alignItems: "center", 
-                    gap: 6, 
-                    padding: "6px 14px", 
-                    background: "rgba(255,107,0,0.08)", 
-                    borderRadius: 14, 
-                    color: "var(--accent-primary)", 
-                    fontSize: 12, 
-                    fontWeight: 800 
-                  }}>
-                    <History size={13} />
-                    {h.eventQuota 
-                      ? t.joinedAsRank.replace("{rank}", h.rank.toString()).replace("{total}", h.eventQuota.toString())
-                      : t.joinedAsRankNoLimit.replace("{rank}", h.rank.toString())}
-                  </div>
+                  {h.rank != null ? (
+                    // Checked in: show the physical check-in / walk-in scan order.
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 14px",
+                      background: "rgba(255,107,0,0.08)",
+                      borderRadius: 14,
+                      color: "var(--accent-primary)",
+                      fontSize: 12,
+                      fontWeight: 800
+                    }}>
+                      <History size={13} />
+                      {h.eventQuota
+                        ? t.joinedAsRank.replace("{rank}", h.rank.toString()).replace("{total}", h.eventQuota.toString())
+                        : t.joinedAsRankNoLimit.replace("{rank}", h.rank.toString())}
+                    </div>
+                  ) : (
+                    // Registered but not yet checked in — no rank is assigned until the
+                    // student physically scans in, so we avoid showing a misleading number.
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 14px",
+                      background: "rgba(0,0,0,0.04)",
+                      borderRadius: 14,
+                      color: "var(--text-muted)",
+                      fontSize: 12,
+                      fontWeight: 800
+                    }}>
+                      <ClipboardList size={13} />
+                      {t.registeredNotCheckedIn}
+                    </div>
+                  )}
                 </div>
 
                 {/* Evaluation Form Actions */}

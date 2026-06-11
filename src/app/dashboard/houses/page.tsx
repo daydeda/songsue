@@ -52,6 +52,7 @@ export default function HousesPage() {
   const [activeTab, setActiveTab] = useState<"house" | "individual">("house");
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [myStanding, setMyStanding] = useState<{ points: number; rank: number | null; total: number } | null>(null);
 
   const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
     const key = idOrName.toLowerCase();
@@ -174,6 +175,19 @@ export default function HousesPage() {
       setLoading(false);
     });
   }, []);
+
+  // Fetch the current user's authoritative rank + score as soon as the session is
+  // ready. This is independent of the top-50 list above, so it stays correct even
+  // when the student is ranked outside the visible leaderboard page.
+  useEffect(() => {
+    if (!myId) return;
+    const ac = new AbortController();
+    fetch("/api/houses/individual/me", { signal: ac.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && typeof d.points === "number") setMyStanding(d); })
+      .catch(() => {});
+    return () => ac.abort();
+  }, [myId]);
  
   if (loading) {
     return (
@@ -447,28 +461,33 @@ export default function HousesPage() {
           <section className="standings-section animate-fade-in-up" style={{ marginBottom: 56 }}>
             <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
 
-            {/* "Your rank" banner — lets a student spot their position even when paginated away */}
-            {myEntry && myRank && (
+            {/* "Your rank" banner — authoritative rank/score from /me, so it shows even
+                when the student is ranked outside the visible top-50 list. The jump
+                button only appears when they're within the loaded (paginated) list. */}
+            {myStanding?.rank && (
               <button
                 onClick={() => myPage && setCurrentPage(myPage)}
                 className="my-rank-banner"
-                title={lang === "th" ? "ไปยังอันดับของฉัน" : "Jump to my position"}
+                style={{ cursor: myPage ? "pointer" : "default" }}
+                title={myPage ? (lang === "th" ? "ไปยังอันดับของฉัน" : "Jump to my position") : undefined}
               >
-                <div className="my-rank-badge">#{myRank}</div>
+                <div className="my-rank-badge">#{myStanding.rank}</div>
                 <div className="my-rank-info">
                   <span className="my-rank-label">{lang === "th" ? "อันดับของคุณ" : "Your rank"}</span>
                   <span className="my-rank-name">
-                    {myEntry.name} {myEntry.nickname ? `(${myEntry.nickname})` : ""}
+                    {(myEntry?.name ?? session?.user?.name) || ""} {myEntry?.nickname ? `(${myEntry.nickname})` : ""}
                   </span>
                 </div>
                 <div className="my-rank-points">
-                  <span className="points-value">{myEntry.points}</span>
+                  <span className="points-value">{myStanding.points}</span>
                   <span className="points-label">{t.points}</span>
                 </div>
                 <span className="my-rank-jump">
-                  {currentPage === myPage
-                    ? (lang === "th" ? "อยู่หน้านี้" : "On this page")
-                    : (lang === "th" ? "ไปดู →" : "View →")}
+                  {myPage
+                    ? (currentPage === myPage
+                        ? (lang === "th" ? "อยู่หน้านี้" : "On this page")
+                        : (lang === "th" ? "ไปดู →" : "View →"))
+                    : (myStanding.total ? (lang === "th" ? `จาก ${myStanding.total}` : `of ${myStanding.total}`) : "")}
                 </span>
               </button>
             )}

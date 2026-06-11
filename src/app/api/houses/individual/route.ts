@@ -7,7 +7,11 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "50")));
+    // Default to the full leaderboard (the standings page paginates client-side).
+    // The 2000 ceiling is just a safety valve against a pathological payload — the
+    // result set is small (a few hundred students), the response is edge-cached for
+    // 30s, and the page only renders 10 rows at a time, so returning all is cheap.
+    const limit = Math.min(2000, Math.max(1, parseInt(searchParams.get("limit") || "2000")));
     const offset = (page - 1) * limit;
 
     const list = await db.query.users.findMany({

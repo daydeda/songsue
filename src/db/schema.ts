@@ -117,6 +117,7 @@ export const events = pgTable("events", {
   description: text("description"),
   startTime: timestamp("start_time").notNull(),
   endTime: timestamp("end_time").notNull(),
+  registrationOpenTime: timestamp("registration_open_time"),
   registrationCloseTime: timestamp("registration_close_time"),
   quota: integer("quota"),
   location: text("location"),

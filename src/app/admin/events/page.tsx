@@ -28,6 +28,7 @@ interface AdminEvent {
   location: string | null;
   startTime: string;
   endTime: string;
+  registrationOpenTime: string | null;
   registrationCloseTime: string | null;
   quota: number | null;
   pointsAwarded: number;
@@ -123,6 +124,7 @@ const EMPTY_FORM = {
   location: "",
   startTime: "",
   endTime: "",
+  registrationOpenTime: "",
   registrationCloseTime: "",
   quota: 0,
   pointsAwarded: 0,
@@ -834,6 +836,7 @@ export default function AdminEventsPage() {
           ...bodyData,
           startTime: new Date(formData.startTime).toISOString(),
           endTime: new Date(formData.endTime).toISOString(),
+          registrationOpenTime: formData.registrationOpenTime ? new Date(formData.registrationOpenTime).toISOString() : null,
           registrationCloseTime: formData.registrationCloseTime ? new Date(formData.registrationCloseTime).toISOString() : null,
         }),
       });
@@ -915,6 +918,7 @@ export default function AdminEventsPage() {
       location: evt.location || "",
       startTime: toLocal(evt.startTime),
       endTime: toLocal(evt.endTime),
+      registrationOpenTime: evt.registrationOpenTime ? toLocal(evt.registrationOpenTime) : "",
       registrationCloseTime: evt.registrationCloseTime ? toLocal(evt.registrationCloseTime) : "",
       quota: evt.quota || 0,
       pointsAwarded: evt.pointsAwarded || 0,
@@ -1161,6 +1165,16 @@ export default function AdminEventsPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="field">
+                    <label className="label">{t.eventRegistrationOpenLabel}</label>
+                    <input
+                      className="input"
+                      type="datetime-local"
+                      lang="en-GB"
+                      value={formData.registrationOpenTime}
+                      onChange={(e) => set("registrationOpenTime", e.target.value)}
+                    />
+                  </div>
                   <div className="field">
                     <label className="label">{t.eventRegistrationCloseLabel}</label>
                     <input

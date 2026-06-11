@@ -14,6 +14,9 @@ export const translations = {
     joinStudents: "Join 500+ active students",
     modernizing: "Modernizing Student Life",
     accessDashboard: "Sign in to access your dashboard",
+    signInErrorTitle: "Sign-in didn't complete",
+    signInErrorBody: "Your sign-in session expired or your browser blocked the login cookie. Please try again.",
+    signInErrorHint: "Tip: if you opened this link inside the LINE / Gmail / Instagram app, tap ⋯ and choose “Open in browser” (Safari or Chrome), then sign in again.",
     // Onboarding
     prefix: "Prefix",
     fullName: "Full Name",
@@ -289,6 +292,9 @@ export const translations = {
     joinStudents: "เข้าร่วมกับนักศึกษาแล้วกว่า 500 คน",
     modernizing: "ยกระดับชีวิตนักศึกษาให้ทันสมัย",
     accessDashboard: "เข้าสู่ระบบเพื่อเข้าใช้งานแดชบอร์ด",
+    signInErrorTitle: "เข้าสู่ระบบไม่สำเร็จ",
+    signInErrorBody: "เซสชันการเข้าสู่ระบบหมดอายุ หรือเบราว์เซอร์บล็อกคุกกี้สำหรับเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง",
+    signInErrorHint: "เคล็ดลับ: หากคุณเปิดลิงก์นี้ในแอป LINE / Gmail / Instagram ให้กดปุ่ม ⋯ แล้วเลือก “เปิดในเบราว์เซอร์” (Safari หรือ Chrome) จากนั้นเข้าสู่ระบบอีกครั้ง",
     // Onboarding
     prefix: "คำนำหน้า",
     fullName: "ชื่อ-นามสกุล",
@@ -564,6 +570,9 @@ export const translations = {
     joinStudents: "ကျောင်းသား ၅၀၀ ကျော်နှင့် ပူးပေါင်းပါ",
     modernizing: "ကျောင်းသားဘဝကို ခေတ်မီအောင် ပြုပြင်ခြင်း",
     accessDashboard: "သင်၏ဒိုင်ခွက်ကို အသုံးပြုရန် ဝင်ရောက်ပါ",
+    signInErrorTitle: "အကောင့်ဝင်ခြင်း မအောင်မြင်ပါ",
+    signInErrorBody: "ဝင်ရောက်မှု session သက်တမ်းကုန်သွားသည် သို့မဟုတ် browser က login cookie ကို ပိတ်ဆို့ထားသည်။ ထပ်မံကြိုးစားပါ။",
+    signInErrorHint: "အကြံပြုချက်: ဤလင့်ခ်ကို LINE / Gmail / Instagram အက်ပ်အတွင်း ဖွင့်ထားပါက ⋯ ကိုနှိပ်၍ “Browser ဖြင့်ဖွင့်ရန်” (Safari သို့မဟုတ် Chrome) ကိုရွေးပြီး ပြန်ဝင်ပါ။",
     // Onboarding
     prefix: "ရှေ့ဆက်နာမည်",
     fullName: "နာမည်အပြည့်အစုံ",
@@ -839,6 +848,9 @@ export const translations = {
     joinStudents: "加入 500 多名活跃学生",
     modernizing: "现代化学生生活",
     accessDashboard: "登录以访问您的仪表板",
+    signInErrorTitle: "登录未完成",
+    signInErrorBody: "您的登录会话已过期，或浏览器拦截了登录 Cookie。请重试。",
+    signInErrorHint: "提示：如果您是在 LINE / Gmail / Instagram 应用内打开此链接，请点击 ⋯ 并选择“在浏览器中打开”（Safari 或 Chrome），然后重新登录。",
     // Onboarding
     prefix: "称谓",
     fullName: "全名",

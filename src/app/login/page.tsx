@@ -4,7 +4,11 @@ import { LandingUI } from "@/components/home/LandingUI";
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   let session = null;
   try {
     session = await auth();
@@ -22,5 +26,11 @@ export default async function LoginPage() {
     }
   }
 
-  return <LandingUI userCount={31} />;
+  // Auth.js redirects failed OAuth callbacks here with ?error=... (e.g.
+  // "Configuration" for an InvalidCheck/PKCE cookie failure — typically an
+  // expired sign-in or an in-app browser that dropped the cookie). Surface a
+  // friendly, actionable banner instead of silently showing the landing page.
+  const { error } = await searchParams;
+
+  return <LandingUI userCount={31} authError={error ?? null} />;
 }

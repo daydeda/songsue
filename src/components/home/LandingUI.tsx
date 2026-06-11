@@ -8,10 +8,12 @@ import { signIn } from "next-auth/react";
 
 
 
-export function LandingUI({ 
-  userCount: initialUserCount = 31 
-}: { 
-  userCount?: number; 
+export function LandingUI({
+  userCount: initialUserCount = 31,
+  authError = null,
+}: {
+  userCount?: number;
+  authError?: string | null;
 }) {
   const { t, lang } = useLanguage();
   const [userCount, setUserCount] = useState(initialUserCount);
@@ -159,6 +161,28 @@ export function LandingUI({
               }}>{t.welcome}</h2>
               <p style={{ color: "var(--text-secondary)", fontSize: "clamp(16px, 1.5vw, 18px)", fontWeight: 500, lineHeight: 1.5 }}>{t.accessDashboard}</p>
             </div>
+
+            {authError && (
+              <div
+                role="alert"
+                style={{
+                  background: "rgba(239,68,68,0.07)",
+                  border: "1px solid rgba(239,68,68,0.3)",
+                  borderRadius: 16,
+                  padding: "16px 18px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>⚠️</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: "#b91c1c" }}>{t.signInErrorTitle}</span>
+                </div>
+                <p style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.55, margin: 0 }}>{t.signInErrorBody}</p>
+                <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.55, margin: 0 }}>{t.signInErrorHint}</p>
+              </div>
+            )}
 
             <div className="flex flex-col gap-5 lg:gap-6">
               <button

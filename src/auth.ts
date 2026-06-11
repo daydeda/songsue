@@ -82,6 +82,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
+  // Trust the host header for callback-URL construction. Required for non-Vercel
+  // deploys (Docker / university server) where Auth.js can't auto-detect the host;
+  // a wrong host breaks the OAuth round-trip and surfaces as an InvalidCheck/PKCE
+  // failure. On Vercel this is already implied. AUTH_URL (prod) must still match
+  // the live domain exactly — apex vs www — and Google's redirect URI must be
+  // https://<domain>/api/auth/callback/google.
+  trustHost: true,
   session: { strategy: "jwt" },
   providers: [
     Google({

@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 const WINDOW_MS = 5 * 60 * 1000;
 const SIG_LEN = 24;
@@ -10,15 +10,26 @@ function secret(): string {
 }
 
 /**
+ * Per-user shift of the window grid. Without this, every client's token
+ * expires at the same wall-clock second and hundreds of dashboards refetch
+ * simultaneously (thundering herd on the token endpoint at large events).
+ */
+function windowOffset(userId: string): number {
+  return createHash("sha256").update(userId).digest().readUInt32BE(0) % WINDOW_MS;
+}
+
+/**
  * Returns a short-lived token: `{userId}.{exp}.{hmac24}`.
  * Expiry snaps to a fixed 5-minute window boundary (TOTP-style), so every
  * request within the same window yields the identical token — and all copies
  * of it expire together the instant the window rolls over. A page refresh
  * therefore cannot leave a still-valid "old" QR behind, and multiple open
- * tabs/devices all display the same code.
+ * tabs/devices all display the same code. The grid is offset per user so
+ * refetches spread evenly across the window instead of spiking together.
  */
 export function signQrToken(userId: string): { token: string; expiresAt: number } {
-  const exp = (Math.floor(Date.now() / WINDOW_MS) + 1) * WINDOW_MS;
+  const offset = windowOffset(userId);
+  const exp = (Math.floor((Date.now() - offset) / WINDOW_MS) + 1) * WINDOW_MS + offset;
   const payload = `${userId}.${exp}`;
   const sig = createHmac("sha256", secret()).update(payload).digest("hex").slice(0, SIG_LEN);
   return { token: `${payload}.${sig}`, expiresAt: exp };

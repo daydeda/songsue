@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attendance } from "@/db/schema";
-import { and, count, eq, lt, or } from "drizzle-orm";
+import { and, count, eq, lt } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -13,18 +13,14 @@ export async function GET() {
 
     const userId = session.user.id;
 
-    // Get all attendances for the user
     const userAttendances = await db.query.attendance.findMany({
       where: eq(attendance.studentId, userId),
-      with: {
-        event: true,
-      },
-      orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
+      with: { event: true },
+      orderBy: (a, { desc }) => [desc(a.checkInTime)],
     });
 
     const { forms, formSubmissions } = await import("@/db/schema");
 
-    // For each attendance, calculate the rank
     const history = await Promise.all(
       userAttendances.map(async (att) => {
         if (!att.event) return null;
@@ -49,34 +45,42 @@ export async function GET() {
           rank = (earlier || 0) + 1; // 1st, 2nd, … to physically check in
         }
 
-        // Check if there is an evaluation form for the event
-        const formObj = await db.query.forms.findFirst({
+        // All forms for this event (S-type excluded — students never see skill tests)
+        const eventForms = await db.query.forms.findMany({
           where: eq(forms.eventId, att.eventId),
+          orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
         });
 
-        let formStatus: "none" | "available" | "submitted" | "closed" = "none";
-        let formId: string | null = null;
-        let formPoints = 0;
+        const studentForms = await Promise.all(
+          eventForms
+            .filter((f) => f.formType !== "S")
+            .map(async (formObj) => {
+              const sub = await db.query.formSubmissions.findFirst({
+                where: and(
+                  eq(formSubmissions.formId, formObj.id),
+                  eq(formSubmissions.studentId, userId)
+                ),
+              });
 
-        if (formObj) {
-          formId = formObj.id;
-          formPoints = formObj.pointsAwarded ?? 0;
-          
-          const sub = await db.query.formSubmissions.findFirst({
-            where: and(
-              eq(formSubmissions.formId, formObj.id),
-              eq(formSubmissions.studentId, userId)
-            ),
-          });
-          
-          if (sub) {
-            formStatus = "submitted";
-          } else if (!formObj.isActive) {
-            formStatus = "closed";
-          } else {
-            formStatus = "available";
-          }
-        }
+              let formStatus: "available" | "submitted" | "closed";
+              if (sub) {
+                formStatus = "submitted";
+              } else if (!formObj.isActive) {
+                formStatus = "closed";
+              } else {
+                formStatus = "available";
+              }
+
+              return {
+                id: formObj.id,
+                formType: formObj.formType,
+                title: formObj.title,
+                sortOrder: formObj.sortOrder,
+                formStatus,
+                formPoints: formObj.pointsAwarded ?? 0,
+              };
+            })
+        );
 
         return {
           id: att.id,
@@ -89,9 +93,7 @@ export async function GET() {
           checkInTime: att.checkInTime,
           method: att.method,
           rank, // check-in order; null when registered but not yet checked in
-          formStatus,
-          formId,
-          formPoints,
+          forms: studentForms,
         };
       })
     );

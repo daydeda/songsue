@@ -97,17 +97,33 @@ interface FormBuilderSubmission {
   hasGraded?: boolean;
 }
 
-interface FormBuilderStats {
-  totalSubmissions: number;
-  questions: Array<{
-    id: string;
-    label: string;
-    type: string;
-    average?: number;
-    distribution?: Record<string, number>;
-    textAnswers?: string[];
-  }>;
+interface EventFormSummary {
+  id: string;
+  formType: string;
+  sortOrder: number;
+  title: string;
+  description: string;
+  questions: unknown;
+  pointsAwarded: number;
+  isActive: boolean;
+  isAwarded: boolean;
+  stats: Record<string, number>;
+  submissions: FormBuilderSubmission[];
 }
+
+const FORM_TYPE_LABELS: Record<string, string> = {
+  K_pre: "K Pre-Test",
+  K_post: "K Post-Test",
+  A: "A - Attitude",
+  S: "S - Skill",
+};
+
+const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  K_pre:  { bg: "rgba(99,102,241,0.12)",  text: "#6366f1", border: "rgba(99,102,241,0.3)"  },
+  K_post: { bg: "rgba(16,185,129,0.12)",  text: "#10b981", border: "rgba(16,185,129,0.3)"  },
+  A:      { bg: "rgba(245,158,11,0.12)",  text: "#f59e0b", border: "rgba(245,158,11,0.3)"  },
+  S:      { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", border: "rgba(239,68,68,0.3)"   },
+};
 
 const ALL_PARTICIPANT_ROLES = ["student", "staff", "smo", "anusmo"] as const;
 type ParticipantRole = typeof ALL_PARTICIPANT_ROLES[number];
@@ -180,6 +196,12 @@ export default function AdminEventsPage() {
   const [formSaving, setFormSaving] = useState(false);
   const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
   
+  // Multi-form state: list of all forms for the current event + which one is being edited
+  const [allEventForms, setAllEventForms] = useState<EventFormSummary[]>([]);
+  const [activeFormId, setActiveFormId] = useState<string | null>(null);
+  const [activeFormType, setActiveFormType] = useState<string>("K_post");
+  const [showNewFormPicker, setShowNewFormPicker] = useState(false);
+
   // Custom admin form builder premium notification states
   const [formBuilderError, setFormBuilderError] = useState<string | null>(null);
   const [formBuilderSuccess, setFormBuilderSuccess] = useState<string | null>(null);
@@ -214,6 +236,22 @@ export default function AdminEventsPage() {
     message: ""
   });
 
+  const loadFormIntoEditor = (f: EventFormSummary) => {
+    setActiveFormId(f.id);
+    setActiveFormType(f.formType);
+    setFormTitle(f.title);
+    setFormDescription(f.description || "");
+    setFormPoints(f.pointsAwarded || 0);
+    setFormSections(normalizeForm(f.questions).sections);
+    setFormIsActive(f.isActive);
+    setFormIsAwarded(f.isAwarded || false);
+    setFormStats(f.stats);
+    setFormSubmissions(f.submissions || []);
+    setFormTab(f.submissions && f.submissions.length > 0 ? "stats" : "edit");
+    setFormBuilderError(null);
+    setFormBuilderSuccess(null);
+  };
+
   const openFormBuilder = async (eventId: string, eventTitle: string) => {
     setFormEventId(eventId);
     setFormEventTitle(eventTitle);
@@ -223,38 +261,35 @@ export default function AdminEventsPage() {
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
     setShowAwardConfirm(false);
-    
+    setShowNewFormPicker(false);
+    setAllEventForms([]);
+    setActiveFormId(null);
+
     try {
       const res = await fetch(`/api/admin/events/${eventId}/form`);
       const data = await res.json();
-      
-      if (data.form) {
-        setFormTitle(data.form.title);
-        setFormDescription(data.form.description || "");
-        setFormPoints(data.form.pointsAwarded || 0);
-        setFormSections(normalizeForm(data.form.questions).sections);
-        setFormIsActive(data.form.isActive);
-        setFormIsAwarded(data.form.isAwarded || false);
-        setFormStats(data.stats);
-        setFormSubmissions(data.submissions || []);
-        if (data.submissions && data.submissions.length > 0) {
-          setFormTab("stats");
-        }
+      const eventForms: EventFormSummary[] = data.forms || [];
+      setAllEventForms(eventForms);
+
+      if (eventForms.length > 0) {
+        loadFormIntoEditor(eventForms[0]);
       } else {
-        setFormTitle(`${eventTitle} Evaluation`);
-        setFormDescription("Thank you for attending! Please give us your feedback.");
+        // No forms yet — show new-form picker
+        setShowNewFormPicker(true);
+        setActiveFormId(null);
+        setActiveFormType("K_post");
+        setFormTitle("");
+        setFormDescription("");
         setFormPoints(50);
-        setFormSections([
-          {
-            id: "section-1",
-            title: "",
-            questions: [
-              { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
-              { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
-              { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
-            ],
-          },
-        ]);
+        setFormSections([{
+          id: "section-1",
+          title: "",
+          questions: [
+            { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
+            { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
+            { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
+          ],
+        }]);
         setFormIsActive(true);
         setFormIsAwarded(false);
         setFormStats(null);
@@ -267,39 +302,72 @@ export default function AdminEventsPage() {
     }
   };
 
+  const refreshAllForms = async () => {
+    if (!formEventId) return;
+    const res = await fetch(`/api/admin/events/${formEventId}/form`);
+    const data = await res.json();
+    const eventForms: EventFormSummary[] = data.forms || [];
+    setAllEventForms(eventForms);
+    // Refresh the active form data
+    if (activeFormId) {
+      const updated = eventForms.find((f) => f.id === activeFormId);
+      if (updated) loadFormIntoEditor(updated);
+    }
+    return eventForms;
+  };
+
+  const startNewForm = (type: string) => {
+    setActiveFormId(null);
+    setActiveFormType(type);
+    setShowNewFormPicker(false);
+    setFormTitle(`${formEventTitle || "Event"} — ${FORM_TYPE_LABELS[type] || type}`);
+    setFormDescription("");
+    setFormPoints(50);
+    setFormSections([{
+      id: "section-1",
+      title: "",
+      questions: [
+        { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
+        { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
+        { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
+      ],
+    }]);
+    setFormIsActive(true);
+    setFormIsAwarded(false);
+    setFormStats(null);
+    setFormSubmissions([]);
+    setFormTab("edit");
+    setFormBuilderError(null);
+    setFormBuilderSuccess(null);
+  };
+
   const saveForm = async () => {
     if (!formEventId) return;
     setFormSaving(true);
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
     try {
+      const isNew = !activeFormId;
       const res = await fetch(`/api/admin/events/${formEventId}/form`, {
-        method: "POST",
+        method: isNew ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(isNew ? { formType: activeFormType } : { formId: activeFormId }),
           title: formTitle,
           description: formDescription,
           pointsAwarded: formPoints,
           questions: serializeForm(formSections),
-          isActive: formIsActive
-        })
+          isActive: formIsActive,
+        }),
       });
       if (res.ok) {
+        const saved = await res.json();
         setFormBuilderSuccess("Evaluation form saved successfully!");
-        
-        // Refresh states in background
-        const freshRes = await fetch(`/api/admin/events/${formEventId}/form`);
-        const freshData = await freshRes.json();
-        if (freshData.form) {
-          setFormTitle(freshData.form.title);
-          setFormDescription(freshData.form.description || "");
-          setFormPoints(freshData.form.pointsAwarded || 0);
-          setFormSections(normalizeForm(freshData.form.questions).sections);
-          setFormIsActive(freshData.form.isActive);
-          setFormIsAwarded(freshData.form.isAwarded || false);
-          setFormStats(freshData.stats);
-          setFormSubmissions(freshData.submissions || []);
+        // If this was a new form, set the activeFormId
+        if (isNew && saved.form?.id) {
+          setActiveFormId(saved.form.id);
         }
+        await refreshAllForms();
       } else {
         const d = await res.json();
         setFormBuilderError("Failed to save: " + (d.error || "Unknown error"));
@@ -313,26 +381,21 @@ export default function AdminEventsPage() {
   };
 
   const toggleFormActiveStatus = async () => {
-    if (!formEventId) return;
+    if (!formEventId || !activeFormId) return;
     setFormSaving(true);
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
     const newActiveState = !formIsActive;
     try {
       const res = await fetch(`/api/admin/events/${formEventId}/form`, {
-        method: "POST",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: formTitle,
-          description: formDescription,
-          pointsAwarded: formPoints,
-          questions: serializeForm(formSections),
-          isActive: newActiveState
-        })
+        body: JSON.stringify({ formId: activeFormId, isActive: newActiveState }),
       });
       if (res.ok) {
         setFormIsActive(newActiveState);
         setFormBuilderSuccess(newActiveState ? "Evaluation form is now open for students!" : "Evaluation form has been closed.");
+        await refreshAllForms();
       } else {
         const d = await res.json();
         setFormBuilderError("Failed to update status: " + (d.error || "Unknown error"));
@@ -350,33 +413,26 @@ export default function AdminEventsPage() {
   };
 
   const awardFormPointsReal = async () => {
-    if (!formEventId) return;
-    
+    if (!formEventId || !activeFormId) return;
+
     setFormAwarding(true);
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
     try {
       const res = await fetch(`/api/admin/events/${formEventId}/form/award`, {
-        method: "POST"
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formId: activeFormId }),
       });
       const data = await res.json();
-      
+
       if (res.ok) {
         if (data.winners && data.winners.length > 0) {
           setFormBuilderSuccess(`🏆 Contest Ended! Winner: ${data.winners.map((w: string) => w.toUpperCase()).join(" & ")} House won with ${data.submissionsCount} submissions! +${formPoints} PTS awarded!`);
         } else {
           setFormBuilderSuccess(data.message || "Form ended, no points awarded.");
         }
-        
-        // Refresh state
-        const freshRes = await fetch(`/api/admin/events/${formEventId}/form`);
-        const freshData = await freshRes.json();
-        if (freshData.form) {
-          setFormIsActive(freshData.form.isActive);
-          setFormIsAwarded(freshData.form.isAwarded || false);
-          setFormStats(freshData.stats);
-          setFormSubmissions(freshData.submissions || []);
-        }
+        await refreshAllForms();
       } else {
         setFormBuilderError("Failed: " + (data.error || "Unknown error"));
       }
@@ -385,6 +441,33 @@ export default function AdminEventsPage() {
       setFormBuilderError("Failed to end contest and award points.");
     } finally {
       setFormAwarding(false);
+    }
+  };
+
+  const deleteActiveForm = async () => {
+    if (!formEventId || !activeFormId) return;
+    try {
+      const res = await fetch(`/api/admin/events/${formEventId}/form`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formId: activeFormId }),
+      });
+      if (res.ok) {
+        const remaining = await refreshAllForms();
+        if (remaining && remaining.length > 0) {
+          loadFormIntoEditor(remaining[0]);
+        } else {
+          setActiveFormId(null);
+          setShowNewFormPicker(true);
+        }
+        setFormBuilderSuccess("Form deleted.");
+      } else {
+        const d = await res.json();
+        setFormBuilderError("Failed to delete: " + (d.error || "Unknown error"));
+      }
+    } catch (e) {
+      console.error(e);
+      setFormBuilderError("Failed to delete form.");
     }
   };
 
@@ -2156,6 +2239,82 @@ export default function AdminEventsPage() {
               </button>
             </div>
 
+            {/* KAS Form Selector — chips for each form + Add button */}
+            <div style={{ padding: "12px clamp(12px,4vw,32px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {allEventForms.map((f) => {
+                const c = FORM_TYPE_COLORS[f.formType] || FORM_TYPE_COLORS["K_post"];
+                const isActive = f.id === activeFormId;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => { setShowNewFormPicker(false); loadFormIntoEditor(f); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      padding: "6px 14px", borderRadius: 99, fontSize: 12, fontWeight: 800,
+                      cursor: "pointer", transition: "all 0.15s",
+                      background: isActive ? c.bg : "var(--bg-surface)",
+                      color: isActive ? c.text : "var(--text-secondary)",
+                      border: isActive ? `1.5px solid ${c.border}` : "1.5px solid var(--border-subtle)",
+                      boxShadow: isActive ? `0 0 0 2px ${c.border}` : "none",
+                    }}
+                  >
+                    <span style={{ fontSize: 9, fontWeight: 900, background: c.bg, color: c.text, padding: "1px 5px", borderRadius: 4 }}>
+                      {FORM_TYPE_LABELS[f.formType] || f.formType}
+                    </span>
+                    <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.title}</span>
+                    {f.isAwarded && <span style={{ fontSize: 10 }}>🔒</span>}
+                    {!f.isActive && !f.isAwarded && <span style={{ fontSize: 10, opacity: 0.6 }}>●</span>}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => { setShowNewFormPicker(true); setActiveFormId(null); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  padding: "6px 14px", borderRadius: 99, fontSize: 12, fontWeight: 800,
+                  cursor: "pointer", background: "transparent",
+                  color: "var(--accent-primary)", border: "1.5px dashed var(--accent-primary)",
+                }}
+              >
+                + Add Form
+              </button>
+            </div>
+
+            {/* New Form Type Picker */}
+            {showNewFormPicker && !formLoading && (
+              <div style={{ padding: "20px clamp(12px,4vw,32px)", background: "var(--bg-surface)", borderBottom: "1px solid var(--border-subtle)" }}>
+                <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)", marginBottom: 12 }}>
+                  Select the type of form to create for this event:
+                </p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {(["K_pre", "K_post", "A", "S"] as const).map((type) => {
+                    const c = FORM_TYPE_COLORS[type];
+                    const alreadyExists = allEventForms.some((f) => f.formType === type);
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        disabled={alreadyExists}
+                        onClick={() => startNewForm(type)}
+                        style={{
+                          padding: "10px 20px", borderRadius: 14, fontSize: 13, fontWeight: 800,
+                          cursor: alreadyExists ? "not-allowed" : "pointer", opacity: alreadyExists ? 0.4 : 1,
+                          background: c.bg, color: c.text, border: `1.5px solid ${c.border}`,
+                          transition: "all 0.15s",
+                        }}
+                        title={alreadyExists ? "A form of this type already exists for this event" : ""}
+                      >
+                        {FORM_TYPE_LABELS[type]}
+                        {alreadyExists && " ✓"}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Modal Navigation Tabs */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-surface)" }}>
               <button
@@ -2199,6 +2358,14 @@ export default function AdminEventsPage() {
               <div style={{ padding: "80px 0", textAlign: "center" }}>
                 <div className="spinner w-8 h-8 border-4 border-t-transparent" style={{ margin: "0 auto 16px" }} />
                 <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>Fetching evaluation system data...</p>
+              </div>
+            ) : showNewFormPicker && !activeFormId ? (
+              <div style={{ padding: "60px 40px", textAlign: "center" }}>
+                <ClipboardList size={48} style={{ color: "var(--text-muted)", margin: "0 auto 20px", opacity: 0.3, display: "block" }} />
+                <h4 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Select a form type above to get started</h4>
+                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                  Each form type (K Pre-Test, K Post-Test, A - Attitude, S - Skill) can only be created once per event.
+                </p>
               </div>
             ) : (
               <div style={{ padding: "clamp(16px, 5vw, 40px)" }}>
@@ -2268,6 +2435,18 @@ export default function AdminEventsPage() {
                       
                       {/* Right Panel */}
                       <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 16 }}>
+                        {/* Form Type Badge */}
+                        {(() => {
+                          const c = FORM_TYPE_COLORS[activeFormType] || FORM_TYPE_COLORS["K_post"];
+                          return (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 12, background: c.bg, border: `1px solid ${c.border}` }}>
+                              <span style={{ fontSize: 12, fontWeight: 900, color: c.text }}>{FORM_TYPE_LABELS[activeFormType] || activeFormType}</span>
+                              <span style={{ fontSize: 11, color: c.text, opacity: 0.7 }}>
+                                {activeFormType === "K_pre" ? "— No attendance required" : activeFormType === "S" ? "— Admin/staff only" : "— Requires check-in"}
+                              </span>
+                            </div>
+                          );
+                        })()}
                         <div className="field">
                           <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
                             <Zap size={14} style={{ color: "var(--accent-primary)" }} /> House Points Reward
@@ -2624,24 +2803,46 @@ export default function AdminEventsPage() {
                     </div>
 
                     {/* Footer Actions */}
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 12 }}>
-                      <button
-                        className="btn btn-ghost"
-                        type="button"
-                        style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
-                        onClick={() => setShowFormBuilder(false)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="btn btn-primary"
-                        type="button"
-                        style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
-                        disabled={formSaving || formIsAwarded}
-                        onClick={saveForm}
-                      >
-                        {formSaving ? <div className="spinner w-4 h-4 border-2" /> : "Save Form Structure"}
-                      </button>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 12 }}>
+                      <div>
+                        {activeFormId && !formIsAwarded && (
+                          <button
+                            className="btn btn-danger"
+                            type="button"
+                            style={{ height: 40, borderRadius: 12, padding: "0 16px", fontSize: 12 }}
+                            onClick={() => setConfirmModal({
+                              show: true,
+                              title: "Delete this form?",
+                              message: "This will permanently delete the form and all its submissions.",
+                              confirmText: "Delete Form",
+                              cancelText: "Cancel",
+                              isDanger: true,
+                              onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); deleteActiveForm(); }
+                            })}
+                          >
+                            <Trash2 size={13} style={{ marginRight: 6 }} /> Delete Form
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 12 }}>
+                        <button
+                          className="btn btn-ghost"
+                          type="button"
+                          style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
+                          onClick={() => setShowFormBuilder(false)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          type="button"
+                          style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
+                          disabled={formSaving || formIsAwarded}
+                          onClick={saveForm}
+                        >
+                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : activeFormId ? "Save Changes" : "Create Form"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (

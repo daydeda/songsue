@@ -5,31 +5,34 @@ import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService } from "@/modules/audit/audit.service";
 
-// POST /api/admin/events/[id]/form/award — Close form and award points to house with most completions
+const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
+
+// POST /api/admin/events/[id]/form/award — close a form and award points to house with most completions
+// Body: { formId: string }
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    if (!session?.user || !ADMIN_ROLES.includes(session.user.role || "")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id: eventId } = await params;
+    const { formId } = await req.json();
 
-    // 1. Get the form details and submissions
+    if (!formId) {
+      return NextResponse.json({ error: "formId is required" }, { status: 400 });
+    }
+
+    // 1. Get the specific form (must belong to this event)
     const formObj = await db.query.forms.findFirst({
-      where: eq(forms.eventId, eventId),
+      where: and(eq(forms.id, formId), eq(forms.eventId, eventId)),
       with: {
         submissions: {
           with: {
-            user: {
-              columns: {
-                houseId: true,
-              },
-            },
+            user: { columns: { houseId: true } },
           },
         },
       },
@@ -40,12 +43,11 @@ export async function POST(
     }
 
     if (formObj.isAwarded) {
-      return NextResponse.json({ error: "Points have already been awarded for this event's evaluation form contest." }, { status: 400 });
+      return NextResponse.json({ error: "Points have already been awarded for this form." }, { status: 400 });
     }
 
     const submissions = formObj.submissions;
     if (submissions.length === 0) {
-      // Close form anyway
       await db.update(forms).set({ isActive: false, updatedAt: new Date() }).where(eq(forms.id, formObj.id));
       return NextResponse.json({ success: true, message: "Form closed, but no points awarded since there were no submissions." });
     }
@@ -60,28 +62,22 @@ export async function POST(
 
     const houseList = Object.entries(houseCounts);
     if (houseList.length === 0) {
-      // Close form
       await db.update(forms).set({ isActive: false, updatedAt: new Date() }).where(eq(forms.id, formObj.id));
       return NextResponse.json({ success: true, message: "Form closed, but no houses had submitted. No points awarded." });
     }
 
-    // 3. Find max submission count
+    // 3. Find max and winners (handles ties)
     let maxSubmissions = -1;
-    for (const [_, count] of houseList) {
-      if (count > maxSubmissions) {
-        maxSubmissions = count;
-      }
+    for (const [, count] of houseList) {
+      if (count > maxSubmissions) maxSubmissions = count;
     }
-
-    // 4. Find all winners (handles ties)
-    const winningHouseIds = houseList.filter(([_, count]) => count === maxSubmissions).map(([hId]) => hId);
+    const winningHouseIds = houseList.filter(([, count]) => count === maxSubmissions).map(([hId]) => hId);
 
     const dbHouses = await db.query.houses.findMany();
     const houseNameMap = new Map(dbHouses.map((h) => [h.id, h.name]));
-
     const pointsToAward = formObj.pointsAwarded ?? 0;
 
-    // 5. Award points in a transaction
+    // 4. Award points in a transaction
     let alreadyAwarded = false;
     await db.transaction(async (tx) => {
       // Close form and mark as awarded. The WHERE is_awarded = false makes this the
@@ -101,25 +97,22 @@ export async function POST(
 
       for (const winnerId of winningHouseIds) {
         const houseName = houseNameMap.get(winnerId) || winnerId;
-        
+
         if (pointsToAward > 0) {
-          // Update house points
           await tx
             .update(houses)
-            .set({
-              points: sql`${houses.points} + ${pointsToAward}`,
-            })
+            .set({ points: sql`${houses.points} + ${pointsToAward}` })
             .where(eq(houses.id, winnerId));
         }
 
-        const reasonStr = winningHouseIds.length > 1
-          ? `Event Form Contest Tie Winner: ${houseName} House completed the evaluation form "${formObj.title}" most with ${maxSubmissions} submissions! Shared ${pointsToAward} PTS.`
-          : `Event Form Contest Winner: ${houseName} House completed the evaluation form "${formObj.title}" most with ${maxSubmissions} submissions! Received ${pointsToAward} PTS.`;
+        const reasonStr =
+          winningHouseIds.length > 1
+            ? `Event Form Contest Tie Winner: ${houseName} House completed the evaluation form "${formObj.title}" most with ${maxSubmissions} submissions! Shared ${pointsToAward} PTS.`
+            : `Event Form Contest Winner: ${houseName} House completed the evaluation form "${formObj.title}" most with ${maxSubmissions} submissions! Received ${pointsToAward} PTS.`;
 
-        // Log score history
         await tx.insert(scoreHistory).values({
           houseId: winnerId,
-          eventId: eventId,
+          eventId,
           delta: pointsToAward,
           reason: reasonStr,
           timestamp: new Date(),
@@ -128,7 +121,7 @@ export async function POST(
         // Audit Log (through the service so the hash chain stays intact)
         await AuditService.logActionInternal(tx, {
           actorId: session.user!.id!,
-          action: `Awarded ${pointsToAward} PTS to house ${winnerId} for evaluation form completion winner for event ${eventId}.`,
+          action: `Awarded ${pointsToAward} PTS to house ${winnerId} for evaluation form "${formObj.title}" (${formObj.formType}) completion winner for event ${eventId}.`,
           ipAddress:
             req.headers.get("x-forwarded-for")?.split(",")[0] ||
             req.headers.get("x-real-ip") ||
@@ -141,8 +134,8 @@ export async function POST(
       return NextResponse.json({ error: "Points have already been awarded for this event's evaluation form contest." }, { status: 400 });
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       winners: winningHouseIds.map((wId) => houseNameMap.get(wId) || wId),
       submissionsCount: maxSubmissions,
     });

@@ -11,9 +11,12 @@ import {
   type AnswerMap,
 } from "@/lib/form-schema";
 
-// GET /api/events/[id]/form — Fetch the form for students (checking if attended & submitted)
+const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
+
+// GET /api/events/[id]/form — fetch all relevant forms for a student
+// S-type forms are excluded for non-admin users.
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -24,69 +27,66 @@ export async function GET(
 
     const { id: eventId } = await params;
     const userId = session.user.id!;
+    const userRole = session.user.role || "";
+    const isAdmin = ADMIN_ROLES.includes(userRole);
 
-    // 1. Get the form details
-    const formObj = await db.query.forms.findFirst({
-      where: eq(forms.eventId, eventId),
-    });
-
-    if (!formObj) {
-      return NextResponse.json({ form: null });
-    }
-
-    // 2. Verify if the student checked in / attended this event
     const attRecord = await db.query.attendance.findFirst({
-      where: and(
-        eq(attendance.eventId, eventId),
-        eq(attendance.studentId, userId)
-      ),
+      where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
     });
-
     const hasAttended = attRecord?.status === "attended";
 
-    // 3. Check if the student has already submitted this form
-    const existingSubmission = await db.query.formSubmissions.findFirst({
-      where: and(
-        eq(formSubmissions.formId, formObj.id),
-        eq(formSubmissions.studentId, userId)
-      ),
+    const allForms = await db.query.forms.findMany({
+      where: eq(forms.eventId, eventId),
+      orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
     });
 
-    // If the student already submitted a graded form, recompute their score from
-    // the stored answers + the form's correct answers (score is display-only, so
-    // we never persist it — recomputing keeps it correct if the key is edited).
-    let result: { score: number; maxScore: number; hasGraded: boolean } | null = null;
-    if (existingSubmission) {
-      const { score, maxScore, hasGraded } = computeScore(
-        normalizeForm(formObj.questions),
-        (existingSubmission.answers as AnswerMap) || {},
-      );
-      if (hasGraded) result = { score, maxScore, hasGraded };
-    }
+    const visibleForms = allForms.filter((f) => f.formType !== "S" || isAdmin);
 
-    return NextResponse.json({
-      form: {
-        id: formObj.id,
-        eventId: formObj.eventId,
-        title: formObj.title,
-        description: formObj.description,
-        questions: formObj.questions,
-        pointsAwarded: formObj.pointsAwarded,
-        isActive: formObj.isActive,
-        isAwarded: formObj.isAwarded,
-      },
-      hasAttended,
-      hasSubmitted: !!existingSubmission,
-      answers: existingSubmission?.answers || null,
-      result,
-    });
+    const formResponses = await Promise.all(
+      visibleForms.map(async (formObj) => {
+        const existingSubmission = await db.query.formSubmissions.findFirst({
+          where: and(
+            eq(formSubmissions.formId, formObj.id),
+            eq(formSubmissions.studentId, userId)
+          ),
+        });
+
+        let result: { score: number; maxScore: number; hasGraded: boolean } | null = null;
+        if (existingSubmission) {
+          const { score, maxScore, hasGraded } = computeScore(
+            normalizeForm(formObj.questions),
+            (existingSubmission.answers as AnswerMap) || {}
+          );
+          if (hasGraded) result = { score, maxScore, hasGraded };
+        }
+
+        return {
+          id: formObj.id,
+          eventId: formObj.eventId,
+          formType: formObj.formType,
+          sortOrder: formObj.sortOrder,
+          title: formObj.title,
+          description: formObj.description,
+          questions: formObj.questions,
+          pointsAwarded: formObj.pointsAwarded,
+          isActive: formObj.isActive,
+          isAwarded: formObj.isAwarded,
+          hasSubmitted: !!existingSubmission,
+          answers: existingSubmission?.answers || null,
+          result,
+        };
+      })
+    );
+
+    return NextResponse.json({ forms: formResponses, hasAttended });
   } catch (error) {
-    console.error("Failed to fetch student form:", error);
+    console.error("Failed to fetch student forms:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
 
-// POST /api/events/[id]/form — Student submits their evaluation form answers
+// POST /api/events/[id]/form — student submits answers to a specific form
+// Body: { formId: string, answers: AnswerMap }
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -99,19 +99,27 @@ export async function POST(
 
     const { id: eventId } = await params;
     const userId = session.user.id!;
-    const { answers } = await req.json();
+    const userRole = session.user.role || "";
+    const isAdmin = ADMIN_ROLES.includes(userRole);
+    const { formId, answers } = await req.json();
 
+    if (!formId) {
+      return NextResponse.json({ error: "formId is required" }, { status: 400 });
+    }
     if (!answers || typeof answers !== "object") {
       return NextResponse.json({ error: "Missing or invalid answers" }, { status: 400 });
     }
 
-    // 1. Get the form
     const formObj = await db.query.forms.findFirst({
-      where: eq(forms.eventId, eventId),
+      where: and(eq(forms.id, formId), eq(forms.eventId, eventId)),
     });
 
     if (!formObj) {
       return NextResponse.json({ error: "Form not found" }, { status: 404 });
+    }
+
+    if (formObj.formType === "S" && !isAdmin) {
+      return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
     if (formObj.isAwarded) {
@@ -122,31 +130,23 @@ export async function POST(
       return NextResponse.json({ error: "This form has been closed by the administrator." }, { status: 400 });
     }
 
-    // 2. Verify attendance
-    const attRecord = await db.query.attendance.findFirst({
-      where: and(
-        eq(attendance.eventId, eventId),
-        eq(attendance.studentId, userId)
-      ),
-    });
-
-    const hasAttended = attRecord?.status === "attended";
-    if (!hasAttended) {
-      return NextResponse.json({ 
-        error: "You must have checked in and physically attended this event to submit an evaluation form." 
-      }, { status: 403 });
+    // K_pre skips attendance check; all others require it
+    if (formObj.formType !== "K_pre") {
+      const attRecord = await db.query.attendance.findFirst({
+        where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
+      });
+      if (attRecord?.status !== "attended") {
+        return NextResponse.json({
+          error: "You must have checked in and physically attended this event to submit this form.",
+        }, { status: 403 });
+      }
     }
 
-    // 3. Check for duplicate submissions
     const existingSubmission = await db.query.formSubmissions.findFirst({
-      where: and(
-        eq(formSubmissions.formId, formObj.id),
-        eq(formSubmissions.studentId, userId)
-      ),
+      where: and(eq(formSubmissions.formId, formObj.id), eq(formSubmissions.studentId, userId)),
     });
-
     if (existingSubmission) {
-      return NextResponse.json({ error: "You have already completed the form for this event." }, { status: 400 });
+      return NextResponse.json({ error: "You have already completed this form." }, { status: 400 });
     }
 
     // 3b. Server-side required-field validation. The client enforces this too, but a
@@ -164,7 +164,7 @@ export async function POST(
         if (q.required && isQuestionVisible(q, answerMap) && isBlank(answerMap[q.id])) {
           return NextResponse.json(
             { error: "Please answer all required questions before submitting." },
-            { status: 400 },
+            { status: 400 }
           );
         }
       }
@@ -173,25 +173,16 @@ export async function POST(
     // 4. Record the submission. The (form_id, student_id) unique index is the
     // authoritative guard against a double-submit race slipping past the check above.
     try {
-      await db.insert(formSubmissions).values({
-        formId: formObj.id,
-        studentId: userId,
-        answers,
-      });
+      await db.insert(formSubmissions).values({ formId: formObj.id, studentId: userId, answers });
     } catch (e) {
       const dbError = (e as { cause?: { code?: string }; code?: string })?.cause ?? (e as { code?: string });
       if (dbError?.code === "23505") {
-        return NextResponse.json({ error: "You have already completed the form for this event." }, { status: 409 });
+        return NextResponse.json({ error: "You have already completed this form." }, { status: 409 });
       }
       throw e;
     }
 
-    // 5. Score it (display-only — points to houses are still awarded by submission
-    // count in the award route, unaffected by quiz scores).
-    const { score, maxScore, hasGraded } = computeScore(
-      normalizeForm(formObj.questions),
-      answers as AnswerMap,
-    );
+    const { score, maxScore, hasGraded } = computeScore(normalizeForm(formObj.questions), answers as AnswerMap);
 
     return NextResponse.json({
       success: true,

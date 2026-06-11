@@ -242,10 +242,13 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 
 export const forms = pgTable("forms", {
   id: uuid("id").defaultRandom().primaryKey(),
-  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull().unique(),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
+  // 'K_pre' | 'K_post' | 'A' | 'S' — multiple forms of different types per event allowed
+  formType: text("form_type").notNull().default("K_post"),
+  sortOrder: integer("sort_order").notNull().default(0),
   title: text("title").notNull(),
   description: text("description"),
-  questions: jsonb("questions").notNull(), // Array of: { id: string, type: 'text' | 'rating', label: string, required: boolean }
+  questions: jsonb("questions").notNull(),
   pointsAwarded: integer("points_awarded").default(0),
   isActive: boolean("is_active").default(true),
   isAwarded: boolean("is_awarded").default(false),

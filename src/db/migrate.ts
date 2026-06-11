@@ -298,6 +298,31 @@ async function migrate() {
   `;
   console.log("  ✅ form_submissions deduped + unique index");
 
+  // 25. KAS multi-form: add form_type and sort_order to forms, drop single-form unique constraint
+  await sql`
+    ALTER TABLE forms
+    ADD COLUMN IF NOT EXISTS form_type text NOT NULL DEFAULT 'K_post'
+  `;
+  console.log("  ✅ forms.form_type");
+
+  await sql`
+    ALTER TABLE forms
+    ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0
+  `;
+  console.log("  ✅ forms.sort_order");
+
+  try {
+    await sql`ALTER TABLE forms DROP CONSTRAINT IF EXISTS forms_event_id_unique`;
+    console.log("  ✅ dropped forms_event_id_unique constraint");
+  } catch (e) {
+    console.log("  ⚠️ forms_event_id_unique constraint already dropped or not found");
+  }
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_forms_event_type_order ON forms(event_id, form_type, sort_order)
+  `;
+  console.log("  ✅ idx_forms_event_type_order index");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

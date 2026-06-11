@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
+import { useQrToken } from "@/lib/useQrToken";
 
 interface HouseItem {
   id: string;
@@ -37,6 +38,8 @@ export default function DigitalIdPage() {
   const { t, lang } = useLanguage();
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
+
+  const { qrValue, countdownMM, countdownSS, countdownColor } = useQrToken(session?.user?.id);
 
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" },
@@ -70,7 +73,6 @@ export default function DigitalIdPage() {
   const user = session?.user;
   const houseId = user?.houseId ?? null;
   const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
-  const qrValue = user?.qrToken ?? user?.id ?? "no-token";
 
   return (
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
@@ -197,6 +199,25 @@ export default function DigitalIdPage() {
                 bgColor="#ffffff"
                 fgColor="#000000"
               />
+
+              {/* Countdown pill */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 12px",
+                borderRadius: 99,
+                background: `${countdownColor}15`,
+                border: `1px solid ${countdownColor}40`,
+              }}>
+                <RefreshCw size={11} color={countdownColor} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: countdownColor, fontVariantNumeric: "tabular-nums", letterSpacing: "0.03em" }}>
+                  {countdownMM}:{countdownSS}
+                </span>
+                <span style={{ fontSize: 11, color: countdownColor, opacity: 0.8 }}>
+                  {lang === "th" ? "รีเฟรช" : "refresh"}
+                </span>
+              </div>
             </div>
 
             <div style={{ textAlign: "center", width: "100%" }}>

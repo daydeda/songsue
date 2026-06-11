@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -145,7 +145,7 @@ export const attendance = pgTable("attendance", {
   scannedBy: text("scanned_by").references(() => users.id),
   medsCheckOption: text("meds_check_option"),
 }, (table) => ([
-  index("idx_attendance_event_student").on(table.eventId, table.studentId),
+  uniqueIndex("idx_attendance_event_student").on(table.eventId, table.studentId),
   index("idx_attendance_student").on(table.studentId),
   index("idx_attendance_checkin_time").on(table.checkInTime),
 ]));
@@ -169,6 +169,8 @@ export const auditLogs = pgTable("audit_logs", {
   targetId: text("target_id").references(() => users.id),
   action: text("action").notNull(),
   ipAddress: text("ip_address"),
+  prevHash: text("prev_hash").notNull().default(""),
+  rowHash: text("row_hash").notNull().default(""),
 });
 
 // ─── Relations ────────────────────────────────────────────────────────────────

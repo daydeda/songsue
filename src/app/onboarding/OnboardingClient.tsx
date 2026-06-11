@@ -219,6 +219,14 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
   const inp = "input";
   const lbl = "label";
 
+  const medicalPlaceholders: Record<string, string> = {
+    chronicDiseases: isTh ? "เช่น เบาหวาน, ความดันโลหิตสูง, โรคหืด" : "e.g. Diabetes, Hypertension, Asthma",
+    medicalHistory: isTh ? "เช่น เคยผ่าตัด, เคยรับการรักษาในโรงพยาบาล" : "e.g. Previous surgeries, hospital stays",
+    drugAllergies: isTh ? "เช่น แอสไพริน, เพนิซิลลิน" : "e.g. Aspirin, Penicillin",
+    foodAllergies: isTh ? "เช่น อาหารทะเล, ถั่วลิสง" : "e.g. Seafood, Peanuts",
+    emergencyMedication: isTh ? "เช่น ยาพ่นหอบ, ยาลดความดัน" : "e.g. Inhaler, Blood pressure medication",
+  };
+
   const renderMedicalField = (
     fieldKey: "chronicDiseases" | "medicalHistory" | "drugAllergies" | "foodAllergies" | "emergencyMedication",
     label: string
@@ -256,7 +264,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: a
           <>
             <input
               className={inp}
-              placeholder={isTh ? "ระบุรายละเอียด..." : "Please specify details..."}
+              placeholder={medicalPlaceholders[fieldKey] ?? (isTh ? "ระบุรายละเอียด..." : "Please specify details...")}
               value={formData[fieldKey]}
               onChange={(e) => set(fieldKey, e.target.value)}
               style={{

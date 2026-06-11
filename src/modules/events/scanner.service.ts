@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { attendance, users, houses, scoreHistory } from "@/db/schema";
+import { attendance, users, houses, scoreHistory, events } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
@@ -16,14 +16,15 @@ export interface ScanResult {
     house: string;
     houseId?: string | null;
     houseColor: string;
-    hasMedicalCondition: boolean;
-    chronicDiseases: string | null;
-    medicalHistory: string | null;
-    drugAllergies: string | null;
-    foodAllergies: string | null;
-    dietaryRestrictions: string | null;
-    faintingHistory: boolean | null;
-    emergencyMedication: string | null;
+    // Medical fields only included when operationally needed (pending/first check-in)
+    hasMedicalCondition?: boolean;
+    chronicDiseases?: string | null;
+    medicalHistory?: string | null;
+    drugAllergies?: string | null;
+    foodAllergies?: string | null;
+    dietaryRestrictions?: string | null;
+    faintingHistory?: boolean | null;
+    emergencyMedication?: string | null;
     points?: number | null;
   } | null;
   checkedInAt?: Date | null;
@@ -31,11 +32,13 @@ export interface ScanResult {
   isWalkIn?: boolean;
 }
 
+const MAX_SCORE_AWARD = 500;
+
+class QuotaFullError extends Error {
+  constructor() { super("QUOTA_FULL"); }
+}
+
 export class ScannerService {
-  /**
-   * Processes a QR code scan or manual confirmation for a student and event.
-   * Ensures atomic database transactions and strict data security limits (PDPA).
-   */
   static async processScan(params: {
     qrToken: string;
     eventId: string;
@@ -46,42 +49,32 @@ export class ScannerService {
     actorId: string;
     ipAddress: string;
   }): Promise<ScanResult> {
-    const { qrToken, eventId, action, medsCheckOption, score, reason, actorId, ipAddress } = params;
+    const { qrToken, eventId, action, medsCheckOption, actorId, ipAddress } = params;
 
-    // 1 + 2. Resolve student and event in parallel — they are independent lookups,
-    // so a single round-trip instead of two sequential ones (matters most on the
-    // scan hot path, where the DB is cross-region).
     const [student, event] = await Promise.all([
       UsersService.resolveStudentByToken(qrToken),
       EventsService.getEventById(eventId),
     ]);
 
-    if (!student) {
-      return {
-        status: "not_found",
-        student: null,
-        error: "Student not found in the system.",
-      };
-    }
+    if (!student) return { status: "not_found", student: null, error: "Student not found in the system." };
+    if (!event)   return { status: "not_found", student: null, error: "Event not found" };
 
-    if (!event) {
-      return {
-        status: "not_found",
-        student: null,
-        error: "Event not found",
-      };
-    }
-
-    // 4. PDPA Helper: Identify if any medical warnings exist
     const hasMedicalCondition = this.evaluateMedicalCondition(student);
 
-    const studentInfo = {
+    // Base info: safe to return in all contexts (no sensitive health data)
+    const baseStudentInfo = {
       name: student.name,
       nickname: student.nickname,
       studentId: student.studentId,
       house: student.house?.name ?? "UNASSIGNED",
       houseId: student.house?.id,
       houseColor: student.house?.color ?? "#6366f1",
+      points: student.points ?? 0,
+    };
+
+    // Full info: only returned when staff needs to act on a student at the gate
+    const studentWithMedical = {
+      ...baseStudentInfo,
       hasMedicalCondition,
       chronicDiseases: student.chronicDiseases,
       medicalHistory: student.medicalHistory,
@@ -90,111 +83,96 @@ export class ScannerService {
       dietaryRestrictions: student.dietaryRestrictions,
       faintingHistory: student.faintingHistory,
       emergencyMedication: student.emergencyMedication,
-      points: student.points ?? 0,
     };
 
-    // Case C: Score Awarding Flow
+    /* ── Score Awarding ─────────────────────────────────────────────────────── */
     if (action === "score") {
-      const parsedScore = score !== undefined ? Number(score) : 0;
-      if (isNaN(parsedScore) || parsedScore <= 0) {
+      const parsedScore = params.score !== undefined ? Number(params.score) : 0;
+      if (!Number.isInteger(parsedScore) || parsedScore < 1 || parsedScore > MAX_SCORE_AWARD) {
         return {
           status: "error",
-          student: studentInfo,
-          error: "Invalid score value.",
+          student: baseStudentInfo,
+          error: `Score must be an integer between 1 and ${MAX_SCORE_AWARD}.`,
         };
       }
 
-      const previousPoints = student.points ?? 0;
-      const newPoints = previousPoints + parsedScore;
+      let newPoints = 0;
 
       await db.transaction(async (tx) => {
-        // A. Update student points
-        await tx
+        // Atomic UPDATE: locks the row, increments, and returns the new value in
+        // one round-trip. T2 blocks here until T1 commits, then reads the
+        // already-incremented value — no separate SELECT FOR UPDATE needed.
+        const [result] = await tx
           .update(users)
-          .set({ points: newPoints })
-          .where(eq(users.id, student.id));
+          .set({ points: sql`COALESCE(${users.points}, 0) + ${parsedScore}` })
+          .where(eq(users.id, student.id))
+          .returning({ newPoints: users.points });
 
-        // B. Log individual score history
+        newPoints = result?.newPoints ?? parsedScore;
+        const previousPoints = newPoints - parsedScore;
+
         if (student.houseId) {
-          const individualLogReason = reason && reason.trim() !== ""
-            ? `Awarded ${parsedScore} pts to ${student.name} - Reason: ${reason} (from activity "${event.title}")`
+          const logReason = params.reason?.trim()
+            ? `Awarded ${parsedScore} pts to ${student.name} - Reason: ${params.reason} (from activity "${event.title}")`
             : `Awarded ${parsedScore} individual points to ${student.name} from activity "${event.title}"`;
 
           await tx.insert(scoreHistory).values({
             houseId: student.houseId,
             eventId: eventId || null,
             delta: 0,
-            reason: individualLogReason,
+            reason: logReason,
           });
         }
 
-        // C. Check milestone crossing (every 100 points)
         const oldMilestones = Math.floor(previousPoints / 100);
         const newMilestones = Math.floor(newPoints / 100);
         const milestoneDiff = newMilestones - oldMilestones;
 
-        let houseAwarded = false;
         let housePointsAdded = 0;
-
         if (milestoneDiff > 0 && student.houseId) {
           housePointsAdded = milestoneDiff * 2;
-          // Update house points
-          await tx
-            .update(houses)
+          await tx.update(houses)
             .set({ points: sql`${houses.points} + ${housePointsAdded}` })
             .where(eq(houses.id, student.houseId));
-
-          // Log score history for the house milestone
           await tx.insert(scoreHistory).values({
             houseId: student.houseId,
             eventId: eventId || null,
             delta: housePointsAdded,
             reason: `Student ${student.name} reached 100 point milestone (+${newPoints} total points) from activity "${event.title}"`,
           });
-          houseAwarded = true;
         }
 
-        // C. Log transaction audit trail
         await AuditService.logActionInternal(tx, {
           actorId,
           targetId: student.id,
           action: `Awarded ${parsedScore} individual points to ${student.name} for activity "${event.title}"` +
-                  (reason && reason.trim() !== "" ? ` (Reason: ${reason})` : "") +
-                  `. Points updated from ${previousPoints} to ${newPoints}.` + 
-                  (houseAwarded ? ` House ${student.houseId} awarded +${housePointsAdded} points.` : ""),
+                  (params.reason?.trim() ? ` (Reason: ${params.reason})` : "") +
+                  `. Points updated from ${previousPoints} to ${newPoints}.` +
+                  (housePointsAdded > 0 ? ` House ${student.houseId} awarded +${housePointsAdded} points.` : ""),
           ipAddress,
         });
       });
 
-      return {
-        status: "success",
-        student: {
-          ...studentInfo,
-          points: newPoints,
-        },
-      };
+      // Score responses omit medical data — not relevant to point awarding
+      return { status: "success", student: { ...baseStudentInfo, points: newPoints } };
     }
 
-    // 3. Resolve existing attendance record
+    /* ── Check-in: pre-registered path ─────────────────────────────────────── */
     const record = await db.query.attendance.findFirst({
       where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, student.id)),
     });
 
-    // Case A: Student is already registered
     if (record) {
       if (record.status === "attended") {
-        return {
-          status: "already_checked_in",
-          student: studentInfo,
-          checkedInAt: record.checkInTime,
-        };
+        // Already done — return base info only (no reason to re-expose medical data)
+        return { status: "already_checked_in", student: baseStudentInfo, checkedInAt: record.checkInTime };
       }
 
-      // Pre-registered but not checked in yet
       if (action === "confirm") {
-        await db.transaction(async (tx) => {
-          // Update attendance status
-          await tx
+        // Atomic update: WHERE status='registered' ensures only one concurrent
+        // confirm wins. The losing request gets 0 rows back → already_checked_in.
+        const updated = await db.transaction(async (tx) => {
+          const rows = await tx
             .update(attendance)
             .set({
               status: "attended",
@@ -202,56 +180,76 @@ export class ScannerService {
               scannedBy: actorId,
               medsCheckOption: medsCheckOption || null,
             })
-            .where(eq(attendance.id, record.id));
+            .where(and(eq(attendance.id, record.id), eq(attendance.status, "registered")))
+            .returning({ id: attendance.id });
 
-          // Log transaction audit trail
-          await AuditService.logActionInternal(tx, {
-            actorId,
-            targetId: student.id,
-            action: `Confirmed check-in for pre-registered event: ${event.title}`,
-            ipAddress,
-          });
+          if (rows.length > 0) {
+            await AuditService.logActionInternal(tx, {
+              actorId,
+              targetId: student.id,
+              action: `Confirmed check-in for pre-registered event: ${event.title}`,
+              ipAddress,
+            });
+          }
+          return rows;
         });
 
-        return {
-          status: "success",
-          student: studentInfo,
-        };
+        if (updated.length === 0) {
+          return { status: "already_checked_in", student: baseStudentInfo };
+        }
+        return { status: "success", student: studentWithMedical };
       }
 
-      // Needs confirmation
+      // Scan only — staff sees medical alert before deciding to confirm
+      return { status: "pending_confirmation", student: studentWithMedical };
+    }
+
+    /* ── Check-in: walk-in path ─────────────────────────────────────────────── */
+    if (!event.walkInsEnabled) {
       return {
-        status: "pending_confirmation",
-        student: studentInfo,
+        status: "walk_ins_disabled",
+        student: baseStudentInfo,
+        error: "Walk-ins are not enabled for this event and student is not pre-registered.",
       };
     }
 
-    // Case B: Not registered (Walk-in Flow)
-    if (event.walkInsEnabled) {
-      // Quota checking
-      if (event.quota !== null) {
-        const currentCount = await EventsService.getAttendeeCount(eventId);
-        if (currentCount >= event.quota) {
-          return {
-            status: "quota_full",
-            student: null,
-            error: "Event is full. Walk-ins cannot be accepted.",
-          };
-        }
-      }
-
-      // Confirm walk-in check-in
-      if (action === "confirm") {
+    if (action === "confirm") {
+      try {
         await db.transaction(async (tx) => {
-          await tx.insert(attendance).values({
-            eventId: eventId,
-            studentId: student.id,
-            scannedBy: actorId,
-            method: "walk-in",
-            status: "attended",
-            checkInTime: new Date(),
-            medsCheckOption: medsCheckOption || null,
-          });
+          if (event.quota !== null) {
+            // Lock the event row so concurrent confirms serialize here, then
+            // recount — preventing the quota bypass TOCTOU window.
+            const [lockedEvent] = await tx
+              .select({ quota: events.quota })
+              .from(events)
+              .where(eq(events.id, eventId))
+              .for("update");
+
+            const [{ n }] = await tx
+              .select({ n: sql<number>`count(*)` })
+              .from(attendance)
+              .where(and(eq(attendance.eventId, eventId), eq(attendance.status, "attended")));
+
+            if (Number(n) >= (lockedEvent?.quota ?? 0)) throw new QuotaFullError();
+          }
+
+          // ON CONFLICT DO NOTHING handles a race where the student was registered
+          // between the findFirst above and this insert.
+          const inserted = await tx
+            .insert(attendance)
+            .values({
+              eventId,
+              studentId: student.id,
+              scannedBy: actorId,
+              method: "walk-in",
+              status: "attended",
+              checkInTime: new Date(),
+              medsCheckOption: medsCheckOption || null,
+            })
+            .onConflictDoNothing()
+            .returning({ id: attendance.id });
+
+          if (inserted.length === 0) throw new Error("ALREADY_CHECKED_IN");
 
           await AuditService.logActionInternal(tx, {
             actorId,
@@ -260,31 +258,23 @@ export class ScannerService {
             ipAddress,
           });
         });
-
-        return {
-          status: "success_walk_in",
-          student: studentInfo,
-        };
+      } catch (e) {
+        if (e instanceof QuotaFullError) {
+          return { status: "quota_full", student: null, error: "Event is full. Walk-ins cannot be accepted." };
+        }
+        if (e instanceof Error && e.message === "ALREADY_CHECKED_IN") {
+          return { status: "already_checked_in", student: baseStudentInfo };
+        }
+        throw e;
       }
 
-      return {
-        status: "pending_confirmation",
-        isWalkIn: true,
-        student: studentInfo,
-      };
+      return { status: "success_walk_in", student: studentWithMedical };
     }
 
-    // Walk-ins disabled
-    return {
-      status: "walk_ins_disabled",
-      student: studentInfo,
-      error: "Walk-ins are not enabled for this event and student is not pre-registered.",
-    };
+    // Walk-in scan only — staff sees medical alert before deciding to confirm
+    return { status: "pending_confirmation", isWalkIn: true, student: studentWithMedical };
   }
 
-  /**
-   * Search students for manual fallback check-in
-   */
   static async searchStudents(query: string) {
     return await db.query.users.findMany({
       where: (users, { or, like }) =>
@@ -306,20 +296,15 @@ export class ScannerService {
     });
   }
 
-  /**
-   * Evaluates if raw text is a valid medical condition (PDPA evaluation)
-   */
   private static evaluateMedicalCondition(student: ResolvedStudent): boolean {
     const checkMedical = (val?: string | null) => {
       if (!val) return false;
       const clean = val.trim().toLowerCase();
-
       const negativeValues = [
         "", "-", "ไม่มี", "ไม่มีโรคประจำตัว", "ไม่มีประวัติแพ้ยา",
         "ไม่มีประวัติแพ้อาหาร", "ไม่มีโรค", "ไม่มีแพ้ยา",
         "ไม่มีแพ้อาหาร", "ปกติ", "none", "no", "n/a", "nil"
       ];
-
       return !negativeValues.includes(clean);
     };
 

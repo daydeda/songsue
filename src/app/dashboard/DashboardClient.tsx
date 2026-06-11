@@ -5,6 +5,7 @@ import type { Session } from "next-auth";
 import { useSession, signOut } from "next-auth/react";
 import { useState } from "react";
 import { usePolling } from "@/lib/usePolling";
+import { useQrToken } from "@/lib/useQrToken";
 import dynamic from "next/dynamic";
 const QRCodeSVG = dynamic(
   () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
@@ -189,7 +190,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const user = session?.user;
   const houseId = user?.houseId ?? null;
   const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
-  const qrValue = user?.qrToken ?? user?.id ?? "no-token";
+  const { qrValue, countdownMM, countdownSS, countdownColor } = useQrToken(user?.id);
 
   const now = new Date();
   
@@ -590,8 +591,27 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                       bgColor="#ffffff"
                       fgColor="#000000"
                     />
+
+                    {/* Countdown pill */}
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 12px",
+                      borderRadius: 99,
+                      background: `${countdownColor}15`,
+                      border: `1px solid ${countdownColor}40`,
+                    }}>
+                      <RefreshCw size={11} color={countdownColor} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: countdownColor, fontVariantNumeric: "tabular-nums", letterSpacing: "0.03em" }}>
+                        {countdownMM}:{countdownSS}
+                      </span>
+                      <span style={{ fontSize: 11, color: countdownColor, opacity: 0.8 }}>
+                        {lang === "th" ? "รีเฟรช" : "refresh"}
+                      </span>
+                    </div>
                   </div>
- 
+
                    <div style={{ textAlign: "center", width: "100%" }}>
                      <p style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)", wordBreak: "break-word", overflowWrap: "break-word" }}>{user?.name}</p>
                      <p style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 6, fontWeight: 600 }}>ID: {user?.studentId || "212110XXX"}</p>

@@ -13,7 +13,7 @@ const scanSchema = z.object({
   eventId: z.string().uuid(),
   action: z.enum(["scan", "confirm", "score"]).default("scan"),
   medsCheckOption: z.string().nullish(),
-  score: z.number().int().optional(),
+  score: z.number().int().min(1).max(500).optional(),
   reason: z.string().optional(),
 });
 

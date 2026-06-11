@@ -1,18 +1,25 @@
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq, or } from "drizzle-orm";
+import { verifyQrToken } from "@/lib/qr-token";
 
 export class UsersService {
   /**
-   * Resolves a student profile by their unique QR token or their direct user ID (fallback)
-   * Includes relation to their assigned house.
+   * Resolves a student profile from a QR scan token.
+   * Accepts HMAC-signed 5-minute tokens (from the Digital ID page) or legacy
+   * static qrToken / user ID (used for manual check-in fallback).
    */
   static async resolveStudentByToken(token: string) {
-    return await db.query.users.findFirst({
-      where: (users, { eq, or }) => or(
-        eq(users.qrToken, token),
-        eq(users.id, token)
-      ),
+    const userId = verifyQrToken(token);
+    if (userId) {
+      return db.query.users.findFirst({
+        where: eq(users.id, userId),
+        with: { house: true },
+      });
+    }
+    // Legacy: static qrToken UUID or direct user ID (manual search → confirm flow)
+    return db.query.users.findFirst({
+      where: or(eq(users.qrToken, token), eq(users.id, token)),
       with: { house: true },
     });
   }

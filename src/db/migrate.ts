@@ -140,6 +140,30 @@ async function migrate() {
   `;
   console.log("  ✅ users.points");
 
+  // 15. Promote attendance(event_id, student_id) index to UNIQUE constraint
+  // to prevent duplicate check-in records under concurrent scans.
+  try {
+    await sql`DROP INDEX IF EXISTS idx_attendance_event_student`;
+    await sql`
+      ALTER TABLE attendance
+      ADD CONSTRAINT attendance_event_student_unique UNIQUE (event_id, student_id)
+    `;
+    console.log("  ✅ attendance unique constraint on (event_id, student_id)");
+  } catch {
+    console.log("  ⚠️  attendance unique constraint already exists, skipping");
+  }
+
+  // 16. Add tamper-evident hash chain columns to audit_logs
+  await sql`
+    ALTER TABLE audit_logs
+    ADD COLUMN IF NOT EXISTS prev_hash text NOT NULL DEFAULT ''
+  `;
+  await sql`
+    ALTER TABLE audit_logs
+    ADD COLUMN IF NOT EXISTS row_hash text NOT NULL DEFAULT ''
+  `;
+  console.log("  ✅ audit_logs.prev_hash + row_hash (tamper-evident chain)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

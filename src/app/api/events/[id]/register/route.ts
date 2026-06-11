@@ -27,6 +27,21 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Role-based access control (mirrors the event-list filter so students can't
+    // POST directly to a role-restricted event they can't see). null/[] = open to
+    // all; admin-type roles always pass.
+    const userRole = session.user.role || "student";
+    const adminRoles = ["super_admin", "admin", "registration", "organizer"];
+    const allowedRoles = event.allowedRoles;
+    if (
+      Array.isArray(allowedRoles) &&
+      allowedRoles.length > 0 &&
+      !adminRoles.includes(userRole) &&
+      !allowedRoles.includes(userRole)
+    ) {
+      return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
+    }
+
     // Validate registration window if set
     if (event.registrationOpenTime && new Date() < new Date(event.registrationOpenTime)) {
       return NextResponse.json({ error: "Registration for this event has not opened yet" }, { status: 403 });
@@ -73,62 +88,79 @@ export async function POST(
       return NextResponse.json({ error: "Already registered for this event" }, { status: 409 });
     }
 
-    // Quota check (Overall)
-    if (event.quota !== null && event.quota > 0) {
-      const [{ value: currentCount }] = await db
-        .select({ value: count() })
-        .from(attendance)
-        .where(eq(attendance.eventId, eventId));
+    // Quota enforcement must be atomic: count-then-insert without a lock lets N
+    // concurrent requests all read the same sub-quota count and oversell the last
+    // seat. We serialize on the event row (FOR UPDATE), recount inside the lock,
+    // then insert — the walk-in path in scanner.service.ts uses the same pattern.
+    const QUOTA_FULL = "QUOTA_FULL";
+    try {
+      await db.transaction(async (tx) => {
+        await tx.select({ id: events.id }).from(events).where(eq(events.id, eventId)).for("update");
 
-      if (currentCount >= event.quota) {
-        return NextResponse.json({ error: "Event is full" }, { status: 422 });
+        // Overall quota
+        if (event.quota !== null && event.quota > 0) {
+          const [{ value: currentCount }] = await tx
+            .select({ value: count() })
+            .from(attendance)
+            .where(eq(attendance.eventId, eventId));
+          if (currentCount >= event.quota) throw new Error(`${QUOTA_FULL}:Event is full`);
+        }
+
+        // Cohort quota: Thai students
+        if (isThai && event.quotaThai !== null && event.quotaThai > 0) {
+          const [{ value: currentThaiCount }] = await tx
+            .select({ value: count() })
+            .from(attendance)
+            .innerJoin(users, eq(attendance.studentId, users.id))
+            .where(
+              and(
+                eq(attendance.eventId, eventId),
+                sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) IN ('0', '1', '2', '3', '4')`
+              )
+            );
+          if (currentThaiCount >= event.quotaThai) throw new Error(`${QUOTA_FULL}:Thai student quota is full`);
+        }
+
+        // Cohort quota: International students
+        if (isIntl && event.quotaInternational !== null && event.quotaInternational > 0) {
+          const [{ value: currentIntlCount }] = await tx
+            .select({ value: count() })
+            .from(attendance)
+            .innerJoin(users, eq(attendance.studentId, users.id))
+            .where(
+              and(
+                eq(attendance.eventId, eventId),
+                sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) = '5'`
+              )
+            );
+          if (currentIntlCount >= event.quotaInternational) throw new Error(`${QUOTA_FULL}:International student quota is full`);
+        }
+
+        // Register. ON CONFLICT DO NOTHING covers a duplicate-click race against the
+        // (event_id, student_id) unique index; 0 rows back means already registered.
+        const inserted = await tx
+          .insert(attendance)
+          .values({
+            eventId,
+            studentId: userId,
+            method: "pre-registered",
+            status: "registered",
+            checkInTime: null,
+          })
+          .onConflictDoNothing()
+          .returning({ id: attendance.id });
+
+        if (inserted.length === 0) throw new Error("ALREADY_REGISTERED");
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith(QUOTA_FULL)) {
+        return NextResponse.json({ error: e.message.split(":")[1] }, { status: 422 });
       }
-    }
-
-    // Cohort Quota check: Thai Students
-    if (isThai && event.quotaThai !== null && event.quotaThai > 0) {
-      const [{ value: currentThaiCount }] = await db
-        .select({ value: count() })
-        .from(attendance)
-        .innerJoin(users, eq(attendance.studentId, users.id))
-        .where(
-          and(
-            eq(attendance.eventId, eventId),
-            sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) IN ('0', '1', '2', '3', '4')`
-          )
-        );
-
-      if (currentThaiCount >= event.quotaThai) {
-        return NextResponse.json({ error: "Thai student quota is full" }, { status: 422 });
+      if (e instanceof Error && e.message === "ALREADY_REGISTERED") {
+        return NextResponse.json({ error: "Already registered for this event" }, { status: 409 });
       }
+      throw e;
     }
-
-    // Cohort Quota check: International Students
-    if (isIntl && event.quotaInternational !== null && event.quotaInternational > 0) {
-      const [{ value: currentIntlCount }] = await db
-        .select({ value: count() })
-        .from(attendance)
-        .innerJoin(users, eq(attendance.studentId, users.id))
-        .where(
-          and(
-            eq(attendance.eventId, eventId),
-            sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) = '5'`
-          )
-        );
-
-      if (currentIntlCount >= event.quotaInternational) {
-        return NextResponse.json({ error: "International student quota is full" }, { status: 422 });
-      }
-    }
-
-    // Register (status = registered, no checkInTime yet)
-    await db.insert(attendance).values({
-      eventId,
-      studentId: userId,
-      method: "pre-registered",
-      status: "registered",
-      checkInTime: null,
-    });
 
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (error) {

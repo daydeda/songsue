@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { auditLogs, users } from "@/db/schema";
+import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { AuditService } from "@/modules/audit/audit.service";
 
 // Next.js 15+: params is a Promise and must be awaited
 export async function GET(
@@ -18,11 +19,10 @@ export async function GET(
     const { id: targetStudentId } = await params;
 
     // FE-12: Log the sensitive data access (Immutable Audit Trail)
-    await db.insert(auditLogs).values({
-      actorId: session.user.id,
+    await AuditService.logAction({
+      actorId: session.user.id!,
       targetId: targetStudentId,
       action: "Viewed Sensitive Medical/Emergency Info",
-      timestamp: new Date(),
       ipAddress:
         req.headers.get("x-forwarded-for")?.split(",")[0] ||
         req.headers.get("x-real-ip") ||

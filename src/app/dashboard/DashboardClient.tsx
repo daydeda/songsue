@@ -118,11 +118,12 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       .then((d) => { if (Array.isArray(d)) setHouses(d); })
       .finally(() => setLoadingHouses(false));
 
-  // Poll events + leaderboard. Slower interval (20s) because this is student-facing
-  // and potentially many devices; polling avoids the Supabase free-tier 200
-  // concurrent-connection cap and pauses while the tab is hidden. Return the
+  // Poll events + leaderboard. Slow interval (60s) because this is student-facing
+  // across potentially ~1,500 devices — at 20s a single event hour approaches the
+  // Vercel free-tier invocation budget. Polling also avoids the Supabase free-tier
+  // 200 concurrent-connection cap and pauses while the tab is hidden. Return the
   // combined promise so the poller awaits both and never stacks requests.
-  usePolling((signal) => Promise.all([fetchEvents(signal), fetchHouses(signal)]), 20000);
+  usePolling((signal) => Promise.all([fetchEvents(signal), fetchHouses(signal)]), 60000);
 
   const handleRegister = async (eventId: string, registered: boolean) => {
     if (!session?.user) {

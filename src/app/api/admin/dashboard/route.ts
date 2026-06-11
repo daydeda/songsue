@@ -79,9 +79,13 @@ export async function GET(req: Request) {
     // in the daily cron. This route is a pure, fast read.
 
     // Default: Overview stats
-    // FE-08: Check-ins today
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    // FE-08: Check-ins today — anchored to Bangkok midnight (UTC+7), not the
+    // server's UTC midnight. Otherwise scans between 00:00–07:00 Bangkok count
+    // toward the previous day. Bangkok has no DST so a fixed +7h offset is exact.
+    const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
+    const bkkNow = new Date(Date.now() + BKK_OFFSET_MS);
+    bkkNow.setUTCHours(0, 0, 0, 0);
+    const startOfToday = new Date(bkkNow.getTime() - BKK_OFFSET_MS);
 
     // Fetch dashboard statistics sequentially to avoid database connection pool starvation.
     // Sequential execution uses exactly 1 connection at a time (peak demand = 1), whereas

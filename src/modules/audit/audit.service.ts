@@ -1,7 +1,13 @@
 import { createHash } from "crypto";
 import { db } from "@/db";
 import { auditLogs } from "@/db/schema";
-import { asc, desc } from "drizzle-orm";
+import { asc, desc, sql } from "drizzle-orm";
+
+// Fixed key for the transaction-scoped advisory lock that serializes audit-log
+// appends. Without it, two concurrent transactions can read the same chain tip and
+// both link to it, forking the hash chain. The lock makes every append wait for the
+// previous one's tip to commit. Released automatically at transaction end.
+const AUDIT_CHAIN_LOCK_KEY = 919273;
 
 export interface LogActionParams {
   actorId: string;
@@ -60,6 +66,9 @@ async function getLastHashForUpdate(tx: DBTransaction): Promise<string> {
 export class AuditService {
   static async logActionInternal(tx: DBTransaction, params: LogActionParams) {
     const { actorId, targetId, action, ipAddress } = params;
+
+    // Serialize all appenders so the chain can't fork under concurrency.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_KEY})`);
 
     const prevHash = await getLastHashForUpdate(tx);
     const id = crypto.randomUUID();

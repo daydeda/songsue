@@ -3,7 +3,13 @@ import { db } from "@/db";
 import { forms, formSubmissions, attendance } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
+import {
+  normalizeForm,
+  computeScore,
+  getVisitedSectionIndices,
+  isQuestionVisible,
+  type AnswerMap,
+} from "@/lib/form-schema";
 
 // GET /api/events/[id]/form — Fetch the form for students (checking if attended & submitted)
 export async function GET(
@@ -143,12 +149,42 @@ export async function POST(
       return NextResponse.json({ error: "You have already completed the form for this event." }, { status: 400 });
     }
 
-    // 4. Record the submission
-    await db.insert(formSubmissions).values({
-      formId: formObj.id,
-      studentId: userId,
-      answers,
-    });
+    // 3b. Server-side required-field validation. The client enforces this too, but a
+    // raw POST could send {} and still count toward the house submission contest.
+    // Only validate questions actually on the student's branch path and visible.
+    const normalized = normalizeForm(formObj.questions);
+    const answerMap = answers as AnswerMap;
+    const isBlank = (v: unknown) =>
+      v === undefined || v === null ||
+      (typeof v === "string" && v.trim() === "") ||
+      (Array.isArray(v) && v.length === 0);
+
+    for (const idx of getVisitedSectionIndices(normalized, answerMap)) {
+      for (const q of normalized.sections[idx].questions) {
+        if (q.required && isQuestionVisible(q, answerMap) && isBlank(answerMap[q.id])) {
+          return NextResponse.json(
+            { error: "Please answer all required questions before submitting." },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
+    // 4. Record the submission. The (form_id, student_id) unique index is the
+    // authoritative guard against a double-submit race slipping past the check above.
+    try {
+      await db.insert(formSubmissions).values({
+        formId: formObj.id,
+        studentId: userId,
+        answers,
+      });
+    } catch (e) {
+      const dbError = (e as { cause?: { code?: string }; code?: string })?.cause ?? (e as { code?: string });
+      if (dbError?.code === "23505") {
+        return NextResponse.json({ error: "You have already completed the form for this event." }, { status: 409 });
+      }
+      throw e;
+    }
 
     // 5. Score it (display-only — points to houses are still awarded by submission
     // count in the award route, unaffected by quiz scores).

@@ -67,10 +67,11 @@ export default function DigitalIdPage() {
     return Promise.all([houseReq, standingReq]);
   };
 
-  // Poll the leaderboard. Slower interval (20s) because this is student-facing and
-  // potentially many devices — a leaderboard does not need sub-second freshness,
-  // and polling avoids the Supabase free-tier 200 concurrent-connection cap.
-  usePolling(fetchHouses, 20000);
+  // Poll the leaderboard. Slow interval (60s) because this is student-facing across
+  // potentially ~1,500 devices — a leaderboard does not need sub-second freshness,
+  // and this keeps invocations well under the Vercel free-tier budget while also
+  // avoiding the Supabase free-tier 200 concurrent-connection cap.
+  usePolling(fetchHouses, 60000);
 
   // Fetch the user's individual standing immediately once the session is ready,
   // rather than waiting for the next 20s poll tick (the first poll fires before

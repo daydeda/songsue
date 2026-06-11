@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { houses, scoreHistory, auditLogs } from "@/db/schema";
+import { houses, scoreHistory } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { AuditService } from "@/modules/audit/audit.service";
 
 export async function POST(req: Request) {
   try {
@@ -39,12 +40,11 @@ export async function POST(req: Request) {
         reason,
       });
 
-      // 3. Audit log
-      await tx.insert(auditLogs).values({
-        actorId: session.user?.id,
+      // 3. Audit log (through the service so the hash chain stays intact)
+      await AuditService.logActionInternal(tx, {
+        actorId: session.user!.id!,
         action: `Adjusted house ${houseId} points by ${parsedDelta}. Reason: ${reason}`,
-        timestamp: new Date(),
-        ipAddress: 
+        ipAddress:
           req.headers.get("x-forwarded-for")?.split(",")[0] ||
           req.headers.get("x-real-ip") ||
           "127.0.0.1",

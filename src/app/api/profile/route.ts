@@ -132,6 +132,14 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const data = profileSchema.parse(body);
 
+    // studentId gates Thai/International event eligibility and is set at onboarding.
+    // The UI locks it, but a raw PATCH could still send a new value — strip it here
+    // for non-admins so it can never be changed after the fact.
+    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
+    if (!isAdmin) {
+      delete data.studentId;
+    }
+
     const [updated] = await db
       .update(users)
       .set({

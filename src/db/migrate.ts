@@ -248,6 +248,56 @@ async function migrate() {
   `;
   console.log("  ✅ database default timezone set to Asia/Bangkok");
 
+  // 21. Backfill NULL points, then enforce NOT NULL. A single NULL poisons every
+  // future `points + delta` increment (NULL + n = NULL), silently zeroing a house
+  // or student. ALTER ... SET NOT NULL is a no-op if already enforced.
+  await sql`UPDATE houses SET points = 0 WHERE points IS NULL`;
+  await sql`UPDATE users  SET points = 0 WHERE points IS NULL`;
+  await sql`ALTER TABLE houses ALTER COLUMN points SET NOT NULL`;
+  await sql`ALTER TABLE users  ALTER COLUMN points SET NOT NULL`;
+  console.log("  ✅ points columns backfilled and set NOT NULL");
+
+  // 22. Drop the UNIQUE constraint on users.name. Two students can legitimately
+  // share a Google display name; the second was getting a permanent sign-in failure.
+  await sql`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_name_unique`;
+  console.log("  ✅ dropped users_name_unique");
+
+  // 23. Event winner-bonus "processed" flag. Replaces the buggy heuristic that
+  // inferred "already awarded" from ANY score_history row on the event — which let
+  // mid-event individual/milestone/manual rows suppress the house winner bonus.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS winner_awarded_at timestamptz`;
+  // Backfill preserves existing behavior exactly: stamp every already-ended event
+  // that has any score_history row (the OLD definition of "processed"), so the new
+  // code never re-awards a bonus on historical data. Events with no score_history
+  // stay NULL and process normally on the next run, same as before.
+  await sql`
+    UPDATE events e
+    SET winner_awarded_at = COALESCE(
+      (SELECT max(sh.timestamp) FROM score_history sh WHERE sh.event_id = e.id),
+      now()
+    )
+    WHERE e.winner_awarded_at IS NULL
+      AND e.end_time <= now()
+      AND EXISTS (SELECT 1 FROM score_history sh WHERE sh.event_id = e.id)
+  `;
+  console.log("  ✅ events.winner_awarded_at added and backfilled");
+
+  // 24. De-duplicate form_submissions (keep the earliest per student+form), then
+  // add the unique index that blocks duplicate-submission point farming.
+  await sql`
+    DELETE FROM form_submissions fs
+    USING form_submissions keep
+    WHERE fs.form_id = keep.form_id
+      AND fs.student_id = keep.student_id
+      AND (fs.submitted_at > keep.submitted_at
+        OR (fs.submitted_at = keep.submitted_at AND fs.id > keep.id))
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_form_submissions_form_student
+    ON form_submissions (form_id, student_id)
+  `;
+  console.log("  ✅ form_submissions deduped + unique index");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

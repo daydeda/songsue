@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { forms, auditLogs } from "@/db/schema";
+import { forms } from "@/db/schema";
+import { AuditService } from "@/modules/audit/audit.service";
 import { desc, eq, count } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -83,12 +84,11 @@ export async function POST(req: Request) {
       isActive: true
     }).returning();
 
-    // Log audit log
-    await db.insert(auditLogs).values({
-      actorId: session.user.id,
+    // Log audit log (through the service so the hash chain stays intact)
+    await AuditService.logAction({
+      actorId: session.user.id!,
       action: `Created new custom form: "${title}" (ID: ${newForm.id}) with award: ${pointsAwarded} PTS`,
-      timestamp: new Date(),
-      ipAddress: 
+      ipAddress:
         req.headers.get("x-forwarded-for")?.split(",")[0] ||
         req.headers.get("x-real-ip") ||
         "127.0.0.1",

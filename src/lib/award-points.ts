@@ -28,15 +28,18 @@ export async function checkAndAwardPastEventPoints() {
   try {
     const now = new Date();
 
-    // Fast path: is there any ended event with no score_history row yet?
-    // "has a score_history row" is the existing definition of "already processed".
+    // Fast path: is there any ended event whose winner bonus hasn't been awarded?
+    // `winnerAwardedAt` is the ONLY signal for "already processed" — we must not
+    // infer it from score_history, because mid-event individual-score, milestone,
+    // and manual-adjustment rows also carry this eventId and would falsely mark the
+    // event as done, silently skipping the house winner bonus.
     const pending = await db
       .select({ id: events.id })
       .from(events)
       .where(
         and(
           lte(events.endTime, now),
-          sql`NOT EXISTS (SELECT 1 FROM ${scoreHistory} WHERE ${scoreHistory.eventId} = ${events.id})`
+          sql`${events.winnerAwardedAt} IS NULL`
         )
       )
       .limit(1);
@@ -62,14 +65,11 @@ export async function checkAndAwardPastEventPoints() {
 
       // Re-fetch inside the lock so two racing callers can't both process an event.
       const pastEvents = await tx.query.events.findMany({
-        where: lte(events.endTime, now),
+        where: and(lte(events.endTime, now), sql`${events.winnerAwardedAt} IS NULL`),
       });
 
       for (const event of pastEvents) {
-        const existingAward = await tx.query.scoreHistory.findFirst({
-          where: eq(scoreHistory.eventId, event.id),
-        });
-        if (existingAward) continue; // already processed
+        if (event.winnerAwardedAt) continue; // already processed
 
         const attendees = await tx.query.attendance.findMany({
           where: and(
@@ -82,7 +82,7 @@ export async function checkAndAwardPastEventPoints() {
         const dbHouses = await tx.query.houses.findMany();
 
         if (attendees.length === 0) {
-          // No attendees — mark processed with a 0-point row to prevent re-processing.
+          // No attendees — record a 0-point row for the activity feed, then mark processed.
           if (dbHouses.length > 0) {
             await tx.insert(scoreHistory).values({
               houseId: dbHouses[0].id,
@@ -91,6 +91,7 @@ export async function checkAndAwardPastEventPoints() {
               reason: `Event "${event.title}" ended with no attendees. No points awarded.`,
             });
           }
+          await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
           continue;
         }
 
@@ -111,7 +112,7 @@ export async function checkAndAwardPastEventPoints() {
 
         const houseList = Object.entries(houseCounts);
         if (houseList.length === 0) {
-          // All attendees unassigned — mark processed.
+          // All attendees unassigned — record a 0-point row, then mark processed.
           if (dbHouses.length > 0) {
             await tx.insert(scoreHistory).values({
               houseId: dbHouses[0].id,
@@ -120,6 +121,7 @@ export async function checkAndAwardPastEventPoints() {
               reason: `Event "${event.title}" ended but all checked-in students were unassigned. No points awarded.`,
             });
           }
+          await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
           continue;
         }
 
@@ -151,6 +153,9 @@ export async function checkAndAwardPastEventPoints() {
             timestamp: new Date(),
           });
         }
+
+        // Mark processed so this event's winner bonus is never awarded twice.
+        await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
       }
     });
   } catch (error) {

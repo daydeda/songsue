@@ -47,6 +47,7 @@ type Event = {
   location?: string;
   startTime: string;
   endTime: string;
+  registrationOpenTime?: string | null;
   registrationCloseTime?: string | null;
   quota?: number;
   isRegistered?: boolean;
@@ -479,10 +480,19 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
                         <div style={{ marginTop: "auto", paddingTop: 8 }}>
                           {(() => {
-                            const isPastEvent = new Date() > new Date(e.endTime);
+                            const nowTs = new Date();
+                            const isPastEvent = nowTs > new Date(e.endTime);
                             const isAttended = e.attendanceStatus === "attended";
                             const canCancel = !isPastEvent && !isAttended;
-                            const isDisabled = (e.isRegistered && !canCancel) || registeringId === e.id;
+                            // The registration window only gates NEW sign-ups — an
+                            // existing registration is never blocked by it.
+                            const regOpenAt = e.registrationOpenTime ? new Date(e.registrationOpenTime) : null;
+                            const regCloseAt = e.registrationCloseTime ? new Date(e.registrationCloseTime) : null;
+                            const notYetOpen = !e.isRegistered && !!regOpenAt && nowTs < regOpenAt;
+                            const regClosed = !e.isRegistered && !!regCloseAt && nowTs > regCloseAt;
+                            const windowBlocked = notYetOpen || regClosed;
+                            const isDisabled = (e.isRegistered && !canCancel) || windowBlocked || registeringId === e.id;
+                            const greyed = regClosed || (e.isRegistered && !canCancel);
 
                             return (
                               <button
@@ -492,16 +502,16 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                                   handleRegister(e.id, !!e.isRegistered);
                                 }}
                                 className={`btn btn-full ${e.isRegistered ? "btn-success-solid" : "btn-primary"}`}
-                                style={{ 
-                                  borderRadius: 16, 
-                                  height: 48, 
+                                style={{
+                                  borderRadius: 16,
+                                  height: 48,
                                   fontWeight: 800,
-                                  background: e.isRegistered ? (canCancel ? "#10b981" : "var(--bg-elevated)") : undefined,
-                                  color: e.isRegistered ? (canCancel ? "#fff" : "var(--text-muted)") : undefined,
-                                  boxShadow: (e.isRegistered && canCancel) ? "0 10px 25px rgba(16,185,129,0.3)" : (e.isRegistered ? "none" : "0 10px 25px var(--accent-glow)"),
-                                  border: e.isRegistered && !canCancel ? "1px solid var(--border-subtle)" : "none",
+                                  background: notYetOpen ? "#f59e0b" : greyed ? "var(--bg-elevated)" : e.isRegistered ? (canCancel ? "#10b981" : "var(--bg-elevated)") : undefined,
+                                  color: notYetOpen ? "#fff" : greyed ? "var(--text-muted)" : e.isRegistered ? (canCancel ? "#fff" : "var(--text-muted)") : undefined,
+                                  boxShadow: notYetOpen ? "0 10px 25px rgba(245,158,11,0.3)" : (e.isRegistered && canCancel) ? "0 10px 25px rgba(16,185,129,0.3)" : (greyed ? "none" : "0 10px 25px var(--accent-glow)"),
+                                  border: greyed ? "1px solid var(--border-subtle)" : "none",
                                   cursor: isDisabled && !registeringId ? "not-allowed" : "pointer",
-                                  opacity: e.isRegistered && !canCancel ? 0.8 : 1
+                                  opacity: greyed ? 0.8 : 1
                                 }}
                               >
                                 {registeringId === e.id ? (
@@ -514,6 +524,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                                   ) : (
                                     <><CheckCircle2 size={18} /> {t.registered || "Registered"}</>
                                   )
+                                ) : notYetOpen ? (
+                                  <><Clock size={18} /> {t.registrationNotOpen}</>
+                                ) : regClosed ? (
+                                  <><AlertCircle size={18} /> {t.registrationClosed}</>
                                 ) : (
                                   t.registerNow || "Register Now"
                                 )}
@@ -949,10 +963,18 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       {/* Event Details Preview Modal */}
       {previewEvent && (() => {
         const liveEvent = events.find(x => x.id === previewEvent.id) || previewEvent;
-        const isPastEvent = new Date() > new Date(liveEvent.endTime);
+        const nowTs = new Date();
+        const isPastEvent = nowTs > new Date(liveEvent.endTime);
         const isAttended = liveEvent.attendanceStatus === "attended";
         const canCancel = !isPastEvent && !isAttended;
-        const isDisabled = (liveEvent.isRegistered && !canCancel) || registeringId === liveEvent.id;
+        // Registration window only gates NEW sign-ups, not an existing registration.
+        const regOpenAt = liveEvent.registrationOpenTime ? new Date(liveEvent.registrationOpenTime) : null;
+        const regCloseAt = liveEvent.registrationCloseTime ? new Date(liveEvent.registrationCloseTime) : null;
+        const notYetOpen = !liveEvent.isRegistered && !!regOpenAt && nowTs < regOpenAt;
+        const regClosed = !liveEvent.isRegistered && !!regCloseAt && nowTs > regCloseAt;
+        const windowBlocked = notYetOpen || regClosed;
+        const greyed = regClosed || (liveEvent.isRegistered && !canCancel);
+        const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
 
         return (
           <div 
@@ -1188,17 +1210,17 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                   disabled={isDisabled}
                   onClick={() => handleRegister(liveEvent.id, !!liveEvent.isRegistered)}
                   className={`btn ${liveEvent.isRegistered ? "btn-success-solid" : "btn-primary"}`}
-                  style={{ 
-                    borderRadius: 16, 
-                    height: 48, 
+                  style={{
+                    borderRadius: 16,
+                    height: 48,
                     padding: "0 24px",
                     fontWeight: 800,
-                    background: liveEvent.isRegistered ? (canCancel ? "#10b981" : "var(--bg-elevated)") : undefined,
-                    color: liveEvent.isRegistered ? (canCancel ? "#fff" : "var(--text-muted)") : undefined,
-                    boxShadow: (liveEvent.isRegistered && canCancel) ? "0 10px 25px rgba(16,185,129,0.3)" : (liveEvent.isRegistered ? "none" : "0 10px 25px var(--accent-glow)"),
-                    border: liveEvent.isRegistered && !canCancel ? "1px solid var(--border-subtle)" : "none",
+                    background: notYetOpen ? "#f59e0b" : greyed ? "var(--bg-elevated)" : liveEvent.isRegistered ? (canCancel ? "#10b981" : "var(--bg-elevated)") : undefined,
+                    color: notYetOpen ? "#fff" : greyed ? "var(--text-muted)" : liveEvent.isRegistered ? (canCancel ? "#fff" : "var(--text-muted)") : undefined,
+                    boxShadow: notYetOpen ? "0 10px 25px rgba(245,158,11,0.3)" : (liveEvent.isRegistered && canCancel) ? "0 10px 25px rgba(16,185,129,0.3)" : (greyed ? "none" : "0 10px 25px var(--accent-glow)"),
+                    border: greyed ? "1px solid var(--border-subtle)" : "none",
                     cursor: isDisabled && !registeringId ? "not-allowed" : "pointer",
-                    opacity: liveEvent.isRegistered && !canCancel ? 0.8 : 1,
+                    opacity: greyed ? 0.8 : 1,
                     display: "flex",
                     alignItems: "center",
                     gap: "8px"
@@ -1214,6 +1236,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     ) : (
                       <><CheckCircle2 size={18} /> {t.registered || "Registered"}</>
                     )
+                  ) : notYetOpen ? (
+                    <><Clock size={18} /> {t.registrationNotOpen}</>
+                  ) : regClosed ? (
+                    <><AlertCircle size={18} /> {t.registrationClosed}</>
                   ) : (
                     t.registerNow || "Register Now"
                   )}

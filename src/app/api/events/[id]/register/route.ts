@@ -27,7 +27,10 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    // Validate registration deadline if exists
+    // Validate registration window if set
+    if (event.registrationOpenTime && new Date() < new Date(event.registrationOpenTime)) {
+      return NextResponse.json({ error: "Registration for this event has not opened yet" }, { status: 403 });
+    }
     if (event.registrationCloseTime && new Date() > new Date(event.registrationCloseTime)) {
       return NextResponse.json({ error: "Registration for this event has closed" }, { status: 403 });
     }

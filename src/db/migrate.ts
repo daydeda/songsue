@@ -164,6 +164,14 @@ async function migrate() {
   `;
   console.log("  ✅ audit_logs.prev_hash + row_hash (tamper-evident chain)");
 
+  // 17. Add registration_open_time column to events (pairs with close time
+  // to define a registration window; NULL = already open).
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS registration_open_time timestamp
+  `;
+  console.log("  ✅ events.registration_open_time");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

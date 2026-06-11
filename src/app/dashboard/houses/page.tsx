@@ -464,14 +464,16 @@ export default function HousesPage() {
             {/* "Your rank" banner — authoritative rank/score from /me, so it shows even
                 when the student is ranked outside the visible top-50 list. The jump
                 button only appears when they're within the loaded (paginated) list. */}
-            {myStanding?.rank && (
+            {myStanding && (
               <button
                 onClick={() => myPage && setCurrentPage(myPage)}
                 className="my-rank-banner"
                 style={{ cursor: myPage ? "pointer" : "default" }}
                 title={myPage ? (lang === "th" ? "ไปยังอันดับของฉัน" : "Jump to my position") : undefined}
               >
-                <div className="my-rank-badge">#{myStanding.rank}</div>
+                <div className={`my-rank-badge${myStanding.rank ? "" : " unranked"}`}>
+                  {myStanding.rank ? `#${myStanding.rank}` : (lang === "th" ? "—" : "—")}
+                </div>
                 <div className="my-rank-info">
                   <span className="my-rank-label">{lang === "th" ? "อันดับของคุณ" : "Your rank"}</span>
                   <span className="my-rank-name">
@@ -483,11 +485,13 @@ export default function HousesPage() {
                   <span className="points-label">{t.points}</span>
                 </div>
                 <span className="my-rank-jump">
-                  {myPage
-                    ? (currentPage === myPage
-                        ? (lang === "th" ? "อยู่หน้านี้" : "On this page")
-                        : (lang === "th" ? "ไปดู →" : "View →"))
-                    : (myStanding.total ? (lang === "th" ? `จาก ${myStanding.total}` : `of ${myStanding.total}`) : "")}
+                  {!myStanding.rank
+                    ? (lang === "th" ? "ทำคะแนนเพื่อรับอันดับ" : "Earn points to get ranked")
+                    : myPage
+                      ? (currentPage === myPage
+                          ? (lang === "th" ? "อยู่หน้านี้" : "On this page")
+                          : (lang === "th" ? "ไปดู →" : "View →"))
+                      : (myStanding.total ? (lang === "th" ? `จาก ${myStanding.total}` : `of ${myStanding.total}`) : "")}
                 </span>
               </button>
             )}
@@ -823,6 +827,10 @@ export default function HousesPage() {
           font-weight: 900;
           font-size: 16px;
           flex-shrink: 0;
+        }
+        .my-rank-badge.unranked {
+          background: var(--bg-elevated);
+          color: var(--text-muted);
         }
         .my-rank-info {
           display: flex;

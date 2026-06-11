@@ -196,21 +196,32 @@ export default function DigitalIdPage() {
                 </span>
               </div>
             </div>
-            {myStanding.rank && (
-              <div style={{ textAlign: "center", flexShrink: 0, padding: "8px 16px", borderRadius: 16, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border-subtle)" }}>
-                <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", display: "block" }}>
-                  {lang === "th" ? "อันดับ" : "Rank"}
-                </span>
-                <span style={{ fontSize: 24, fontWeight: 900, color: "var(--accent-primary)", lineHeight: 1.1 }}>
-                  #{myStanding.rank}
-                </span>
-                {myStanding.total > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "block" }}>
-                    {lang === "th" ? `จาก ${myStanding.total}` : `of ${myStanding.total}`}
+            <div style={{ textAlign: "center", flexShrink: 0, padding: "8px 16px", borderRadius: 16, background: "rgba(255,255,255,0.6)", border: "1px solid var(--border-subtle)" }}>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", display: "block" }}>
+                {lang === "th" ? "อันดับ" : "Rank"}
+              </span>
+              {myStanding.rank ? (
+                <>
+                  <span style={{ fontSize: 24, fontWeight: 900, color: "var(--accent-primary)", lineHeight: 1.1 }}>
+                    #{myStanding.rank}
                   </span>
-                )}
-              </div>
-            )}
+                  {myStanding.total > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", display: "block" }}>
+                      {lang === "th" ? `จาก ${myStanding.total}` : `of ${myStanding.total}`}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 22, fontWeight: 900, color: "var(--text-muted)", lineHeight: 1.1 }}>
+                    —
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", display: "block", maxWidth: 92, lineHeight: 1.3, marginTop: 2 }}>
+                    {lang === "th" ? "ทำคะแนนเพื่อรับอันดับ" : "Earn points to get ranked"}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         )}
 

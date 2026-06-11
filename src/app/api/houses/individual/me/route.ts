@@ -26,15 +26,25 @@ export async function GET() {
 
     const myPoints = me.points ?? 0;
 
-    const [{ ahead }] = await db
-      .select({ ahead: sql<number>`count(*)` })
-      .from(users)
-      .where(and(eq(users.profileCompleted, true), gt(users.points, myPoints)));
-
     const [{ total }] = await db
       .select({ total: sql<number>`count(*)` })
       .from(users)
       .where(eq(users.profileCompleted, true));
+
+    // With 0 points you haven't earned a position yet — and when everyone is at 0
+    // a numeric rank would just tie everybody at #1, which is misleading. Report
+    // rank: null ("Unranked") until at least 1 point is earned.
+    if (myPoints <= 0) {
+      return NextResponse.json(
+        { points: myPoints, rank: null, total: Number(total) },
+        { headers: { "Cache-Control": "private, no-store" } }
+      );
+    }
+
+    const [{ ahead }] = await db
+      .select({ ahead: sql<number>`count(*)` })
+      .from(users)
+      .where(and(eq(users.profileCompleted, true), gt(users.points, myPoints)));
 
     return NextResponse.json(
       { points: myPoints, rank: Number(ahead) + 1, total: Number(total) },

@@ -122,7 +122,12 @@ export const events = pgTable("events", {
   quota: integer("quota"),
   location: text("location"),
   pointsAwarded: integer("points_awarded").default(0),
+  // Cover poster — kept as the single source for thumbnails (admin list, etc.).
+  // Always mirrors imageUrls[0] so legacy single-image consumers keep working.
   imageUrl: text("image_url"),
+  // Ordered list of poster image URLs. First entry is the cover. Empty/NULL on
+  // legacy events — read them as `imageUrls ?? (imageUrl ? [imageUrl] : [])`.
+  imageUrls: jsonb("image_urls").$type<string[]>(),
   walkInsEnabled: boolean("walk_ins_enabled").default(false),
   quotaWalkIn: integer("quota_walk_in"),
   targetThai: boolean("target_thai").default(true),

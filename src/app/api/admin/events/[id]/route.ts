@@ -17,6 +17,7 @@ const eventUpdateSchema = z.object({
   location: z.string().optional().nullable(),
   pointsAwarded: z.number().int().min(0).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
+  imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
   quotaWalkIn: z.number().int().min(0).optional().nullable(),
   targetThai: z.boolean().optional(),
@@ -42,6 +43,15 @@ export async function PUT(
     const body = await req.json();
     const data = eventUpdateSchema.parse(body);
 
+    // When posters are provided, normalize them and keep the imageUrl cover in
+    // sync with imageUrls[0]. If only the legacy imageUrl is sent, fall back to it.
+    let posters: string[] | undefined;
+    if (data.imageUrls !== undefined) {
+      posters = (data.imageUrls ?? [])
+        .filter((u): u is string => typeof u === "string" && u.trim() !== "");
+    }
+    const coverFromPosters = posters !== undefined ? (posters[0] ?? null) : undefined;
+
     const [updated] = await db
       .update(events)
       .set({
@@ -58,7 +68,9 @@ export async function PUT(
         ...(data.quota !== undefined && { quota: data.quota }),
         ...(data.location !== undefined && { location: data.location }),
         ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
-        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+        ...(posters !== undefined
+          ? { imageUrls: posters, imageUrl: coverFromPosters }
+          : (data.imageUrl !== undefined && { imageUrl: data.imageUrl })),
         ...(data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled }),
         ...(data.quotaWalkIn !== undefined && { quotaWalkIn: data.quotaWalkIn }),
         ...(data.targetThai !== undefined && { targetThai: data.targetThai }),

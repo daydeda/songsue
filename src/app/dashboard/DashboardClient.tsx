@@ -3,7 +3,7 @@
 
 import type { Session } from "next-auth";
 import { useSession, signOut } from "next-auth/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { usePolling } from "@/lib/usePolling";
 import { useQrToken } from "@/lib/useQrToken";
 import dynamic from "next/dynamic";
@@ -19,21 +19,23 @@ const QRCodeSVG = dynamic(
   }
 );
 import Link from "next/link";
-import { 
-  LogOut, 
-  MapPin, 
-  Clock, 
-  Calendar, 
-  CheckCircle2, 
-  Zap, 
-  User, 
+import {
+  LogOut,
+  MapPin,
+  Clock,
+  Calendar,
+  CheckCircle2,
+  Zap,
+  User,
   RefreshCw,
   Trophy,
   ArrowRight,
   Settings,
   X,
   AlertCircle,
-  Megaphone
+  Megaphone,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -53,8 +55,125 @@ type Event = {
   isRegistered?: boolean;
   attendanceStatus?: string | null;
   imageUrl?: string;
+  imageUrls?: string[] | null;
   pointsAwarded?: number;
 };
+
+// An event's posters as an ordered list. Falls back to the single legacy imageUrl
+// so events created before multi-poster support still render in the carousel.
+const getPosters = (e: Pick<Event, "imageUrls" | "imageUrl">): string[] => {
+  if (e.imageUrls && e.imageUrls.length > 0) return e.imageUrls;
+  return e.imageUrl ? [e.imageUrl] : [];
+};
+
+// A swipeable / clickable poster carousel. Renders as an absolute fill layer, so
+// the parent supplies the sized (relative) container and any overlay badges. With
+// a single poster it looks identical to a plain <img>; arrows, dots and a counter
+// only appear when there are multiple. onExpand fires on tap (not on swipe).
+function PosterCarousel({
+  posters,
+  objectFit = "contain",
+  onExpand,
+  backdrop = false,
+  arrowSize = 20,
+  initialIndex = 0,
+}: {
+  posters: string[];
+  objectFit?: "contain" | "cover";
+  onExpand?: (index: number) => void;
+  backdrop?: boolean;
+  arrowSize?: number;
+  initialIndex?: number;
+}) {
+  const [idx, setIdx] = useState(initialIndex);
+  const startX = useRef<number | null>(null);
+  const moved = useRef(false);
+  const count = posters.length;
+  const wrap = (i: number) => ((i % count) + count) % count;
+  const safeIdx = wrap(idx);
+  const cur = posters[safeIdx] ?? posters[0];
+
+  const go = (dir: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setIdx((p) => wrap(p + dir));
+  };
+
+  const arrowBtn: React.CSSProperties = {
+    position: "absolute",
+    top: "50%",
+    transform: "translateY(-50%)",
+    width: 36,
+    height: 36,
+    borderRadius: "50%",
+    border: "none",
+    background: "rgba(0,0,0,0.45)",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    backdropFilter: "blur(4px)",
+    zIndex: 4,
+  };
+
+  return (
+    <>
+      {backdrop && (
+        <img
+          src={cur}
+          alt=""
+          aria-hidden
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(20px) brightness(0.4)", transform: "scale(1.1)", zIndex: 0 }}
+        />
+      )}
+      <img
+        src={cur}
+        alt=""
+        onClick={() => { if (!moved.current) onExpand?.(safeIdx); }}
+        onTouchStart={(e) => { startX.current = e.touches[0].clientX; moved.current = false; }}
+        onTouchMove={(e) => {
+          if (startX.current !== null && Math.abs(e.touches[0].clientX - startX.current) > 10) moved.current = true;
+        }}
+        onTouchEnd={(e) => {
+          if (startX.current === null) return;
+          const dx = e.changedTouches[0].clientX - startX.current;
+          startX.current = null;
+          if (count > 1 && Math.abs(dx) > 40) setIdx((p) => wrap(p + (dx < 0 ? 1 : -1)));
+        }}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit, cursor: onExpand ? "pointer" : "default", zIndex: 1 }}
+      />
+
+      {count > 1 && (
+        <>
+          <button type="button" aria-label="Previous poster" onClick={(e) => go(-1, e)} style={{ ...arrowBtn, left: 10 }}>
+            <ChevronLeft size={arrowSize} />
+          </button>
+          <button type="button" aria-label="Next poster" onClick={(e) => go(1, e)} style={{ ...arrowBtn, right: 10 }}>
+            <ChevronRight size={arrowSize} />
+          </button>
+
+          {/* Counter pill (top-center, clear of the corner badges) */}
+          <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 4, background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 99, backdropFilter: "blur(4px)", pointerEvents: "none", letterSpacing: "0.03em" }}>
+            {safeIdx + 1} / {count}
+          </div>
+
+          {/* Dots */}
+          <div style={{ position: "absolute", bottom: 12, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 6, zIndex: 4 }}>
+            {posters.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Go to poster ${i + 1}`}
+                onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+                style={{ width: i === safeIdx ? 22 : 7, height: 7, borderRadius: 99, border: "none", padding: 0, background: i === safeIdx ? "#fff" : "rgba(255,255,255,0.5)", cursor: "pointer", transition: "all 0.25s", boxShadow: "0 1px 3px rgba(0,0,0,0.35)" }}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 
 interface HouseItem {
   id: string;
@@ -96,7 +215,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   });
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  // Fullscreen poster viewer — carries the whole poster list + which one was tapped
+  // so the user can keep swiping at full size.
+  const [previewImage, setPreviewImage] = useState<{ posters: string[]; index: number } | null>(null);
   const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
   
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
@@ -338,12 +459,11 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     >
                       {/* Poster Area */}
                       <div style={{ position: "relative", aspectRatio: "1/1", background: "#1a1a1a", overflow: "hidden" }}>
-                         {e.imageUrl ? (
-                           <img 
-                             src={e.imageUrl} 
-                             alt={e.title} 
-                             style={{ width: "100%", height: "100%", objectFit: "contain", cursor: "pointer" }} 
-                             onClick={() => setPreviewImage(e.imageUrl!)}
+                         {getPosters(e).length > 0 ? (
+                           <PosterCarousel
+                             posters={getPosters(e)}
+                             objectFit="contain"
+                             onExpand={(i) => setPreviewImage({ posters: getPosters(e), index: i })}
                            />
                          ) : (
                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(45deg, var(--bg-elevated), var(--bg-surface))" }}>
@@ -932,30 +1052,23 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             <X size={24} />
           </button>
           
-          {/* Image Container */}
-          <div 
-            style={{ 
+          {/* Image Container — a fixed-size stage so the carousel can fill it and
+              the user can keep swiping between posters at full size. */}
+          <div
+            style={{
               position: "relative",
-              maxWidth: "90%",
-              maxHeight: "85vh",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              width: "min(900px, 92vw)",
+              height: "85vh",
               borderRadius: 24,
-              overflow: "hidden",
-              boxShadow: "0 20px 50px rgba(0,0,0,0.3)"
+              overflow: "hidden"
             }}
             onClick={e => e.stopPropagation()}
           >
-            <img 
-              src={previewImage} 
-              alt="Full Poster" 
-              style={{ 
-                maxWidth: "100%", 
-                maxHeight: "85vh", 
-                objectFit: "contain",
-                borderRadius: 24
-              }} 
+            <PosterCarousel
+              posters={previewImage.posters}
+              objectFit="contain"
+              arrowSize={24}
+              initialIndex={previewImage.index}
             />
           </div>
         </div>
@@ -976,6 +1089,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         const windowBlocked = notYetOpen || regClosed;
         const greyed = regClosed || (liveEvent.isRegistered && !canCancel);
         const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
+        const previewPosters = getPosters(liveEvent);
 
         return (
           <div 
@@ -1036,46 +1150,61 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
               {/* Scrollable Content */}
               <div className="custom-scrollbar" style={{ overflowY: "auto", flex: 1 }}>
-                {/* Top Banner (if image exists) */}
-                {liveEvent.imageUrl ? (
-                  <div style={{ 
-                    position: "relative", 
-                    width: "100%", 
-                    background: "#000", 
+                {/* Top Banner (if any posters exist) */}
+                {previewPosters.length > 0 ? (
+                  <div style={{
+                    position: "relative",
+                    width: "100%",
+                    background: "#000",
                     overflow: "hidden",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center"
+                    justifyContent: "center",
+                    // A multi-poster carousel needs a fixed stage; a single poster keeps
+                    // its natural height exactly as before.
+                    ...(previewPosters.length > 1 ? { height: "min(70vh, 520px)" } : {})
                   }}>
-                    <img 
-                      src={liveEvent.imageUrl} 
-                      alt="" 
-                      style={{ 
-                        position: "absolute", 
-                        inset: 0, 
-                        width: "100%", 
-                        height: "100%", 
-                        objectFit: "cover", 
-                        filter: "blur(20px) brightness(0.4)",
-                        transform: "scale(1.1)"
-                      }} 
-                    />
-                    <img 
-                      src={liveEvent.imageUrl} 
-                      alt={liveEvent.title} 
-                      style={{ 
-                        position: "relative", 
-                        width: "100%", 
-                        height: "auto", 
-                        objectFit: "contain",
-                        zIndex: 1,
-                        cursor: "pointer"
-                      }} 
-                      onClick={() => {
-                        setPreviewImage(liveEvent.imageUrl!);
-                      }}
-                    />
-                    
+                    {previewPosters.length > 1 ? (
+                      <PosterCarousel
+                        posters={previewPosters}
+                        objectFit="contain"
+                        backdrop
+                        arrowSize={22}
+                        onExpand={(i) => setPreviewImage({ posters: previewPosters, index: i })}
+                      />
+                    ) : (
+                      <>
+                        <img
+                          src={previewPosters[0]}
+                          alt=""
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            filter: "blur(20px) brightness(0.4)",
+                            transform: "scale(1.1)"
+                          }}
+                        />
+                        <img
+                          src={previewPosters[0]}
+                          alt={liveEvent.title}
+                          style={{
+                            position: "relative",
+                            width: "100%",
+                            height: "auto",
+                            objectFit: "contain",
+                            zIndex: 1,
+                            cursor: "pointer"
+                          }}
+                          onClick={() => {
+                            setPreviewImage({ posters: previewPosters, index: 0 });
+                          }}
+                        />
+                      </>
+                    )}
+
                     {/* Status Overlay */}
                     <div style={{ position: "absolute", top: 16, left: 16, zIndex: 2 }}>
                       <span style={{ 

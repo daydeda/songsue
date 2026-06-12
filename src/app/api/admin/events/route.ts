@@ -17,6 +17,7 @@ const eventSchema = z.object({
   location: z.string().optional().nullable(),
   pointsAwarded: z.number().int().min(0).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
+  imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
   quotaWalkIn: z.number().int().min(0).optional().nullable(),
   targetThai: z.boolean().optional(),
@@ -75,6 +76,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const data = eventSchema.parse(body);
 
+    // Normalize posters: drop blanks, dedupe-free order preserved. The cover
+    // (imageUrl) always mirrors imageUrls[0] so single-image consumers keep working.
+    const posters = (data.imageUrls ?? (data.imageUrl ? [data.imageUrl] : []))
+      .filter((u): u is string => typeof u === "string" && u.trim() !== "");
+    const cover = posters[0] ?? null;
+
     const [event] = await db
       .insert(events)
       .values({
@@ -87,7 +94,8 @@ export async function POST(req: Request) {
         quota: data.quota,
         location: data.location,
         pointsAwarded: data.pointsAwarded ?? 0,
-        imageUrl: data.imageUrl,
+        imageUrl: cover,
+        imageUrls: posters,
         walkInsEnabled: data.walkInsEnabled ?? false,
         quotaWalkIn: data.quotaWalkIn,
         targetThai: data.targetThai ?? true,

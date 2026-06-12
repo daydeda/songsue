@@ -5,7 +5,7 @@ import {
   Plus, Edit2, Trash2, Calendar, MapPin, Clock,
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
-  ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, Image as ImageIcon, Zap,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
@@ -33,6 +33,7 @@ interface AdminEvent {
   quota: number | null;
   pointsAwarded: number;
   imageUrl: string | null;
+  imageUrls: string[] | null;
   walkInsEnabled: boolean;
   quotaWalkIn: number | null;
   targetThai: boolean;
@@ -173,6 +174,7 @@ const EMPTY_FORM = {
   quota: 0,
   pointsAwarded: 0,
   imageUrl: "",
+  imageUrls: [] as string[],
   walkInsEnabled: false,
   quotaWalkIn: null as number | null,
   targetThai: true,
@@ -907,6 +909,109 @@ export default function AdminEventsPage() {
     }, 10);
   };
 
+  // ---- Multi-poster management ----
+  // Compress (Canvas → WebP) then upload a single image, returning its hosted URL.
+  // Mirrors the original single-poster pipeline so output size/quality is unchanged.
+  const compressAndUploadPoster = async (file: File): Promise<string | null> => {
+    const compressImage = (imgFile: File): Promise<Blob> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(imgFile);
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target?.result as string;
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const MAX_WIDTH = 1080;
+            const MAX_HEIGHT = 1350;
+            let width = img.width;
+            let height = img.height;
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height = Math.round((height * MAX_WIDTH) / width);
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width = Math.round((width * MAX_HEIGHT) / height);
+                height = MAX_HEIGHT;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx?.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(
+              (blob) => (blob ? resolve(blob) : reject(new Error("Compression failed"))),
+              "image/webp",
+              0.8
+            );
+          };
+          img.onerror = reject;
+        };
+        reader.onerror = reject;
+      });
+
+    const compressedBlob = await compressImage(file);
+    const useCompressed = compressedBlob.size < file.size;
+    const finalFile = useCompressed ? compressedBlob : file;
+    const body = new FormData();
+    const originalName = file.name.substring(0, file.name.lastIndexOf("."));
+    const extension = useCompressed ? "webp" : file.name.split(".").pop() || "png";
+    body.append("file", finalFile, `${originalName || "poster"}.${extension}`);
+    const res = await fetch("/api/upload", { method: "POST", body });
+    if (!res.ok) return null;
+    const { url } = await res.json();
+    return url as string;
+  };
+
+  // Tracks how many posters are still uploading so the UI can show progress.
+  const [posterUploading, setPosterUploading] = useState(0);
+
+  const addPosters = async (files: FileList | File[]) => {
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (list.length === 0) return;
+    setPosterUploading((n) => n + list.length);
+    try {
+      for (const file of list) {
+        try {
+          const url = await compressAndUploadPoster(file);
+          if (url) {
+            // Append one at a time so partial uploads still appear and ordering
+            // follows selection order. Cover (imageUrl) stays as imageUrls[0].
+            setFormData((prev) => {
+              const next = [...prev.imageUrls, url];
+              return { ...prev, imageUrls: next, imageUrl: next[0] };
+            });
+          }
+        } catch (err) {
+          console.error("Poster compression / upload failed:", err);
+        } finally {
+          setPosterUploading((n) => Math.max(0, n - 1));
+        }
+      }
+    } catch {
+      setPosterUploading(0);
+    }
+  };
+
+  const removePoster = (idx: number) => {
+    setFormData((prev) => {
+      const next = prev.imageUrls.filter((_, i) => i !== idx);
+      return { ...prev, imageUrls: next, imageUrl: next[0] || "" };
+    });
+  };
+
+  const movePoster = (idx: number, dir: -1 | 1) => {
+    setFormData((prev) => {
+      const target = idx + dir;
+      if (target < 0 || target >= prev.imageUrls.length) return prev;
+      const next = [...prev.imageUrls];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return { ...prev, imageUrls: next, imageUrl: next[0] || "" };
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -1011,6 +1116,10 @@ export default function AdminEventsPage() {
       quota: evt.quota || 0,
       pointsAwarded: evt.pointsAwarded || 0,
       imageUrl: evt.imageUrl || "",
+      // Legacy events have only imageUrl — wrap it so the manager shows one poster.
+      imageUrls: (evt.imageUrls && evt.imageUrls.length > 0)
+        ? evt.imageUrls
+        : (evt.imageUrl ? [evt.imageUrl] : []),
       walkInsEnabled: evt.walkInsEnabled || false,
       quotaWalkIn: evt.quotaWalkIn || null,
       targetThai: evt.targetThai !== false,
@@ -1650,10 +1759,76 @@ export default function AdminEventsPage() {
                 </div>
 
                 <div className="field">
-                  <label className="label">{t.eventPosterLabel}</label>
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {t.eventPosterLabel}
+                    {formData.imageUrls.length > 0 && (
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(255,107,0,0.1)", padding: "2px 8px", borderRadius: 99 }}>
+                        {formData.imageUrls.length}
+                      </span>
+                    )}
+                  </label>
+
+                  {/* Poster thumbnails — first one is the cover. Reorder with the
+                      arrows; delete with the ×. */}
+                  {formData.imageUrls.length > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 12, marginBottom: 12 }}>
+                      {formData.imageUrls.map((url, idx) => (
+                        <div key={url + idx} style={{
+                          position: "relative",
+                          aspectRatio: "4/5",
+                          borderRadius: 16,
+                          overflow: "hidden",
+                          background: "#000",
+                          border: idx === 0 ? "2px solid var(--accent-primary)" : "1px solid var(--border-medium)"
+                        }}>
+                          <img src={url} alt={`Poster ${idx + 1}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+
+                          {idx === 0 && (
+                            <span style={{ position: "absolute", top: 6, left: 6, fontSize: 9, fontWeight: 900, color: "#fff", background: "var(--accent-primary)", padding: "3px 7px", borderRadius: 99, letterSpacing: "0.05em", boxShadow: "0 2px 8px rgba(0,0,0,0.3)" }}>
+                              {lang === "th" ? "ปก" : "COVER"}
+                            </span>
+                          )}
+
+                          {/* Remove */}
+                          <button
+                            type="button"
+                            onClick={() => removePoster(idx)}
+                            title={lang === "th" ? "ลบ" : "Remove"}
+                            style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(4px)" }}
+                          >
+                            <X size={14} />
+                          </button>
+
+                          {/* Reorder */}
+                          <div style={{ position: "absolute", bottom: 6, left: 6, right: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => movePoster(idx, -1)}
+                              disabled={idx === 0}
+                              title={lang === "th" ? "ย้ายไปด้านหน้า" : "Move left"}
+                              style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.35 : 1, backdropFilter: "blur(4px)" }}
+                            >
+                              <ChevronLeft size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => movePoster(idx, 1)}
+                              disabled={idx === formData.imageUrls.length - 1}
+                              title={lang === "th" ? "ย้ายไปด้านหลัง" : "Move right"}
+                              style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: idx === formData.imageUrls.length - 1 ? "not-allowed" : "pointer", opacity: idx === formData.imageUrls.length - 1 ? 0.35 : 1, backdropFilter: "blur(4px)" }}
+                            >
+                              <ChevronRight size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Upload dropzone — accepts multiple files at once. */}
                   <div style={{
                     position: "relative",
-                    height: 180,
+                    height: formData.imageUrls.length > 0 ? 110 : 180,
                     background: "var(--bg-elevated)",
                     borderRadius: 20,
                     border: "2px dashed var(--border-medium)",
@@ -1662,105 +1837,60 @@ export default function AdminEventsPage() {
                     alignItems: "center",
                     justifyContent: "center",
                     overflow: "hidden",
-                    cursor: "pointer",
+                    cursor: posterUploading > 0 ? "wait" : "pointer",
                     transition: "all 0.2s"
-                  }} onClick={() => document.getElementById("poster-upload")?.click()}>
-                    {formData.imageUrl ? (
-                      <>
-                        <img src={formData.imageUrl} alt="Poster" style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }} />
-                        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0, transition: "opacity 0.2s", color: "#fff" }} className="hover-overlay">
-                          <Edit2 size={24} />
-                        </div>
-                      </>
+                  }} onClick={() => { if (posterUploading === 0) document.getElementById("poster-upload")?.click(); }}>
+                    {posterUploading > 0 ? (
+                      <div style={{ textAlign: "center", padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                        <RefreshCw size={24} className="animate-spin" style={{ color: "var(--accent-primary)" }} />
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>
+                          {lang === "th" ? `กำลังอัปโหลด ${posterUploading} ไฟล์...` : `Uploading ${posterUploading} image${posterUploading > 1 ? "s" : ""}...`}
+                        </p>
+                      </div>
                     ) : (
                       <div style={{ textAlign: "center", padding: 20 }}>
-                        <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bg-surface)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", color: "var(--text-muted)" }}>
-                          <ImageIcon size={28} />
+                        <div style={{ width: formData.imageUrls.length > 0 ? 44 : 64, height: formData.imageUrls.length > 0 ? 44 : 64, borderRadius: "50%", background: "var(--bg-surface)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", color: "var(--text-muted)" }}>
+                          <Plus size={formData.imageUrls.length > 0 ? 22 : 28} />
                         </div>
-                        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)" }}>{lang === "th" ? "อัปโหลดโปสเตอร์" : "Upload Poster"}</p>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, fontWeight: 600 }}>
-                          {lang === "th" ? "แนะนำขนาด 1080x1350px (อัตราส่วน 4:5)" : "Recommended: 1080x1350px (4:5 Ratio)"}
+                        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)" }}>
+                          {formData.imageUrls.length > 0
+                            ? (lang === "th" ? "เพิ่มโปสเตอร์" : "Add more posters")
+                            : (lang === "th" ? "อัปโหลดโปสเตอร์ (เลือกได้หลายไฟล์)" : "Upload Posters (select multiple)")}
                         </p>
-                        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                          {lang === "th" ? "ขนาดไฟล์สูงสุด 10MB (ระบบจะบีบอัดอัตโนมัติ)" : "Max file size: 10MB (Auto-compressed)"}
-                        </p>
+                        {formData.imageUrls.length === 0 && (
+                          <>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, fontWeight: 600 }}>
+                              {lang === "th" ? "แนะนำขนาด 1080x1350px (อัตราส่วน 4:5)" : "Recommended: 1080x1350px (4:5 Ratio)"}
+                            </p>
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                              {lang === "th" ? "ขนาดไฟล์สูงสุด 10MB (ระบบจะบีบอัดอัตโนมัติ)" : "Max file size: 10MB (Auto-compressed)"}
+                            </p>
+                          </>
+                        )}
                       </div>
                     )}
                     <input
                       type="file"
                       id="poster-upload"
                       accept="image/*"
+                      multiple
                       style={{ display: "none" }}
                       onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-
-                        try {
-                          // Client-side image compression helper (Canvas-based)
-                          const compressImage = (imgFile: File): Promise<Blob> => {
-                            return new Promise((resolve, reject) => {
-                              const reader = new FileReader();
-                              reader.readAsDataURL(imgFile);
-                              reader.onload = (event) => {
-                                const img = new Image();
-                                img.src = event.target?.result as string;
-                                img.onload = () => {
-                                  const canvas = document.createElement("canvas");
-                                  const MAX_WIDTH = 1080;
-                                  const MAX_HEIGHT = 1350;
-                                  let width = img.width;
-                                  let height = img.height;
-
-                                  if (width > height) {
-                                    if (width > MAX_WIDTH) {
-                                      height = Math.round((height * MAX_WIDTH) / width);
-                                      width = MAX_WIDTH;
-                                    }
-                                  } else {
-                                    if (height > MAX_HEIGHT) {
-                                      width = Math.round((width * MAX_HEIGHT) / height);
-                                      height = MAX_HEIGHT;
-                                    }
-                                  }
-
-                                  canvas.width = width;
-                                  canvas.height = height;
-                                  const ctx = canvas.getContext("2d");
-                                  ctx?.drawImage(img, 0, 0, width, height);
-                                  canvas.toBlob(
-                                    (blob) => blob ? resolve(blob) : reject(new Error("Compression failed")),
-                                    "image/webp", // Output as WebP to support PNG transparency & super high compression
-                                    0.8 // 80% WebP quality is extremely crisp
-                                  );
-                                };
-                                img.onerror = reject;
-                              };
-                              reader.onerror = reject;
-                            });
-                          };
-
-                          const compressedBlob = await compressImage(file);
-                          
-                          // Self-optimizing check: only use the compressed version if it is actually smaller
-                          const useCompressed = compressedBlob.size < file.size;
-                          const finalFile = useCompressed ? compressedBlob : file;
-
-                          const body = new FormData();
-                          const originalName = file.name.substring(0, file.name.lastIndexOf("."));
-                          const extension = useCompressed ? "webp" : file.name.split('.').pop() || "png";
-                          body.append("file", finalFile, `${originalName || "poster"}.${extension}`);
-
-                          const res = await fetch("/api/upload", { method: "POST", body });
-                          if (res.ok) {
-                            const { url } = await res.json();
-                            set("imageUrl", url);
-                          }
-                        } catch (err) {
-                          console.error("Compression / upload failed:", err);
-                        }
+                        const files = e.target.files;
+                        if (!files || files.length === 0) return;
+                        await addPosters(files);
+                        // Allow re-selecting the same file(s) after a removal.
+                        e.target.value = "";
                       }}
                     />
                   </div>
+                  {formData.imageUrls.length > 1 && (
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, fontWeight: 600 }}>
+                      {lang === "th"
+                        ? "นักศึกษาสามารถปัดดูโปสเตอร์ทั้งหมดได้ในหน้าแดชบอร์ด • โปสเตอร์แรกคือภาพปก"
+                        : "Students can swipe through all posters on the dashboard • the first poster is the cover."}
+                    </p>
+                  )}
                 </div>
 
                 <div className="field">

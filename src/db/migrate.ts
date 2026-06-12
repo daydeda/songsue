@@ -367,6 +367,18 @@ async function migrate() {
   `;
   console.log("  ✅ idx_audit_logs_timestamp index");
 
+  // 29. Multi-poster support: events can carry an ordered list of poster image
+  // URLs (carousel on the student dashboard). image_urls[0] mirrors the existing
+  // image_url cover. Backfill wraps any existing single image_url into the array
+  // so legacy events render in the carousel exactly as before.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS image_urls jsonb`;
+  await sql`
+    UPDATE events
+    SET image_urls = jsonb_build_array(image_url)
+    WHERE image_urls IS NULL AND image_url IS NOT NULL AND image_url <> ''
+  `;
+  console.log("  ✅ events.image_urls added and backfilled from image_url");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

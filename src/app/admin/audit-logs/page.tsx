@@ -12,17 +12,30 @@ type AuditLog = {
   target?: { id: string; name: string; studentId?: string } | null;
 };
 
+const PAGE_SIZE = 30;
+
 export default function AdminAuditLogsPage() {
   const { t, lang } = useLanguage();
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    fetch("/api/admin/audit-logs")
+    setLoading(true);
+    fetch(`/api/admin/audit-logs?page=${page}&pageSize=${PAGE_SIZE}`)
       .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d)) setLogs(d); })
+      .then((d) => {
+        if (d && Array.isArray(d.logs)) {
+          setLogs(d.logs);
+          setTotal(typeof d.total === "number" ? d.total : d.logs.length);
+        }
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [page]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
 
   return (
     <div className="pb-20">
@@ -140,6 +153,37 @@ export default function AdminAuditLogsPage() {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {total > PAGE_SIZE && (
+        <div
+          className="flex items-center justify-between gap-4 flex-wrap"
+          style={{ marginTop: 20 }}
+        >
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, total)} / {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-ghost"
+              disabled={currentPage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ←
+            </button>
+            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              className="btn btn-ghost"
+              disabled={currentPage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

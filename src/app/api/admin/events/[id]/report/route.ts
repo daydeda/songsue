@@ -3,6 +3,8 @@ import { db } from "@/db";
 import { attendance } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { csvCell } from "@/lib/csv";
+import { AuditService } from "@/modules/audit/audit.service";
 
 export async function GET(
   req: Request,
@@ -31,15 +33,25 @@ export async function GET(
     const noShows = totalPreRegistered - attendedPreRegistered;
     const noShowPercentage = totalPreRegistered > 0 ? (noShows / totalPreRegistered) * 100 : 0;
 
+    // Bulk PII export: keep a tamper-evident record of who pulled it (PDPA).
+    await AuditService.logAction({
+      actorId: session.user.id!,
+      action: `Exported attendance report CSV for event ${eventId} (${allAttendance.length} rows)`,
+      ipAddress:
+        req.headers.get("x-forwarded-for")?.split(",")[0] ||
+        req.headers.get("x-real-ip") ||
+        "127.0.0.1",
+    });
+
     // CSV Construction
     const headers = ["Student ID", "Name", "Nickname", "Method", "Status", "Check-in Time"];
     const rows = allAttendance.map(a => [
-      `"${a.user.studentId || "N/A"}"`,
-      `"${a.user.name}"`,
-      `"${a.user.nickname || ""}"`,
-      `"${a.method}"`,
-      `"${a.status}"`,
-      `"${a.checkInTime ? a.checkInTime.toLocaleString("en-GB", { timeZone: "Asia/Bangkok" }) : ""}"`
+      csvCell(a.user.studentId || "N/A"),
+      csvCell(a.user.name),
+      csvCell(a.user.nickname || ""),
+      csvCell(a.method),
+      csvCell(a.status),
+      csvCell(a.checkInTime ? a.checkInTime.toLocaleString("en-GB", { timeZone: "Asia/Bangkok" }) : "")
     ]);
 
     const summaryHeaders = ["Metric", "Value"];

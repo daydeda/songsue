@@ -3,6 +3,8 @@ import { db } from "@/db";
 import { attendance, events, users, houses } from "@/db/schema";
 import { count, gte, sql, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { csvCell } from "@/lib/csv";
+import { AuditService } from "@/modules/audit/audit.service";
 
 // Hard ceiling: a request must never hang at the platform's 300s default. If a DB
 // call stalls (e.g. the Supabase pooler is momentarily queueing), fail fast at 20s,
@@ -56,9 +58,21 @@ export async function GET(req: Request) {
         orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
       });
 
+      // Bulk PII export: keep a tamper-evident record of who pulled it (PDPA).
+      await AuditService.logAction({
+        actorId: session.user.id!,
+        action: `Exported full attendance CSV (${allAtt.length} rows)`,
+        ipAddress:
+          req.headers.get("x-forwarded-for")?.split(",")[0] ||
+          req.headers.get("x-real-ip") ||
+          "127.0.0.1",
+      });
+
       let csv = "Event_Title,Student_ID,Name,Major,Check_In_Time,Method\n";
       allAtt.forEach((a) => {
-        csv += `"${a.event?.title ?? ""}","${a.user?.studentId ?? ""}","${a.user?.name ?? ""}","${a.user?.major ?? ""}","${a.checkInTime ?? ""}","${a.method ?? ""}"\n`;
+        csv += [a.event?.title, a.user?.studentId, a.user?.name, a.user?.major, a.checkInTime, a.method]
+          .map(csvCell)
+          .join(",") + "\n";
       });
 
       const csvWithBom = "\ufeff" + csv;

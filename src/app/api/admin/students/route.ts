@@ -21,7 +21,9 @@ export async function GET() {
         prefix: true,
         nickname: true,
         major: true,
-        phone: true,
+        // No phone here: nothing in the directory UI renders it, and PDPA says
+        // bulk endpoints carry the minimum. The super_admin-only detail route
+        // (/api/admin/students/[id]) still returns contact info when needed.
         houseId: true,
         profileCompleted: true,
         role: true,

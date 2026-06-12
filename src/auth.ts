@@ -5,7 +5,13 @@ import { db } from "@/db"
 import { accounts, sessions, users, verificationTokens } from "@/db/schema"
 import { eq } from "drizzle-orm"
 
-const SUPER_ADMIN_EMAILS = ["daydedaa@gmail.com"];
+// Comma-separated list in the SUPER_ADMIN_EMAILS env var; falls back to the
+// original hardcoded owner address so existing deployments keep working until
+// the env var is set everywhere.
+const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS ?? "daydedaa@gmail.com")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
 const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
 // How often the session is re-hydrated from the DB to pick up role/profile/house
 // changes made elsewhere (e.g. an admin assigning a role). This refresh lives in
@@ -89,7 +95,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // the live domain exactly — apex vs www — and Google's redirect URI must be
   // https://<domain>/api/auth/callback/google.
   trustHost: true,
-  session: { strategy: "jwt" },
+  // 7 days instead of NextAuth's 30-day default: a stolen cookie on a shared
+  // or lost device stays valid for a week, not a month, while inactive
+  // students don't have to re-login daily between events.
+  session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,

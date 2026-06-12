@@ -18,9 +18,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    // Bound manual adjustments so a typo (or a misused admin account) can't
+    // swing the leaderboard by millions in one request. Large corrections are
+    // still possible — they just take several audited steps.
+    const MAX_DELTA = 10000;
     const parsedDelta = parseInt(delta);
-    if (isNaN(parsedDelta)) {
-      return NextResponse.json({ error: "Invalid delta" }, { status: 400 });
+    if (isNaN(parsedDelta) || Math.abs(parsedDelta) > MAX_DELTA) {
+      return NextResponse.json(
+        { error: `Invalid delta: must be an integer between -${MAX_DELTA} and ${MAX_DELTA}` },
+        { status: 400 }
+      );
     }
 
     // FE-08: Atomic point update

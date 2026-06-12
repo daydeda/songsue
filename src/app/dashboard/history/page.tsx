@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList } from "lucide-react";
+import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
 import {
@@ -15,6 +15,24 @@ import {
   type AnswerMap,
 } from "@/lib/form-schema";
 
+const FORM_TYPE_LABELS: Record<string, string> = {
+  K_pre: "K Pre-Test",
+  K_post: "K Post-Test",
+  A: "A - Attitude",
+  S: "S - Skill",
+};
+
+interface EventFormStatus {
+  id: string;
+  formType: string;
+  title: string;
+  sortOrder: number;
+  formStatus: "available" | "submitted" | "closed" | "upcoming";
+  formPoints: number;
+  opensAt: string | null;
+  closesAt: string | null;
+}
+
 interface HistoryItem {
   id: string;
   eventId: string;
@@ -25,10 +43,9 @@ interface HistoryItem {
   eventEndTime?: string;
   eventQuota: number | null;
   rank: number | null; // check-in order; null when registered but not yet checked in
-  formStatus: "none" | "available" | "submitted" | "closed";
-  formId?: string | null;
-  formPoints?: number;
+  forms: EventFormStatus[];
   method?: string | null;
+  assignedOnly?: boolean; // entry surfaced only because the viewer is assigned to evaluate
 }
 
 interface ActiveForm {
@@ -36,34 +53,31 @@ interface ActiveForm {
   eventId: string;
   title: string;
   description: string | null;
-  questions: unknown; // raw jsonb; normalized via normalizeForm()
+  questions: unknown;
+  formType: string;
 }
 
 export default function HistoryPage() {
   const { lang, t } = useLanguage();
+  // Locale for date formatting so the month/format follow the chosen language.
+  const dateLocale = lang === "th" ? "th-TH" : lang === "cn" ? "zh-CN" : lang === "mm" ? "my-MM" : "en-GB";
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form states for student submission
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [activeForm, setActiveForm] = useState<ActiveForm | null>(null);
-  // Sections + branching navigation (Google Forms style).
   const [normForm, setNormForm] = useState<NormalizedForm | null>(null);
   const [sectionIndex, setSectionIndex] = useState(0);
-  const [navStack, setNavStack] = useState<number[]>([]); // visited indices, for Back
-  // Quiz score shown after submit (display-only). null when the form has no graded
-  // questions or before submission.
+  const [navStack, setNavStack] = useState<number[]>([]);
   const [scoreResult, setScoreResult] = useState<{ score: number; maxScore: number } | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string | number | string[]>>({});
   const [submitting, setSubmitting] = useState(false);
-  
-  // Custom premium validation/alert states
+
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [generalSuccess, setGeneralSuccess] = useState<string | null>(null);
 
-  // Custom warning modal states for attendance 403 prevention
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [warningMessage, setWarningMessage] = useState("");
 
@@ -85,13 +99,11 @@ export default function HistoryPage() {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchHistory();
-    }, 0);
+    const timer = setTimeout(() => { fetchHistory(); }, 0);
     return () => clearTimeout(timer);
   }, []);
 
-  const openStudentForm = async (eventId: string, eventTitle: string) => {
+  const openStudentForm = async (eventId: string, formId: string, formType: string) => {
     setShowStudentForm(true);
     setFormLoading(true);
     setAnswers({});
@@ -105,33 +117,40 @@ export default function HistoryPage() {
     try {
       const res = await fetch(`/api/events/${eventId}/form`);
       const data = await res.json();
-      
-      if (data.form) {
-        if (!data.hasAttended) {
-          setShowStudentForm(false);
-          setWarningMessage(
-            lang === "th"
-              ? "คุณยังไม่ได้สแกนเช็คอินเข้าร่วมกิจกรรมนี้ กรุณาสแกนเช็คอินเพื่อเข้าร่วมกิจกรรมจริงก่อนจึงจะสามารถส่งแบบประเมินและสะสมคะแนนบ้านได้!"
-              : lang === "cn"
-              ? "您尚未扫码签到参加此活动。请先在现场签到参加活动，然后才能提交评估表并为您的“学院/House”赚取积分！"
-              : lang === "mm"
-              ? "သင်သည် ဤပွဲသို့ ပါဝင်ရန် QR check-in မလုပ်ရသေးပါ။ ကျေးဇူးပြု၍ ပွဲသို့ တကယ့်ကိုယ်တိုင်တက်ရောက်ပြီးမှသာ အကဲဖြတ်လွှาကို တင်သွင်းပြီး အိမ်မှတ်များ စုဆောင်းနိုင်မည်ဖြစ်သည်!"
-              : "You haven't scanned and checked into this event yet. Please check in and physically attend the event first to submit your evaluation and feed house points!"
-          );
-          setShowWarningModal(true);
-          return;
-        }
-        setActiveForm({ ...data.form, eventId });
-        const nf = normalizeForm(data.form.questions);
-        setNormForm(nf);
-        const initialAnswers: Record<string, string | number | string[]> = {};
-        allQuestions(nf).forEach((q) => {
-          initialAnswers[q.id] = q.type === "rating" ? 5 : q.type === "multiple" ? [] : "";
-        });
-        setAnswers(initialAnswers);
-      } else {
+
+      const formObj = data.forms?.find((f: { id: string }) => f.id === formId);
+
+      if (!formObj) {
         setGeneralError(t.evaluationNotFound);
+        setFormLoading(false);
+        return;
       }
+
+      // Attendance gate: K_pre (pre-test) and S (skill — filled by assigned
+      // evaluators, not attendees) don't require check-in; all others do.
+      if (formType !== "K_pre" && formType !== "S" && !data.hasAttended) {
+        setShowStudentForm(false);
+        setWarningMessage(
+          lang === "th"
+            ? "คุณยังไม่ได้สแกนเช็คอินเข้าร่วมกิจกรรมนี้ กรุณาสแกนเช็คอินเพื่อเข้าร่วมกิจกรรมจริงก่อนจึงจะสามารถส่งแบบประเมินและสะสมคะแนนบ้านได้!"
+            : lang === "cn"
+            ? "您尚未扫码签到参加此活动。请先在现场签到参加活动，然后才能提交评估表并为您的“学院/House”赚取积分！"
+            : lang === "mm"
+            ? "သင်သည် ဤပွဲသို့ ပါဝင်ရန် QR check-in မလုပ်ရသေးပါ။ ကျေးဇူးပြု၍ ပွဲသို့ တကယ့်ကိုယ်တိုင်တက်ရောက်ပြီးမှသာ အကဲဖြတ်လွှာကို တင်သွင်းပြီး အိမ်မှတ်များ စုဆောင်းနိုင်မည်ဖြစ်သည်!"
+            : "You haven't scanned and checked into this event yet. Please check in and physically attend the event first to submit your evaluation and feed house points!"
+        );
+        setShowWarningModal(true);
+        return;
+      }
+
+      setActiveForm({ ...formObj, eventId });
+      const nf = normalizeForm(formObj.questions);
+      setNormForm(nf);
+      const initialAnswers: Record<string, string | number | string[]> = {};
+      allQuestions(nf).forEach((q) => {
+        initialAnswers[q.id] = q.type === "rating" ? 5 : q.type === "multiple" ? [] : "";
+      });
+      setAnswers(initialAnswers);
     } catch (e) {
       console.error(e);
       setGeneralError(t.failedToLoadEvaluation);
@@ -140,21 +159,15 @@ export default function HistoryPage() {
     }
   };
 
-  // Validate the required questions of one section. Returns true if the section
-  // is complete. We validate per-section (not the whole form) because branching
-  // means later sections may never be shown to this student.
   const validateSection = (idx: number): boolean => {
     const section = normForm?.sections[idx];
     if (!section) return true;
     const newErrors: Record<string, string> = {};
     for (const q of section.questions) {
-      // Skip questions hidden by an unmet conditional — they aren't shown, so they
-      // can't be "required" right now.
       if (!isQuestionVisible(q, answers as AnswerMap)) continue;
       const a = answers[q.id];
       const empty =
-        a === undefined ||
-        a === null ||
+        a === undefined || a === null ||
         (Array.isArray(a) ? a.length === 0 : a.toString().trim() === "");
       if (q.required && empty) newErrors[q.id] = t.fieldRequired;
     }
@@ -166,7 +179,6 @@ export default function HistoryPage() {
     return true;
   };
 
-  // The destination after the current section: a section index, or "submit".
   const nextDestination = (): number | "submit" =>
     normForm ? resolveNextSection(normForm, sectionIndex, answers as AnswerMap) : "submit";
 
@@ -182,8 +194,6 @@ export default function HistoryPage() {
     });
   };
 
-  // Advance: validate the current section, then either move to the next section
-  // (following branches) or submit if this is the end of the student's path.
   const goNext = () => {
     setFormErrors({});
     setGeneralError(null);
@@ -199,11 +209,8 @@ export default function HistoryPage() {
 
   const submitAnswers = async () => {
     if (!activeForm) return;
-
     setFormErrors({});
     setGeneralError(null);
-
-    // Final guard: the current (last) section must be complete.
     if (!validateSection(sectionIndex)) return;
 
     setSubmitting(true);
@@ -211,10 +218,10 @@ export default function HistoryPage() {
       const res = await fetch(`/api/events/${activeForm.eventId}/form`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers })
+        body: JSON.stringify({ formId: activeForm.id, answers }),
       });
       const data = await res.json();
-      
+
       if (res.ok) {
         if (data.result?.hasGraded) {
           setScoreResult({ score: data.result.score, maxScore: data.result.maxScore });
@@ -267,11 +274,11 @@ export default function HistoryPage() {
         ) : history.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {history.map((h) => (
-              <div key={h.id} className="glass animate-fade-in-up" style={{ 
-                padding: "28px", 
-                display: "flex", 
-                flexDirection: "column", 
-                gap: 20, 
+              <div key={h.id} className="glass animate-fade-in-up" style={{
+                padding: "28px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 20,
                 borderRadius: 32,
                 border: "1px solid var(--border-subtle)",
                 background: "var(--bg-surface)",
@@ -291,16 +298,33 @@ export default function HistoryPage() {
                     <p style={{ fontWeight: 900, fontSize: 17, color: "var(--text-primary)", letterSpacing: "-0.01em", lineHeight: 1.35, overflowWrap: "break-word", wordBreak: "break-word" }}>{h.eventTitle}</p>
                     <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                       {h.checkInTime ? (
-                        <>Completed on {new Date(h.checkInTime).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}</>
+                        <>Completed on {new Date(h.checkInTime).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" })}</>
                       ) : (
-                        <>Event Date: {new Date(h.eventStartTime).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })}</>
+                        <>Event Date: {new Date(h.eventStartTime).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" })}</>
                       )}
                     </p>
                   </div>
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  {h.rank != null ? (
+                  {h.assignedOnly ? (
+                    // Surfaced only because the viewer is assigned to evaluate this
+                    // event's skill form — they aren't a participant here.
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 14px",
+                      background: "rgba(239,68,68,0.08)",
+                      borderRadius: 14,
+                      color: "#ef4444",
+                      fontSize: 12,
+                      fontWeight: 800
+                    }}>
+                      <ClipboardList size={14} />
+                      {lang === "th" ? "ได้รับมอบหมายให้ประเมิน" : lang === "cn" ? "已分配评估任务" : lang === "mm" ? "အကဲဖြတ်ရန် တာဝန်ပေးထားသည်" : "Assigned to evaluate"}
+                    </div>
+                  ) : h.rank != null ? (
                     // Checked in: show the physical check-in / walk-in scan order.
                     <div style={{
                       display: "inline-flex",
@@ -313,7 +337,7 @@ export default function HistoryPage() {
                       fontSize: 12,
                       fontWeight: 800
                     }}>
-                      <History size={13} />
+                      <ClipboardList size={14} />
                       {h.eventQuota
                         ? t.joinedAsRank.replace("{rank}", h.rank.toString()).replace("{total}", h.eventQuota.toString())
                         : t.joinedAsRankNoLimit.replace("{rank}", h.rank.toString())}
@@ -332,73 +356,127 @@ export default function HistoryPage() {
                       fontSize: 12,
                       fontWeight: 800
                     }}>
-                      <ClipboardList size={13} />
+                      <ClipboardList size={14} />
                       {t.registeredNotCheckedIn}
                     </div>
                   )}
                 </div>
 
-                {/* Evaluation Form Actions */}
-                {h.formStatus !== "none" && (
-                  <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: 16, marginTop: 4 }}>
-                    {h.formStatus === "available" && (
-                      <button
-                        className="btn"
-                        style={{
-                          width: "100%",
-                          height: 42,
-                          borderRadius: 12,
-                          fontSize: 13,
-                          fontWeight: 900,
-                          background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
-                          color: "#fff",
-                          border: "none",
-                          cursor: "pointer",
-                          boxShadow: "0 4px 12px rgba(255,107,0,0.15)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 6
-                        }}
-                        onClick={() => openStudentForm(h.eventId, h.eventTitle)}
-                      >
-                        <ClipboardList size={14} /> {t.submitFeedback} (+{h.formPoints} PTS)
-                      </button>
-                    )}
-                    {h.formStatus === "submitted" && (
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        width: "100%",
-                        height: 42,
-                        borderRadius: 12,
-                        background: "rgba(16,185,129,0.08)",
-                        color: "#10b981",
-                        fontSize: 13,
-                        fontWeight: 800
-                      }}>
-                        <CheckCircle2 size={14} /> Completed & points feeding
+                {/* KAS Form Actions */}
+                {h.forms.length > 0 && (
+                  <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: 16, marginTop: 4, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {h.forms.map((form) => (
+                      <div key={form.id}>
+                        {form.formStatus === "available" && (
+                          <button
+                            className="btn"
+                            style={{
+                              width: "100%",
+                              minHeight: 42,
+                              borderRadius: 12,
+                              padding: "8px 14px",
+                              fontSize: 13,
+                              fontWeight: 900,
+                              background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
+                              color: "#fff",
+                              border: "none",
+                              cursor: "pointer",
+                              boxShadow: "0 4px 12px rgba(255,107,0,0.15)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexWrap: "wrap",
+                              gap: 6
+                            }}
+                            onClick={() => openStudentForm(h.eventId, form.id, form.formType)}
+                          >
+                            <ClipboardList size={14} style={{ flexShrink: 0 }} />
+                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: 6, flexShrink: 0 }}>
+                              {FORM_TYPE_LABELS[form.formType] || form.formType}
+                            </span>
+                            <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
+                            <span style={{ opacity: 0.85, flexShrink: 0 }}>(+{form.formPoints} PTS)</span>
+                          </button>
+                        )}
+                        {form.formStatus === "submitted" && (
+                          <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 6,
+                            width: "100%",
+                            minHeight: 42,
+                            borderRadius: 12,
+                            padding: "8px 14px",
+                            background: "rgba(16,185,129,0.08)",
+                            color: "#10b981",
+                            fontSize: 13,
+                            fontWeight: 800
+                          }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                              <CheckCircle2 size={14} style={{ flexShrink: 0 }} /> <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
+                            </span>
+                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.75, background: "rgba(16,185,129,0.15)", padding: "2px 8px", borderRadius: 6, flexShrink: 0 }}>
+                              {FORM_TYPE_LABELS[form.formType] || form.formType}
+                            </span>
+                          </div>
+                        )}
+                        {form.formStatus === "closed" && (
+                          <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 6,
+                            width: "100%",
+                            minHeight: 42,
+                            borderRadius: 12,
+                            padding: "8px 14px",
+                            background: "rgba(0,0,0,0.03)",
+                            color: "var(--text-muted)",
+                            fontSize: 13,
+                            fontWeight: 700
+                          }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                              <Lock size={14} style={{ flexShrink: 0 }} /> <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
+                            </span>
+                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.6, background: "var(--bg-elevated)", padding: "2px 8px", borderRadius: 6, flexShrink: 0 }}>
+                              {FORM_TYPE_LABELS[form.formType] || form.formType}
+                            </span>
+                          </div>
+                        )}
+                        {form.formStatus === "upcoming" && (
+                          <div style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                            width: "100%",
+                            minHeight: 42,
+                            borderRadius: 12,
+                            padding: "8px 14px",
+                            background: "rgba(99,102,241,0.06)",
+                            color: "#6366f1",
+                            fontSize: 13,
+                            fontWeight: 700
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                              <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                <Calendar size={14} style={{ flexShrink: 0 }} />
+                                <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
+                              </span>
+                              <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.7, background: "rgba(99,102,241,0.12)", padding: "2px 8px", borderRadius: 6, flexShrink: 0 }}>
+                                {FORM_TYPE_LABELS[form.formType] || form.formType}
+                              </span>
+                            </div>
+                            {form.opensAt && (
+                              <span style={{ opacity: 0.85, fontWeight: 600, fontSize: 12, paddingLeft: 20 }}>
+                                {lang === "th" ? "เปิด" : lang === "cn" ? "开放" : lang === "mm" ? "ဖွင့်" : "Opens"}{" "}
+                                {new Date(form.opensAt).toLocaleString(dateLocale, { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {h.formStatus === "closed" && (
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        width: "100%",
-                        height: 42,
-                        borderRadius: 12,
-                        background: "rgba(0,0,0,0.03)",
-                        color: "var(--text-muted)",
-                        fontSize: 13,
-                        fontWeight: 700
-                      }}>
-                        🔒 Feedback Period Ended
-                      </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
@@ -406,90 +484,42 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div style={{ padding: "100px 40px", textAlign: "center", background: "var(--bg-surface)", borderRadius: 40, border: "2px dashed var(--border-subtle)" }}>
-             <History size={48} style={{ color: "var(--text-muted)", display: "block", margin: "0 auto 20px auto", opacity: 0.3 }} />
-             <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>No history yet</h3>
-             <p style={{ color: "var(--text-muted)", marginBottom: 24 }}>Join your first event to start your activity journey!</p>
-             <Link href="/dashboard" className="btn btn-primary">Browse Events</Link>
+            <History size={48} style={{ color: "var(--text-muted)", display: "block", margin: "0 auto 20px auto", opacity: 0.3 }} />
+            <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>No history yet</h3>
+            <p style={{ color: "var(--text-muted)", marginBottom: 24 }}>Join your first event to start your activity journey!</p>
+            <Link href="/dashboard" className="btn btn-primary">Browse Events</Link>
           </div>
         )}
 
         {/* Warning Modal */}
         {showWarningModal && (
           <div style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            backdropFilter: "blur(12px)",
-            zIndex: 1200,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 24
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(12px)",
+            zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24
           }} onClick={() => setShowWarningModal(false)}>
             <div className="animate-fade-in-up" style={{
-              background: "var(--bg-surface)",
-              width: "100%",
-              maxWidth: 480,
-              borderRadius: 32,
-              overflow: "hidden",
-              boxShadow: "0 30px 60px rgba(0,0,0,0.25)",
-              border: "1px solid var(--border-medium)",
-              padding: "40px 32px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              textAlign: "center"
+              background: "var(--bg-surface)", width: "100%", maxWidth: 480, borderRadius: 32,
+              overflow: "hidden", boxShadow: "0 30px 60px rgba(0,0,0,0.25)", border: "1px solid var(--border-medium)",
+              padding: "40px 32px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center"
             }} onClick={e => e.stopPropagation()}>
-              {/* Alert Icon with ambient glow */}
               <div style={{
-                width: 72,
-                height: 72,
-                borderRadius: "50%",
-                background: "rgba(255, 107, 0, 0.1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 24,
-                border: "1px solid rgba(255, 107, 0, 0.2)",
-                boxShadow: "0 0 20px rgba(255,107,0,0.15)"
+                width: 72, height: 72, borderRadius: "50%", background: "rgba(255,107,0,0.1)",
+                display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 24,
+                border: "1px solid rgba(255,107,0,0.2)", boxShadow: "0 0 20px rgba(255,107,0,0.15)"
               }}>
                 <Trophy size={36} style={{ color: "var(--accent-primary)" }} />
               </div>
-
-              {/* Title */}
               <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", marginBottom: 14 }}>
-                {lang === "th"
-                  ? "จำเป็นต้องเข้าร่วมกิจกรรม"
-                  : lang === "cn"
-                  ? "需要签到参加活动"
-                  : lang === "mm"
-                  ? "ပွဲတက်ရောက်ရန် လိုအပ်သည်"
-                  : "Event Attendance Required"}
+                {lang === "th" ? "จำเป็นต้องเข้าร่วมกิจกรรม" : lang === "cn" ? "需要签到参加活动" : lang === "mm" ? "ပွဲတက်ရောက်ရန် လိုအပ်သည်" : "Event Attendance Required"}
               </h3>
-
-              {/* Description */}
               <p style={{ color: "var(--text-secondary)", fontSize: 14, fontWeight: 500, lineHeight: 1.6, marginBottom: 32 }}>
                 {warningMessage}
               </p>
-
-              {/* CTA Button */}
-              <button
-                className="btn btn-primary"
-                type="button"
-                style={{
-                  width: "100%",
-                  height: 48,
-                  borderRadius: 14,
-                  fontWeight: 900,
-                  fontSize: 15,
-                  background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
-                  color: "#fff",
-                  border: "none",
-                  boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
-                  cursor: "pointer"
-                }}
-                onClick={() => setShowWarningModal(false)}
-              >
+              <button className="btn btn-primary" type="button" style={{
+                width: "100%", height: 48, borderRadius: 14, fontWeight: 900, fontSize: 15,
+                background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
+                color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(255,107,0,0.3)", cursor: "pointer"
+              }} onClick={() => setShowWarningModal(false)}>
                 {lang === "th" ? "ตกลง" : lang === "cn" ? "好的" : lang === "mm" ? "ကောင်းပါပြီ" : "Understood"}
               </button>
             </div>
@@ -499,38 +529,29 @@ export default function HistoryPage() {
         {/* Student Form Modal */}
         {showStudentForm && (
           <div style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.4)",
-            backdropFilter: "blur(8px)",
-            zIndex: 1100,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 24
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)",
+            zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24
           }} onClick={() => setShowStudentForm(false)}>
             <div className="animate-fade-in-up custom-scrollbar" style={{
-              background: "var(--bg-surface)",
-              width: "100%",
-              maxWidth: 600,
-              maxHeight: "85vh",
-              borderRadius: 32,
-              overflowY: "auto",
-              boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
+              background: "var(--bg-surface)", width: "100%", maxWidth: 600, maxHeight: "85vh",
+              borderRadius: 32, overflowY: "auto", boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
               border: "1px solid var(--border-medium)"
             }} onClick={e => e.stopPropagation()}>
-              
+
               {/* Modal Header */}
               <div style={{ padding: "28px 40px", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.housePointFeeding}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.housePointFeeding}</span>
+                    {activeForm?.formType && (
+                      <span style={{ fontSize: 10, fontWeight: 900, background: "rgba(255,107,0,0.12)", color: "var(--accent-primary)", padding: "2px 8px", borderRadius: 6 }}>
+                        {FORM_TYPE_LABELS[activeForm.formType] || activeForm.formType}
+                      </span>
+                    )}
+                  </div>
                   <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{activeForm?.title || t.evaluation}</h3>
                 </div>
-                <button 
-                  className="btn btn-ghost" 
-                  onClick={() => setShowStudentForm(false)} 
-                  style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}
-                >
+                <button className="btn btn-ghost" onClick={() => setShowStudentForm(false)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}>
                   <X size={18} />
                 </button>
               </div>
@@ -543,17 +564,9 @@ export default function HistoryPage() {
                 </div>
               ) : generalSuccess ? (
                 <div style={{ padding: 40, textAlign: "center" }}>
-                  {/* Success State */}
                   <div className="animate-scale-in" style={{
-                    width: 72,
-                    height: 72,
-                    borderRadius: "50%",
-                    background: "rgba(16,185,129,0.1)",
-                    color: "#10b981",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "20px auto 24px",
+                    width: 72, height: 72, borderRadius: "50%", background: "rgba(16,185,129,0.1)", color: "#10b981",
+                    display: "flex", alignItems: "center", justifyContent: "center", margin: "20px auto 24px",
                     boxShadow: "0 10px 30px rgba(16,185,129,0.15)"
                   }}>
                     <CheckCircle2 size={36} />
@@ -562,12 +575,8 @@ export default function HistoryPage() {
 
                   {scoreResult && (
                     <div className="animate-scale-in" style={{
-                      maxWidth: 320,
-                      margin: "0 auto 24px",
-                      padding: "20px 24px",
-                      borderRadius: 20,
-                      background: "var(--bg-elevated)",
-                      border: "1px solid var(--border-subtle)",
+                      maxWidth: 320, margin: "0 auto 24px", padding: "20px 24px", borderRadius: 20,
+                      background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)",
                     }}>
                       <p style={{ fontSize: 12, fontWeight: 900, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
                         {lang === "th" ? "คะแนนของคุณ" : lang === "cn" ? "您的得分" : lang === "mm" ? "သင့်ရမှတ်" : "Your Score"}
@@ -581,22 +590,11 @@ export default function HistoryPage() {
                   <p style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 420, margin: "0 auto 32px", lineHeight: 1.6 }}>
                     {t.feedbackSuccessDetail}
                   </p>
-                  <button
-                    className="btn btn-primary"
-                    style={{
-                      height: 46,
-                      borderRadius: 12,
-                      padding: "0 32px",
-                      background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
-                      color: "#fff",
-                      border: "none",
-                      boxShadow: "0 4px 14px rgba(255,107,0,0.3)"
-                    }}
-                    onClick={() => {
-                      setShowStudentForm(false);
-                      setGeneralSuccess(null);
-                    }}
-                  >
+                  <button className="btn btn-primary" style={{
+                    height: 46, borderRadius: 12, padding: "0 32px",
+                    background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
+                    color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(255,107,0,0.3)"
+                  }} onClick={() => { setShowStudentForm(false); setGeneralSuccess(null); }}>
                     {t.closeWindow}
                   </button>
                 </div>
@@ -604,32 +602,20 @@ export default function HistoryPage() {
                 <div style={{ padding: 40 }}>
                   {generalError && (
                     <div className="animate-fade-in" style={{
-                      background: "rgba(239, 68, 68, 0.08)",
-                      border: "1px solid rgba(239, 68, 68, 0.2)",
-                      borderRadius: 16,
-                      padding: "16px 20px",
-                      marginBottom: 28,
-                      color: "#ef4444",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10
+                      background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 16,
+                      padding: "16px 20px", marginBottom: 28, color: "#ef4444", fontSize: 13, fontWeight: 700,
+                      display: "flex", alignItems: "center", gap: 10
                     }}>
                       <span style={{ fontSize: 16 }}>⚠️</span> {generalError}
                     </div>
                   )}
 
-                  {/* Form-level intro shown only on the first step */}
                   {activeForm?.description && sectionIndex === 0 && navStack.length === 0 && (
                     <p style={{ color: "var(--text-secondary)", fontSize: 14, fontWeight: 500, lineHeight: 1.5, marginBottom: 28, background: "var(--bg-elevated)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
                       {activeForm.description}
                     </p>
                   )}
 
-                  {/* Section header (only meaningful when the form has >1 section).
-                      Shows the ACTUAL section number (sectionIndex+1), not the visit
-                      count — so a branch jump to Section 3 clearly reads as Section 3. */}
                   {normForm && normForm.sections.length > 1 && (
                     <div style={{ marginBottom: 24 }}>
                       <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
@@ -653,208 +639,115 @@ export default function HistoryPage() {
                     {normForm?.sections[sectionIndex]?.questions
                       .filter((q: Question) => isQuestionVisible(q, answers as AnswerMap))
                       .map((q: Question) => (
-                      <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <label style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
-                          {q.label === "Overall Satisfaction" ? t.overallSatisfaction : q.label} {q.required && <span style={{ color: "#ef4444" }}>*</span>}
-                        </label>
-                        
-                        {q.type === "rating" ? (
-                          <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
-                            {Array.from({ length: 5 }).map((_, starIdx) => {
-                              const ratingValue = starIdx + 1;
-                              const ansVal = answers[q.id];
-                              const isSelected = ratingValue <= (typeof ansVal === "number" ? ansVal : typeof ansVal === "string" ? parseInt(ansVal) || 0 : 0);
-                              return (
-                                <button
-                                  key={starIdx}
-                                  type="button"
-                                  style={{
-                                    border: "none",
-                                    background: "transparent",
-                                    cursor: "pointer",
-                                    padding: 0,
-                                    color: isSelected ? "#ffb000" : "var(--border-medium)",
-                                    transition: "all 0.1s"
-                                  }}
-                                  onClick={() => {
-                                    setAnswers({ ...answers, [q.id]: ratingValue });
-                                    if (formErrors[q.id]) {
-                                      const updated = { ...formErrors };
-                                      delete updated[q.id];
-                                      setFormErrors(updated);
-                                    }
-                                  }}
-                                >
-                                  <Star size={32} fill={isSelected ? "#ffb000" : "none"} />
-                                </button>
-                              );
-                            })}
-                            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)", marginLeft: 12 }}>
-                              {answers[q.id] || 0} / 5
-                            </span>
-                          </div>
-                        ) : q.type === "choice" ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "8px 0" }}>
-                            {q.options?.map((opt: string, optIdx: number) => {
-                              const isSelected = answers[q.id] === opt;
-                              return (
-                                <label
-                                  key={optIdx}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 12,
-                                    padding: "12px 16px",
-                                    borderRadius: 14,
-                                    border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
-                                    background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)",
-                                    cursor: "pointer",
-                                    transition: "all 0.2s ease",
-                                    boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
-                                  }}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`choice-${q.id}`}
-                                    value={opt}
-                                    checked={isSelected}
-                                    onChange={() => {
-                                      setAnswers({ ...answers, [q.id]: opt });
-                                      if (formErrors[q.id]) {
-                                        const updated = { ...formErrors };
-                                        delete updated[q.id];
-                                        setFormErrors(updated);
-                                      }
-                                    }}
-                                    style={{
-                                      accentColor: "var(--accent-primary)",
-                                      width: 18,
-                                      height: 18,
-                                      cursor: "pointer"
-                                    }}
-                                  />
-                                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{opt}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ) : q.type === "multiple" ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "8px 0" }}>
-                            {q.options?.map((opt: string, optIdx: number) => {
-                              const currentSelections = (Array.isArray(answers[q.id]) ? answers[q.id] : []) as string[];
-                              const isSelected = currentSelections.includes(opt);
-                              return (
-                                <label
-                                  key={optIdx}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 12,
-                                    padding: "12px 16px",
-                                    borderRadius: 14,
-                                    border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
-                                    background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)",
-                                    cursor: "pointer",
-                                    transition: "all 0.2s ease",
-                                    boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
-                                  }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    value={opt}
-                                    checked={isSelected}
-                                    onChange={(e) => {
-                                      let updatedSelections = [...currentSelections];
-                                      if (e.target.checked) {
-                                        updatedSelections.push(opt);
-                                      } else {
-                                        updatedSelections = updatedSelections.filter((val: string) => val !== opt);
-                                      }
-                                      setAnswers({ ...answers, [q.id]: updatedSelections });
-                                      if (formErrors[q.id]) {
-                                        const updated = { ...formErrors };
-                                        delete updated[q.id];
-                                        setFormErrors(updated);
-                                      }
-                                    }}
-                                    style={{
-                                      accentColor: "var(--accent-primary)",
-                                      width: 18,
-                                      height: 18,
-                                      cursor: "pointer"
-                                    }}
-                                  />
-                                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{opt}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <textarea
-                            className="input custom-scrollbar"
-                            style={{ 
-                              width: "100%", 
-                              minHeight: 100, 
-                              borderRadius: 14, 
-                              padding: "12px 16px", 
-                              resize: "vertical",
-                              borderColor: formErrors[q.id] ? "#ef4444" : "var(--border-medium)"
-                            }}
-                            value={answers[q.id] || ""}
-                            onChange={e => {
-                              setAnswers({ ...answers, [q.id]: e.target.value });
-                              if (formErrors[q.id]) {
-                                const updated = { ...formErrors };
-                                delete updated[q.id];
-                                setFormErrors(updated);
-                              }
-                            }}
-                            placeholder={t.yourAnswerHere}
-                          />
-                        )}
+                        <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <label style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
+                            {q.label === "Overall Satisfaction" ? t.overallSatisfaction : q.label} {q.required && <span style={{ color: "#ef4444" }}>*</span>}
+                          </label>
 
-                        {formErrors[q.id] && (
-                          <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 700, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-                            ⚠️ {formErrors[q.id]}
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                          {q.type === "rating" ? (
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
+                              {Array.from({ length: 5 }).map((_, starIdx) => {
+                                const ratingValue = starIdx + 1;
+                                const ansVal = answers[q.id];
+                                const isSelected = ratingValue <= (typeof ansVal === "number" ? ansVal : typeof ansVal === "string" ? parseInt(ansVal) || 0 : 0);
+                                return (
+                                  <button key={starIdx} type="button" style={{
+                                    border: "none", background: "transparent", cursor: "pointer", padding: 0,
+                                    color: isSelected ? "#ffb000" : "var(--border-medium)", transition: "all 0.1s"
+                                  }} onClick={() => {
+                                    setAnswers({ ...answers, [q.id]: ratingValue });
+                                    if (formErrors[q.id]) { const u = { ...formErrors }; delete u[q.id]; setFormErrors(u); }
+                                  }}>
+                                    <Star size={32} fill={isSelected ? "#ffb000" : "none"} />
+                                  </button>
+                                );
+                              })}
+                              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)", marginLeft: 12 }}>
+                                {answers[q.id] || 0} / 5
+                              </span>
+                            </div>
+                          ) : q.type === "choice" ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "8px 0" }}>
+                              {q.options?.map((opt: string, optIdx: number) => {
+                                const isSelected = answers[q.id] === opt;
+                                return (
+                                  <label key={optIdx} style={{
+                                    display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 14,
+                                    border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                                    background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)", cursor: "pointer",
+                                    transition: "all 0.2s ease", boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
+                                  }}>
+                                    <input type="radio" name={`choice-${q.id}`} value={opt} checked={isSelected}
+                                      onChange={() => {
+                                        setAnswers({ ...answers, [q.id]: opt });
+                                        if (formErrors[q.id]) { const u = { ...formErrors }; delete u[q.id]; setFormErrors(u); }
+                                      }}
+                                      style={{ accentColor: "var(--accent-primary)", width: 18, height: 18, cursor: "pointer" }} />
+                                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{opt}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : q.type === "multiple" ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "8px 0" }}>
+                              {q.options?.map((opt: string, optIdx: number) => {
+                                const currentSelections = (Array.isArray(answers[q.id]) ? answers[q.id] : []) as string[];
+                                const isSelected = currentSelections.includes(opt);
+                                return (
+                                  <label key={optIdx} style={{
+                                    display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 14,
+                                    border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                                    background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)", cursor: "pointer",
+                                    transition: "all 0.2s ease", boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
+                                  }}>
+                                    <input type="checkbox" value={opt} checked={isSelected}
+                                      onChange={(e) => {
+                                        let updated = [...currentSelections];
+                                        if (e.target.checked) updated.push(opt); else updated = updated.filter((v) => v !== opt);
+                                        setAnswers({ ...answers, [q.id]: updated });
+                                        if (formErrors[q.id]) { const u = { ...formErrors }; delete u[q.id]; setFormErrors(u); }
+                                      }}
+                                      style={{ accentColor: "var(--accent-primary)", width: 18, height: 18, cursor: "pointer" }} />
+                                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{opt}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <textarea className="input custom-scrollbar" style={{
+                              width: "100%", minHeight: 100, borderRadius: 14, padding: "12px 16px", resize: "vertical",
+                              borderColor: formErrors[q.id] ? "#ef4444" : "var(--border-medium)"
+                            }} value={String(answers[q.id] || "")}
+                              onChange={e => {
+                                setAnswers({ ...answers, [q.id]: e.target.value });
+                                if (formErrors[q.id]) { const u = { ...formErrors }; delete u[q.id]; setFormErrors(u); }
+                              }}
+                              placeholder={t.yourAnswerHere} />
+                          )}
+
+                          {formErrors[q.id] && (
+                            <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 700, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                              ⚠️ {formErrors[q.id]}
+                            </span>
+                          )}
+                        </div>
+                      ))}
                   </div>
 
-                  {/* Footer — Back / (Next | Submit), driven by section branching */}
+                  {/* Footer */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 32 }}>
-                    <button
-                      className="btn btn-ghost"
-                      type="button"
-                      style={{ height: 46, borderRadius: 12, padding: "0 24px", display: "flex", alignItems: "center", gap: 8 }}
-                      onClick={navStack.length > 0 ? goBack : () => setShowStudentForm(false)}
-                      disabled={submitting}
-                    >
+                    <button className="btn btn-ghost" type="button" style={{ height: 46, borderRadius: 12, padding: "0 24px", display: "flex", alignItems: "center", gap: 8 }}
+                      onClick={navStack.length > 0 ? goBack : () => setShowStudentForm(false)} disabled={submitting}>
                       {navStack.length > 0 ? (
                         <><ArrowLeft size={16} /> {lang === "th" ? "ย้อนกลับ" : lang === "cn" ? "上一步" : lang === "mm" ? "နောက်သို့" : "Back"}</>
-                      ) : (
-                        t.cancel
-                      )}
+                      ) : t.cancel}
                     </button>
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      style={{
-                        height: 46,
-                        borderRadius: 12,
-                        padding: "0 24px",
-                        background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
-                        color: "#fff",
-                        border: "none",
-                        boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8
-                      }}
-                      disabled={submitting}
-                      onClick={goNext}
-                    >
+                    <button className="btn btn-primary" type="button" style={{
+                      height: 46, borderRadius: 12, padding: "0 24px",
+                      background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
+                      color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
+                      display: "flex", alignItems: "center", gap: 8
+                    }} disabled={submitting} onClick={goNext}>
                       {submitting ? (
                         <div className="spinner w-4 h-4 border-2" />
                       ) : nextDestination() === "submit" ? (
@@ -870,7 +763,6 @@ export default function HistoryPage() {
           </div>
         )}
 
-        {/* Global CSS for page animations */}
         <style jsx global>{`
           .glass:hover {
             transform: translateY(-4px);

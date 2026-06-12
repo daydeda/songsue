@@ -298,6 +298,45 @@ async function migrate() {
   `;
   console.log("  ✅ form_submissions deduped + unique index");
 
+  // 25. KAS multi-form: add form_type and sort_order to forms, drop single-form unique constraint
+  await sql`
+    ALTER TABLE forms
+    ADD COLUMN IF NOT EXISTS form_type text NOT NULL DEFAULT 'K_post'
+  `;
+  console.log("  ✅ forms.form_type");
+
+  await sql`
+    ALTER TABLE forms
+    ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0
+  `;
+  console.log("  ✅ forms.sort_order");
+
+  try {
+    await sql`ALTER TABLE forms DROP CONSTRAINT IF EXISTS forms_event_id_unique`;
+    console.log("  ✅ dropped forms_event_id_unique constraint");
+  } catch (e) {
+    console.log("  ⚠️ forms_event_id_unique constraint already dropped or not found");
+  }
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_forms_event_type_order ON forms(event_id, form_type, sort_order)
+  `;
+  console.log("  ✅ idx_forms_event_type_order index");
+
+  // 26. Form scheduling window + assignment (who may see/fill a form). opens_at /
+  // closes_at give each form an optional auto open/close window (like an event's
+  // registration window); NULL means unbounded on that side. assigned_roles /
+  // assigned_user_ids gate access to S (Skill) forms — empty arrays mean only
+  // super_admin/admin can see the form until someone is assigned by role or person.
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS opens_at timestamptz`;
+  console.log("  ✅ forms.opens_at");
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS closes_at timestamptz`;
+  console.log("  ✅ forms.closes_at");
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS assigned_roles jsonb NOT NULL DEFAULT '[]'::jsonb`;
+  console.log("  ✅ forms.assigned_roles");
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS assigned_user_ids jsonb NOT NULL DEFAULT '[]'::jsonb`;
+  console.log("  ✅ forms.assigned_user_ids");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

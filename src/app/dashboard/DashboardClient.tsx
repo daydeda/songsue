@@ -3,7 +3,7 @@
 
 import type { Session } from "next-auth";
 import { useSession, signOut } from "next-auth/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePolling } from "@/lib/usePolling";
 import { useQrToken } from "@/lib/useQrToken";
 import dynamic from "next/dynamic";
@@ -66,10 +66,20 @@ const getPosters = (e: Pick<Event, "imageUrls" | "imageUrl">): string[] => {
   return e.imageUrl ? [e.imageUrl] : [];
 };
 
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 4;
+const touchDist = (t: React.TouchList) =>
+  Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
 // A swipeable / clickable poster carousel. Renders as an absolute fill layer, so
 // the parent supplies the sized (relative) container and any overlay badges. With
 // a single poster it looks identical to a plain <img>; arrows, dots and a counter
 // only appear when there are multiple. onExpand fires on tap (not on swipe).
+//
+// When `zoomable` is set (the fullscreen viewer), the current poster can be zoomed:
+// double-tap / double-click toggles 1×↔2.5×, pinch and wheel zoom continuously, and
+// dragging pans while zoomed. Swiping only changes posters at 1× — once zoomed, a
+// one-finger drag pans instead. Zoom resets whenever the poster changes.
 function PosterCarousel({
   posters,
   objectFit = "contain",
@@ -77,6 +87,7 @@ function PosterCarousel({
   backdrop = false,
   arrowSize = 20,
   initialIndex = 0,
+  zoomable = false,
 }: {
   posters: string[];
   objectFit?: "contain" | "cover";
@@ -84,6 +95,7 @@ function PosterCarousel({
   backdrop?: boolean;
   arrowSize?: number;
   initialIndex?: number;
+  zoomable?: boolean;
 }) {
   const [idx, setIdx] = useState(initialIndex);
   const startX = useRef<number | null>(null);
@@ -93,9 +105,71 @@ function PosterCarousel({
   const safeIdx = wrap(idx);
   const cur = posters[safeIdx] ?? posters[0];
 
+  // Zoom/pan state for the fullscreen viewer.
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [scale, setScale] = useState(1);
+  const [tx, setTx] = useState(0);
+  const [ty, setTy] = useState(0);
+  const [smooth, setSmooth] = useState(false);
+  const zoomed = scale > 1;
+  const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const pinch = useRef<{ dist: number; scale: number } | null>(null);
+  const lastTap = useRef(0);
+
+  const resetZoom = () => { setScale(1); setTx(0); setTy(0); };
+
+  // Keep the pan within bounds so the image can't be dragged off the stage. The
+  // stage is the (unscaled) parent element the image fills via inset:0.
+  const clampPan = (s: number, x: number, y: number) => {
+    const stage = imgRef.current?.parentElement?.getBoundingClientRect();
+    if (!stage) return { x, y };
+    const maxX = (stage.width * (s - 1)) / 2;
+    const maxY = (stage.height * (s - 1)) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, x)),
+      y: Math.max(-maxY, Math.min(maxY, y)),
+    };
+  };
+
+  // Zoom to `target`, keeping the point under (clientX, clientY) stationary.
+  const zoomTo = (target: number, clientX?: number, clientY?: number) => {
+    const s = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, target));
+    const stage = imgRef.current?.parentElement?.getBoundingClientRect();
+    if (!stage) { setScale(s); return; }
+    const fx = (clientX ?? stage.left + stage.width / 2) - (stage.left + stage.width / 2);
+    const fy = (clientY ?? stage.top + stage.height / 2) - (stage.top + stage.height / 2);
+    const px = (fx - tx) / scale;
+    const py = (fy - ty) / scale;
+    const c = clampPan(s, fx - px * s, fy - py * s);
+    setScale(s); setTx(c.x); setTy(c.y);
+  };
+
+  // Wheel zoom (desktop). Attached natively so we can preventDefault — React's
+  // onWheel is passive and can't stop the page from scrolling underneath. The
+  // listener is re-bound on scale/pan changes so it always sees current values.
+  useEffect(() => {
+    if (!zoomable) return;
+    const el = imgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setSmooth(true);
+      zoomTo(scale * (e.deltaY < 0 ? 1.2 : 0.83), e.clientX, e.clientY);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomable, scale, tx, ty]);
+
+  // Change posters and drop any active zoom in one step (a zoomed-in poster
+  // shouldn't carry its zoom over to the next one).
+  const navigate = (next: number | ((p: number) => number)) => {
+    resetZoom();
+    setIdx(next);
+  };
+
   const go = (dir: number, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setIdx((p) => wrap(p + dir));
+    navigate((p) => wrap(p + dir));
   };
 
   const arrowBtn: React.CSSProperties = {
@@ -127,20 +201,88 @@ function PosterCarousel({
         />
       )}
       <img
+        ref={imgRef}
         src={cur}
         alt=""
         onClick={() => { if (!moved.current) onExpand?.(safeIdx); }}
-        onTouchStart={(e) => { startX.current = e.touches[0].clientX; moved.current = false; }}
+        onDoubleClick={zoomable ? (e) => {
+          e.stopPropagation();
+          setSmooth(true);
+          if (zoomed) resetZoom(); else zoomTo(2.5, e.clientX, e.clientY);
+        } : undefined}
+        onMouseDown={zoomable && zoomed ? (e) => {
+          e.preventDefault();
+          setSmooth(false);
+          panStart.current = { x: e.clientX, y: e.clientY, tx, ty };
+        } : undefined}
+        onMouseMove={zoomable && zoomed ? (e) => {
+          if (!panStart.current) return;
+          const c = clampPan(scale, panStart.current.tx + (e.clientX - panStart.current.x), panStart.current.ty + (e.clientY - panStart.current.y));
+          setTx(c.x); setTy(c.y);
+        } : undefined}
+        onMouseUp={zoomable ? () => { panStart.current = null; } : undefined}
+        onMouseLeave={zoomable ? () => { panStart.current = null; } : undefined}
+        onTouchStart={(e) => {
+          if (zoomable && e.touches.length === 2) {
+            pinch.current = { dist: touchDist(e.touches), scale };
+            panStart.current = null; startX.current = null; moved.current = true;
+            return;
+          }
+          const t = e.touches[0];
+          if (zoomable) {
+            const now = Date.now();
+            if (now - lastTap.current < 300) {
+              setSmooth(true);
+              if (zoomed) resetZoom(); else zoomTo(2.5, t.clientX, t.clientY);
+              lastTap.current = 0; moved.current = true;
+              return;
+            }
+            lastTap.current = now;
+            if (zoomed) {
+              setSmooth(false);
+              panStart.current = { x: t.clientX, y: t.clientY, tx, ty };
+              moved.current = true;
+              return;
+            }
+          }
+          startX.current = t.clientX; moved.current = false;
+        }}
         onTouchMove={(e) => {
+          if (zoomable && pinch.current && e.touches.length === 2) {
+            setSmooth(false);
+            zoomTo(pinch.current.scale * (touchDist(e.touches) / pinch.current.dist),
+              (e.touches[0].clientX + e.touches[1].clientX) / 2,
+              (e.touches[0].clientY + e.touches[1].clientY) / 2);
+            moved.current = true;
+            return;
+          }
+          if (zoomable && zoomed && panStart.current) {
+            const t = e.touches[0];
+            const c = clampPan(scale, panStart.current.tx + (t.clientX - panStart.current.x), panStart.current.ty + (t.clientY - panStart.current.y));
+            setTx(c.x); setTy(c.y); moved.current = true;
+            return;
+          }
           if (startX.current !== null && Math.abs(e.touches[0].clientX - startX.current) > 10) moved.current = true;
         }}
         onTouchEnd={(e) => {
+          if (zoomable) {
+            if (e.touches.length > 0) return;
+            pinch.current = null;
+            if (panStart.current) { panStart.current = null; return; }
+            if (zoomed) return;
+          }
           if (startX.current === null) return;
           const dx = e.changedTouches[0].clientX - startX.current;
           startX.current = null;
-          if (count > 1 && Math.abs(dx) > 40) setIdx((p) => wrap(p + (dx < 0 ? 1 : -1)));
+          if (count > 1 && Math.abs(dx) > 40) navigate((p) => wrap(p + (dx < 0 ? 1 : -1)));
         }}
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit, cursor: onExpand ? "pointer" : "default", zIndex: 1 }}
+        style={{
+          position: "absolute", inset: 0, width: "100%", height: "100%", objectFit, zIndex: 1,
+          cursor: zoomable ? (zoomed ? "grab" : "zoom-in") : (onExpand ? "pointer" : "default"),
+          transform: zoomable ? `translate(${tx}px, ${ty}px) scale(${scale})` : undefined,
+          transition: zoomable && smooth ? "transform 0.2s ease" : "none",
+          touchAction: zoomable ? "none" : undefined,
+        }}
       />
 
       {count > 1 && (
@@ -164,7 +306,7 @@ function PosterCarousel({
                 key={i}
                 type="button"
                 aria-label={`Go to poster ${i + 1}`}
-                onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+                onClick={(e) => { e.stopPropagation(); navigate(i); }}
                 style={{ width: i === safeIdx ? 22 : 7, height: 7, borderRadius: 99, border: "none", padding: 0, background: i === safeIdx ? "#fff" : "rgba(255,255,255,0.5)", cursor: "pointer", transition: "all 0.25s", boxShadow: "0 1px 3px rgba(0,0,0,0.35)" }}
               />
             ))}
@@ -1069,6 +1211,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               objectFit="contain"
               arrowSize={24}
               initialIndex={previewImage.index}
+              zoomable
             />
           </div>
         </div>

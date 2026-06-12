@@ -19,6 +19,7 @@ type DashboardStats = {
   totalUsers: number;
   totalEvents: number;
   checkinsToday: number;
+  userGrowthPct: number;
   recentActivity: (
     | { type: "checkin"; studentName: string; studentNickname: string; eventTitle: string; timestamp: string }
     | { type: "score"; houseId?: string; houseName: string; houseColor: string; delta: number; reason: string; timestamp: string }
@@ -346,10 +347,12 @@ export default function AdminDashboardOverview() {
                 <p style={{ fontSize: 56, fontWeight: 900, letterSpacing: "-0.04em", color: "var(--text-primary)" }}>
                   {stats.totalUsers}
                 </p>
-                <span style={{ fontSize: 16, fontWeight: 700, color: "#10b981", display: "flex", alignItems: "center", gap: 2 }}>
-                  <ArrowUpRight size={14} />
-                  12%
-                </span>
+                {stats.userGrowthPct > 0 && (
+                  <span title="New registrations in the last 30 days" style={{ fontSize: 16, fontWeight: 700, color: "#10b981", display: "flex", alignItems: "center", gap: 2 }}>
+                    <ArrowUpRight size={14} />
+                    {stats.userGrowthPct}%
+                  </span>
+                )}
               </div>
               <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8 }}>Verified @cmu.ac.th accounts</p>
             </div>

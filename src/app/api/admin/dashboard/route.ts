@@ -101,6 +101,12 @@ export async function GET(req: Request) {
     bkkNow.setUTCHours(0, 0, 0, 0);
     const startOfToday = new Date(bkkNow.getTime() - BKK_OFFSET_MS);
 
+    // Total Students growth %: students registered in the last 30 days, expressed
+    // as growth over the count that existed before that window. Folded into the
+    // single counts query below as one extra subquery — no extra round-trip or
+    // pooled connection (the cost the rest of this file is careful about).
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
     // Fetch dashboard statistics sequentially to avoid database connection pool starvation.
     // Sequential execution uses exactly 1 connection at a time (peak demand = 1), whereas
     // Promise.all with 7 queries requested 7 connections simultaneously, exceeding the
@@ -110,7 +116,8 @@ export async function GET(req: Request) {
         SELECT 
           (SELECT count(*)::int FROM ${users}) AS "totalUsers",
           (SELECT count(*)::int FROM ${events}) AS "totalEvents",
-          (SELECT count(*)::int FROM ${attendance} WHERE ${attendance.checkInTime} >= ${startOfToday.toISOString()}) AS "checkinsToday"
+          (SELECT count(*)::int FROM ${attendance} WHERE ${attendance.checkInTime} >= ${startOfToday.toISOString()}) AS "checkinsToday",
+          (SELECT count(*)::int FROM ${users} WHERE ${users.createdAt} >= ${thirtyDaysAgo.toISOString()}) AS "newUsers30d"
       `),
       READ_TIMEOUT_MS,
       "counts"
@@ -118,6 +125,12 @@ export async function GET(req: Request) {
     const totalUsers = (countsResult[0]?.totalUsers as number) ?? 0;
     const totalEvents = (countsResult[0]?.totalEvents as number) ?? 0;
     const checkinsToday = (countsResult[0]?.checkinsToday as number) ?? 0;
+    const newUsers30d = (countsResult[0]?.newUsers30d as number) ?? 0;
+    // Growth = new arrivals / what existed before the window. Guard div-by-zero:
+    // if there was no prior base, any new students read as +100%.
+    const priorUsers = totalUsers - newUsers30d;
+    const userGrowthPct =
+      priorUsers > 0 ? Math.round((newUsers30d / priorUsers) * 100) : newUsers30d > 0 ? 100 : 0;
 
     const houseListWithMembers = await withTimeout(
       db
@@ -195,6 +208,7 @@ export async function GET(req: Request) {
       totalUsers,
       totalEvents,
       checkinsToday,
+      userGrowthPct,
       recentActivity: mergedActivity,
       houses: houseListWithMembers.map((h) => ({
         id: h.id,

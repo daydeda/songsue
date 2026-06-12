@@ -126,11 +126,12 @@ export async function GET(req: Request) {
     const totalEvents = (countsResult[0]?.totalEvents as number) ?? 0;
     const checkinsToday = (countsResult[0]?.checkinsToday as number) ?? 0;
     const newUsers30d = (countsResult[0]?.newUsers30d as number) ?? 0;
-    // Growth = new arrivals / what existed before the window. Guard div-by-zero:
-    // if there was no prior base, any new students read as +100%.
+    // Growth = new arrivals / what existed before the window. If there's no prior
+    // base (brand-new platform — everyone registered within the window), growth %
+    // is meaningless, so return 0 and let the card hide the badge until a real
+    // baseline exists (students older than 30 days to compare against).
     const priorUsers = totalUsers - newUsers30d;
-    const userGrowthPct =
-      priorUsers > 0 ? Math.round((newUsers30d / priorUsers) * 100) : newUsers30d > 0 ? 100 : 0;
+    const userGrowthPct = priorUsers > 0 ? Math.round((newUsers30d / priorUsers) * 100) : 0;
 
     const houseListWithMembers = await withTimeout(
       db

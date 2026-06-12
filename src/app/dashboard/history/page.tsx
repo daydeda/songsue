@@ -282,7 +282,11 @@ export default function HistoryPage() {
                 borderRadius: 32,
                 border: "1px solid var(--border-subtle)",
                 background: "var(--bg-surface)",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.03)"
+                boxShadow: "0 10px 30px rgba(0,0,0,0.03)",
+                // Grid items default to min-width:auto, so a long form/event title
+                // would stretch the whole column instead of wrapping. minWidth:0
+                // lets the column hold its track width so the inner text wraps.
+                minWidth: 0
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
                   <div style={{ width: 70, height: 70, borderRadius: 18, overflow: "hidden", background: "var(--bg-elevated)", flexShrink: 0 }}>

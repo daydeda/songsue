@@ -1,7 +1,10 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 const WINDOW_MS = 5 * 60 * 1000;
-const SIG_LEN = 24;
+// 32 hex chars = 128 bits of the HMAC — the floor for not worrying about
+// brute-force, while keeping the QR payload small enough to scan fast.
+// Bumping this invalidates in-flight tokens for at most one 5-min window.
+const SIG_LEN = 32;
 // Accept a token for a short grace period past its expiry. A student's screen
 // shows a code that expires at the window boundary; a scan begun a second before
 // expiry can reach the server just after it. Without grace, verification fails and

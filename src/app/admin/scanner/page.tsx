@@ -64,7 +64,7 @@ export default function QRScannerPage() {
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [manualSearch, setManualSearch] = useState("");
-  const [manualResults, setManualResults] = useState<{ id: string; name: string; studentId: string; qrToken: string }[]>([]);
+  const [manualResults, setManualResults] = useState<{ id: string; name: string; studentId: string }[]>([]);
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [medsCheckOption, setMedsCheckOption] = useState<string | null>(null);
@@ -849,8 +849,8 @@ export default function QRScannerPage() {
                 {manualResults.map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => manualCheckIn(s.qrToken)}
-                    disabled={checkingIn === s.qrToken}
+                    onClick={() => manualCheckIn(s.id)}
+                    disabled={checkingIn === s.id}
                     style={{
                       width: "100%",
                       textAlign: "left",

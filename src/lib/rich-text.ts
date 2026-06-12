@@ -24,8 +24,22 @@ export function parseRichText(text: string): string {
   // Bold: **text**
   html = html.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
 
-  // Links: [text](url)
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">$1</a>');
+  // Links: [text](url) — only http/https/mailto survive. Anything else
+  // (javascript:, data:, vbscript:, …) would execute in the reader's browser
+  // when clicked, so the markup is left as plain text instead.
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, (match, label, url) => {
+    let protocol: string;
+    try {
+      protocol = new URL(url, "https://placeholder.invalid").protocol;
+    } catch {
+      return match;
+    }
+    if (!["http:", "https:", "mailto:"].includes(protocol)) return match;
+    // The earlier &/</> escaping can't catch a quote inside the URL breaking
+    // out of the href attribute; neutralize it here.
+    const safeUrl = url.replace(/"/g, "%22");
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-primary); text-decoration: underline;">${label}</a>`;
+  });
 
   // Newlines
   html = html.replace(/\n/g, "<br />");

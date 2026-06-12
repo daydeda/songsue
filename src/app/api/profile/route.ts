@@ -35,6 +35,10 @@ export async function GET() {
 
     const user = await db.query.users.findFirst({
       where: eq(users.id, session.user.id),
+      // The static qrToken is a long-lived check-in credential — the dashboard
+      // gets short-lived signed tokens from /api/qr-token instead, so it must
+      // never ride along in profile responses.
+      columns: { qrToken: false },
       with: { house: true }
     });
 
@@ -95,25 +99,20 @@ export async function POST(req: Request) {
     revalidatePath("/");
     revalidatePath("/dashboard");
 
-    return NextResponse.json({ success: true, user: updated });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { qrToken: _qrToken, ...safeUser } = updated;
+    return NextResponse.json({ success: true, user: safeUser });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues.map(i => `${i.path}: ${i.message}`).join(", ") }, { status: 400 });
     }
-    
-    // Handle Postgres Unique Constraint Violation (duplicate entries)
+
+    // Handle Postgres Unique Constraint Violation (duplicate entries).
+    // Deliberately generic: naming the colliding field would let anyone with an
+    // account enumerate which student IDs / phone numbers exist in the system.
     const dbError = error.cause || error;
     if (dbError && dbError.code === "23505") {
-      const constraint = dbError.constraint_name || dbError.constraint || "";
-      let errorKey = "infoAlreadyInUse";
-      if (constraint.includes("student_id")) {
-        errorKey = "studentIdAlreadyRegistered";
-      } else if (constraint.includes("name")) {
-        errorKey = "fullNameAlreadyRegistered";
-      } else if (constraint.includes("phone")) {
-        errorKey = "phoneAlreadyRegistered";
-      }
-      return NextResponse.json({ error: errorKey }, { status: 400 });
+      return NextResponse.json({ error: "infoAlreadyInUse" }, { status: 400 });
     }
 
     console.error(error);
@@ -152,25 +151,20 @@ export async function PATCH(req: Request) {
     revalidatePath("/");
     revalidatePath("/dashboard");
 
-    return NextResponse.json({ success: true, user: updated });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { qrToken: _qrToken, ...safeUser } = updated;
+    return NextResponse.json({ success: true, user: safeUser });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    
-    // Handle Postgres Unique Constraint Violation (duplicate entries)
+
+    // Handle Postgres Unique Constraint Violation (duplicate entries).
+    // Deliberately generic: naming the colliding field would let anyone with an
+    // account enumerate which student IDs / phone numbers exist in the system.
     const dbError = error.cause || error;
     if (dbError && dbError.code === "23505") {
-      const constraint = dbError.constraint_name || dbError.constraint || "";
-      let errorKey = "infoAlreadyInUse";
-      if (constraint.includes("student_id")) {
-        errorKey = "studentIdAlreadyRegistered";
-      } else if (constraint.includes("name")) {
-        errorKey = "fullNameAlreadyRegistered";
-      } else if (constraint.includes("phone")) {
-        errorKey = "phoneAlreadyRegistered";
-      }
-      return NextResponse.json({ error: errorKey }, { status: 400 });
+      return NextResponse.json({ error: "infoAlreadyInUse" }, { status: 400 });
     }
 
     console.error(error);

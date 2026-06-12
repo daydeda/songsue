@@ -1,15 +1,25 @@
 import { checkAndAwardPastEventPoints, checkAndAwardClosedForms } from "@/lib/award-points";
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "crypto";
 
 export const dynamic = "force-dynamic";
+
+// Constant-time comparison; hashing first equalizes lengths so even the
+// length of the secret doesn't leak through response timing.
+function safeEqual(a: string, b: string): boolean {
+  return timingSafeEqual(
+    createHash("sha256").update(a).digest(),
+    createHash("sha256").update(b).digest()
+  );
+}
 
 export async function GET(req: Request) {
   // Verify cron secret to prevent unauthorized access. Fail CLOSED: if CRON_SECRET
   // is unset, reject everything rather than letting anyone trigger the job.
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("authorization") ?? "";
   const cronSecret = process.env.CRON_SECRET;
 
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || !safeEqual(authHeader, `Bearer ${cronSecret}`)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

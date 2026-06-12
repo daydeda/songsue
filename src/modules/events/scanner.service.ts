@@ -310,20 +310,24 @@ export class ScannerService {
   }
 
   static async searchStudents(query: string) {
+    // Escape LIKE metacharacters so a query of "%" or "_" can't wildcard-match
+    // the whole table; the search should only ever match literal substrings.
+    const escaped = query.replace(/[\\%_]/g, "\\$&");
     return await db.query.users.findMany({
       where: (users, { or, like }) =>
         or(
-          like(users.studentId, `%${query}%`),
-          like(users.name, `%${query}%`),
-          like(users.nickname, `%${query}%`)
+          like(users.studentId, `%${escaped}%`),
+          like(users.name, `%${escaped}%`),
+          like(users.nickname, `%${escaped}%`)
         ),
+      // No qrToken here: it's a long-lived check-in credential, and the manual
+      // check-in flow resolves students by plain id instead.
       columns: {
         id: true,
         studentId: true,
         name: true,
         nickname: true,
         houseId: true,
-        qrToken: true,
       },
       with: { house: true },
       limit: 10,

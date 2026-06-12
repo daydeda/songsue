@@ -180,7 +180,12 @@ export const auditLogs = pgTable("audit_logs", {
   ipAddress: text("ip_address"),
   prevHash: text("prev_hash").notNull().default(""),
   rowHash: text("row_hash").notNull().default(""),
-});
+}, (table) => ([
+  // Every append reads the chain tip via ORDER BY timestamp DESC LIMIT 1
+  // (inside the advisory lock), and the admin page sorts by timestamp —
+  // without this index both degrade to full-table sorts as the log grows.
+  index("idx_audit_logs_timestamp").on(table.timestamp),
+]));
 
 // ─── Relations ────────────────────────────────────────────────────────────────
 

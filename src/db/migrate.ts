@@ -358,6 +358,15 @@ async function migrate() {
   `;
   console.log("  ✅ dropped audit_logs foreign keys (rows must never be rewritten)");
 
+  // 28. Index audit_logs.timestamp. Every audit append looks up the newest row
+  // (ORDER BY timestamp DESC LIMIT 1) to get the previous chain hash, and it
+  // does so while holding the advisory lock that serializes ALL audit writes —
+  // so without an index, every write everywhere slows down as the table grows.
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs ("timestamp")
+  `;
+  console.log("  ✅ idx_audit_logs_timestamp index");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

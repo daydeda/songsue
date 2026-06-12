@@ -1,9 +1,11 @@
 import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
+import { headers } from "next/headers"
 import { db } from "@/db"
 import { accounts, sessions, users, verificationTokens } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { AuditService } from "@/modules/audit/audit.service"
 
 // Comma-separated list in the SUPER_ADMIN_EMAILS env var; falls back to the
 // original hardcoded owner address so existing deployments keep working until
@@ -13,6 +15,9 @@ const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS ?? "daydedaa@gmail.co
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
 const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
+// Sign-ins by these roles are audit-logged. Students are deliberately NOT
+// logged — hundreds of sign-ins a day would just flood the audit table.
+const AUDITED_SIGNIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 // How often the session is re-hydrated from the DB to pick up role/profile/house
 // changes made elsewhere (e.g. an admin assigning a role). This refresh lives in
 // the `jwt` callback so the timestamp PERSISTS to the cookie — meaning it runs at
@@ -208,6 +213,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       return session;
+    },
+  },
+  events: {
+    // Audit admin-level sign-ins (fires once per OAuth sign-in, after the
+    // signIn callback above — so the role read here includes any auto-promotion).
+    // Runs inside the existing callback request: no extra function invocation.
+    async signIn({ user }) {
+      try {
+        if (!user?.id) return;
+        const dbUser = await db.query.users.findFirst({
+          where: eq(users.id, user.id),
+          columns: { name: true, role: true, roles: true },
+        });
+        if (!dbUser) return;
+        const primaryRole = getPrimaryRole(dbUser.roles as string[] | null, dbUser.role);
+        if (!AUDITED_SIGNIN_ROLES.includes(primaryRole)) return;
+
+        let ipAddress = "unknown";
+        try {
+          const h = await headers();
+          ipAddress =
+            h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+            h.get("x-real-ip") ||
+            "unknown";
+        } catch {
+          // headers() can throw outside a request scope; keep "unknown"
+        }
+
+        await AuditService.logAction({
+          actorId: user.id,
+          action: `Admin sign-in: ${dbUser.name} (${primaryRole})`,
+          ipAddress,
+        });
+      } catch (err) {
+        // Never block a sign-in because audit logging failed
+        console.error("Failed to audit admin sign-in:", err);
+      }
     },
   },
   pages: {

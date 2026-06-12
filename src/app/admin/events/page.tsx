@@ -2265,7 +2265,7 @@ export default function AdminEventsPage() {
                     <span style={{ fontSize: 9, fontWeight: 900, background: c.bg, color: c.text, padding: "1px 5px", borderRadius: 4 }}>
                       {FORM_TYPE_LABELS[f.formType] || f.formType}
                     </span>
-                    <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.title}</span>
+                    <span style={{ maxWidth: 200, whiteSpace: "normal", overflowWrap: "break-word", wordBreak: "break-word", textAlign: "left", lineHeight: 1.3 }}>{f.title}</span>
                     {f.isAwarded && <span style={{ fontSize: 10 }}>🔒</span>}
                     {!f.isActive && !f.isAwarded && <span style={{ fontSize: 10, opacity: 0.6 }}>●</span>}
                   </button>

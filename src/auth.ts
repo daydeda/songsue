@@ -95,9 +95,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // the live domain exactly — apex vs www — and Google's redirect URI must be
   // https://<domain>/api/auth/callback/google.
   trustHost: true,
-  // 24h instead of NextAuth's 30-day default: a stolen cookie on a shared or
-  // lost device stays valid for a day, not a month.
-  session: { strategy: "jwt", maxAge: 24 * 60 * 60 },
+  // 7 days instead of NextAuth's 30-day default: a stolen cookie on a shared
+  // or lost device stays valid for a week, not a month, while inactive
+  // students don't have to re-login daily between events.
+  session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,

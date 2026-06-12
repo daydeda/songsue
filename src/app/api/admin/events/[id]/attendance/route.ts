@@ -31,6 +31,8 @@ export async function GET(
             studentId: true,
             major: true,
             phone: true,
+            role: true,
+            roles: true,
             chronicDiseases: canViewMedical,
             medicalHistory: canViewMedical,
             drugAllergies: canViewMedical,

@@ -27,8 +27,10 @@ interface EventFormStatus {
   formType: string;
   title: string;
   sortOrder: number;
-  formStatus: "available" | "submitted" | "closed";
+  formStatus: "available" | "submitted" | "closed" | "upcoming";
   formPoints: number;
+  opensAt: string | null;
+  closesAt: string | null;
 }
 
 interface HistoryItem {
@@ -43,6 +45,7 @@ interface HistoryItem {
   rank: number | null; // check-in order; null when registered but not yet checked in
   forms: EventFormStatus[];
   method?: string | null;
+  assignedOnly?: boolean; // entry surfaced only because the viewer is assigned to evaluate
 }
 
 interface ActiveForm {
@@ -56,6 +59,8 @@ interface ActiveForm {
 
 export default function HistoryPage() {
   const { lang, t } = useLanguage();
+  // Locale for date formatting so the month/format follow the chosen language.
+  const dateLocale = lang === "th" ? "th-TH" : lang === "cn" ? "zh-CN" : lang === "mm" ? "my-MM" : "en-GB";
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -121,8 +126,9 @@ export default function HistoryPage() {
         return;
       }
 
-      // Attendance gate: K_pre doesn't require check-in; all others do
-      if (formType !== "K_pre" && !data.hasAttended) {
+      // Attendance gate: K_pre (pre-test) and S (skill — filled by assigned
+      // evaluators, not attendees) don't require check-in; all others do.
+      if (formType !== "K_pre" && formType !== "S" && !data.hasAttended) {
         setShowStudentForm(false);
         setWarningMessage(
           lang === "th"
@@ -301,7 +307,24 @@ export default function HistoryPage() {
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  {h.rank != null ? (
+                  {h.assignedOnly ? (
+                    // Surfaced only because the viewer is assigned to evaluate this
+                    // event's skill form — they aren't a participant here.
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 14px",
+                      background: "rgba(239,68,68,0.08)",
+                      borderRadius: 14,
+                      color: "#ef4444",
+                      fontSize: 12,
+                      fontWeight: 800
+                    }}>
+                      <ClipboardList size={14} />
+                      {lang === "th" ? "ได้รับมอบหมายให้ประเมิน" : lang === "cn" ? "已分配评估任务" : lang === "mm" ? "အကဲဖြတ်ရန် တာဝန်ပေးထားသည်" : "Assigned to evaluate"}
+                    </div>
+                  ) : h.rank != null ? (
                     // Checked in: show the physical check-in / walk-in scan order.
                     <div style={{
                       display: "inline-flex",
@@ -314,7 +337,7 @@ export default function HistoryPage() {
                       fontSize: 12,
                       fontWeight: 800
                     }}>
-                      <History size={13} />
+                      <ClipboardList size={14} />
                       {h.eventQuota
                         ? t.joinedAsRank.replace("{rank}", h.rank.toString()).replace("{total}", h.eventQuota.toString())
                         : t.joinedAsRankNoLimit.replace("{rank}", h.rank.toString())}
@@ -333,7 +356,7 @@ export default function HistoryPage() {
                       fontSize: 12,
                       fontWeight: 800
                     }}>
-                      <ClipboardList size={13} />
+                      <ClipboardList size={14} />
                       {t.registeredNotCheckedIn}
                     </div>
                   )}
@@ -349,8 +372,9 @@ export default function HistoryPage() {
                             className="btn"
                             style={{
                               width: "100%",
-                              height: 42,
+                              minHeight: 42,
                               borderRadius: 12,
+                              padding: "8px 14px",
                               fontSize: 13,
                               fontWeight: 900,
                               background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
@@ -361,16 +385,17 @@ export default function HistoryPage() {
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
+                              flexWrap: "wrap",
                               gap: 6
                             }}
                             onClick={() => openStudentForm(h.eventId, form.id, form.formType)}
                           >
-                            <ClipboardList size={14} />
-                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: 6 }}>
+                            <ClipboardList size={14} style={{ flexShrink: 0 }} />
+                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: 6, flexShrink: 0 }}>
                               {FORM_TYPE_LABELS[form.formType] || form.formType}
                             </span>
-                            {form.title}
-                            <span style={{ opacity: 0.85 }}>(+{form.formPoints} PTS)</span>
+                            <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
+                            <span style={{ opacity: 0.85, flexShrink: 0 }}>(+{form.formPoints} PTS)</span>
                           </button>
                         )}
                         {form.formStatus === "submitted" && (
@@ -380,18 +405,18 @@ export default function HistoryPage() {
                             justifyContent: "space-between",
                             gap: 6,
                             width: "100%",
-                            height: 42,
+                            minHeight: 42,
                             borderRadius: 12,
-                            padding: "0 14px",
+                            padding: "8px 14px",
                             background: "rgba(16,185,129,0.08)",
                             color: "#10b981",
                             fontSize: 13,
                             fontWeight: 800
                           }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <CheckCircle2 size={14} /> {form.title}
+                            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                              <CheckCircle2 size={14} style={{ flexShrink: 0 }} /> <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
                             </span>
-                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.75, background: "rgba(16,185,129,0.15)", padding: "2px 8px", borderRadius: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.75, background: "rgba(16,185,129,0.15)", padding: "2px 8px", borderRadius: 6, flexShrink: 0 }}>
                               {FORM_TYPE_LABELS[form.formType] || form.formType}
                             </span>
                           </div>
@@ -403,20 +428,51 @@ export default function HistoryPage() {
                             justifyContent: "space-between",
                             gap: 6,
                             width: "100%",
-                            height: 42,
+                            minHeight: 42,
                             borderRadius: 12,
-                            padding: "0 14px",
+                            padding: "8px 14px",
                             background: "rgba(0,0,0,0.03)",
                             color: "var(--text-muted)",
                             fontSize: 13,
                             fontWeight: 700
                           }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <Lock size={13} /> {form.title}
+                            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                              <Lock size={14} style={{ flexShrink: 0 }} /> <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
                             </span>
-                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.6, background: "var(--bg-elevated)", padding: "2px 8px", borderRadius: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.6, background: "var(--bg-elevated)", padding: "2px 8px", borderRadius: 6, flexShrink: 0 }}>
                               {FORM_TYPE_LABELS[form.formType] || form.formType}
                             </span>
+                          </div>
+                        )}
+                        {form.formStatus === "upcoming" && (
+                          <div style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                            width: "100%",
+                            minHeight: 42,
+                            borderRadius: 12,
+                            padding: "8px 14px",
+                            background: "rgba(99,102,241,0.06)",
+                            color: "#6366f1",
+                            fontSize: 13,
+                            fontWeight: 700
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                              <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                <Calendar size={14} style={{ flexShrink: 0 }} />
+                                <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
+                              </span>
+                              <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.7, background: "rgba(99,102,241,0.12)", padding: "2px 8px", borderRadius: 6, flexShrink: 0 }}>
+                                {FORM_TYPE_LABELS[form.formType] || form.formType}
+                              </span>
+                            </div>
+                            {form.opensAt && (
+                              <span style={{ opacity: 0.85, fontWeight: 600, fontSize: 12, paddingLeft: 20 }}>
+                                {lang === "th" ? "เปิด" : lang === "cn" ? "开放" : lang === "mm" ? "ဖွင့်" : "Opens"}{" "}
+                                {new Date(form.opensAt).toLocaleString(dateLocale, { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

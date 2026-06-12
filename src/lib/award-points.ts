@@ -1,10 +1,13 @@
 import { db } from "@/db";
-import { events, attendance, scoreHistory, houses } from "@/db/schema";
+import { events, attendance, scoreHistory, houses, forms } from "@/db/schema";
 import { eq, and, lte, sql } from "drizzle-orm";
 
 // Arbitrary constant key for the Postgres advisory lock that serialises award
 // runs across all serverless instances. Any fixed integer works.
 const AWARD_LOCK_KEY = 728193;
+// A distinct lock key for the form-contest award run, so it can proceed
+// independently of the event-winner run without the two blocking each other.
+const FORM_AWARD_LOCK_KEY = 728194;
 
 /**
  * Awards the event-winner bonus to the house with the most attendees for every
@@ -160,5 +163,133 @@ export async function checkAndAwardPastEventPoints() {
     });
   } catch (error) {
     console.error("Failed to automatically check and award past event points:", error);
+  }
+}
+
+/**
+ * Awards each evaluation form's contest points to the house that completed it the
+ * most, as soon as the form's scheduled `closesAt` has passed. This replaces the
+ * old manual "End & Award Points" button — there is no manual open/close anymore,
+ * the schedule window alone drives the form lifecycle.
+ *
+ * Same cheap-by-default shape as checkAndAwardPastEventPoints:
+ *
+ *  - Fast path: one tiny query asks "is any form past closesAt and not yet
+ *    awarded?". The forms table is small, so in steady state this returns nothing
+ *    and we exit immediately — no transaction, no lock. Safe to call on hot reads.
+ *
+ *  - When a form has just closed, ONE transaction takes a transaction-scoped
+ *    advisory lock (distinct key from the event run) so only one instance does the
+ *    work. The `is_awarded = false` WHERE on the flip is the atomic gate: the
+ *    loser of a race updates 0 rows and skips, so points can never be awarded twice.
+ *
+ * Never throws — failures are logged and swallowed so callers can fire it safely.
+ */
+export async function checkAndAwardClosedForms() {
+  try {
+    const now = new Date();
+
+    // Fast path: any scheduled-closed form still awaiting its contest award?
+    const pending = await db
+      .select({ id: forms.id })
+      .from(forms)
+      .where(
+        and(
+          sql`${forms.closesAt} IS NOT NULL`,
+          lte(forms.closesAt, now),
+          eq(forms.isAwarded, false)
+        )
+      )
+      .limit(1);
+
+    if (pending.length === 0) return; // nothing to award — cheap exit
+
+    await db.transaction(async (tx) => {
+      // Bound row-lock waits without using statement_timeout (see the note in
+      // checkAndAwardPastEventPoints for why statement_timeout is avoided here).
+      await tx.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
+
+      const lockResult = await tx.execute<{ locked: unknown }>(
+        sql`SELECT pg_try_advisory_xact_lock(${FORM_AWARD_LOCK_KEY}) AS locked`
+      );
+      const raw = lockResult[0]?.locked;
+      const locked = raw === true || raw === "t" || raw === "true";
+      if (!locked) return; // another instance is already processing closed forms
+
+      // Re-fetch inside the lock, with the submissions + each submitter's house.
+      const closedForms = await tx.query.forms.findMany({
+        where: and(
+          sql`${forms.closesAt} IS NOT NULL`,
+          lte(forms.closesAt, now),
+          eq(forms.isAwarded, false)
+        ),
+        with: {
+          submissions: {
+            with: { user: { columns: { houseId: true } } },
+          },
+        },
+      });
+
+      const dbHouses = await tx.query.houses.findMany();
+      const houseNameMap = new Map(dbHouses.map((h) => [h.id, h.name]));
+
+      for (const formObj of closedForms) {
+        // Atomic gate: flip is_awarded only if still false. Also closes the form
+        // (is_active=false) for tidiness. A racing run updates 0 rows and skips.
+        const flipped = await tx
+          .update(forms)
+          .set({ isActive: false, isAwarded: true, updatedAt: new Date() })
+          .where(and(eq(forms.id, formObj.id), eq(forms.isAwarded, false)))
+          .returning({ id: forms.id });
+
+        if (flipped.length === 0) continue; // someone else already awarded it
+
+        // Count submissions per house (the contest metric: most completions wins).
+        const houseCounts: Record<string, number> = {};
+        for (const sub of formObj.submissions) {
+          const houseId = sub.user?.houseId;
+          if (!houseId) continue;
+          houseCounts[houseId] = (houseCounts[houseId] || 0) + 1;
+        }
+
+        const houseList = Object.entries(houseCounts);
+        if (houseList.length === 0) continue; // closed with no eligible submissions
+
+        let maxSubmissions = -1;
+        for (const [, count] of houseList) {
+          if (count > maxSubmissions) maxSubmissions = count;
+        }
+        const winningHouseIds = houseList
+          .filter(([, count]) => count === maxSubmissions)
+          .map(([hId]) => hId);
+        const pointsToAward = formObj.pointsAwarded ?? 0;
+
+        for (const winnerId of winningHouseIds) {
+          const houseName = houseNameMap.get(winnerId) || winnerId;
+
+          if (pointsToAward > 0) {
+            await tx
+              .update(houses)
+              .set({ points: sql`${houses.points} + ${pointsToAward}` })
+              .where(eq(houses.id, winnerId));
+          }
+
+          const reasonStr =
+            winningHouseIds.length > 1
+              ? `Event Form Contest Tie Winner: ${houseName} House completed the evaluation form "${formObj.title}" most with ${maxSubmissions} submissions! Shared ${pointsToAward} PTS.`
+              : `Event Form Contest Winner: ${houseName} House completed the evaluation form "${formObj.title}" most with ${maxSubmissions} submissions! Received ${pointsToAward} PTS.`;
+
+          await tx.insert(scoreHistory).values({
+            houseId: winnerId,
+            eventId: formObj.eventId,
+            delta: pointsToAward,
+            reason: reasonStr,
+            timestamp: new Date(),
+          });
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Failed to automatically check and award closed form points:", error);
   }
 }

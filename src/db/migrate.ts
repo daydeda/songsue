@@ -323,6 +323,20 @@ async function migrate() {
   `;
   console.log("  ✅ idx_forms_event_type_order index");
 
+  // 26. Form scheduling window + assignment (who may see/fill a form). opens_at /
+  // closes_at give each form an optional auto open/close window (like an event's
+  // registration window); NULL means unbounded on that side. assigned_roles /
+  // assigned_user_ids gate access to S (Skill) forms — empty arrays mean only
+  // super_admin/admin can see the form until someone is assigned by role or person.
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS opens_at timestamptz`;
+  console.log("  ✅ forms.opens_at");
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS closes_at timestamptz`;
+  console.log("  ✅ forms.closes_at");
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS assigned_roles jsonb NOT NULL DEFAULT '[]'::jsonb`;
+  console.log("  ✅ forms.assigned_roles");
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS assigned_user_ids jsonb NOT NULL DEFAULT '[]'::jsonb`;
+  console.log("  ✅ forms.assigned_user_ids");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

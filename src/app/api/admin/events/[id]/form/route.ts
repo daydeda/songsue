@@ -4,11 +4,33 @@ import { forms } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
+import { ASSIGNABLE_ROLES } from "@/lib/form-access";
 
 const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 
 function isAdmin(role?: string) {
   return ADMIN_ROLES.includes(role || "");
+}
+
+// Parse an incoming datetime (ISO string) into a Date, or null. Invalid/empty
+// values become null (unbounded on that side of the window).
+function parseDateOrNull(v: unknown): Date | null {
+  if (!v || typeof v !== "string") return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Keep only valid, de-duplicated role strings from the assignable set.
+function sanitizeRoles(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const allowed = ASSIGNABLE_ROLES as readonly string[];
+  return [...new Set(v.filter((r): r is string => typeof r === "string" && allowed.includes(r)))];
+}
+
+// Keep only non-empty string ids, de-duplicated.
+function sanitizeUserIds(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.filter((id): id is string => typeof id === "string" && id.trim().length > 0))];
 }
 
 // GET /api/admin/events/[id]/form — fetch all forms for this event with stats & submissions
@@ -56,6 +78,10 @@ export async function GET(
         pointsAwarded: formObj.pointsAwarded,
         isActive: formObj.isActive,
         isAwarded: formObj.isAwarded,
+        opensAt: formObj.opensAt,
+        closesAt: formObj.closesAt,
+        assignedRoles: formObj.assignedRoles ?? [],
+        assignedUserIds: formObj.assignedUserIds ?? [],
         stats: houseStats,
         submissions: formObj.submissions.map((sub) => {
           const { score, maxScore, hasGraded } = computeScore(normalized, (sub.answers as AnswerMap) || {});
@@ -93,7 +119,7 @@ export async function POST(
     }
 
     const { id: eventId } = await params;
-    const { title, description, questions, pointsAwarded, isActive, formType, sortOrder } = await req.json();
+    const { title, description, questions, pointsAwarded, isActive, formType, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = await req.json();
 
     const isValidQuestions =
       Array.isArray(questions) ||
@@ -108,6 +134,17 @@ export async function POST(
       return NextResponse.json({ error: "Invalid form_type" }, { status: 400 });
     }
 
+    // "Closes at" is required — it's the trigger that closes the form and
+    // auto-awards its points, so a form without it would never resolve.
+    const opensAtDate = parseDateOrNull(opensAt);
+    const closesAtDate = parseDateOrNull(closesAt);
+    if (!closesAtDate) {
+      return NextResponse.json({ error: "A valid \"Closes at\" time is required." }, { status: 400 });
+    }
+    if (opensAtDate && closesAtDate <= opensAtDate) {
+      return NextResponse.json({ error: "\"Closes at\" must be after \"Opens at\"." }, { status: 400 });
+    }
+
     const [result] = await db
       .insert(forms)
       .values({
@@ -119,6 +156,10 @@ export async function POST(
         questions,
         pointsAwarded: parseInt(pointsAwarded) || 0,
         isActive: isActive !== undefined ? !!isActive : true,
+        opensAt: opensAtDate,
+        closesAt: closesAtDate,
+        assignedRoles: sanitizeRoles(assignedRoles),
+        assignedUserIds: sanitizeUserIds(assignedUserIds),
       })
       .returning();
 
@@ -141,7 +182,8 @@ export async function PATCH(
     }
 
     const { id: eventId } = await params;
-    const { formId, title, description, questions, pointsAwarded, isActive, sortOrder } = await req.json();
+    const body = await req.json();
+    const { formId, title, description, questions, pointsAwarded, isActive, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
 
     if (!formId) {
       return NextResponse.json({ error: "formId is required" }, { status: 400 });
@@ -164,6 +206,17 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid questions format" }, { status: 400 });
     }
 
+    // The effective schedule after this update must still have a valid "Closes at"
+    // (it's the auto-close/auto-award trigger), and it must be after "Opens at".
+    const effectiveOpensAt = "opensAt" in body ? parseDateOrNull(opensAt) : existing.opensAt;
+    const effectiveClosesAt = "closesAt" in body ? parseDateOrNull(closesAt) : existing.closesAt;
+    if (!effectiveClosesAt) {
+      return NextResponse.json({ error: "A valid \"Closes at\" time is required." }, { status: 400 });
+    }
+    if (effectiveOpensAt && effectiveClosesAt <= effectiveOpensAt) {
+      return NextResponse.json({ error: "\"Closes at\" must be after \"Opens at\"." }, { status: 400 });
+    }
+
     const [result] = await db
       .update(forms)
       .set({
@@ -173,6 +226,10 @@ export async function PATCH(
         pointsAwarded: pointsAwarded !== undefined ? parseInt(pointsAwarded) || 0 : existing.pointsAwarded,
         isActive: isActive !== undefined ? !!isActive : existing.isActive,
         sortOrder: sortOrder !== undefined ? sortOrder : existing.sortOrder,
+        opensAt: effectiveOpensAt,
+        closesAt: effectiveClosesAt,
+        assignedRoles: "assignedRoles" in body ? sanitizeRoles(assignedRoles) : existing.assignedRoles,
+        assignedUserIds: "assignedUserIds" in body ? sanitizeUserIds(assignedUserIds) : existing.assignedUserIds,
         updatedAt: new Date(),
       })
       .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))

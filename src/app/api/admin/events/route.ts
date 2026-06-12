@@ -26,7 +26,7 @@ const eventSchema = z.object({
   allowedRoles: z.array(z.string()).optional().nullable(),
 });
 
-import { checkAndAwardPastEventPoints } from "@/lib/award-points";
+import { checkAndAwardPastEventPoints, checkAndAwardClosedForms } from "@/lib/award-points";
 
 // GET /api/admin/events — List all events with registration counts
 export async function GET() {
@@ -37,8 +37,9 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Automatically check and award past event points
+    // Automatically check and award past event points + closed-form contests
     await checkAndAwardPastEventPoints();
+    await checkAndAwardClosedForms();
 
     const list = await db.query.events.findMany({
       orderBy: (events, { desc }) => [desc(events.startTime)],

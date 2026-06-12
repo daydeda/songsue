@@ -107,6 +107,10 @@ interface EventFormSummary {
   pointsAwarded: number;
   isActive: boolean;
   isAwarded: boolean;
+  opensAt: string | null;
+  closesAt: string | null;
+  assignedRoles: string[];
+  assignedUserIds: string[];
   stats: Record<string, number>;
   submissions: FormBuilderSubmission[];
 }
@@ -116,6 +120,29 @@ const FORM_TYPE_LABELS: Record<string, string> = {
   K_post: "K Post-Test",
   A: "A - Attitude",
   S: "S - Skill",
+};
+
+// Roles an admin can assign an S (Skill) form to. Mirrors ASSIGNABLE_ROLES in
+// src/lib/form-access.ts.
+const ASSIGNABLE_FORM_ROLES = ["organizer", "registration", "staff", "smo", "anusmo", "student"] as const;
+const ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
+  organizer: "Organizer",
+  registration: "Registration",
+  staff: "Staff",
+  smo: "SMO",
+  anusmo: "ANUSMO",
+  student: "Student",
+};
+
+// Convert a stored ISO timestamp to a value for a <input type="datetime-local">
+// in the browser's local timezone (Bangkok for on-site admins), matching how
+// event registration times are handled elsewhere on this page.
+const toDatetimeLocal = (iso: string | null | undefined): string => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().slice(0, 16);
 };
 
 const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -188,11 +215,17 @@ export default function AdminEventsPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formPoints, setFormPoints] = useState(50);
   const [formSections, setFormSections] = useState<FormSection[]>([]);
-  const [formIsActive, setFormIsActive] = useState(true);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
+  // Scheduling window + S-form assignment
+  const [formOpensAt, setFormOpensAt] = useState("");
+  const [formClosesAt, setFormClosesAt] = useState("");
+  const [formAssignedRoles, setFormAssignedRoles] = useState<string[]>([]);
+  const [formAssignedUserIds, setFormAssignedUserIds] = useState<string[]>([]);
+  // People directory for the S-form person-picker (loaded on demand)
+  const [assigneeUsers, setAssigneeUsers] = useState<{ id: string; name: string | null; studentId: string | null; role: string | null }[]>([]);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const [formStats, setFormStats] = useState<Record<string, number> | null>(null);
   const [formSubmissions, setFormSubmissions] = useState<FormBuilderSubmission[]>([]);
-  const [formAwarding, setFormAwarding] = useState(false);
   const [formSaving, setFormSaving] = useState(false);
   const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
   
@@ -205,7 +238,6 @@ export default function AdminEventsPage() {
   // Custom admin form builder premium notification states
   const [formBuilderError, setFormBuilderError] = useState<string | null>(null);
   const [formBuilderSuccess, setFormBuilderSuccess] = useState<string | null>(null);
-  const [showAwardConfirm, setShowAwardConfirm] = useState(false);
 
   // Custom premium modals for confirmation and errors
   const [confirmModal, setConfirmModal] = useState<{
@@ -243,8 +275,11 @@ export default function AdminEventsPage() {
     setFormDescription(f.description || "");
     setFormPoints(f.pointsAwarded || 0);
     setFormSections(normalizeForm(f.questions).sections);
-    setFormIsActive(f.isActive);
     setFormIsAwarded(f.isAwarded || false);
+    setFormOpensAt(toDatetimeLocal(f.opensAt));
+    setFormClosesAt(toDatetimeLocal(f.closesAt));
+    setFormAssignedRoles(f.assignedRoles || []);
+    setFormAssignedUserIds(f.assignedUserIds || []);
     setFormStats(f.stats);
     setFormSubmissions(f.submissions || []);
     setFormTab(f.submissions && f.submissions.length > 0 ? "stats" : "edit");
@@ -260,10 +295,18 @@ export default function AdminEventsPage() {
     setFormTab("edit");
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
-    setShowAwardConfirm(false);
     setShowNewFormPicker(false);
     setAllEventForms([]);
     setActiveFormId(null);
+    setAssigneeSearch("");
+
+    // Load the people directory once for the S-form person-picker (best-effort).
+    if (assigneeUsers.length === 0) {
+      fetch("/api/admin/students")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => { if (Array.isArray(d)) setAssigneeUsers(d.map((u) => ({ id: u.id, name: u.name, studentId: u.studentId, role: u.role }))); })
+        .catch(() => {});
+    }
 
     try {
       const res = await fetch(`/api/admin/events/${eventId}/form`);
@@ -290,8 +333,11 @@ export default function AdminEventsPage() {
             { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
           ],
         }]);
-        setFormIsActive(true);
         setFormIsAwarded(false);
+        setFormOpensAt("");
+        setFormClosesAt("");
+        setFormAssignedRoles([]);
+        setFormAssignedUserIds([]);
         setFormStats(null);
         setFormSubmissions([]);
       }
@@ -332,8 +378,11 @@ export default function AdminEventsPage() {
         { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
       ],
     }]);
-    setFormIsActive(true);
     setFormIsAwarded(false);
+    setFormOpensAt("");
+    setFormClosesAt("");
+    setFormAssignedRoles([]);
+    setFormAssignedUserIds([]);
     setFormStats(null);
     setFormSubmissions([]);
     setFormTab("edit");
@@ -343,9 +392,21 @@ export default function AdminEventsPage() {
 
   const saveForm = async () => {
     if (!formEventId) return;
-    setFormSaving(true);
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
+
+    // "Closes at" is required: it's the trigger that closes the form and
+    // auto-awards the points, so a form without it would never resolve.
+    if (!formClosesAt) {
+      setFormBuilderError('Please set a "Closes at" time — it is required so the form can automatically close and award points.');
+      return;
+    }
+    if (formOpensAt && new Date(formClosesAt) <= new Date(formOpensAt)) {
+      setFormBuilderError('"Closes at" must be after "Opens at".');
+      return;
+    }
+
+    setFormSaving(true);
     try {
       const isNew = !activeFormId;
       const res = await fetch(`/api/admin/events/${formEventId}/form`, {
@@ -357,7 +418,13 @@ export default function AdminEventsPage() {
           description: formDescription,
           pointsAwarded: formPoints,
           questions: serializeForm(formSections),
-          isActive: formIsActive,
+          // Forms are always active now — the schedule window (opensAt/closesAt)
+          // drives the lifecycle and auto-awards when closesAt passes.
+          isActive: true,
+          opensAt: formOpensAt ? new Date(formOpensAt).toISOString() : null,
+          closesAt: formClosesAt ? new Date(formClosesAt).toISOString() : null,
+          assignedRoles: activeFormType === "S" ? formAssignedRoles : [],
+          assignedUserIds: activeFormType === "S" ? formAssignedUserIds : [],
         }),
       });
       if (res.ok) {
@@ -377,70 +444,6 @@ export default function AdminEventsPage() {
       setFormBuilderError("Failed to save evaluation form.");
     } finally {
       setFormSaving(false);
-    }
-  };
-
-  const toggleFormActiveStatus = async () => {
-    if (!formEventId || !activeFormId) return;
-    setFormSaving(true);
-    setFormBuilderError(null);
-    setFormBuilderSuccess(null);
-    const newActiveState = !formIsActive;
-    try {
-      const res = await fetch(`/api/admin/events/${formEventId}/form`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formId: activeFormId, isActive: newActiveState }),
-      });
-      if (res.ok) {
-        setFormIsActive(newActiveState);
-        setFormBuilderSuccess(newActiveState ? "Evaluation form is now open for students!" : "Evaluation form has been closed.");
-        await refreshAllForms();
-      } else {
-        const d = await res.json();
-        setFormBuilderError("Failed to update status: " + (d.error || "Unknown error"));
-      }
-    } catch (e) {
-      console.error(e);
-      setFormBuilderError("Failed to toggle form status.");
-    } finally {
-      setFormSaving(false);
-    }
-  };
-
-  const awardFormPoints = () => {
-    setShowAwardConfirm(true);
-  };
-
-  const awardFormPointsReal = async () => {
-    if (!formEventId || !activeFormId) return;
-
-    setFormAwarding(true);
-    setFormBuilderError(null);
-    setFormBuilderSuccess(null);
-    try {
-      const res = await fetch(`/api/admin/events/${formEventId}/form/award`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formId: activeFormId }),
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        if (data.winners && data.winners.length > 0) {
-          setFormBuilderSuccess(`🏆 Contest Ended! Winner: ${data.winners.map((w: string) => w.toUpperCase()).join(" & ")} House won with ${data.submissionsCount} submissions! +${formPoints} PTS awarded!`);
-        } else {
-          setFormBuilderSuccess(data.message || "Form ended, no points awarded.");
-        }
-        await refreshAllForms();
-      } else {
-        setFormBuilderError("Failed: " + (data.error || "Unknown error"));
-      }
-    } catch (e) {
-      console.error(e);
-      setFormBuilderError("Failed to end contest and award points.");
-    } finally {
-      setFormAwarding(false);
     }
   };
 
@@ -2461,47 +2464,182 @@ export default function AdminEventsPage() {
                           />
                         </div>
                         
-                        <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "rgba(0,0,0,0.02)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: "50%",
-                              background: formIsAwarded ? "#10b981" : (formIsActive ? "var(--green-house)" : "var(--text-muted)")
-                            }} />
-                            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)" }}>
-                              Status: {formIsAwarded ? "Finalized & Awarded" : (formIsActive ? "Accepting Entries" : "Closed / Inactive")}
-                            </span>
-                          </div>
-                          
-                          <button
-                            type="button"
-                            className={`btn ${formIsActive ? "btn-danger" : "btn-primary"}`}
-                            style={{
-                              width: "100%",
-                              height: 38,
-                              borderRadius: 10,
-                              fontSize: 12,
-                              fontWeight: 800,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: 6
-                            }}
-                            disabled={formIsAwarded}
-                            onClick={toggleFormActiveStatus}
-                          >
-                            {formIsAwarded ? (
-                              <>🔒 Locked (Points Awarded)</>
-                            ) : formIsActive ? (
-                              <>🔒 Close Form (Disable Entries)</>
-                            ) : (
-                              <>🔓 Open Form (Enable Entries)</>
-                            )}
-                          </button>
-                        </div>
+                        {(() => {
+                          // Read-only lifecycle status. There is no manual open/close
+                          // anymore — the schedule window below drives everything, and
+                          // points auto-award once the close time passes.
+                          const now = new Date();
+                          const opens = formOpensAt ? new Date(formOpensAt) : null;
+                          const closes = formClosesAt ? new Date(formClosesAt) : null;
+                          let dot = "var(--green-house)";
+                          let label = "Open for entries";
+                          if (formIsAwarded) {
+                            dot = "#10b981"; label = "Finalized & points awarded";
+                          } else if (closes && now > closes) {
+                            dot = "var(--text-muted)"; label = "Closed — points will be awarded automatically";
+                          } else if (opens && now < opens) {
+                            dot = "#6366f1"; label = "Scheduled — not open yet";
+                          }
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.02)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: dot }} />
+                                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)" }}>
+                                  Status: {label}
+                                </span>
+                              </div>
+                              <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                                Set the open/close times in the schedule below. When the close time passes, the house with the most submissions automatically wins the points — no manual action needed.
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
+
+                    {/* Schedule window (auto open/close by date & time) */}
+                    <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Calendar size={16} style={{ color: "var(--accent-primary)" }} />
+                        <h4 style={{ fontSize: 14, fontWeight: 900 }}>Schedule</h4>
+                      </div>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -4 }}>
+                        Set when this form opens and closes (Bangkok time). Leave <b>Opens at</b> blank to open immediately. <b>Closes at</b> is required: when it passes, entries stop and the winning house is awarded automatically.
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 16 }}>
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Opens at</label>
+                          <input
+                            type="datetime-local"
+                            lang="en-GB"
+                            className="input"
+                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px" }}
+                            value={formOpensAt}
+                            onChange={(e) => setFormOpensAt(e.target.value)}
+                            disabled={formIsAwarded}
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Closes at <span style={{ color: "#ef4444" }}>*</span></label>
+                          <input
+                            type="datetime-local"
+                            lang="en-GB"
+                            className="input"
+                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", borderColor: !formClosesAt ? "#ef4444" : undefined }}
+                            value={formClosesAt}
+                            onChange={(e) => setFormClosesAt(e.target.value)}
+                            disabled={formIsAwarded}
+                          />
+                        </div>
+                      </div>
+                      {!formClosesAt && (
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700 }}>⚠️ A close time is required so the form can auto-close and award points.</p>
+                      )}
+                      {formOpensAt && formClosesAt && new Date(formClosesAt) <= new Date(formOpensAt) && (
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700 }}>⚠️ Close time is before open time — students will never be able to submit.</p>
+                      )}
+                    </div>
+
+                    {/* S-form assignment — who may see & fill this skill form */}
+                    {activeFormType === "S" && (
+                      <div style={{ background: "rgba(239,68,68,0.04)", padding: 24, borderRadius: 24, border: "1px solid rgba(239,68,68,0.2)", display: "flex", flexDirection: "column", gap: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <ClipboardList size={16} style={{ color: "#ef4444" }} />
+                          <h4 style={{ fontSize: 14, fontWeight: 900 }}>Who can do this form</h4>
+                        </div>
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8 }}>
+                          Skill forms are hidden from everyone except super-admins/admins and the people you assign here (by role or by person). It appears in their dashboard history to fill — no event check-in needed.
+                        </p>
+
+                        {/* By role */}
+                        <div>
+                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assign by role</span>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                            {ASSIGNABLE_FORM_ROLES.map((role) => {
+                              const on = formAssignedRoles.includes(role);
+                              return (
+                                <button
+                                  key={role}
+                                  type="button"
+                                  disabled={formIsAwarded}
+                                  onClick={() => setFormAssignedRoles((prev) => on ? prev.filter((r) => r !== role) : [...prev, role])}
+                                  style={{
+                                    padding: "6px 14px", borderRadius: 99, fontSize: 12, fontWeight: 800, cursor: formIsAwarded ? "not-allowed" : "pointer",
+                                    background: on ? "rgba(239,68,68,0.12)" : "var(--bg-surface)",
+                                    color: on ? "#ef4444" : "var(--text-secondary)",
+                                    border: on ? "1.5px solid rgba(239,68,68,0.4)" : "1.5px solid var(--border-subtle)",
+                                  }}
+                                >
+                                  {on ? "✓ " : ""}{ASSIGNABLE_ROLE_LABELS[role] || role}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* By person */}
+                        <div>
+                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assign specific people ({formAssignedUserIds.length})</span>
+                          {/* Selected chips */}
+                          {formAssignedUserIds.length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                              {formAssignedUserIds.map((uid) => {
+                                const u = assigneeUsers.find((x) => x.id === uid);
+                                return (
+                                  <span key={uid} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, fontSize: 12, fontWeight: 800, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)" }}>
+                                    {u ? (u.name || u.studentId || uid) : uid}
+                                    <button type="button" disabled={formIsAwarded} onClick={() => setFormAssignedUserIds((prev) => prev.filter((x) => x !== uid))} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontWeight: 900, fontSize: 13, lineHeight: 1 }}>✕</button>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                          <input
+                            type="text"
+                            className="input"
+                            style={{ width: "100%", height: 42, borderRadius: 12, padding: "0 14px", marginTop: 10 }}
+                            placeholder="Search people by name or student ID…"
+                            value={assigneeSearch}
+                            onChange={(e) => setAssigneeSearch(e.target.value)}
+                            disabled={formIsAwarded}
+                          />
+                          {assigneeSearch.trim().length > 0 && (
+                            <div style={{ marginTop: 8, maxHeight: 200, overflowY: "auto", border: "1px solid var(--border-subtle)", borderRadius: 12, background: "var(--bg-surface)" }}>
+                              {assigneeUsers
+                                .filter((u) => {
+                                  const q = assigneeSearch.trim().toLowerCase();
+                                  return (u.name || "").toLowerCase().includes(q) || (u.studentId || "").toLowerCase().includes(q);
+                                })
+                                .slice(0, 30)
+                                .map((u) => {
+                                  const on = formAssignedUserIds.includes(u.id);
+                                  return (
+                                    <button
+                                      key={u.id}
+                                      type="button"
+                                      disabled={formIsAwarded}
+                                      onClick={() => setFormAssignedUserIds((prev) => on ? prev.filter((x) => x !== u.id) : [...prev, u.id])}
+                                      style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(239,68,68,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
+                                    >
+                                      <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}</span></span>
+                                      <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#ef4444" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
+                                    </button>
+                                  );
+                                })}
+                              {assigneeUsers.length === 0 && (
+                                <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>Loading people…</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {formAssignedRoles.length === 0 && formAssignedUserIds.length === 0 && (
+                          <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                            No one assigned yet — only super-admins/admins can see and fill this form.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Sections & Questions */}
                     <div>
@@ -2803,7 +2941,7 @@ export default function AdminEventsPage() {
                     </div>
 
                     {/* Footer Actions */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 12 }}>
                       <div>
                         {activeFormId && !formIsAwarded && (
                           <button
@@ -2824,11 +2962,11 @@ export default function AdminEventsPage() {
                           </button>
                         )}
                       </div>
-                      <div style={{ display: "flex", gap: 12 }}>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end", flex: 1 }}>
                         <button
                           className="btn btn-ghost"
                           type="button"
-                          style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
+                          style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
                           onClick={() => setShowFormBuilder(false)}
                         >
                           Cancel
@@ -2836,7 +2974,7 @@ export default function AdminEventsPage() {
                         <button
                           className="btn btn-primary"
                           type="button"
-                          style={{ height: 46, borderRadius: 12, padding: "0 24px" }}
+                          style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
                           disabled={formSaving || formIsAwarded}
                           onClick={saveForm}
                         >
@@ -2848,124 +2986,63 @@ export default function AdminEventsPage() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
                     
-                    {/* Contest End Actions */}
-                    {!formIsAwarded && (
-                      <div 
-                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
-                        style={{ 
-                          background: "linear-gradient(135deg, rgba(255,107,0,0.08) 0%, rgba(255,50,0,0.08) 100%)", 
-                          border: "1px solid rgba(255,107,0,0.2)", 
-                          borderRadius: 24, 
-                          padding: "24px 32px"
-                        }}
-                      >
-                        <div>
-                          <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--accent-primary)", marginBottom: 4 }}>🏆 Declare House Points Winner!</h4>
-                          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                            This will close this form, calculate which house has completed it the most, and award <b>+{formPoints} PTS</b> immediately!
-                          </p>
-                        </div>
-                        <button
-                          className="btn w-full sm:w-auto justify-center"
-                          style={{
-                            background: "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
-                            color: "#fff",
-                            border: "none",
-                            padding: "12px 24px",
-                            borderRadius: 14,
-                            fontWeight: 900,
-                            fontSize: 14,
-                            cursor: "pointer",
-                            boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8
-                          }}
-                          disabled={formAwarding || formSubmissions.length === 0}
-                          onClick={awardFormPoints}
-                          title={formSubmissions.length === 0 ? "Requires at least 1 submission" : ""}
-                        >
-                          {formAwarding ? <div className="spinner w-4 h-4 border-2" /> : <Trophy size={16} />} 
-                          End & Award Points
-                        </button>
-                      </div>
-                    )}
+                    {/* Auto-award status banner — points are awarded automatically
+                        when the scheduled close time passes; there is no manual
+                        award/open/close action anymore. */}
+                    {(() => {
+                      const now = new Date();
+                      const closes = formClosesAt ? new Date(formClosesAt) : null;
+                      const hasClosed = !!closes && now > closes;
 
-                    {/* Closed Status Banner */}
-                    {!formIsActive && (
-                      <div 
-                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
-                        style={{ 
-                          background: "var(--bg-elevated)", 
-                          border: "1px solid var(--border-subtle)", 
-                          borderRadius: 24, 
-                          padding: "24px 32px"
-                        }}
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                          <div style={{ 
-                            display: "flex", 
-                            alignItems: "center", 
-                            justifyContent: "center", 
-                            width: 44, 
-                            height: 44, 
-                            borderRadius: "50%", 
-                            background: formIsAwarded ? "rgba(16,185,129,0.1)" : "rgba(255,107,0,0.1)", 
-                            color: formIsAwarded ? "#10b981" : "var(--accent-primary)",
-                            flexShrink: 0
-                          }}>
-                            {formIsAwarded ? <CheckCircle2 size={22} /> : <AlertCircle size={22} />}
+                      if (formIsAwarded) {
+                        return (
+                          <div
+                            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
+                            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", borderRadius: 24, padding: "24px 32px" }}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", background: "rgba(16,185,129,0.1)", color: "#10b981", flexShrink: 0 }}>
+                                <CheckCircle2 size={22} />
+                              </div>
+                              <div>
+                                <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>Contest Finalized &amp; Closed</h4>
+                                <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                                  Points have been awarded to the winning house and this evaluation form is frozen.
+                                </p>
+                              </div>
+                            </div>
+                            <div style={{ padding: "8px 16px", borderRadius: 10, background: "rgba(16,185,129,0.1)", color: "#10b981", fontSize: 12, fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>
+                              🔒 Permanent Lock
+                            </div>
                           </div>
-                          <div>
-                            <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>
-                              {formIsAwarded ? "Contest Finalized & Closed" : "Evaluation Form Suspended / Closed"}
-                            </h4>
-                            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                              {formIsAwarded 
-                                ? "Points have been awarded to the winning house and this evaluation form is frozen."
-                                : "This form is temporarily closed under Design & Rules. You can re-open it or declare points winner above."}
-                            </p>
+                        );
+                      }
+
+                      return (
+                        <div
+                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
+                          style={{ background: "linear-gradient(135deg, rgba(255,107,0,0.08) 0%, rgba(255,50,0,0.08) 100%)", border: "1px solid rgba(255,107,0,0.2)", borderRadius: 24, padding: "24px 32px" }}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)", flexShrink: 0 }}>
+                              {hasClosed ? <Trophy size={22} /> : <Calendar size={22} />}
+                            </div>
+                            <div>
+                              <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--accent-primary)", marginBottom: 4 }}>
+                                {hasClosed ? "Closed — awaiting automatic award" : "Awards automatically when the form closes"}
+                              </h4>
+                              <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                                {hasClosed
+                                  ? <>The close time has passed. The house with the most submissions will automatically receive <b>+{formPoints} PTS</b> — it settles the next time the dashboard or scoreboard is opened, or at the daily 23:00 run.</>
+                                  : formClosesAt
+                                  ? <>When the close time passes, the house with the most submissions automatically receives <b>+{formPoints} PTS</b>. No manual action needed.</>
+                                  : <>No <b>Closes at</b> time is set, so this form stays open and will <b>not</b> auto-award. Set a close time under Design &amp; Rules to enable automatic awarding.</>}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                        
-                        {!formIsAwarded ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost w-full sm:w-auto justify-center"
-                            style={{
-                              height: 38,
-                              borderRadius: 10,
-                              fontSize: 12,
-                              fontWeight: 800,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6,
-                              border: "1px solid var(--border-medium)"
-                            }}
-                            onClick={toggleFormActiveStatus}
-                          >
-                            🔓 Re-open Form
-                          </button>
-                        ) : (
-                          <div 
-                            className="w-full sm:w-auto justify-center"
-                            style={{
-                              padding: "8px 16px",
-                              borderRadius: 10,
-                              background: "rgba(16,185,129,0.1)",
-                              color: "#10b981",
-                              fontSize: 12,
-                              fontWeight: 900,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6
-                            }}
-                          >
-                            🔒 Permanent Lock
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Stats Leaderboard Cards */}
                     <div>
@@ -3115,79 +3192,6 @@ export default function AdminEventsPage() {
                 )}
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Custom Confirm Modal for Awarding Contest Points */}
-      {showAwardConfirm && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.6)",
-          backdropFilter: "blur(12px)",
-          zIndex: 2300,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24
-        }} onClick={() => setShowAwardConfirm(false)}>
-          <div className="animate-fade-in-up" style={{
-            background: "var(--bg-surface)",
-            width: "100%",
-            maxWidth: 480,
-            borderRadius: 28,
-            padding: 36,
-            textAlign: "center",
-            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
-            border: "1px solid var(--border-medium)"
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{
-              width: 64,
-              height: 64,
-              borderRadius: "50%",
-              background: "rgba(255,107,0,0.1)",
-              color: "var(--accent-primary)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 20px"
-            }}>
-              <Trophy size={32} />
-            </div>
-            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>End Evaluation Contest?</h4>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
-              Are you sure you want to end this evaluation form session and award the points? This will freeze the form and update house standings immediately!
-            </p>
-            <div style={{ display: "flex", gap: 16 }}>
-              <button
-                className="btn btn-ghost"
-                style={{ flex: 1, height: 46, borderRadius: 12 }}
-                onClick={() => setShowAwardConfirm(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn"
-                style={{
-                  flex: 1,
-                  height: 46,
-                  borderRadius: 12,
-                  background: "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
-                  color: "#fff",
-                  border: "none",
-                  fontWeight: 800,
-                  boxShadow: "0 4px 14px rgba(255,107,0,0.3)"
-                }}
-                disabled={formAwarding}
-                onClick={() => {
-                  setShowAwardConfirm(false);
-                  awardFormPointsReal();
-                }}
-              >
-                {formAwarding ? <div className="spinner w-4 h-4 border-2" /> : "Confirm & End"}
-              </button>
-            </div>
           </div>
         </div>
       )}

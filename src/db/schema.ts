@@ -252,6 +252,15 @@ export const forms = pgTable("forms", {
   pointsAwarded: integer("points_awarded").default(0),
   isActive: boolean("is_active").default(true),
   isAwarded: boolean("is_awarded").default(false),
+  // Optional auto open/close window. NULL on either side = unbounded that side.
+  // isActive stays the manual master override on top of this window.
+  opensAt: timestamp("opens_at", { withTimezone: true }),
+  closesAt: timestamp("closes_at", { withTimezone: true }),
+  // Who may see/fill the form (used to gate S-Skill forms). Empty = only
+  // super_admin/admin. A user qualifies if their role is in assignedRoles OR
+  // their id is in assignedUserIds.
+  assignedRoles: jsonb("assigned_roles").$type<string[]>().notNull().default([]),
+  assignedUserIds: jsonb("assigned_user_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });

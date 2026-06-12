@@ -1,4 +1,4 @@
-import { checkAndAwardPastEventPoints } from "@/lib/award-points";
+import { checkAndAwardPastEventPoints, checkAndAwardClosedForms } from "@/lib/award-points";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,7 @@ export async function GET(req: Request) {
 
   try {
     await checkAndAwardPastEventPoints();
+    await checkAndAwardClosedForms();
     return NextResponse.json({ success: true, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error("Cron award-points error:", error);

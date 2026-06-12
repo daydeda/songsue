@@ -10,8 +10,7 @@ import {
   isQuestionVisible,
   type AnswerMap,
 } from "@/lib/form-schema";
-
-const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
+import { canAccessSkillForm, getFormAvailability } from "@/lib/form-access";
 
 // GET /api/events/[id]/form — fetch all relevant forms for a student
 // S-type forms are excluded for non-admin users.
@@ -28,7 +27,6 @@ export async function GET(
     const { id: eventId } = await params;
     const userId = session.user.id!;
     const userRole = session.user.role || "";
-    const isAdmin = ADMIN_ROLES.includes(userRole);
 
     const attRecord = await db.query.attendance.findFirst({
       where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
@@ -40,7 +38,10 @@ export async function GET(
       orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
     });
 
-    const visibleForms = allForms.filter((f) => f.formType !== "S" || isAdmin);
+    // S forms are gated by assignment (role/person + managers); other forms are
+    // visible to everyone.
+    const viewer = { id: userId, role: userRole };
+    const visibleForms = allForms.filter((f) => f.formType !== "S" || canAccessSkillForm(f, viewer));
 
     const formResponses = await Promise.all(
       visibleForms.map(async (formObj) => {
@@ -71,6 +72,9 @@ export async function GET(
           pointsAwarded: formObj.pointsAwarded,
           isActive: formObj.isActive,
           isAwarded: formObj.isAwarded,
+          opensAt: formObj.opensAt,
+          closesAt: formObj.closesAt,
+          availability: getFormAvailability(formObj),
           hasSubmitted: !!existingSubmission,
           answers: existingSubmission?.answers || null,
           result,
@@ -100,7 +104,6 @@ export async function POST(
     const { id: eventId } = await params;
     const userId = session.user.id!;
     const userRole = session.user.role || "";
-    const isAdmin = ADMIN_ROLES.includes(userRole);
     const { formId, answers } = await req.json();
 
     if (!formId) {
@@ -118,20 +121,26 @@ export async function POST(
       return NextResponse.json({ error: "Form not found" }, { status: 404 });
     }
 
-    if (formObj.formType === "S" && !isAdmin) {
+    // S forms are restricted to assigned people (by role/person) + managers.
+    if (formObj.formType === "S" && !canAccessSkillForm(formObj, { id: userId, role: userRole })) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    if (formObj.isAwarded) {
+    // Schedule-aware gate: finalized (awarded), not yet open, or past close.
+    const availability = getFormAvailability(formObj);
+    if (availability === "awarded") {
       return NextResponse.json({ error: "The contest has finalized and this form is permanently locked." }, { status: 400 });
     }
-
-    if (!formObj.isActive) {
-      return NextResponse.json({ error: "This form has been closed by the administrator." }, { status: 400 });
+    if (availability === "upcoming") {
+      return NextResponse.json({ error: "This form is not open yet. Please come back when it opens." }, { status: 400 });
+    }
+    if (availability !== "open") {
+      return NextResponse.json({ error: "This form is closed." }, { status: 400 });
     }
 
-    // K_pre skips attendance check; all others require it
-    if (formObj.formType !== "K_pre") {
+    // K_pre (pre-test) and S (skill — filled by assigned evaluators, not attendees)
+    // skip the attendance check; all others require physical check-in.
+    if (formObj.formType !== "K_pre" && formObj.formType !== "S") {
       const attRecord = await db.query.attendance.findFirst({
         where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
       });

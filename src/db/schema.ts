@@ -171,13 +171,21 @@ export const scoreHistory = pgTable("score_history", {
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
-  actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
-  targetId: text("target_id").references(() => users.id, { onDelete: "set null" }),
+  // Deliberately NO foreign keys to users.id: actor_id/target_id are baked into
+  // the tamper-evident row hashes, so they must survive user deletion unchanged
+  // (ON DELETE SET NULL would rewrite rows and break the chain).
+  actorId: text("actor_id"),
+  targetId: text("target_id"),
   action: text("action").notNull(),
   ipAddress: text("ip_address"),
   prevHash: text("prev_hash").notNull().default(""),
   rowHash: text("row_hash").notNull().default(""),
-});
+}, (table) => ([
+  // Every append reads the chain tip via ORDER BY timestamp DESC LIMIT 1
+  // (inside the advisory lock), and the admin page sorts by timestamp —
+  // without this index both degrade to full-table sorts as the log grows.
+  index("idx_audit_logs_timestamp").on(table.timestamp),
+]));
 
 // ─── Relations ────────────────────────────────────────────────────────────────
 

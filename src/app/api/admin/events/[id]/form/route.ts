@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
 import { ASSIGNABLE_ROLES } from "@/lib/form-access";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 
@@ -163,6 +164,12 @@ export async function POST(
       })
       .returning();
 
+    await AuditService.logAction({
+      actorId: session.user.id!,
+      action: `Created form "${result.title}" (${result.id}) for event ${eventId} with award: ${result.pointsAwarded} PTS`,
+      ipAddress: getClientIp(req),
+    });
+
     return NextResponse.json({ success: true, form: result });
   } catch (error) {
     console.error("Failed to create event form:", error);
@@ -235,6 +242,12 @@ export async function PATCH(
       .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))
       .returning();
 
+    await AuditService.logAction({
+      actorId: session.user.id!,
+      action: `Updated form "${result.title}" (${formId}) for event ${eventId}`,
+      ipAddress: getClientIp(req),
+    });
+
     return NextResponse.json({ success: true, form: result });
   } catch (error) {
     console.error("Failed to update event form:", error);
@@ -273,6 +286,12 @@ export async function DELETE(
     }
 
     await db.delete(forms).where(and(eq(forms.id, formId), eq(forms.eventId, eventId)));
+
+    await AuditService.logAction({
+      actorId: session.user.id!,
+      action: `Deleted form "${existing.title}" (${formId}) from event ${eventId}`,
+      ipAddress: getClientIp(req),
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

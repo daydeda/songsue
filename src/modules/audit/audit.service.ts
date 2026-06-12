@@ -9,6 +9,15 @@ import { asc, desc, sql } from "drizzle-orm";
 // previous one's tip to commit. Released automatically at transaction end.
 const AUDIT_CHAIN_LOCK_KEY = 919273;
 
+// Client IP as seen through Vercel's proxy headers.
+export function getClientIp(req: Request): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "127.0.0.1"
+  );
+}
+
 export interface LogActionParams {
   actorId: string;
   targetId?: string;

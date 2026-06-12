@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
+import type { Session } from "next-auth";
 import { useState } from "react";
 import { Camera, Check, Loader2, LogOut, User, Menu, X } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -58,7 +59,7 @@ function StepIcon({ index, current }: { index: number; current: number }) {
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Main page                                                                   */
 /* ─────────────────────────────────────────────────────────────────────────── */
-export default function OnboardingClient({ initialSession }: { initialSession: any }) {
+export default function OnboardingClient({ initialSession }: { initialSession: Session }) {
   const { data: sessionData, update } = useSession();
   const session = sessionData || initialSession;
   const isStudent =

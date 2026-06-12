@@ -102,7 +102,7 @@ export async function POST(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { qrToken: _qrToken, ...safeUser } = updated;
     return NextResponse.json({ success: true, user: safeUser });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues.map(i => `${i.path}: ${i.message}`).join(", ") }, { status: 400 });
     }
@@ -110,8 +110,8 @@ export async function POST(req: Request) {
     // Handle Postgres Unique Constraint Violation (duplicate entries).
     // Deliberately generic: naming the colliding field would let anyone with an
     // account enumerate which student IDs / phone numbers exist in the system.
-    const dbError = error.cause || error;
-    if (dbError && dbError.code === "23505") {
+    const dbError = error instanceof Error && error.cause ? error.cause : error;
+    if (dbError && typeof dbError === "object" && "code" in dbError && dbError.code === "23505") {
       return NextResponse.json({ error: "infoAlreadyInUse" }, { status: 400 });
     }
 
@@ -154,7 +154,7 @@ export async function PATCH(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { qrToken: _qrToken, ...safeUser } = updated;
     return NextResponse.json({ success: true, user: safeUser });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
@@ -162,8 +162,8 @@ export async function PATCH(req: Request) {
     // Handle Postgres Unique Constraint Violation (duplicate entries).
     // Deliberately generic: naming the colliding field would let anyone with an
     // account enumerate which student IDs / phone numbers exist in the system.
-    const dbError = error.cause || error;
-    if (dbError && dbError.code === "23505") {
+    const dbError = error instanceof Error && error.cause ? error.cause : error;
+    if (dbError && typeof dbError === "object" && "code" in dbError && dbError.code === "23505") {
       return NextResponse.json({ error: "infoAlreadyInUse" }, { status: 400 });
     }
 

@@ -398,7 +398,7 @@ export default function HistoryPage() {
                             <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: 6, flexShrink: 0 }}>
                               {FORM_TYPE_LABELS[form.formType] || form.formType}
                             </span>
-                            <span style={{ minWidth: 0, overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
+                            <span style={{ minWidth: 0, whiteSpace: "normal", overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
                             <span style={{ opacity: 0.85, flexShrink: 0 }}>(+{form.formPoints} PTS)</span>
                           </button>
                         )}

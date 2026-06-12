@@ -171,8 +171,11 @@ export const scoreHistory = pgTable("score_history", {
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
-  actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
-  targetId: text("target_id").references(() => users.id, { onDelete: "set null" }),
+  // Deliberately NO foreign keys to users.id: actor_id/target_id are baked into
+  // the tamper-evident row hashes, so they must survive user deletion unchanged
+  // (ON DELETE SET NULL would rewrite rows and break the chain).
+  actorId: text("actor_id"),
+  targetId: text("target_id"),
   action: text("action").notNull(),
   ipAddress: text("ip_address"),
   prevHash: text("prev_hash").notNull().default(""),

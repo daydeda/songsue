@@ -337,6 +337,27 @@ async function migrate() {
   await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS assigned_user_ids jsonb NOT NULL DEFAULT '[]'::jsonb`;
   console.log("  ✅ forms.assigned_user_ids");
 
+  // 27. Drop ALL foreign keys on audit_logs (actor_id/target_id → users.id).
+  // Those column values are baked into the tamper-evident row hashes, so any
+  // rewrite (manual SET NULL on user deletion, or an ON DELETE action) breaks
+  // chain verification. Without FKs the rows survive user deletion untouched;
+  // the app joins via drizzle relations, which don't need DB-level constraints.
+  await sql`
+    DO $$
+    DECLARE r record;
+    BEGIN
+      FOR r IN
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'audit_logs' AND con.contype = 'f'
+      LOOP
+        EXECUTE format('ALTER TABLE audit_logs DROP CONSTRAINT %I', r.conname);
+      END LOOP;
+    END $$;
+  `;
+  console.log("  ✅ dropped audit_logs foreign keys (rows must never be rewritten)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -60,6 +60,8 @@ interface AdminStudent {
   email: string;
   phone: string | null;
   major: string | null;
+  role: string | null;
+  roles: string[] | null;
   religion: string | null;
   contactChannels: string | null;
   chronicDiseases: string | null;
@@ -153,6 +155,21 @@ const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: strin
   S:      { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", border: "rgba(239,68,68,0.3)"   },
 };
 
+// Role priority (mirrors ROLE_PRIORITY in src/auth.ts). A person's "primary"
+// role is the highest-priority role they hold; "student" is the lowest, so an
+// attendee counts as a regular student only when they hold no elevated role
+// (smo, anusmo, registration, organizer, staff, office, etc.).
+const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
+
+const isRegularStudent = (user: AdminStudent | null | undefined): boolean => {
+  if (!user) return false;
+  const roles = (user.roles && user.roles.length > 0)
+    ? user.roles
+    : (user.role ? [user.role] : ["student"]);
+  const primary = ROLE_PRIORITY.find((r) => roles.includes(r)) ?? "student";
+  return primary === "student";
+};
+
 const ALL_PARTICIPANT_ROLES = ["student", "staff", "smo", "anusmo"] as const;
 type ParticipantRole = typeof ALL_PARTICIPANT_ROLES[number];
 
@@ -205,6 +222,7 @@ export default function AdminEventsPage() {
   const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
   const [filterNotCheckedIn, setFilterNotCheckedIn] = useState(false);
+  const [filterStudentsOnly, setFilterStudentsOnly] = useState(false);
   const [filterThai, setFilterThai] = useState(true);
   const [filterInternational, setFilterInternational] = useState(true);
 
@@ -1138,6 +1156,7 @@ export default function AdminEventsPage() {
     setShowAttendance(true);
     setLoadingAttendance(true);
     setFilterMedical(false);
+    setFilterStudentsOnly(false);
     setFilterThai(true);
     setFilterInternational(true);
     try {
@@ -1158,7 +1177,10 @@ export default function AdminEventsPage() {
     if (filterNotCheckedIn && m.status !== "registered") {
       return false;
     }
-    
+    if (filterStudentsOnly && !isRegularStudent(m.user)) {
+      return false;
+    }
+
     const studentId = m.user?.studentId || "";
     const cleanId = studentId.trim();
     
@@ -3544,6 +3566,27 @@ export default function AdminEventsPage() {
                     {filterNotCheckedIn ? "Showing: Not Checked In Only" : "Filter: Not Checked In Only"}
                   </button>
 
+                  <button
+                    onClick={() => setFilterStudentsOnly(!filterStudentsOnly)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 99,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "all 0.2s",
+                      border: filterStudentsOnly ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                      background: filterStudentsOnly ? "var(--accent-glow)" : "var(--bg-surface)",
+                      color: filterStudentsOnly ? "var(--accent-primary)" : "var(--text-secondary)"
+                    }}
+                  >
+                    <User size={16} />
+                    {filterStudentsOnly ? "Showing: Students Only" : "Filter: Students Only"}
+                  </button>
+
                   <label style={{
                     display: "flex",
                     alignItems: "center",
@@ -3590,7 +3633,7 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || filterNotCheckedIn || !filterThai || !filterInternational) && (
+                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
                     Filtered: Showing {filteredAttendance.length} of {attendance.length} students

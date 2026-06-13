@@ -568,7 +568,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               </div>
               <div>
                 <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text-primary)" }}>ประกาศสำคัญ | Important Announcement</p>
-                <p style={{ fontSize: 14, color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>{announcement?.body ?? "ขณะนี้ Web Application ActiveCAMT อยู่ระหว่างการพัฒนาและทดสอบระบบเพื่อเพิ่มประสิทธิภาพในการใช้งานสูงสุด\nหากท่านพบข้อผิดพลาดหรือมีข้อสงสัยประการใด สามารถแจ้งปัญหาหรือติดต่อเราได้ที่ IG: smocamt.official"}</p>
+                <p
+                  style={{ fontSize: 14, color: "var(--text-secondary)" }}
+                  dangerouslySetInnerHTML={{ __html: parseRichText(announcement?.body ?? "ขณะนี้ Web Application ActiveCAMT อยู่ระหว่างการพัฒนาและทดสอบระบบเพื่อเพิ่มประสิทธิภาพในการใช้งานสูงสุด\nหากท่านพบข้อผิดพลาดหรือมีข้อสงสัยประการใด สามารถแจ้งปัญหาหรือติดต่อเราได้ที่ IG: smocamt.official") }}
+                />
               </div>
             </div>
             )}

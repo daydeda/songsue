@@ -1,6 +1,7 @@
 import { db } from "./src/db";
 import { users } from "./src/db/schema";
 import { eq } from "drizzle-orm";
+import { assertDestructiveAllowed } from "./src/db/guard";
 
 async function elevate() {
   const email = process.argv[2];
@@ -9,8 +10,10 @@ async function elevate() {
     process.exit(1);
   }
 
+  assertDestructiveAllowed("elevate-admin (grants admin role)");
+
   console.log(`🚀 Elevating user ${email} to admin...`);
-  
+
   const result = await db.update(users)
     .set({ role: "admin" })
     .where(eq(users.email, email))

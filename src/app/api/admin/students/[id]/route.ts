@@ -31,6 +31,9 @@ export async function GET(
 
     const studentData = await db.query.users.findFirst({
       where: eq(users.id, targetStudentId),
+      // qrToken is a permanent check-in credential replayable at /api/admin/scan,
+      // so it must never leave the server — every other route strips it too.
+      columns: { qrToken: false },
       with: { house: true },
     });
 

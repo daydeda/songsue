@@ -11,7 +11,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER:-activeuser}:${POSTGRES_PASSWORD:-activepass}@db:5432/${POSTGRES_DB:-activedb}?sslmode=disable
+      - DATABASE_URL=postgres://${POSTGRES_USER:-activeuser}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-activedb}?sslmode=disable
       - AUTH_SECRET=${AUTH_SECRET}
       - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID}
       - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET}
@@ -30,10 +30,11 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-activeuser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-activepass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-activedb}
-    ports:
-      - "5432:5432"
+    # No public "ports:" mapping — the DB is reachable only by the `web` service
+    # over the internal compose network, never exposed to the host/LAN.
+    # To debug locally, use `docker compose exec db psql` instead of opening 5432.
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:

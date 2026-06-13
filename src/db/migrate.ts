@@ -489,21 +489,26 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_shop_order_items_variant ON shop_order_items (variant_id)`;
   console.log("  ✅ shop tables (settings, products, variants, orders, order_items) created");
 
-  // 32. Remove the placeholder 0-point score_history rows that ended events with no
-  // attendance used to write. Those rows attributed an event nobody attended to an
-  // arbitrary house (dbHouses[0]), so it showed up in that house's activity feed.
-  // award-points.ts no longer writes them; this clears the ones already recorded.
-  // Scoped to delta = 0 + the exact generated reason strings so real awards (and
-  // legitimate 0-point winner rows, whose reason says "WINNER") are never touched.
+  // 32. Remove the 0-point score_history rows the auto-award paths used to write for
+  // events/forms that moved no points — the no-attendance placeholders (attributed to
+  // an arbitrary house) AND the 0-point "winner"/"contest" rows for events or surveys
+  // configured with 0 points. All of them surfaced an activity under a house even
+  // though nothing was awarded. award-points.ts no longer writes any of these.
+  // Scoped to delta = 0 + the exact auto-generated reason strings, so real point
+  // awards and manual/individual adjustments are never touched.
   await sql`
     DELETE FROM score_history
     WHERE delta = 0
       AND (
         reason LIKE 'Event "%" ended with no attendees. No points awarded.'
         OR reason LIKE 'Event "%" ended but all checked-in students were unassigned. No points awarded.'
+        OR reason LIKE 'Event "%" completed! WINNER:%'
+        OR reason LIKE 'Event "%" completed! TIE WINNER:%'
+        OR reason LIKE 'Event Form Contest Winner:%'
+        OR reason LIKE 'Event Form Contest Tie Winner:%'
       )
   `;
-  console.log("  ✅ removed placeholder no-attendance score_history rows");
+  console.log("  ✅ removed 0-point auto-award score_history rows (no-attendance + 0-point winners)");
 
   console.log("✅ Migration complete!");
   await sql.end();

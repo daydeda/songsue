@@ -125,13 +125,19 @@ export async function checkAndAwardPastEventPoints() {
         const winners = houseList.filter(([, data]) => data.count === maxCount);
         const pointsToAward = event.pointsAwarded ?? 0;
 
+        // No points configured for this event (e.g. a survey/sign-up) → nothing
+        // actually moves, so there's no real award. Mark processed and skip without
+        // writing a 0-point "winner" row that would clutter a house's activity feed.
+        if (pointsToAward <= 0) {
+          await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
+          continue;
+        }
+
         for (const [winnerHouseId, data] of winners) {
-          if (pointsToAward > 0) {
-            await tx
-              .update(houses)
-              .set({ points: sql`${houses.points} + ${pointsToAward}` })
-              .where(eq(houses.id, winnerHouseId));
-          }
+          await tx
+            .update(houses)
+            .set({ points: sql`${houses.points} + ${pointsToAward}` })
+            .where(eq(houses.id, winnerHouseId));
 
           const reasonStr = winners.length > 1
             ? `Event "${event.title}" completed! TIE WINNER: ${data.name} House won with ${data.count} attendees! Shared ${pointsToAward} PTS.`
@@ -244,6 +250,12 @@ export async function checkAndAwardClosedForms() {
         const houseList = Object.entries(houseCounts);
         if (houseList.length === 0) continue; // closed with no eligible submissions
 
+        const pointsToAward = formObj.pointsAwarded ?? 0;
+        // No points configured for this form/survey → no real award; don't write a
+        // 0-point contest row that would surface the form under a house's feed. The
+        // form is already flagged is_awarded above, so it stays processed.
+        if (pointsToAward <= 0) continue;
+
         let maxSubmissions = -1;
         for (const [, count] of houseList) {
           if (count > maxSubmissions) maxSubmissions = count;
@@ -251,17 +263,14 @@ export async function checkAndAwardClosedForms() {
         const winningHouseIds = houseList
           .filter(([, count]) => count === maxSubmissions)
           .map(([hId]) => hId);
-        const pointsToAward = formObj.pointsAwarded ?? 0;
 
         for (const winnerId of winningHouseIds) {
           const houseName = houseNameMap.get(winnerId) || winnerId;
 
-          if (pointsToAward > 0) {
-            await tx
-              .update(houses)
-              .set({ points: sql`${houses.points} + ${pointsToAward}` })
-              .where(eq(houses.id, winnerId));
-          }
+          await tx
+            .update(houses)
+            .set({ points: sql`${houses.points} + ${pointsToAward}` })
+            .where(eq(houses.id, winnerId));
 
           const reasonStr =
             winningHouseIds.length > 1

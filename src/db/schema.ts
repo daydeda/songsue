@@ -171,6 +171,9 @@ export const scoreHistory = pgTable("score_history", {
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
 }, (table) => ([
   index("idx_score_history_event").on(table.eventId),
+  // Leaderboard recent-activity and the dashboard both ORDER BY timestamp DESC;
+  // without this they degrade to a full sort as score_history grows (one row per scan/award).
+  index("idx_score_history_timestamp").on(table.timestamp),
 ]));
 
 export const auditLogs = pgTable("audit_logs", {

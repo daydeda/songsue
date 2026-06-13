@@ -8,6 +8,7 @@
 import { db } from "./index";
 import { houses, users } from "./schema";
 import { eq } from "drizzle-orm";
+import { assertDestructiveAllowed } from "./guard";
 
 const HOUSES = [
   { id: "red",    name: "Mom",   color: "#ef4444" },
@@ -22,6 +23,7 @@ const SUPER_ADMINS = [
 ];
 
 async function seed() {
+  assertDestructiveAllowed("db:seed (writes houses + super admins)");
   console.log("🌱 Seeding houses...");
 
   for (const house of HOUSES) {

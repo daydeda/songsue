@@ -15,6 +15,7 @@ import {
   auditLogs
 } from "./schema";
 import { sql } from "drizzle-orm";
+import { assertDestructiveAllowed } from "./guard";
 
 const HOUSES = [
   { id: "red",    name: "Mom",   color: "#ef4444" },
@@ -24,6 +25,7 @@ const HOUSES = [
 ];
 
 async function reset() {
+  assertDestructiveAllowed("db:reset (DELETES ALL DATA)");
   console.log("🧨 Resetting Database...");
 
   try {

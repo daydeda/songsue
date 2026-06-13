@@ -2,8 +2,10 @@
 import { db } from "./index";
 import { users } from "./schema";
 import { eq } from "drizzle-orm";
+import { assertDestructiveAllowed } from "./guard";
 
 async function promoteAdmin() {
+  assertDestructiveAllowed("promote-admin (grants admin role)");
   const email = "smocamt.official@gmail.com";
   console.log(`Promoting ${email} to admin...`);
 

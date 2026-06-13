@@ -19,7 +19,14 @@ export function parseRichText(text: string): string {
   // compatible with the project's pre-es2018 tsconfig target. Newlines become
   // <br /> later, so multi-line bold/colored text still renders correctly.
   while (html.includes("{{color:") && html.includes("|") && html.includes("}}")) {
-    const nextHtml = html.replace(/\{\{color:([^|]*?)\|((?:(?!\{\{color:)[\s\S])*?)\}\}/g, '<span style="color:$1">$2</span>');
+    const nextHtml = html.replace(/\{\{color:([^|]*?)\|((?:(?!\{\{color:)[\s\S])*?)\}\}/g, (match, color, content) => {
+      // Only allow a hex value (#fff / #ffffff / #ffffffff) or a plain CSS color
+      // name. Anything else — e.g. `red" onmouseover="alert(1)` — would break out
+      // of the style attribute and inject an event handler, so it falls back to
+      // the visible text. (The link branch below escapes quotes for the same reason.)
+      if (!/^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]+$/.test(color.trim())) return content;
+      return `<span style="color:${color.trim()}">${content}</span>`;
+    });
     if (nextHtml === html) break; // Prevent infinite loop if syntax is broken
     html = nextHtml;
   }

@@ -644,7 +644,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                          )}
                          
                          {/* Date Overlay */}
-                         <div style={{ position: "absolute", top: 16, right: 16 }}>
+                         <div style={{ position: "absolute", top: 16, right: 16, zIndex: 2 }}>
                             <div style={{ 
                                background: "#fff", 
                                padding: "10px 14px", 
@@ -663,9 +663,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             </div>
                          </div>
 
-                         <div style={{ position: "absolute", top: 16, left: 16 }}>
-                           <span style={{ 
-                             padding: "8px 16px", 
+                         <div style={{ position: "absolute", top: 16, left: 16, zIndex: 2 }}>
+                           <span style={{
+                             padding: "8px 16px",
                              background: getEventStatus(e) === 'live' ? "#ef4444" : "var(--accent-primary)", 
                              color: "#fff", 
                              borderRadius: 20, 
@@ -681,7 +681,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
                          {/* Points Badge */}
                          {e.pointsAwarded !== undefined && (
-                           <div style={{ position: "absolute", bottom: 16, left: 16 }}>
+                           <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
                              <div style={{ 
                                background: "rgba(0, 0, 0, 0.7)", 
                                backdropFilter: "blur(8px)", 

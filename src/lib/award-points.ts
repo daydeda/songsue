@@ -85,10 +85,15 @@ export async function checkAndAwardPastEventPoints() {
         const dbHouses = await tx.query.houses.findMany();
 
         if (attendees.length === 0) {
-          // No attendees — mark processed and move on. We deliberately do NOT write a
-          // score_history row here: attributing it to dbHouses[0] tied an event nobody
-          // attended to an arbitrary house and surfaced it in that house's activity
-          // feed. An event with zero attendance belongs to no house.
+          // No attendees — record a house-less activity row (houseId: null) so the
+          // event still shows in the Recent Activity feed, but attributed to no house.
+          // It used to be pinned to dbHouses[0], an arbitrary house, which made no sense.
+          await tx.insert(scoreHistory).values({
+            houseId: null,
+            eventId: event.id,
+            delta: 0,
+            reason: `Event "${event.title}" ended with no attendees. No points awarded.`,
+          });
           await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
           continue;
         }
@@ -110,9 +115,14 @@ export async function checkAndAwardPastEventPoints() {
 
         const houseList = Object.entries(houseCounts);
         if (houseList.length === 0) {
-          // Everyone who checked in is unassigned to a house — no house participated,
-          // so mark processed without writing a score_history row (same reasoning as
-          // the no-attendees case above: don't attribute it to an arbitrary house).
+          // Everyone who checked in is unassigned to a house — record a house-less
+          // activity row so it still shows in the feed, attributed to no house.
+          await tx.insert(scoreHistory).values({
+            houseId: null,
+            eventId: event.id,
+            delta: 0,
+            reason: `Event "${event.title}" ended but all checked-in students were unassigned. No points awarded.`,
+          });
           await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
           continue;
         }
@@ -126,9 +136,15 @@ export async function checkAndAwardPastEventPoints() {
         const pointsToAward = event.pointsAwarded ?? 0;
 
         // No points configured for this event (e.g. a survey/sign-up) → nothing
-        // actually moves, so there's no real award. Mark processed and skip without
-        // writing a 0-point "winner" row that would clutter a house's activity feed.
+        // actually moves, so there's no winning house. Record a house-less activity
+        // row (no "WINNER: X House" attribution, which would be meaningless at 0 pts).
         if (pointsToAward <= 0) {
+          await tx.insert(scoreHistory).values({
+            houseId: null,
+            eventId: event.id,
+            delta: 0,
+            reason: `Event "${event.title}" ended. No points awarded.`,
+          });
           await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
           continue;
         }
@@ -251,10 +267,18 @@ export async function checkAndAwardClosedForms() {
         if (houseList.length === 0) continue; // closed with no eligible submissions
 
         const pointsToAward = formObj.pointsAwarded ?? 0;
-        // No points configured for this form/survey → no real award; don't write a
-        // 0-point contest row that would surface the form under a house's feed. The
-        // form is already flagged is_awarded above, so it stays processed.
-        if (pointsToAward <= 0) continue;
+        // No points configured for this form/survey (e.g. a shirt-order survey) → no
+        // contest winner. Record a house-less activity row so it still shows in the
+        // feed without naming a house. The form is already flagged is_awarded above.
+        if (pointsToAward <= 0) {
+          await tx.insert(scoreHistory).values({
+            houseId: null,
+            eventId: formObj.eventId,
+            delta: 0,
+            reason: `Evaluation form "${formObj.title}" closed. No points awarded.`,
+          });
+          continue;
+        }
 
         let maxSubmissions = -1;
         for (const [, count] of houseList) {

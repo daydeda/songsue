@@ -489,26 +489,51 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_shop_order_items_variant ON shop_order_items (variant_id)`;
   console.log("  ✅ shop tables (settings, products, variants, orders, order_items) created");
 
-  // 32. Remove the 0-point score_history rows the auto-award paths used to write for
-  // events/forms that moved no points — the no-attendance placeholders (attributed to
-  // an arbitrary house) AND the 0-point "winner"/"contest" rows for events or surveys
-  // configured with 0 points. All of them surfaced an activity under a house even
-  // though nothing was awarded. award-points.ts no longer writes any of these.
-  // Scoped to delta = 0 + the exact auto-generated reason strings, so real point
-  // awards and manual/individual adjustments are never touched.
+  // 32. Detach no-award activity rows from any house. An event/form that ends with no
+  // real award (no attendance, all attendees unassigned, or 0 points configured) should
+  // still appear in the Recent Activity feed, but attributed to NO house — pinning it to
+  // an arbitrary house (the old behaviour), or naming a 0-point "winner", made no sense.
+  //
+  // Make house_id nullable, then convert the existing auto-generated 0-point rows to
+  // house-less. The two no-attendance variants keep their (already neutral) text; the
+  // 0-point "winner"/"contest" rows are also rewritten to a neutral, house-free reason
+  // so the text no longer names a house. All scoped to delta = 0 + the exact generated
+  // reason strings, so real point awards and manual/individual adjustments are untouched.
+  // Idempotent: the rewrites change the reason out of the matched patterns, and
+  // re-detaching an already-null house_id is a no-op.
+  await sql`ALTER TABLE score_history ALTER COLUMN house_id DROP NOT NULL`;
+  console.log("  ✅ score_history.house_id is now nullable");
+
+  // No-attendance / all-unassigned: text is already neutral, just drop the house.
   await sql`
-    DELETE FROM score_history
+    UPDATE score_history
+    SET house_id = NULL
     WHERE delta = 0
+      AND house_id IS NOT NULL
       AND (
         reason LIKE 'Event "%" ended with no attendees. No points awarded.'
         OR reason LIKE 'Event "%" ended but all checked-in students were unassigned. No points awarded.'
-        OR reason LIKE 'Event "%" completed! WINNER:%'
-        OR reason LIKE 'Event "%" completed! TIE WINNER:%'
-        OR reason LIKE 'Event Form Contest Winner:%'
-        OR reason LIKE 'Event Form Contest Tie Winner:%'
       )
   `;
-  console.log("  ✅ removed 0-point auto-award score_history rows (no-attendance + 0-point winners)");
+
+  // 0-point event "winner"/"tie winner": drop the house and neutralise the text.
+  await sql`
+    UPDATE score_history
+    SET house_id = NULL,
+        reason = 'Event "' || regexp_replace(reason, '^Event "(.*?)" completed!.*$', '\\1') || '" ended. No points awarded.'
+    WHERE delta = 0
+      AND (reason LIKE 'Event "%" completed! WINNER:%' OR reason LIKE 'Event "%" completed! TIE WINNER:%')
+  `;
+
+  // 0-point form contest "winner"/"tie winner": drop the house and neutralise the text.
+  await sql`
+    UPDATE score_history
+    SET house_id = NULL,
+        reason = 'Evaluation form "' || regexp_replace(reason, '.*evaluation form "(.*?)" most with.*$', '\\1') || '" closed. No points awarded.'
+    WHERE delta = 0
+      AND (reason LIKE 'Event Form Contest Winner:%' OR reason LIKE 'Event Form Contest Tie Winner:%')
+  `;
+  console.log("  ✅ detached no-award activity rows from any house (feed entries kept)");
 
   console.log("✅ Migration complete!");
   await sql.end();

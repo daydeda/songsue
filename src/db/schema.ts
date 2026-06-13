@@ -164,7 +164,10 @@ export const attendance = pgTable("attendance", {
 // Score history log per house per activity (FE-08)
 export const scoreHistory = pgTable("score_history", {
   id: uuid("id").defaultRandom().primaryKey(),
-  houseId: text("house_id").references(() => houses.id, { onDelete: "cascade" }).notNull(),
+  // Nullable: an event/form that ends with no real award (no attendance, all
+  // attendees unassigned, or 0 points configured) records a house-less activity
+  // row — it shows in the Recent Activity feed but is attributed to no house.
+  houseId: text("house_id").references(() => houses.id, { onDelete: "cascade" }),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
   delta: integer("delta").notNull(), // positive = gain, negative = loss
   reason: text("reason").notNull(),

@@ -37,7 +37,9 @@ type Activity = {
   delta: number;
   reason: string;
   timestamp: string;
-  house: { id: string; name: string; color: string };
+  // null for house-less activity (e.g. an event/survey that ended with no points):
+  // it shows in the feed but is attributed to no house.
+  house: { id: string; name: string; color: string } | null;
   event?: { title: string };
 };
 
@@ -168,6 +170,26 @@ export default function HousesPage() {
       if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลงแต่ผู้เข้าเช็คอินไม่มีสังกัด ไม่มีการมอบคะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးသော်လည်း တက်ရောက်သူအားလုံးသည် အိမ်မသတ်မှတ်ရသေးသူများဖြစ်ကြသည်။ မည်သည့်အမှတ်မှ မရရှိပါ။`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束，但所有签到的学生均未分配学院。未授予积分。`;
+      return reason;
+    }
+
+    // 10. Event "X" ended. No points awarded. (event configured with 0 points)
+    const match10 = reason.match(/^Event "(.+?)" ended\. No points awarded\.$/);
+    if (match10) {
+      const [_, eventTitle] = match10;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลง ไม่มีการมอบคะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ မည်သည့်အမှတ်မှ မရရှိပါ။`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束。未授予积分。`;
+      return reason;
+    }
+
+    // 11. Evaluation form "X" closed. No points awarded. (survey/form with 0 points)
+    const match11 = reason.match(/^Evaluation form "(.+?)" closed\. No points awarded\.$/);
+    if (match11) {
+      const [_, formTitle] = match11;
+      if (lang === "th") return `แบบประเมิน "${formTitle}" ปิดรับแล้ว ไม่มีการมอบคะแนน`;
+      if (lang === "mm") return `အကဲဖြတ်လွှာ "${formTitle}" ပိတ်ပါပြီ။ မည်သည့်အမှတ်မှ မရရှိပါ။`;
+      if (lang === "cn") return `评估表 "${formTitle}" 已关闭。未授予积分。`;
       return reason;
     }
 
@@ -622,9 +644,13 @@ export default function HousesPage() {
           </h2>
 
           <div className="activity-list">
-            {activities.map((a) => (
+            {activities.map((a) => {
+              // House-less rows (a.house === null) show in the feed but aren't tied to
+              // any house — render a neutral icon colour and omit the house-name chip.
+              const iconColor = a.house?.color ?? "var(--text-muted)";
+              return (
               <div key={a.id} className="activity-item hover-scale">
-                 <div className="activity-icon-container" style={{ color: a.house.color, background: `${a.house.color}10` }}>
+                 <div className="activity-icon-container" style={{ color: iconColor, background: `${iconColor}10` }}>
                     <Award className="activity-icon" />
                  </div>
                  <div className="activity-content">
@@ -637,15 +663,20 @@ export default function HousesPage() {
                       </span>
                     </div>
                     <div className="activity-sub-info">
-                       <span style={{ color: a.house.color }}>{getTranslatedHouseName(a.house.id, a.house.name)}</span>
-                       <span className="bullet">•</span>
+                       {a.house && (
+                         <>
+                           <span style={{ color: a.house.color }}>{getTranslatedHouseName(a.house.id, a.house.name)}</span>
+                           <span className="bullet">•</span>
+                         </>
+                       )}
                        <span className="activity-event-title">{a.event?.title || "Special Points"}</span>
                        <span className="bullet">•</span>
                        <span>{new Date(a.timestamp).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })}</span>
                     </div>
                  </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
  

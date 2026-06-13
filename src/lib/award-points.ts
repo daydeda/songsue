@@ -85,15 +85,10 @@ export async function checkAndAwardPastEventPoints() {
         const dbHouses = await tx.query.houses.findMany();
 
         if (attendees.length === 0) {
-          // No attendees — record a 0-point row for the activity feed, then mark processed.
-          if (dbHouses.length > 0) {
-            await tx.insert(scoreHistory).values({
-              houseId: dbHouses[0].id,
-              eventId: event.id,
-              delta: 0,
-              reason: `Event "${event.title}" ended with no attendees. No points awarded.`,
-            });
-          }
+          // No attendees — mark processed and move on. We deliberately do NOT write a
+          // score_history row here: attributing it to dbHouses[0] tied an event nobody
+          // attended to an arbitrary house and surfaced it in that house's activity
+          // feed. An event with zero attendance belongs to no house.
           await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
           continue;
         }
@@ -115,15 +110,9 @@ export async function checkAndAwardPastEventPoints() {
 
         const houseList = Object.entries(houseCounts);
         if (houseList.length === 0) {
-          // All attendees unassigned — record a 0-point row, then mark processed.
-          if (dbHouses.length > 0) {
-            await tx.insert(scoreHistory).values({
-              houseId: dbHouses[0].id,
-              eventId: event.id,
-              delta: 0,
-              reason: `Event "${event.title}" ended but all checked-in students were unassigned. No points awarded.`,
-            });
-          }
+          // Everyone who checked in is unassigned to a house — no house participated,
+          // so mark processed without writing a score_history row (same reasoning as
+          // the no-attendees case above: don't attribute it to an arbitrary house).
           await tx.update(events).set({ winnerAwardedAt: new Date() }).where(eq(events.id, event.id));
           continue;
         }

@@ -318,7 +318,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                       const sel = v.id === variantId;
                       return (
                         <button key={v.id} disabled={out} onClick={() => { setVariantId(v.id); setCustomValue(""); }}
-                          style={{ padding: "8px 14px", borderRadius: "var(--radius-md)", border: `2px solid ${sel ? "var(--accent-primary)" : "var(--border-subtle)"}`, background: sel ? "var(--accent-glow)" : "var(--bg-base)", fontWeight: 700, fontSize: 13, cursor: out ? "not-allowed" : "pointer", opacity: out ? 0.4 : 1, textDecoration: out ? "line-through" : "none" }}>
+                          style={{ padding: "8px 14px", borderRadius: "var(--radius-md)", border: `2px solid ${sel ? "var(--accent-primary)" : "var(--border-subtle)"}`, background: sel ? "var(--accent-glow)" : "var(--bg-base)", fontWeight: 700, fontSize: 13, cursor: out ? "not-allowed" : "pointer", opacity: out ? 0.4 : 1, textDecoration: out ? "line-through" : "none", maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere", wordBreak: "break-word", textAlign: "left", lineHeight: 1.35 }}>
                           {v.label}{v.remaining != null ? ` (${Math.max(0, v.remaining)})` : ""}
                         </button>
                       );
@@ -365,9 +365,9 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
             <>
               {/* Order summary */}
               <div style={{ background: "var(--bg-base)", borderRadius: "var(--radius-md)", padding: 14, marginBottom: 16, border: "1px solid var(--border-subtle)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 4 }}>
-                  <span>{product.name}{variant && product.variants.length > 1 ? ` · ${variant.label}` : ""} × {qty}</span>
-                  <span style={{ fontWeight: 700 }}>{baht(total)}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 14, marginBottom: 4 }}>
+                  <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>{product.name}{variant && product.variants.length > 1 ? ` · ${variant.label}` : ""} × {qty}</span>
+                  <span style={{ fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{baht(total)}</span>
                 </div>
               </div>
 
@@ -435,9 +435,9 @@ function OrderRow({ order, th }: { order: Order; th: boolean }) {
   return (
     <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           {order.items.map((i, idx) => (
-            <p key={idx} style={{ fontSize: 14, fontWeight: 600 }}>{i.productName}{i.variantLabel && i.variantLabel !== "Standard" ? ` · ${i.variantLabel}` : ""} × {i.quantity}</p>
+            <p key={idx} style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere", wordBreak: "break-word" }}>{i.productName}{i.variantLabel && i.variantLabel !== "Standard" ? ` · ${i.variantLabel}` : ""} × {i.quantity}</p>
           ))}
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{new Date(order.createdAt).toLocaleString(th ? "th-TH" : "en-GB")}</p>
         </div>

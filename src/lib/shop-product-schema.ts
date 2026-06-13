@@ -18,7 +18,7 @@ export const productSchema = z.object({
     .array(
       z.object({
         id: z.string().uuid().optional(), // present = update existing, absent = new
-        label: z.string().min(1).max(60),
+        label: z.string().min(1).max(200),
         stock: z.number().int().min(0).max(100_000).nullable().default(null), // null = unlimited
         allowCustom: z.boolean().default(false), // "Other (specify)" — buyer types a value
       })

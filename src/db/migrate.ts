@@ -403,6 +403,92 @@ async function migrate() {
   `;
   console.log("  ✅ announcements table created and seeded");
 
+  // 31. Shop / merch. Five tables: a singleton settings row (payment QR + info +
+  // on/off), products (multi-poster + rich-text description + per-buyer limit),
+  // variants (sizes, each with its own stock), orders (slip + approval status),
+  // and order line items (snapshots so deleting a product never rewrites history).
+  await sql`
+    CREATE TABLE IF NOT EXISTS shop_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      enabled boolean NOT NULL DEFAULT true,
+      payment_info text NOT NULL DEFAULT '',
+      qr_image_url text,
+      updated_by text,
+      updated_at timestamptz DEFAULT now()
+    )
+  `;
+  await sql`
+    INSERT INTO shop_settings (enabled, payment_info)
+    SELECT false, ''
+    WHERE NOT EXISTS (SELECT 1 FROM shop_settings)
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS shop_products (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      name text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      price integer NOT NULL DEFAULT 0,
+      image_url text,
+      image_urls jsonb,
+      max_per_order integer,
+      is_active boolean NOT NULL DEFAULT true,
+      sort_order integer NOT NULL DEFAULT 0,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS shop_variants (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      product_id uuid NOT NULL REFERENCES shop_products(id) ON DELETE CASCADE,
+      label text NOT NULL,
+      stock integer,
+      sort_order integer NOT NULL DEFAULT 0
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shop_variants_product ON shop_variants (product_id)`;
+  // "Other (specify)" option: buyer types a custom value at checkout.
+  await sql`ALTER TABLE shop_variants ADD COLUMN IF NOT EXISTS allow_custom boolean NOT NULL DEFAULT false`;
+  // Optional per-product sale window (NULL = unbounded that side).
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS opens_at timestamptz`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS closes_at timestamptz`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS shop_orders (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      buyer_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status text NOT NULL DEFAULT 'pending',
+      slip_path text,
+      total_amount integer NOT NULL DEFAULT 0,
+      note text,
+      reviewed_by text,
+      reviewed_at timestamptz,
+      rejection_reason text,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shop_orders_buyer ON shop_orders (buyer_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shop_orders_status ON shop_orders (status)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS shop_order_items (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      order_id uuid NOT NULL REFERENCES shop_orders(id) ON DELETE CASCADE,
+      product_id uuid REFERENCES shop_products(id) ON DELETE SET NULL,
+      variant_id uuid REFERENCES shop_variants(id) ON DELETE SET NULL,
+      product_name text NOT NULL,
+      variant_label text NOT NULL,
+      unit_price integer NOT NULL,
+      quantity integer NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shop_order_items_order ON shop_order_items (order_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_shop_order_items_variant ON shop_order_items (variant_id)`;
+  console.log("  ✅ shop tables (settings, products, variants, orders, order_items) created");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

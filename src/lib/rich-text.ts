@@ -46,3 +46,23 @@ export function parseRichText(text: string): string {
 
   return html;
 }
+
+/**
+ * Plain-text version of rich text, for previews/snippets (e.g. product cards).
+ * Strips the markup tokens, keeping the visible text, and collapses whitespace.
+ */
+export function stripRichText(text: string): string {
+  if (!text) return "";
+
+  let out = text;
+  // Colors: {{color:#hex|text}} -> text (loop to unwrap nested tags inner-out).
+  while (out.includes("{{color:") && out.includes("|") && out.includes("}}")) {
+    const next = out.replace(/\{\{color:([^|]*?)\|((?:(?!\{\{color:).)*?)\}\}/g, "$2");
+    if (next === out) break;
+    out = next;
+  }
+  out = out.replace(/\*\*(.*?)\*\*/g, "$1"); // bold
+  out = out.replace(/\[(.*?)\]\((.*?)\)/g, "$1"); // links -> label only
+
+  return out.replace(/\s+/g, " ").trim();
+}

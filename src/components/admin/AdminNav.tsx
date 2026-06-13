@@ -9,6 +9,7 @@ import {
   Users,
   ShieldCheck,
   Megaphone,
+  ShoppingBag,
   User
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -20,6 +21,7 @@ const NAV = [
   { href: "/admin/students",  key: "adminStudentsDirectory",icon: Users },
   { href: "/admin/audit-logs",key: "auditTrails",          icon: ShieldCheck },
   { href: "/admin/announcement",key: "manageAnnouncement", icon: Megaphone },
+  { href: "/admin/shop",      key: "manageShop",           icon: ShoppingBag },
 ] as const;
 
 export function AdminNav({ role }: { role?: string | null }) {
@@ -39,8 +41,8 @@ export function AdminNav({ role }: { role?: string | null }) {
         return false;
       }
     }
-    // Announcement editor is super_admin/admin only (matches the page + API gate)
-    if (item.href === "/admin/announcement" && role !== "super_admin" && role !== "admin") {
+    // Announcement editor + shop are super_admin/admin only (matches page + API gates)
+    if ((item.href === "/admin/announcement" || item.href === "/admin/shop") && role !== "super_admin" && role !== "admin") {
       return false;
     }
     return true;

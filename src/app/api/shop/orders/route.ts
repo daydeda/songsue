@@ -1,0 +1,248 @@
+import { auth } from "@/auth";
+import { db } from "@/db";
+import { shopOrderItems, shopOrders, shopProducts, shopSettings, shopVariants } from "@/db/schema";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+
+export const dynamic = "force-dynamic";
+
+const orderSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        variantId: z.string().uuid(),
+        quantity: z.number().int().min(1).max(99),
+        // Required only when the chosen variant is an "Other (specify)" option.
+        customValue: z.string().max(120).optional(),
+      })
+    )
+    .min(1),
+  // Object key from POST /api/shop/slip — server-generated "<uuid>.<ext>".
+  slipPath: z.string().regex(/^[0-9a-f-]{36}\.(webp|gif|png|jpg|jpeg)$/i),
+  note: z.string().max(500).optional(),
+});
+
+// GET /api/shop/orders — the signed-in buyer's own orders, newest first.
+export async function GET() {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const buyerId = session.user.id!;
+
+    const orders = await db
+      .select()
+      .from(shopOrders)
+      .where(eq(shopOrders.buyerId, buyerId))
+      .orderBy(desc(shopOrders.createdAt));
+
+    const orderIds = orders.map((o) => o.id);
+    const items = orderIds.length
+      ? await db.select().from(shopOrderItems).where(inArray(shopOrderItems.orderId, orderIds))
+      : [];
+
+    const result = orders.map((o) => ({
+      id: o.id,
+      status: o.status,
+      totalAmount: o.totalAmount,
+      note: o.note,
+      rejectionReason: o.rejectionReason,
+      hasSlip: Boolean(o.slipPath),
+      createdAt: o.createdAt,
+      items: items
+        .filter((i) => i.orderId === o.id)
+        .map((i) => ({
+          productName: i.productName,
+          variantLabel: i.variantLabel,
+          unitPrice: i.unitPrice,
+          quantity: i.quantity,
+        })),
+    }));
+
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}
+
+// POST /api/shop/orders — place an order. Enforces per-variant stock and per-buyer
+// limits atomically: the variant rows are locked FOR UPDATE so two concurrent
+// buyers can't both slip past the last unit (same approach as event registration).
+export async function POST(req: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const buyerId = session.user.id!;
+
+    const data = orderSchema.parse(await req.json());
+
+    // Consolidate duplicate lines so a variant is checked once with its full qty.
+    const qtyByVariant = new Map<string, number>();
+    const customByVariant = new Map<string, string>();
+    for (const item of data.items) {
+      qtyByVariant.set(item.variantId, (qtyByVariant.get(item.variantId) ?? 0) + item.quantity);
+      if (item.customValue?.trim()) customByVariant.set(item.variantId, item.customValue.trim());
+    }
+    const variantIds = [...qtyByVariant.keys()];
+
+    const created = await db.transaction(async (tx) => {
+      const [settings] = await tx
+        .select({ enabled: shopSettings.enabled })
+        .from(shopSettings)
+        .orderBy(desc(shopSettings.updatedAt))
+        .limit(1);
+      if (!settings || !settings.enabled) {
+        return { error: "The shop is currently closed.", status: 403 as const };
+      }
+
+      // Lock the variant rows to serialize concurrent stock checks.
+      const variants = await tx
+        .select()
+        .from(shopVariants)
+        .where(inArray(shopVariants.id, variantIds))
+        .for("update");
+
+      if (variants.length !== variantIds.length) {
+        return { error: "One of the selected items no longer exists.", status: 400 as const };
+      }
+
+      const productIds = [...new Set(variants.map((v) => v.productId))];
+      const products = await tx
+        .select()
+        .from(shopProducts)
+        .where(inArray(shopProducts.id, productIds));
+      const productById = new Map(products.map((p) => [p.id, p]));
+
+      // Units already committed (non-rejected) per variant, for the stock check.
+      const soldRows = await tx
+        .select({
+          variantId: shopOrderItems.variantId,
+          sold: sql<number>`coalesce(sum(${shopOrderItems.quantity}), 0)`,
+        })
+        .from(shopOrderItems)
+        .innerJoin(shopOrders, eq(shopOrderItems.orderId, shopOrders.id))
+        .where(and(inArray(shopOrderItems.variantId, variantIds), ne(shopOrders.status, "rejected")))
+        .groupBy(shopOrderItems.variantId);
+      const soldByVariant = new Map(soldRows.map((r) => [r.variantId, Number(r.sold)]));
+
+      // Units this buyer already holds (non-rejected) per product, for the limit.
+      const ownedRows = await tx
+        .select({
+          productId: shopOrderItems.productId,
+          owned: sql<number>`coalesce(sum(${shopOrderItems.quantity}), 0)`,
+        })
+        .from(shopOrderItems)
+        .innerJoin(shopOrders, eq(shopOrderItems.orderId, shopOrders.id))
+        .where(and(eq(shopOrders.buyerId, buyerId), ne(shopOrders.status, "rejected"), inArray(shopOrderItems.productId, productIds)))
+        .groupBy(shopOrderItems.productId);
+      const ownedByProduct = new Map(ownedRows.map((r) => [r.productId, Number(r.owned)]));
+
+      // Requested qty per product (across its variants) for the per-buyer limit.
+      const requestedByProduct = new Map<string, number>();
+      for (const v of variants) {
+        const q = qtyByVariant.get(v.id)!;
+        requestedByProduct.set(v.productId, (requestedByProduct.get(v.productId) ?? 0) + q);
+      }
+
+      const lines: (typeof shopOrderItems.$inferInsert)[] = [];
+      let total = 0;
+
+      for (const v of variants) {
+        const product = productById.get(v.productId);
+        if (!product || !product.isActive) {
+          return { error: `"${product?.name ?? "An item"}" is no longer available.`, status: 400 as const };
+        }
+        // Sale window (server-authoritative — the client also hides it, but never trust that).
+        const now = new Date();
+        if (product.opensAt && now < product.opensAt) {
+          return { error: `${product.name} is not on sale yet.`, status: 409 as const };
+        }
+        if (product.closesAt && now > product.closesAt) {
+          return { error: `Sales for ${product.name} have closed.`, status: 409 as const };
+        }
+        const qty = qtyByVariant.get(v.id)!;
+
+        // "Other (specify)" — the buyer's typed value is required and gets baked
+        // into the snapshot label so it shows on both the buyer's and admin's view.
+        let variantLabel = v.label;
+        if (v.allowCustom) {
+          const custom = customByVariant.get(v.id);
+          if (!custom) {
+            return { error: `Please specify a value for "${v.label}" on ${product.name}.`, status: 400 as const };
+          }
+          variantLabel = `${v.label}: ${custom}`;
+        }
+
+        // Stock cap (per variant).
+        if (v.stock != null) {
+          const remaining = v.stock - (soldByVariant.get(v.id) ?? 0);
+          if (qty > remaining) {
+            return {
+              error: `Not enough stock for ${product.name} (${v.label}). Only ${Math.max(0, remaining)} left.`,
+              status: 409 as const,
+            };
+          }
+        }
+
+        // Per-buyer limit (across the whole product).
+        if (product.maxPerOrder != null) {
+          const owned = ownedByProduct.get(product.id) ?? 0;
+          const requested = requestedByProduct.get(product.id) ?? 0;
+          if (owned + requested > product.maxPerOrder) {
+            const allowance = product.maxPerOrder - owned;
+            return {
+              error: `You can order at most ${product.maxPerOrder} of ${product.name}` +
+                (owned > 0 ? ` (you already have ${owned}; ${Math.max(0, allowance)} more allowed).` : "."),
+              status: 409 as const,
+            };
+          }
+        }
+
+        total += product.price * qty;
+        lines.push({
+          orderId: "", // filled after the order row is created
+          productId: product.id,
+          variantId: v.id,
+          productName: product.name,
+          variantLabel,
+          unitPrice: product.price,
+          quantity: qty,
+        });
+      }
+
+      const [order] = await tx
+        .insert(shopOrders)
+        .values({
+          buyerId,
+          status: "pending",
+          slipPath: data.slipPath,
+          totalAmount: total,
+          note: data.note ?? null,
+        })
+        .returning({ id: shopOrders.id });
+
+      await tx.insert(shopOrderItems).values(lines.map((l) => ({ ...l, orderId: order.id })));
+
+      return { orderId: order.id, status: 201 as const };
+    });
+
+    if ("error" in created) {
+      return NextResponse.json({ error: created.error }, { status: created.status });
+    }
+    return NextResponse.json({ success: true, orderId: created.orderId }, { status: 201 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ") },
+        { status: 400 }
+      );
+    }
+    console.error(error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

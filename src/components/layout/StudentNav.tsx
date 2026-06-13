@@ -13,7 +13,8 @@ Menu,
 X,
 Settings,
 LayoutDashboard,
-QrCode
+QrCode,
+ShoppingBag
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
@@ -49,6 +50,7 @@ const links = user ? [
 { href: "/dashboard/id", label: t.digitalId || "Digital ID", icon: QrCode },
 { href: "/dashboard/history", label: t.eventHistory, icon: History },
 { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
+{ href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },
 { href: "/dashboard/profile", label: t.editProfile, icon: Settings },
 ] : [
 { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
@@ -660,7 +662,7 @@ visibility: visible;
   transform: translateX(0);
   visibility: visible;
 }
-@media (min-width: 1024px) {
+@media (min-width: 1281px) {
   .mobile-sidebar,
   .mobile-sidebar-overlay {
     display: none !important;
@@ -724,12 +726,15 @@ color: var(--accent-primary) !important;
 border: 1px solid rgba(255, 107, 0, 0.15) !important;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1400px) {
 .nav-right {
 gap: 12px;
 }
 .user-section {
 gap: 8px;
+}
+.nav-center {
+gap: 4px;
 }
 :global(.nav-link) {
 padding: 6px 12px !important;
@@ -737,7 +742,7 @@ min-height: 36px !important;
 }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1280px) {
 .desktop-links {
 display: none !important;
 }

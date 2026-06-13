@@ -319,3 +319,139 @@ export const announcements = pgTable("announcements", {
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
+
+// ============================================================================
+// SHOP / MERCH
+// Lightweight store for selling merch (shirts, etc.). Flow: buyer places an order
+// → transfers money (PromptPay/bank shown from shop_settings) → uploads a payment
+// slip to a PRIVATE bucket → an admin reviews the slip and approves or rejects.
+// ============================================================================
+
+// Singleton settings (like announcements): payment instructions + QR shown to
+// buyers at checkout, plus a master on/off switch for the whole shop.
+export const shopSettings = pgTable("shop_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  enabled: boolean("enabled").notNull().default(true),
+  // Rich-text (parseRichText markup) payment instructions / bank details.
+  paymentInfo: text("payment_info").notNull().default(""),
+  // Public URL (uploads bucket) of the PromptPay/bank QR image. Not sensitive.
+  qrImageUrl: text("qr_image_url"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const shopProducts = pgTable("shop_products", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  // Rich-text description — same **bold** / [text](url) / {{color:#hex|text}}
+  // markup as announcements, rendered through parseRichText().
+  description: text("description").notNull().default(""),
+  // Price in whole Thai Baht (฿). All variants of a product share this price.
+  price: integer("price").notNull().default(0),
+  // Cover poster — mirrors imageUrls[0]; kept for thumbnails / legacy reads.
+  imageUrl: text("image_url"),
+  // Ordered list of poster image URLs (carousel). Same pattern as events.imageUrls.
+  imageUrls: jsonb("image_urls").$type<string[]>(),
+  // Max units of THIS product one buyer may hold across all non-rejected orders.
+  // NULL = unlimited. This is the per-buyer "limit per order" control.
+  maxPerOrder: integer("max_per_order"),
+  // Optional sale window. NULL on either side = unbounded that side. Outside the
+  // window the product still shows but ordering is blocked (upcoming / closed).
+  // isActive remains the manual master on/off on top of this schedule.
+  opensAt: timestamp("opens_at", { withTimezone: true }),
+  closesAt: timestamp("closes_at", { withTimezone: true }),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+// A purchasable option of a product (e.g. size S/M/L). Every product has at least
+// one variant; a simple item carries a single "Standard" variant. Stock lives
+// here so each size has its own cap.
+export const shopVariants = pgTable("shop_variants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id").references(() => shopProducts.id, { onDelete: "cascade" }).notNull(),
+  label: text("label").notNull(), // e.g. "S", "M", "L", "Standard", "Other"
+  // Total units available for this variant. NULL = unlimited stock.
+  stock: integer("stock"),
+  // When true this is an "Other (specify)" option: the buyer must type a value,
+  // which is appended to the snapshot label on their order line.
+  allowCustom: boolean("allow_custom").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => ([
+  index("idx_shop_variants_product").on(table.productId),
+]));
+
+export const shopOrders = pgTable("shop_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  buyerId: text("buyer_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // 'pending' (awaiting review) | 'approved' | 'rejected'
+  status: text("status").notNull().default("pending"),
+  // Object path inside the PRIVATE "slips" bucket — NOT a public URL. The slip is
+  // only ever served through the auth-guarded slip endpoint to the buyer or an
+  // admin, never linked publicly (PDPA: slips carry names/bank details).
+  slipPath: text("slip_path"),
+  // Snapshot of the order total (฿) at purchase time.
+  totalAmount: integer("total_amount").notNull().default(0),
+  // Optional buyer note (e.g. name on the slip, pickup preference).
+  note: text("note"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => ([
+  index("idx_shop_orders_buyer").on(table.buyerId),
+  index("idx_shop_orders_status").on(table.status),
+]));
+
+export const shopOrderItems = pgTable("shop_order_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").references(() => shopOrders.id, { onDelete: "cascade" }).notNull(),
+  // Keep the order line even if the product/variant is later deleted (set null);
+  // the snapshot columns below preserve what was actually bought.
+  productId: uuid("product_id").references(() => shopProducts.id, { onDelete: "set null" }),
+  variantId: uuid("variant_id").references(() => shopVariants.id, { onDelete: "set null" }),
+  productName: text("product_name").notNull(),
+  variantLabel: text("variant_label").notNull(),
+  unitPrice: integer("unit_price").notNull(),
+  quantity: integer("quantity").notNull(),
+}, (table) => ([
+  index("idx_shop_order_items_order").on(table.orderId),
+  index("idx_shop_order_items_variant").on(table.variantId),
+]));
+
+export const shopProductsRelations = relations(shopProducts, ({ many }) => ({
+  variants: many(shopVariants),
+}));
+
+export const shopVariantsRelations = relations(shopVariants, ({ one }) => ({
+  product: one(shopProducts, {
+    fields: [shopVariants.productId],
+    references: [shopProducts.id],
+  }),
+}));
+
+export const shopOrdersRelations = relations(shopOrders, ({ one, many }) => ({
+  buyer: one(users, {
+    fields: [shopOrders.buyerId],
+    references: [users.id],
+  }),
+  items: many(shopOrderItems),
+}));
+
+export const shopOrderItemsRelations = relations(shopOrderItems, ({ one }) => ({
+  order: one(shopOrders, {
+    fields: [shopOrderItems.orderId],
+    references: [shopOrders.id],
+  }),
+  product: one(shopProducts, {
+    fields: [shopOrderItems.productId],
+    references: [shopProducts.id],
+  }),
+  variant: one(shopVariants, {
+    fields: [shopOrderItems.variantId],
+    references: [shopVariants.id],
+  }),
+}));

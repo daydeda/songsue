@@ -42,6 +42,17 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useRouter } from "next/navigation";
 
+// House mascot logos (background removed). Keyed by both the house id (color) and
+// its name so it resolves whichever identifier the API returns.
+const HOUSE_LOGOS: Record<string, string> = {
+  red: "/house_logo/mom.png",    mom: "/house_logo/mom.png",
+  green: "/house_logo/to.png",   to: "/house_logo/to.png",
+  yellow: "/house_logo/luang.png", luang: "/house_logo/luang.png",
+  blue: "/house_logo/makon.png", makara: "/house_logo/makon.png", makon: "/house_logo/makon.png",
+};
+const houseLogo = (idOrName?: string | null): string | null =>
+  idOrName ? HOUSE_LOGOS[idOrName.toLowerCase()] ?? null : null;
+
 type Event = {
   id: string;
   title: string;
@@ -527,9 +538,12 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                 background: "rgba(255,255,255,0.6)"
               }}
             >
+              {houseLogo(houseId) && (
+                <img src={houseLogo(houseId)!} alt="" style={{ width: 64, height: 64, objectFit: "contain", margin: "0 auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.12))" }} />
+              )}
               <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: houseInfo.color, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Trophy size={12} />
-                {houseInfo.name} {t.house}
+                {lang === "th" ? houseInfo.name : `${houseInfo.name} ${t.house}`}
               </p>
               <p style={{ fontSize: 32, fontWeight: 900, color: houseInfo.color, filter: "brightness(0.8)" }}>
                 {houseInfo.name.toUpperCase()}

@@ -46,3 +46,6 @@ next-env.d.ts
 AGENTS.md
 CLAUDE.md
 /scratch/
+
+# Private (non-public) dev uploads — payment slips
+.uploads-private/

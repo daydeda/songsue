@@ -13,7 +13,18 @@ import {
   ChevronRight
 } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
- 
+
+// House mascot logos (background removed). Keyed by both the house id (color) and
+// its name so it resolves whichever identifier the API returns.
+const HOUSE_LOGOS: Record<string, string> = {
+  red: "/house_logo/mom.png",    mom: "/house_logo/mom.png",
+  green: "/house_logo/to.png",   to: "/house_logo/to.png",
+  yellow: "/house_logo/luang.png", luang: "/house_logo/luang.png",
+  blue: "/house_logo/makon.png", makara: "/house_logo/makon.png", makon: "/house_logo/makon.png",
+};
+const houseLogo = (idOrName?: string | null): string | null =>
+  idOrName ? HOUSE_LOGOS[idOrName.toLowerCase()] ?? null : null;
+
 type House = {
   id: string;
   name: string;
@@ -101,7 +112,7 @@ export default function HousesPage() {
     if (match4) {
       const [_, house, formTitle, subs, pts] = match4;
       const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: บ้าน${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
+      if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံးဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动表单竞赛优胜者：${translatedHouse} 学院以 ${subs} 次提交最多完成了评估表 "${formTitle}"！获得 ${pts} 积分。`;
       return reason;
@@ -112,7 +123,7 @@ export default function HousesPage() {
     if (match5) {
       const [_, house, formTitle, subs, pts] = match5;
       const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: บ้าน${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံး ပူးတွဲဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动表单竞赛并列优胜者：${translatedHouse} 学院以 ${subs} 次提交完成了评估表 "${formTitle}"！平分获得 ${pts} 积分。`;
       return reason;
@@ -123,7 +134,7 @@ export default function HousesPage() {
     if (match6) {
       const [_, eventTitle, house, atts, pts] = match6;
       const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! บ้าน${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ အနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束！获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！获得 ${pts} 积分。`;
       return reason;
@@ -134,7 +145,7 @@ export default function HousesPage() {
     if (match7) {
       const [_, eventTitle, house, atts, pts] = match7;
       const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: บ้าน${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ ပူးတွဲအနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束！并列获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！平分获得 ${pts} 积分。`;
       return reason;
@@ -154,7 +165,7 @@ export default function HousesPage() {
     const match9 = reason.match(/^Event "(.+?)" ended but all checked-in students were unassigned\. No points awarded\.$/);
     if (match9) {
       const [_, eventTitle] = match9;
-      if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลงแต่ผู้เข้าเช็คอินไม่มีสังกัดบ้าน ไม่มีการมอบคะแนน`;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" สิ้นสุดลงแต่ผู้เข้าเช็คอินไม่มีสังกัด ไม่มีการมอบคะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးသော်လည်း တက်ရောက်သူအားလုံးသည် အိမ်မသတ်မှတ်ရသေးသူများဖြစ်ကြသည်။ မည်သည့်အမှတ်မှ မရရှိပါ။`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束，但所有签到的学生均未分配学院。未授予积分。`;
       return reason;
@@ -288,7 +299,9 @@ export default function HousesPage() {
                 <div className="podium-card second-place" style={{ borderBottom: `8px solid ${houses[1].color}` }}>
                   <div className="podium-rank-badge rank-second">2</div>
                   <div className="podium-avatar" style={{ background: `${houses[1].color}10`, color: houses[1].color }}>
-                    <Trophy size={28} />
+                    {houseLogo(houses[1].id) ? (
+                      <img src={houseLogo(houses[1].id)!} alt="" className="house-logo-img" />
+                    ) : <Trophy size={28} />}
                   </div>
                   <h3 className="podium-name">{getTranslatedHouseName(houses[1].id, houses[1].name)}</h3>
                   <div className="podium-points">
@@ -306,7 +319,9 @@ export default function HousesPage() {
                   </div>
                   <div className="podium-rank-badge rank-first">1</div>
                   <div className="podium-avatar" style={{ background: `${houses[0].color}10`, color: houses[0].color, boxShadow: `0 10px 25px ${houses[0].color}25` }}>
-                    <Trophy size={36} />
+                    {houseLogo(houses[0].id) ? (
+                      <img src={houseLogo(houses[0].id)!} alt="" className="house-logo-img" />
+                    ) : <Trophy size={36} />}
                   </div>
                   <h3 className="podium-name">{getTranslatedHouseName(houses[0].id, houses[0].name)}</h3>
                   <div className="podium-points">
@@ -321,7 +336,9 @@ export default function HousesPage() {
                 <div className="podium-card third-place" style={{ borderBottom: `8px solid ${houses[2].color}` }}>
                   <div className="podium-rank-badge rank-third">3</div>
                   <div className="podium-avatar" style={{ background: `${houses[2].color}10`, color: houses[2].color }}>
-                    <Trophy size={24} />
+                    {houseLogo(houses[2].id) ? (
+                      <img src={houseLogo(houses[2].id)!} alt="" className="house-logo-img" />
+                    ) : <Trophy size={24} />}
                   </div>
                   <h3 className="podium-name">{getTranslatedHouseName(houses[2].id, houses[2].name)}</h3>
                   <div className="podium-points">
@@ -346,14 +363,16 @@ export default function HousesPage() {
                     {idx + 1}
                   </div>
                   <div className="standings-avatar" style={{ background: `${h.color}10`, color: h.color }}>
-                    <Trophy size={18} />
+                    {houseLogo(h.id) ? (
+                      <img src={houseLogo(h.id)!} alt="" className="house-logo-img" />
+                    ) : <Trophy size={18} />}
                   </div>
                   <div className="standings-info">
                     <span className="standings-name">
                       {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}
                     </span>
                     <span className="standings-subtitle" style={{ color: h.color }}>
-                      {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name} House
+                      {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}{lang === "th" ? "" : " House"}
                     </span>
                   </div>
                   <div className="standings-progress-container">
@@ -518,7 +537,7 @@ export default function HousesPage() {
                         {isMe && <span className="you-badge">{lang === "th" ? "คุณ" : "YOU"}</span>}
                       </span>
                       <span className="standings-subtitle" style={{ color: houseColor || "var(--text-muted)" }}>
-                        {houseName} {ind.houseId ? "House" : ""}
+                        {houseName}{ind.houseId && lang !== "th" ? " House" : ""}
                       </span>
                     </div>
                     <div className="standings-progress-container" style={{ flex: 3 }}>
@@ -721,6 +740,14 @@ export default function HousesPage() {
           width: 76px;
           height: 76px;
           border-radius: 24px;
+        }
+        /* House mascot logo inside podium/standings avatars (transparent PNG) */
+        .house-logo-img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          padding: 4px;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.12));
         }
         .podium-name {
           font-size: 18px;

@@ -65,22 +65,33 @@ export async function GET(
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
-    // Whether a user filled in any meaningful medical field (mirrors
-    // hasActualMedicalInfo on the client). "-" and blanks are treated as empty.
+    // Which medical CATEGORIES a user filled in (mirrors hasActualMedicalInfo
+    // on the client). "-" and blanks are treated as empty. The identifiers match
+    // i18n keys so the client can translate them directly — values are never
+    // included, so non-admins learn the category but not the detail.
     const isMeaningful = (v: unknown) =>
       typeof v === "string" ? v.trim() !== "" && v.trim() !== "-" : !!v;
-    const hasMedical = (u: (typeof list)[number]["user"]) =>
-      !!u &&
-      ([u.chronicDiseases, u.medicalHistory, u.drugAllergies, u.foodAllergies, u.dietaryRestrictions, u.emergencyMedication].some(isMeaningful) ||
-        u.faintingHistory === true);
+    const medicalCategoriesOf = (u: (typeof list)[number]["user"]): string[] => {
+      if (!u) return [];
+      const cats: string[] = [];
+      if (isMeaningful(u.chronicDiseases)) cats.push("chronicDiseases");
+      if (isMeaningful(u.medicalHistory)) cats.push("medicalHistory");
+      if (isMeaningful(u.drugAllergies)) cats.push("drugAllergies");
+      if (isMeaningful(u.foodAllergies)) cats.push("foodAllergies");
+      if (isMeaningful(u.dietaryRestrictions)) cats.push("dietaryRestrictions");
+      if (isMeaningful(u.emergencyMedication)) cats.push("emergencyMed");
+      if (u.faintingHistory === true) cats.push("faintingHistory");
+      return cats;
+    };
 
     // super_admin/admin receive the full record (plus the hasMedicalInfo flag).
-    // registration/organizer get only the boolean signal that a condition
-    // exists — never the detail the student filled in — and no meds-check
-    // status (which would itself reveal a condition).
+    // registration/organizer get only the list of categories present — never the
+    // detail the student filled in — and no meds-check status (which would
+    // itself reveal a condition).
     const sanitized = list.map((row) => {
       const u = row.user;
-      const hasMedicalInfo = hasMedical(u);
+      const medicalCategories = medicalCategoriesOf(u);
+      const hasMedicalInfo = medicalCategories.length > 0;
       if (canViewMedical) {
         return { ...row, user: u ? { ...u, hasMedicalInfo } : u };
       }
@@ -96,6 +107,7 @@ export async function GET(
         emergencyContacts: u.emergencyContacts,
         house: u.house,
         hasMedicalInfo,
+        medicalCategories,
       };
       return { ...row, medsCheckOption: null, user: safeUser };
     });

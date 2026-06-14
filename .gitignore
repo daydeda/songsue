@@ -49,3 +49,6 @@ CLAUDE.md
 
 # Private (non-public) dev uploads — payment slips
 .uploads-private/
+
+# House logo source masters (multi-MB originals; app uses optimized versions)
+public/house_logo/original/

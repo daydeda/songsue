@@ -75,6 +75,9 @@ interface AdminStudent {
   emergencyContacts: EmergencyContact[];
   houseId: string | null;
   house: { id: string; name: string; color: string } | null;
+  // Server-derived "has a medical condition" signal. Sent to all admin-area
+  // roles; the raw medical detail above is only populated for super_admin/admin.
+  hasMedicalInfo?: boolean;
 }
 
 interface AdminAttendance {
@@ -800,6 +803,12 @@ export default function AdminEventsPage() {
     return fields.some(isMeaningful) || user.faintingHistory === true;
   };
 
+  // The "has a medical condition" signal shown to every admin-area role.
+  // Admins compute it from the raw fields they receive; registration/organizer
+  // only get the server-derived hasMedicalInfo boolean (no detail).
+  const hasMedicalSignal = (user: AdminStudent | null | undefined) =>
+    !!user && (user.hasMedicalInfo === true || hasActualMedicalInfo(user));
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const fetchEvents = async (signal?: AbortSignal) => {
@@ -1178,7 +1187,7 @@ export default function AdminEventsPage() {
   };
 
   const filteredAttendance = attendance.filter((m) => {
-    if (filterMedical && !hasActualMedicalInfo(m.user)) {
+    if (filterMedical && !hasMedicalSignal(m.user)) {
       return false;
     }
     if (filterNotCheckedIn && m.status !== "registered") {
@@ -3572,8 +3581,8 @@ export default function AdminEventsPage() {
             {!loadingAttendance && attendance.length > 0 && (
               <div className="attendance-modal-filter-bar">
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  {/* Medical-condition filter leaks who has a condition — admin/super_admin only. */}
-                  {canExportAttendance && (
+                  {/* Filtering to condition-holders is signal-level (who, not
+                      what), so it's available to all admin-area roles. */}
                   <button
                     onClick={() => setFilterMedical(!filterMedical)}
                     style={{
@@ -3594,7 +3603,6 @@ export default function AdminEventsPage() {
                     <HeartPulse size={16} />
                     {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
                   </button>
-                  )}
 
                   <button
                     onClick={() => setFilterNotCheckedIn(!filterNotCheckedIn)}
@@ -3878,7 +3886,7 @@ export default function AdminEventsPage() {
                                 )}
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                {canExportAttendance && hasActualMedicalInfo(m.user) && (
+                                {hasMedicalSignal(m.user) && (
                                   <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
                                     <Activity size={20} />
                                   </div>
@@ -3972,26 +3980,25 @@ export default function AdminEventsPage() {
                 </div>
               </div>
 
-              {/* Medical & Health Info is PDPA-sensitive — only super_admin/admin
-                  (canExportAttendance) may view it. The attendance API also
-                  withholds these fields for other roles. Emergency contacts are
-                  shown to all admin-area roles (including registration). */}
-              {canExportAttendance && (
-              /* Medical */
+              {/* Medical & Health Info: the raw detail the student filled in is
+                  PDPA-sensitive and shown only to super_admin/admin
+                  (canExportAttendance). Other admin-area roles (registration)
+                  still see the "has a condition" signal, not the detail. */}
+              {/* Medical */}
               <div style={{
-                background: hasActualMedicalInfo(selectedStudent)
+                background: hasMedicalSignal(selectedStudent)
                   ? "rgba(239, 68, 68, 0.05)"
                   : "var(--bg-elevated)",
                 padding: 20,
                 borderRadius: 20,
-                border: hasActualMedicalInfo(selectedStudent)
+                border: hasMedicalSignal(selectedStudent)
                   ? "1px solid rgba(239, 68, 68, 0.1)"
                   : "1px solid transparent"
               }}>
                 <p style={{
                   fontSize: 12,
                   fontWeight: 800,
-                  color: hasActualMedicalInfo(selectedStudent) ? "#ef4444" : "var(--text-muted)",
+                  color: hasMedicalSignal(selectedStudent) ? "#ef4444" : "var(--text-muted)",
                   textTransform: "uppercase",
                   marginBottom: 12,
                   letterSpacing: "0.05em",
@@ -4004,20 +4011,31 @@ export default function AdminEventsPage() {
                 </p>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Chronic:</b> {selectedStudent.chronicDiseases}</p>}
-                  {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>History:</b> {selectedStudent.medicalHistory}</p>}
-                  {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Drug Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
-                  {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Food Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
-                  {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Dietary:</b> {selectedStudent.dietaryRestrictions}</p>}
-                  {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Emergency Medication:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
-                  {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ History of fainting</p>}
+                  {canExportAttendance ? (
+                    <>
+                      {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Chronic:</b> {selectedStudent.chronicDiseases}</p>}
+                      {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>History:</b> {selectedStudent.medicalHistory}</p>}
+                      {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Drug Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
+                      {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Food Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
+                      {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Dietary:</b> {selectedStudent.dietaryRestrictions}</p>}
+                      {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Emergency Medication:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
+                      {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ History of fainting</p>}
 
-                  {!hasActualMedicalInfo(selectedStudent) && (
+                      {!hasActualMedicalInfo(selectedStudent) && (
+                        <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
+                      )}
+                    </>
+                  ) : hasMedicalSignal(selectedStudent) ? (
+                    // Signal only — registration sees that a condition exists, never the detail.
+                    <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                      <AlertCircle size={16} />
+                      Has a medical condition on file. Details are restricted to administrators.
+                    </p>
+                  ) : (
                     <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
                   )}
                 </div>
               </div>
-              )}
 
               {/* Emergency Contact — visible to all admin-area roles */}
               {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (

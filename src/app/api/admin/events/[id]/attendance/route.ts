@@ -37,14 +37,18 @@ export async function GET(
             phone: true,
             role: true,
             roles: true,
-            chronicDiseases: canViewMedical,
-            medicalHistory: canViewMedical,
-            drugAllergies: canViewMedical,
-            foodAllergies: canViewMedical,
-            dietaryRestrictions: canViewMedical,
-            faintingHistory: canViewMedical,
+            // Medical detail is always read here so we can derive the
+            // "has a condition" signal, but it is only forwarded to
+            // super_admin/admin below (see sanitize step).
+            chronicDiseases: true,
+            medicalHistory: true,
+            drugAllergies: true,
+            foodAllergies: true,
+            dietaryRestrictions: true,
+            faintingHistory: true,
+            emergencyMedication: true,
             // Emergency contacts are available to all admin-area roles
-            // (super_admin/admin/registration/organizer), unlike medical info.
+            // (super_admin/admin/registration/organizer), unlike medical detail.
             emergencyContacts: true,
           },
           with: {
@@ -61,12 +65,40 @@ export async function GET(
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
-    // medsCheckOption only exists for attendees who went through the medication
-    // check, so it reveals who has a medical condition. Withhold it from roles
-    // that can't view medical info (registration/organizer).
-    const sanitized = canViewMedical
-      ? list
-      : list.map((row) => ({ ...row, medsCheckOption: null }));
+    // Whether a user filled in any meaningful medical field (mirrors
+    // hasActualMedicalInfo on the client). "-" and blanks are treated as empty.
+    const isMeaningful = (v: unknown) =>
+      typeof v === "string" ? v.trim() !== "" && v.trim() !== "-" : !!v;
+    const hasMedical = (u: (typeof list)[number]["user"]) =>
+      !!u &&
+      ([u.chronicDiseases, u.medicalHistory, u.drugAllergies, u.foodAllergies, u.dietaryRestrictions, u.emergencyMedication].some(isMeaningful) ||
+        u.faintingHistory === true);
+
+    // super_admin/admin receive the full record (plus the hasMedicalInfo flag).
+    // registration/organizer get only the boolean signal that a condition
+    // exists — never the detail the student filled in — and no meds-check
+    // status (which would itself reveal a condition).
+    const sanitized = list.map((row) => {
+      const u = row.user;
+      const hasMedicalInfo = hasMedical(u);
+      if (canViewMedical) {
+        return { ...row, user: u ? { ...u, hasMedicalInfo } : u };
+      }
+      const safeUser = u && {
+        id: u.id,
+        name: u.name,
+        nickname: u.nickname,
+        studentId: u.studentId,
+        major: u.major,
+        phone: u.phone,
+        role: u.role,
+        roles: u.roles,
+        emergencyContacts: u.emergencyContacts,
+        house: u.house,
+        hasMedicalInfo,
+      };
+      return { ...row, medsCheckOption: null, user: safeUser };
+    });
 
     // FE-12: Log the sensitive data access (Immutable Audit Trail)
     // Since attendance list now contains medical info, we must log this access if they have permission to view it.

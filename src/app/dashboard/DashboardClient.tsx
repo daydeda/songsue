@@ -366,6 +366,14 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     message: "",
     type: "success",
   });
+  // Confirmation gate for cancelling a registration. Un-registering is
+  // destructive (the seat is released and may be taken), so we ask the user to
+  // confirm before firing the DELETE. New sign-ups skip this and register directly.
+  const [confirmUnregister, setConfirmUnregister] = useState<{
+    show: boolean;
+    eventId: string;
+    eventTitle: string;
+  }>({ show: false, eventId: "", eventTitle: "" });
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
   // Admin-editable dashboard announcement. null = not loaded yet or fetch failed
@@ -459,6 +467,20 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       });
     }
     setRegisteringId(null);
+  };
+
+  // Entry point for the register/cancel button. A cancel (registered === true)
+  // is routed through a confirmation modal first; a new sign-up fires immediately.
+  const promptRegister = (eventId: string, registered: boolean, eventTitle: string) => {
+    if (!session?.user) {
+      router.push("/login");
+      return;
+    }
+    if (registered) {
+      setConfirmUnregister({ show: true, eventId, eventTitle });
+    } else {
+      handleRegister(eventId, false);
+    }
   };
 
   // Hooks must run on every render, before any early return (Rules of Hooks).
@@ -776,13 +798,14 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             const nowTs = new Date();
                             const isPastEvent = nowTs > new Date(e.endTime);
                             const isAttended = e.attendanceStatus === "attended";
-                            const canCancel = !isPastEvent && !isAttended;
-                            // The registration window only gates NEW sign-ups — an
-                            // existing registration is never blocked by it.
                             const regOpenAt = e.registrationOpenTime ? new Date(e.registrationOpenTime) : null;
                             const regCloseAt = e.registrationCloseTime ? new Date(e.registrationCloseTime) : null;
+                            // Once the registration window closes the headcount locks
+                            // in both directions: no new sign-ups AND no cancellations.
+                            const regWindowClosed = !!regCloseAt && nowTs > regCloseAt;
+                            const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
                             const notYetOpen = !e.isRegistered && !!regOpenAt && nowTs < regOpenAt;
-                            const regClosed = !e.isRegistered && !!regCloseAt && nowTs > regCloseAt;
+                            const regClosed = !e.isRegistered && regWindowClosed;
                             const windowBlocked = notYetOpen || regClosed;
                             const isDisabled = (e.isRegistered && !canCancel) || windowBlocked || registeringId === e.id;
                             const greyed = regClosed || (e.isRegistered && !canCancel);
@@ -792,7 +815,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                                 disabled={isDisabled}
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  handleRegister(e.id, !!e.isRegistered);
+                                  promptRegister(e.id, !!e.isRegistered, e.title);
                                 }}
                                 className={`btn btn-full ${e.isRegistered ? "btn-success-solid" : "btn-primary"}`}
                                 style={{
@@ -1184,6 +1207,89 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         </div>
       )}
 
+      {/* Cancel-registration confirmation. Asks the student to confirm before the
+          DELETE fires, since releasing the seat can't be silently undone. */}
+      {confirmUnregister.show && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 1350,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setConfirmUnregister(prev => ({ ...prev, show: false }))}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "90%",
+            maxWidth: 440,
+            borderRadius: 28,
+            padding: 32,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "rgba(245, 158, 11, 0.1)",
+              color: "#f59e0b",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <AlertCircle size={28} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
+              {lang === "th" ? "ยกเลิกการลงทะเบียน?" : lang === "cn" ? "取消注册？" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း ပယ်ဖျက်မလား?" : "Cancel Registration?"}
+            </h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              {lang === "th"
+                ? `คุณต้องการยกเลิกการลงทะเบียนสำหรับกิจกรรม "${confirmUnregister.eventTitle}" ใช่หรือไม่? ที่นั่งของคุณอาจถูกผู้อื่นจองแทน`
+                : lang === "cn"
+                ? `您确定要取消活动 "${confirmUnregister.eventTitle}" 的注册吗？您的名额可能会被其他人占用。`
+                : lang === "mm"
+                ? `"${confirmUnregister.eventTitle}" လှုပ်ရှားမှုအတွက် မှတ်ပုံတင်ခြင်းကို ပယ်ဖျက်လိုသည်မှာ သေချာပါသလား? သင့်နေရာကို အခြားသူ ယူသွားနိုင်ပါသည်။`
+                : `Are you sure you want to cancel your registration for "${confirmUnregister.eventTitle}"? Your seat may be taken by someone else.`}
+            </p>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                className="btn btn-ghost"
+                style={{ flex: 1, height: 46, borderRadius: 12, fontSize: 14, fontWeight: 800, border: "1px solid var(--border-medium)" }}
+                onClick={() => setConfirmUnregister(prev => ({ ...prev, show: false }))}
+              >
+                {lang === "th" ? "ไม่ใช่ คงไว้" : lang === "cn" ? "保留注册" : lang === "mm" ? "မဖျက်တော့ပါ" : "Keep It"}
+              </button>
+              <button
+                className="btn"
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 12,
+                  fontSize: 14,
+                  fontWeight: 800,
+                  background: "#ef4444",
+                  color: "#fff",
+                  border: "none",
+                  boxShadow: "0 10px 25px rgba(239,68,68,0.3)"
+                }}
+                onClick={() => {
+                  const { eventId } = confirmUnregister;
+                  setConfirmUnregister(prev => ({ ...prev, show: false }));
+                  handleRegister(eventId, true);
+                }}
+              >
+                {lang === "th" ? "ยืนยันยกเลิก" : lang === "cn" ? "确认取消" : lang === "mm" ? "ပယ်ဖျက်မည်" : "Yes, Cancel"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Full Size Image Preview Modal */}
       {previewImage && (
         <div 
@@ -1253,12 +1359,14 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         const nowTs = new Date();
         const isPastEvent = nowTs > new Date(liveEvent.endTime);
         const isAttended = liveEvent.attendanceStatus === "attended";
-        const canCancel = !isPastEvent && !isAttended;
-        // Registration window only gates NEW sign-ups, not an existing registration.
         const regOpenAt = liveEvent.registrationOpenTime ? new Date(liveEvent.registrationOpenTime) : null;
         const regCloseAt = liveEvent.registrationCloseTime ? new Date(liveEvent.registrationCloseTime) : null;
+        // Once the registration window closes the headcount locks in both
+        // directions: no new sign-ups AND no cancellations.
+        const regWindowClosed = !!regCloseAt && nowTs > regCloseAt;
+        const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
         const notYetOpen = !liveEvent.isRegistered && !!regOpenAt && nowTs < regOpenAt;
-        const regClosed = !liveEvent.isRegistered && !!regCloseAt && nowTs > regCloseAt;
+        const regClosed = !liveEvent.isRegistered && regWindowClosed;
         const windowBlocked = notYetOpen || regClosed;
         const greyed = regClosed || (liveEvent.isRegistered && !canCancel);
         const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
@@ -1511,7 +1619,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
                 <button
                   disabled={isDisabled}
-                  onClick={() => handleRegister(liveEvent.id, !!liveEvent.isRegistered)}
+                  onClick={() => promptRegister(liveEvent.id, !!liveEvent.isRegistered, liveEvent.title)}
                   className={`btn ${liveEvent.isRegistered ? "btn-success-solid" : "btn-primary"}`}
                   style={{
                     borderRadius: 16,

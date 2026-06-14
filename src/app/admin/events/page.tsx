@@ -3824,8 +3824,11 @@ export default function AdminEventsPage() {
                                     </p>
                                   </div>
                                 </div>
-                                {m.medsCheckOption && (
-                                  <div style={{ 
+                                {/* The meds-check badge only appears for attendees who went
+                                    through the medication check, so it reveals who has a
+                                    medical condition — restrict to super_admin/admin. */}
+                                {canExportAttendance && m.medsCheckOption && (
+                                  <div style={{
                                     display: "inline-flex", 
                                     alignItems: "center", 
                                     gap: 6, 

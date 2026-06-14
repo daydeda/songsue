@@ -78,6 +78,10 @@ interface AdminStudent {
   // Server-derived "has a medical condition" signal. Sent to all admin-area
   // roles; the raw medical detail above is only populated for super_admin/admin.
   hasMedicalInfo?: boolean;
+  // For non-admins: the medical categories the student filled in, as i18n keys
+  // (e.g. "drugAllergies"), with no values — so they see what kind of condition
+  // exists but not the detail.
+  medicalCategories?: string[];
 }
 
 interface AdminAttendance {
@@ -4007,32 +4011,42 @@ export default function AdminEventsPage() {
                   gap: 8
                 }}>
                   <HeartPulse size={14} />
-                  Medical & Health Info
+                  {t.medicalHealthInfo}
                 </p>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {canExportAttendance ? (
                     <>
-                      {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Chronic:</b> {selectedStudent.chronicDiseases}</p>}
-                      {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>History:</b> {selectedStudent.medicalHistory}</p>}
-                      {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Drug Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
-                      {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Food Allergies:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
-                      {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Dietary:</b> {selectedStudent.dietaryRestrictions}</p>}
-                      {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>Emergency Medication:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
-                      {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ History of fainting</p>}
+                      {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.chronicDiseases}:</b> {selectedStudent.chronicDiseases}</p>}
+                      {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.medicalHistory}:</b> {selectedStudent.medicalHistory}</p>}
+                      {selectedStudent.drugAllergies && selectedStudent.drugAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.drugAllergies}:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.drugAllergies}</span></p>}
+                      {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.foodAllergies}:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
+                      {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.dietaryRestrictions}:</b> {selectedStudent.dietaryRestrictions}</p>}
+                      {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.emergencyMed}:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
+                      {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ {t.faintingHistory}</p>}
 
                       {!hasActualMedicalInfo(selectedStudent) && (
-                        <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
+                        <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>{t.noMedicalConditions}</p>
                       )}
                     </>
                   ) : hasMedicalSignal(selectedStudent) ? (
-                    // Signal only — registration sees that a condition exists, never the detail.
-                    <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-                      <AlertCircle size={16} />
-                      Has a medical condition on file. Details are restricted to administrators.
-                    </p>
+                    // Signal only — registration sees WHICH categories exist (as
+                    // bullet points), never the detail the student filled in.
+                    <>
+                      <ul style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
+                        {(selectedStudent.medicalCategories ?? []).map((cat) => (
+                          <li key={cat} style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>
+                            {t[cat as keyof typeof t] ?? cat}
+                          </li>
+                        ))}
+                      </ul>
+                      <p style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic", display: "flex", alignItems: "center", gap: 6 }}>
+                        <AlertCircle size={14} />
+                        {t.medicalDetailsRestricted}
+                      </p>
+                    </>
                   ) : (
-                    <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>No medical conditions reported.</p>
+                    <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>{t.noMedicalConditions}</p>
                   )}
                 </div>
               </div>

@@ -18,6 +18,21 @@ export async function POST(
     const { id: eventId } = await params;
     const userId = session.user.id!;
 
+    // Profile must be completed before registering. The proxy middleware keeps
+    // incomplete profiles out of the dashboard, but the API is reachable directly,
+    // so enforce it here too. Read from the DB rather than the session token, which
+    // can be stale (auth.ts only eagerly refreshes while profileCompleted is false).
+    const profile = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { profileCompleted: true },
+    });
+    if (!profile?.profileCompleted) {
+      return NextResponse.json(
+        { error: "Please complete your profile before registering for events" },
+        { status: 403 }
+      );
+    }
+
     // Validate event exists
     const event = await db.query.events.findFirst({
       where: eq(events.id, eventId),

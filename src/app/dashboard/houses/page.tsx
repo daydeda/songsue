@@ -2,16 +2,19 @@
  
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
-import { 
-  Trophy, 
-  Award, 
-  TrendingUp, 
+import {
+  Trophy,
+  Award,
+  TrendingUp,
   History,
   Crown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronRight as ArrowRight
 } from "lucide-react";
+import { houseSlug } from "@/lib/houses";
 import { StudentNav } from "@/components/layout/StudentNav";
 
 // House mascot logos (background removed). Keyed by both the house id (color) and
@@ -59,6 +62,9 @@ export default function HousesPage() {
   const { t, lang } = useLanguage();
   const { data: session } = useSession();
   const myId = session?.user?.id;
+  // The student's own house — its standings row is highlighted as "Your House" and
+  // links to its member roster.
+  const myHouseId = session?.user?.houseId;
   const [houses, setHouses] = useState<House[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [individuals, setIndividuals] = useState<StudentRanking[]>([]);
@@ -231,7 +237,15 @@ export default function HousesPage() {
   }
  
   const maxPoints = Math.max(...houses.map(h => h.points), 1);
-  
+
+  // The student's own house and its rank within the (points-sorted) standings —
+  // surfaced as a dedicated "Your House" card so it has real presence instead of
+  // being a cramped badge inside a list row.
+  const myHouseIndex = myHouseId ? houses.findIndex(h => h.id === myHouseId) : -1;
+  const myHouse = myHouseIndex >= 0 ? houses[myHouseIndex] : null;
+  const myHouseRank = myHouseIndex >= 0 ? myHouseIndex + 1 : null;
+  const myHouseName = myHouse ? getTranslatedHouseName(myHouse.id, myHouse.name) : "";
+
   // Individual pagination calculations
   const itemsPerPage = 10;
   const totalPages = Math.ceil(individuals.length / itemsPerPage);
@@ -377,35 +391,70 @@ export default function HousesPage() {
         {/* Full Rankings List for Houses */}
         {activeTab === "house" && (
           <section className="standings-section animate-fade-in-up" style={{ marginBottom: 56 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
-            <div className="standings-list">
-              {houses.map((h, idx) => (
-                <div className="standings-row" key={h.id}>
-                  <div className={`standings-rank rank-${idx + 1}`}>
-                    {idx + 1}
-                  </div>
-                  <div className="standings-avatar" style={{ background: `${h.color}10`, color: h.color }}>
-                    {houseLogo(h.id) ? (
-                      <img src={houseLogo(h.id)!} alt="" className="house-logo-img" />
-                    ) : <Trophy size={18} />}
-                  </div>
-                  <div className="standings-info">
-                    <span className="standings-name">
-                      {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}
-                    </span>
-                    <span className="standings-subtitle" style={{ color: h.color }}>
-                      {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}{lang === "th" ? "" : " House"}
-                    </span>
-                  </div>
-                  <div className="standings-progress-container">
-                    <div className="standings-progress-bar" style={{ width: `${(h.points / maxPoints) * 100}%`, background: h.color }} />
-                  </div>
-                  <div className="standings-points">
-                    <span className="points-value">{h.points}</span>
-                    <span className="points-label">{t.points}</span>
+
+            {/* "Your House" card — a dedicated, branded entry point into the member
+                roster (your own house only). Replaces the old in-row badge/chevron so
+                the call-to-action reads clearly instead of being lost in the list. */}
+            {myHouse && (
+              <Link
+                href={`/dashboard/houses/${houseSlug(myHouse.id)}`}
+                className="my-house-card"
+                style={{ ["--house-color" as string]: myHouse.color }}
+              >
+                <span className="mh-accent" />
+                <div className="mh-avatar">
+                  {houseLogo(myHouse.id) ? (
+                    <img src={houseLogo(myHouse.id)!} alt="" className="house-logo-img" />
+                  ) : <Trophy size={28} />}
+                </div>
+                <div className="mh-info">
+                  <span className="mh-eyebrow">{t.yourHouse}</span>
+                  <span className="mh-name">{myHouseName}</span>
+                  <div className="mh-meta">
+                    {myHouseRank && (
+                      <span className="mh-rank-chip">#{myHouseRank}</span>
+                    )}
+                    <span className="mh-points">{myHouse.points} {t.points}</span>
                   </div>
                 </div>
-              ))}
+                <span className="mh-cta">
+                  {t.viewMembers}
+                  <ArrowRight size={18} />
+                </span>
+              </Link>
+            )}
+
+            <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
+            <div className="standings-list">
+              {houses.map((h, idx) => {
+                const isMyHouse = h.id === myHouseId;
+                const houseName = getTranslatedHouseName(h.id, h.name);
+                return (
+                  <div className={`standings-row${isMyHouse ? " is-my-house" : ""}`} key={h.id}>
+                    <div className={`standings-rank rank-${idx + 1}`}>
+                      {idx + 1}
+                    </div>
+                    <div className="standings-avatar" style={{ background: `${h.color}10`, color: h.color }}>
+                      {houseLogo(h.id) ? (
+                        <img src={houseLogo(h.id)!} alt="" className="house-logo-img" />
+                      ) : <Trophy size={18} />}
+                    </div>
+                    <div className="standings-info">
+                      <span className="standings-name">{houseName}</span>
+                      <span className="standings-subtitle" style={{ color: h.color }}>
+                        {houseName}{lang === "th" ? "" : " House"}
+                      </span>
+                    </div>
+                    <div className="standings-progress-container">
+                      <div className="standings-progress-bar" style={{ width: `${(h.points / maxPoints) * 100}%`, background: h.color }} />
+                    </div>
+                    <div className="standings-points">
+                      <span className="points-value">{h.points}</span>
+                      <span className="points-label">{t.points}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         )}
@@ -840,6 +889,115 @@ export default function HousesPage() {
           background: rgba(255,107,0,0.05);
           box-shadow: 0 0 0 1px var(--accent-primary), 0 8px 24px rgba(255,107,0,0.08);
         }
+        /* The student's own house row — a quiet locator highlight only; the real
+           call-to-action lives in the "Your House" card above the list. */
+        .standings-row.is-my-house {
+          border-color: rgba(255,107,0,0.35);
+          background: rgba(255,107,0,0.04);
+        }
+
+        /* "Your House" card — branded entry point into the member roster */
+        :global(a.my-house-card) {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          width: 100%;
+          padding: 20px 24px;
+          margin-bottom: 24px;
+          border-radius: 24px;
+          text-decoration: none;
+          color: inherit;
+          position: relative;
+          overflow: hidden;
+          background:
+            linear-gradient(135deg, color-mix(in srgb, var(--house-color) 8%, transparent), transparent 60%),
+            var(--bg-surface);
+          border: 1.5px solid color-mix(in srgb, var(--house-color) 30%, var(--border-subtle));
+          box-shadow: 0 10px 30px rgba(0,0,0,0.03);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        :global(a.my-house-card:hover) {
+          transform: translateY(-2px);
+          box-shadow: 0 18px 44px color-mix(in srgb, var(--house-color) 18%, transparent);
+        }
+        .mh-accent {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 6px;
+          height: 100%;
+          background: var(--house-color);
+        }
+        .mh-avatar {
+          width: 64px;
+          height: 64px;
+          border-radius: 20px;
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: color-mix(in srgb, var(--house-color) 12%, transparent);
+          color: var(--house-color);
+        }
+        .mh-info {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          flex: 1;
+          min-width: 0;
+        }
+        .mh-eyebrow {
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          color: var(--house-color);
+        }
+        .mh-name {
+          font-size: 22px;
+          font-weight: 900;
+          color: var(--text-primary);
+          line-height: 1.1;
+          letter-spacing: -0.02em;
+        }
+        .mh-meta {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 2px;
+        }
+        .mh-rank-chip {
+          font-size: 12px;
+          font-weight: 900;
+          color: var(--house-color);
+          background: color-mix(in srgb, var(--house-color) 14%, transparent);
+          padding: 2px 10px;
+          border-radius: 999px;
+        }
+        .mh-points {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+        .mh-cta {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+          padding: 12px 20px;
+          border-radius: 14px;
+          background: var(--accent-primary);
+          color: #fff;
+          font-size: 14px;
+          font-weight: 800;
+          white-space: nowrap;
+          transition: gap 0.2s ease;
+        }
+        :global(a.my-house-card:hover) .mh-cta {
+          gap: 12px;
+        }
         .you-badge {
           display: inline-block;
           margin-left: 8px;
@@ -1110,6 +1268,24 @@ export default function HousesPage() {
           }
           .standings-progress-container {
             display: none;
+          }
+          :global(a.my-house-card) {
+            flex-wrap: wrap;
+            gap: 14px;
+            padding: 16px 18px;
+          }
+          .mh-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+          }
+          .mh-name {
+            font-size: 19px;
+          }
+          .mh-cta {
+            width: 100%;
+            justify-content: center;
+            padding: 12px 16px;
           }
           .my-rank-banner {
             padding: 12px 16px;

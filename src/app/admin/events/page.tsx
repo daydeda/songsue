@@ -6,8 +6,9 @@ import {
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
-  Activity, Phone, HeartPulse, Info, Trophy, ClipboardList
+  Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
@@ -203,6 +204,12 @@ const EMPTY_FORM = {
 
 export default function AdminEventsPage() {
   const { t, lang } = useLanguage();
+  const { data: session } = useSession();
+  // The admin area also admits registration/organizer (see admin/layout.tsx),
+  // but attendee exports — which include PDPA-sensitive medical & emergency
+  // contact data — are restricted to super_admin/admin only.
+  const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+  const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1217,6 +1224,20 @@ export default function AdminEventsPage() {
     acc[houseId].push(curr);
     return acc;
   }, {});
+
+  // Export the event's attendees as .xlsx. The file is built server-side at
+  // /api/admin/events/[id]/export, which re-checks the super_admin/admin role
+  // (the button is also gated via canExportAttendance) and audit-logs the PII
+  // pull. We just trigger the download; the browser sends the session cookie.
+  const exportAttendanceXlsx = () => {
+    if (!activeEventId) return;
+    const a = document.createElement("a");
+    a.href = `/api/admin/events/${activeEventId}/export`;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   const filteredEvents = Array.isArray(events) ? events.filter(evt => {
     const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -3511,13 +3532,40 @@ export default function AdminEventsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                className="btn btn-ghost"
-                style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }}
-                onClick={() => setShowAttendance(false)}
-              >
-                <X size={20} />
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {canExportAttendance && !loadingAttendance && attendance.length > 0 && (
+                  <button
+                    onClick={exportAttendanceXlsx}
+                    title="Export all attendees of this event to Excel (.xlsx)"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      borderRadius: 99,
+                      height: 48,
+                      paddingInline: 20,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#fff",
+                      background: "linear-gradient(135deg, #10b981, #059669)",
+                      border: "1px solid #059669",
+                      boxShadow: "0 8px 20px rgba(16,185,129,0.35)",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    <Download size={18} />
+                    {lang === "th" ? "ส่งออก Excel" : "Export Excel"}
+                  </button>
+                )}
+                <button
+                  className="btn btn-ghost"
+                  style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }}
+                  onClick={() => setShowAttendance(false)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Filter Bar */}

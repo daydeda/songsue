@@ -61,6 +61,13 @@ export async function GET(
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
+    // medsCheckOption only exists for attendees who went through the medication
+    // check, so it reveals who has a medical condition. Withhold it from roles
+    // that can't view medical info (registration/organizer).
+    const sanitized = canViewMedical
+      ? list
+      : list.map((row) => ({ ...row, medsCheckOption: null }));
+
     // FE-12: Log the sensitive data access (Immutable Audit Trail)
     // Since attendance list now contains medical info, we must log this access if they have permission to view it.
     if (canViewMedical) {
@@ -74,7 +81,7 @@ export async function GET(
       });
     }
 
-    return NextResponse.json(list);
+    return NextResponse.json(sanitized);
   } catch (error) {
     console.error("Failed to fetch attendance:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

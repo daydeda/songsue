@@ -11,12 +11,16 @@ export async function GET(
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const canViewMedical = session.user.role === "super_admin";
+    // PDPA-sensitive medical & emergency-contact data is restricted to
+    // super_admin/admin (mirrors canExportAttendance on the admin events page).
+    // registration/organizer get the roster without health info.
+    const canViewMedical = myRoles.includes("super_admin") || myRoles.includes("admin");
 
     const { id: eventId } = await params;
 
@@ -39,7 +43,9 @@ export async function GET(
             foodAllergies: canViewMedical,
             dietaryRestrictions: canViewMedical,
             faintingHistory: canViewMedical,
-            emergencyContacts: canViewMedical,
+            // Emergency contacts are available to all admin-area roles
+            // (super_admin/admin/registration/organizer), unlike medical info.
+            emergencyContacts: true,
           },
           with: {
             house: {

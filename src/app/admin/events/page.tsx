@@ -3572,6 +3572,8 @@ export default function AdminEventsPage() {
             {!loadingAttendance && attendance.length > 0 && (
               <div className="attendance-modal-filter-bar">
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  {/* Medical-condition filter leaks who has a condition — admin/super_admin only. */}
+                  {canExportAttendance && (
                   <button
                     onClick={() => setFilterMedical(!filterMedical)}
                     style={{
@@ -3592,6 +3594,7 @@ export default function AdminEventsPage() {
                     <HeartPulse size={16} />
                     {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
                   </button>
+                  )}
 
                   <button
                     onClick={() => setFilterNotCheckedIn(!filterNotCheckedIn)}
@@ -3872,7 +3875,7 @@ export default function AdminEventsPage() {
                                 )}
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                {hasActualMedicalInfo(m.user) && (
+                                {canExportAttendance && hasActualMedicalInfo(m.user) && (
                                   <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
                                     <Activity size={20} />
                                   </div>
@@ -3966,7 +3969,12 @@ export default function AdminEventsPage() {
                 </div>
               </div>
 
-              {/* Medical */}
+              {/* Medical & Health Info is PDPA-sensitive — only super_admin/admin
+                  (canExportAttendance) may view it. The attendance API also
+                  withholds these fields for other roles. Emergency contacts are
+                  shown to all admin-area roles (including registration). */}
+              {canExportAttendance && (
+              /* Medical */
               <div style={{
                 background: hasActualMedicalInfo(selectedStudent)
                   ? "rgba(239, 68, 68, 0.05)"
@@ -4006,8 +4014,9 @@ export default function AdminEventsPage() {
                   )}
                 </div>
               </div>
+              )}
 
-              {/* Emergency Contact */}
+              {/* Emergency Contact — visible to all admin-area roles */}
               {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (
                 <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
                   <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Emergency Contact</p>

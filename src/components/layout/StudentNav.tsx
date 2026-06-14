@@ -14,9 +14,11 @@ X,
 Settings,
 LayoutDashboard,
 QrCode,
-ShoppingBag
+ShoppingBag,
+Users
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { houseSlug } from "@/lib/houses";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState, useRef, useEffect } from "react";
 
@@ -45,17 +47,24 @@ return () => document.removeEventListener("mousedown", handleClickOutside);
 
 const user = session?.user;
 
-const links = user ? [
+// Top-bar tabs — only the core destinations, kept lean.
+const primaryLinks = user ? [
 { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
-{ href: "/dashboard/id", label: t.digitalId || "Digital ID", icon: QrCode },
-{ href: "/dashboard/history", label: t.eventHistory, icon: History },
 { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
+{ href: "/dashboard/history", label: t.eventHistory, icon: History },
 { href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },
-{ href: "/dashboard/profile", label: t.editProfile, icon: Settings },
 ] : [
 { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
 { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
 ];
+
+// Secondary destinations — live in the avatar ▾ account menu (and the mobile drawer).
+const secondaryLinks = user ? [
+{ href: "/dashboard/id", label: t.digitalId || "Digital ID", icon: QrCode },
+// Members roster for the student's own house — only when they belong to one.
+...(user.houseId ? [{ href: `/dashboard/houses/${houseSlug(user.houseId)}`, label: t.myHouse, icon: Users }] : []),
+{ href: "/dashboard/profile", label: t.editProfile, icon: Settings },
+] : [];
 
 return (
 <>
@@ -115,14 +124,15 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 <div className="dropdown-divider" />
 {user ? (
   <>
-    <Link href="/dashboard/id" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-      <QrCode size={16} />
-      {t.digitalId || "Digital ID"}
-    </Link>
-    <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-      <User size={16} />
-      {t.editProfile}
-    </Link>
+    {secondaryLinks.map((link) => {
+      const Icon = link.icon;
+      return (
+        <Link key={link.href} href={link.href} className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+          <Icon size={16} />
+          {link.label}
+        </Link>
+      );
+    })}
     {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
       <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
@@ -164,14 +174,13 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 
 {/* Center: Desktop Nav (Hidden on Mobile) */}
 <div className="nav-center desktop-links">
-{links.map((link) => {
-if (link.href === "/dashboard/id") return null;
+{primaryLinks.map((link) => {
 const Icon = link.icon;
 const isActive = pathname === link.href;
 return (
-<Link 
-key={link.href} 
-href={link.href} 
+<Link
+key={link.href}
+href={link.href}
 className={`nav-link ${isActive ? "active" : ""}`}
 >
 <Icon size={16} />
@@ -245,14 +254,15 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 <div className="dropdown-divider" />
 {user ? (
   <>
-    <Link href="/dashboard/id" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-      <QrCode size={16} />
-      {t.digitalId || "Digital ID"}
-    </Link>
-    <Link href="/dashboard/profile" className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
-      <User size={16} />
-      {t.editProfile}
-    </Link>
+    {secondaryLinks.map((link) => {
+      const Icon = link.icon;
+      return (
+        <Link key={link.href} href={link.href} className="dropdown-item" onClick={() => setIsProfileDropdownOpen(false)}>
+          <Icon size={16} />
+          {link.label}
+        </Link>
+      );
+    })}
     {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
       <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
@@ -329,7 +339,7 @@ aria-label="Close Menu"
 </div>
 
 <div className="sidebar-body">
-{links.map((link) => {
+{[...primaryLinks, ...secondaryLinks].map((link) => {
 const Icon = link.icon;
 const isActive = pathname === link.href;
 return (
@@ -584,14 +594,22 @@ text-decoration: none;
 border: none;
 background: none;
 width: 100%;
+white-space: nowrap;
 text-align: left;
 cursor: pointer;
-transition: all 0.2s ease;
+transition: background 0.2s ease, color 0.2s ease;
 }
 :global(.dropdown-item:hover) {
 background: var(--accent-glow);
 color: var(--accent-primary);
-padding-left: 18px;
+}
+/* Icon nudges on hover — uniform motion that works for every label length,
+   since the icon always has the 12px gap to slide into (long labels never clip). */
+:global(.dropdown-item svg) {
+transition: transform 0.2s ease;
+}
+:global(.dropdown-item:hover svg) {
+transform: translateX(3px);
 }
 :global(.dropdown-item.admin-item) {
 color: var(--accent-primary);
@@ -605,7 +623,6 @@ color: #ef4444;
 }
 :global(.dropdown-item.text-danger:hover) {
 background: rgba(239, 68, 68, 0.05);
-padding-left: 18px;
 }
 
 /* Mobile Controls */
@@ -662,7 +679,7 @@ visibility: visible;
   transform: translateX(0);
   visibility: visible;
 }
-@media (min-width: 1281px) {
+@media (min-width: 1024px) {
   .mobile-sidebar,
   .mobile-sidebar-overlay {
     display: none !important;
@@ -742,7 +759,17 @@ min-height: 36px !important;
 }
 }
 
-@media (max-width: 1280px) {
+/* Tablet band (e.g. iPad landscape): tabs stay visible but the textual
+   user name/role is dropped to leave room for the 4 tabs — avatar remains. */
+@media (max-width: 1280px) and (min-width: 1024px) {
+.user-info {
+display: none;
+}
+.nav-right {
+gap: 10px;
+}
+}
+@media (max-width: 1023px) {
 .desktop-links {
 display: none !important;
 }

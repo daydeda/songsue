@@ -218,6 +218,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Cannot cancel registration for past events" }, { status: 403 });
     }
 
+    // Rule 3: Cannot un-register once the registration window has closed. The
+    // close time locks the headcount in both directions — no new sign-ups (POST)
+    // and no cancellations — so organizers can rely on a stable list once it passes.
+    if (record.event?.registrationCloseTime && new Date() > new Date(record.event.registrationCloseTime)) {
+      return NextResponse.json({ error: "Cannot cancel registration after the registration window has closed" }, { status: 403 });
+    }
+
     await db
       .delete(attendance)
       .where(and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)));

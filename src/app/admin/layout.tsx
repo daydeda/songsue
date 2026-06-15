@@ -4,6 +4,7 @@ import { User } from "lucide-react";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { LanguageProvider } from "@/lib/LanguageContext";
 import { AdminLayoutWrapper } from "@/components/admin/AdminLayoutWrapper";
+import { canEnterAdmin } from "@/lib/admin-access";
 
 export default async function AdminLayout({
   children,
@@ -15,7 +16,7 @@ export default async function AdminLayout({
 
   // "smo" is scanner-only: it can enter the admin area, but AdminNav shows just the
   // Scanner and the sensitive APIs (students, audit-logs, dashboard, etc.) still reject it.
-  const allowedRoles = ["super_admin", "admin", "registration", "organizer", "smo"];
+  // canEnterAdmin (shared with the proxy middleware) is the single source of truth.
   // NB: an empty `roles` array is truthy, so `roles || [role]` would wrongly yield []
   // and lock out a user whose role lives only on the singular `role` column. Mirror
   // getPrimaryRole(): only use `roles` when it's actually populated, else fall back to `role`.
@@ -23,7 +24,7 @@ export default async function AdminLayout({
   const userRoles = roles && roles.length > 0
     ? roles
     : (session.user.role ? [session.user.role] : ["student"]);
-  const hasAccess = userRoles.some(r => allowedRoles.includes(r));
+  const hasAccess = userRoles.some(r => canEnterAdmin(r));
   if (!hasAccess) {
     redirect("/dashboard");
   }

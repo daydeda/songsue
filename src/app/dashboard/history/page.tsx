@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
@@ -80,6 +80,14 @@ export default function HistoryPage() {
 
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [warningMessage, setWarningMessage] = useState("");
+
+  // Scroll container for the form modal. When the user moves between sections,
+  // the new (shorter) section can leave the view scrolled partway down, landing
+  // them in the middle instead of at the first question — reset to the top.
+  const modalScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    modalScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [sectionIndex]);
 
   const fetchHistory = () => {
     setLoading(true);
@@ -536,14 +544,14 @@ export default function HistoryPage() {
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)",
             zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24
           }} onClick={() => setShowStudentForm(false)}>
-            <div className="animate-fade-in-up custom-scrollbar" style={{
+            <div ref={modalScrollRef} className="animate-fade-in-up custom-scrollbar" style={{
               background: "var(--bg-surface)", width: "100%", maxWidth: 600, maxHeight: "85vh",
               borderRadius: 32, overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch",
               boxShadow: "0 30px 60px rgba(0,0,0,0.2)", border: "1px solid var(--border-medium)"
             }} onClick={e => e.stopPropagation()}>
 
               {/* Modal Header */}
-              <div style={{ padding: "28px 40px", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 16 }}>
+              <div style={{ padding: "clamp(14px, 4vw, 28px) clamp(18px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                     <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.housePointFeeding}</span>
@@ -553,9 +561,9 @@ export default function HistoryPage() {
                       </span>
                     )}
                   </div>
-                  <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{activeForm?.title || t.evaluation}</h3>
+                  <h3 style={{ fontSize: "clamp(16px, 4.5vw, 20px)", fontWeight: 900, color: "var(--text-primary)", lineHeight: 1.3, overflowWrap: "break-word", wordBreak: "break-word" }}>{activeForm?.title || t.evaluation}</h3>
                 </div>
-                <button className="btn btn-ghost" onClick={() => setShowStudentForm(false)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}>
+                <button className="btn btn-ghost" onClick={() => setShowStudentForm(false)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0, flexShrink: 0 }}>
                   <X size={18} />
                 </button>
               </div>
@@ -603,7 +611,7 @@ export default function HistoryPage() {
                   </button>
                 </div>
               ) : (
-                <div style={{ padding: 40 }}>
+                <div style={{ padding: "clamp(20px, 5vw, 40px)" }}>
                   {generalError && (
                     <div className="animate-fade-in" style={{
                       background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 16,

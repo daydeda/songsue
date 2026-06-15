@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { canEnterAdmin, isScannerOnlyRole, SCANNER_HREF } from "@/lib/admin-access";
 
 // Next.js 16: "middleware" renamed to "proxy"
 export async function proxy(req: NextRequest) {
@@ -33,9 +34,8 @@ export async function proxy(req: NextRequest) {
   }
 
   const user = session.user;
-  const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(user.role || "");
   // SMO is scanner-only: it may enter /admin but is confined to the QR scanner.
-  const isScannerOnly = user.role === "smo";
+  const isScannerOnly = isScannerOnlyRole(user.role);
 
   // Authenticated but profile not complete → force onboarding
   // (except for the /onboarding page itself, and API routes)
@@ -52,9 +52,9 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // Admin routes — block anyone who can't enter the admin area (SMO is allowed
-  // here but is confined to the scanner by the rule below).
-  if (pathname.startsWith("/admin") && !isAdminRole && !isScannerOnly) {
+  // Admin routes — block anyone who can't enter the admin area at all. (SMO is
+  // allowed in but is confined to the scanner by the rule below.)
+  if (pathname.startsWith("/admin") && !canEnterAdmin(user.role)) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
@@ -64,9 +64,9 @@ export async function proxy(req: NextRequest) {
     isScannerOnly &&
     pathname.startsWith("/admin") &&
     pathname !== "/admin" &&
-    pathname !== "/admin/scanner"
+    pathname !== SCANNER_HREF
   ) {
-    return NextResponse.redirect(new URL("/admin/scanner", req.url));
+    return NextResponse.redirect(new URL(SCANNER_HREF, req.url));
   }
 
   // Organizer cannot access students list

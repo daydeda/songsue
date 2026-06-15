@@ -538,8 +538,8 @@ export default function HistoryPage() {
           }} onClick={() => setShowStudentForm(false)}>
             <div className="animate-fade-in-up custom-scrollbar" style={{
               background: "var(--bg-surface)", width: "100%", maxWidth: 600, maxHeight: "85vh",
-              borderRadius: 32, overflowY: "auto", boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
-              border: "1px solid var(--border-medium)"
+              borderRadius: 32, overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch",
+              boxShadow: "0 30px 60px rgba(0,0,0,0.2)", border: "1px solid var(--border-medium)"
             }} onClick={e => e.stopPropagation()}>
 
               {/* Modal Header */}
@@ -649,24 +649,24 @@ export default function HistoryPage() {
                           </label>
 
                           {q.type === "rating" ? (
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "8px 0", maxWidth: "100%" }}>
                               {Array.from({ length: 5 }).map((_, starIdx) => {
                                 const ratingValue = starIdx + 1;
                                 const ansVal = answers[q.id];
                                 const isSelected = ratingValue <= (typeof ansVal === "number" ? ansVal : typeof ansVal === "string" ? parseInt(ansVal) || 0 : 0);
                                 return (
                                   <button key={starIdx} type="button" style={{
-                                    border: "none", background: "transparent", cursor: "pointer", padding: 0,
+                                    border: "none", background: "transparent", cursor: "pointer", padding: 0, flexShrink: 0,
                                     color: isSelected ? "#ffb000" : "var(--border-medium)", transition: "all 0.1s"
                                   }} onClick={() => {
                                     setAnswers({ ...answers, [q.id]: ratingValue });
                                     if (formErrors[q.id]) { const u = { ...formErrors }; delete u[q.id]; setFormErrors(u); }
                                   }}>
-                                    <Star size={32} fill={isSelected ? "#ffb000" : "none"} />
+                                    <Star size={28} fill={isSelected ? "#ffb000" : "none"} />
                                   </button>
                                 );
                               })}
-                              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)", marginLeft: 12 }}>
+                              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-muted)", marginLeft: 8, flexShrink: 0 }}>
                                 {answers[q.id] || 0} / 5
                               </span>
                             </div>

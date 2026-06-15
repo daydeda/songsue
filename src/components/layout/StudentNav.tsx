@@ -19,6 +19,7 @@ Users
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { houseSlug } from "@/lib/houses";
+import { canEnterAdmin, adminLandingHref } from "@/lib/admin-access";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState, useRef, useEffect } from "react";
 
@@ -133,8 +134,8 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
         </Link>
       );
     })}
-    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
-      <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
+    {(canEnterAdmin(user?.role)) && (
+      <Link href={adminLandingHref(user?.role)} className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
         {t.adminPanel}
       </Link>
@@ -263,8 +264,8 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
         </Link>
       );
     })}
-    {(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
-      <Link href="/admin/dashboard" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
+    {(canEnterAdmin(user?.role)) && (
+      <Link href={adminLandingHref(user?.role)} className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
         {t.adminPanel}
       </Link>
@@ -368,10 +369,10 @@ border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent"
 </Link>
 );
 })}
-{(["super_admin", "admin", "registration", "organizer"].includes(user?.role || "")) && (
+{(canEnterAdmin(user?.role)) && (
 <Link 
-href="/admin/dashboard" 
-className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`} 
+href={adminLandingHref(user?.role)}
+className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`}
 onClick={() => setIsMobileMenuOpen(false)}
 style={{
 display: "flex",

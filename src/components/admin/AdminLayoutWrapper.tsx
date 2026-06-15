@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Menu, X, User } from "lucide-react";
 import { AdminNav } from "./AdminNav";
 import { LanguageProvider } from "@/lib/LanguageContext";
+import { adminLandingHref } from "@/lib/admin-access";
 import Link from "next/link";
 
 export function AdminLayoutWrapper({ 
@@ -54,7 +55,7 @@ export function AdminLayoutWrapper({
         w-[280px] bg-white border-r border-[var(--border-subtle)] flex flex-col pt-6 px-6 pb-[calc(1.5rem+var(--safe-bottom))]
       `}>
         <div style={{ marginBottom: 40, display: "flex", alignItems: "center" }}>
-          <Link href="/admin/dashboard" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
+          <Link href={adminLandingHref(user.role)} style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
             <img 
               src="/smocamt-logo-icon.png"
               className="object-contain" 

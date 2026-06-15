@@ -16,7 +16,13 @@ export default async function AdminLayout({
   // "smo" is scanner-only: it can enter the admin area, but AdminNav shows just the
   // Scanner and the sensitive APIs (students, audit-logs, dashboard, etc.) still reject it.
   const allowedRoles = ["super_admin", "admin", "registration", "organizer", "smo"];
-  const userRoles = session.user.roles || (session.user.role ? [session.user.role] : ["student"]);
+  // NB: an empty `roles` array is truthy, so `roles || [role]` would wrongly yield []
+  // and lock out a user whose role lives only on the singular `role` column. Mirror
+  // getPrimaryRole(): only use `roles` when it's actually populated, else fall back to `role`.
+  const roles = session.user.roles;
+  const userRoles = roles && roles.length > 0
+    ? roles
+    : (session.user.role ? [session.user.role] : ["student"]);
   const hasAccess = userRoles.some(r => allowedRoles.includes(r));
   if (!hasAccess) {
     redirect("/dashboard");

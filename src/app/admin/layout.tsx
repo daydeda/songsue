@@ -13,7 +13,9 @@ export default async function AdminLayout({
     redirect("/dashboard");
   }
 
-  const allowedRoles = ["super_admin", "admin", "registration", "organizer"];
+  // "smo" is scanner-only: it can enter the admin area, but AdminNav shows just the
+  // Scanner and the sensitive APIs (students, audit-logs, dashboard, etc.) still reject it.
+  const allowedRoles = ["super_admin", "admin", "registration", "organizer", "smo"];
   const userRoles = session.user.roles || (session.user.role ? [session.user.role] : ["student"]);
   const hasAccess = userRoles.some(r => allowedRoles.includes(r));
   if (!hasAccess) {

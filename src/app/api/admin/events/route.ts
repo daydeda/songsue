@@ -33,7 +33,9 @@ import { checkAndAwardPastEventPoints, checkAndAwardClosedForms } from "@/lib/aw
 export async function GET() {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    // "smo" is included here (read-only list) because the QR Scanner's event picker
+    // fetches this endpoint; write handlers (POST/PUT/DELETE) deliberately exclude it.
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo"].includes(session?.user?.role || "");
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

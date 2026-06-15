@@ -29,6 +29,10 @@ export function AdminNav({ role }: { role?: string | null }) {
   const { t } = useLanguage();
 
   const filteredNav = NAV.filter(item => {
+    // SMO is scanner-only: it may only see the QR Scanner entry.
+    if (role === "smo") {
+      return item.href === "/admin/scanner";
+    }
     // Organizer cannot see Students list or Audit Logs
     if (role === "organizer") {
       if (item.href === "/admin/students" || item.href === "/admin/audit-logs") {

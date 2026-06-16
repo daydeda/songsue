@@ -208,6 +208,29 @@ export default function HistoryPage() {
     }
   };
 
+  // Auto-open a form when deep-linked from the dashboard's pre-test gate
+  // (?form=<formId>&event=<eventId>). Runs once after history loads so we can
+  // resolve the form's type (needed for the attendance gate) from the entry.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current || loading) return;
+    const params = new URLSearchParams(window.location.search);
+    const formId = params.get("form");
+    const eventId = params.get("event");
+    if (!formId || !eventId) return;
+    const form = history.find((h) => h.eventId === eventId)?.forms.find((f) => f.id === formId);
+    if (!form) return;
+    autoOpenedRef.current = true;
+    // Defer out of the effect body (mirrors fetchHistory) so opening the form —
+    // which sets state — doesn't run synchronously inside the effect.
+    const timer = setTimeout(() => openStudentForm(eventId, formId, form.formType), 0);
+    // Strip the params so a refresh / back doesn't re-trigger the form.
+    window.history.replaceState(null, "", window.location.pathname);
+    return () => clearTimeout(timer);
+    // openStudentForm is a stable closure; deps intentionally limited.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, history]);
+
   const validateSection = (idx: number): boolean => {
     const section = normForm?.sections[idx];
     if (!section) return true;

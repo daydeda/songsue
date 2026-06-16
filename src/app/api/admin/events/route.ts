@@ -25,6 +25,7 @@ const eventSchema = z.object({
   quotaThai: z.number().int().min(0).optional().nullable(),
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
+  allowedMajors: z.array(z.string()).optional().nullable(),
 });
 
 // GET /api/admin/events — List all events with registration counts
@@ -111,6 +112,7 @@ export async function POST(req: Request) {
         quotaThai: data.quotaThai,
         quotaInternational: data.quotaInternational,
         allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
+        allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
       })
       .returning();
 

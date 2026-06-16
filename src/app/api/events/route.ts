@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events } from "@/db/schema";
-import { and, count, eq } from "drizzle-orm";
+import { attendance, events, users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
@@ -21,6 +21,10 @@ export async function GET() {
     if (!session?.user) {
       // For guest, filter events by allowedRoles: only show if no role limits, or if "student" is allowed
       const eligibleEvents = allEvents.filter((event) => {
+        // A guest has no major, so a major-restricted event can never match.
+        if (event.allowedMajors && (event.allowedMajors as string[]).length > 0) {
+          return false;
+        }
         if (event.allowedRoles && (event.allowedRoles as string[]).length > 0) {
           return (event.allowedRoles as string[]).includes("student");
         }
@@ -49,8 +53,15 @@ export async function GET() {
     }
 
     const userRoles = session.user.roles || [session.user.role || "student"];
-    // Admin roles bypass all role restrictions
+    // Admin roles bypass all role/major restrictions
     const isAdminRole = userRoles.some(r => ["super_admin", "admin", "registration", "organizer"].includes(r));
+
+    // Major used for major-based access control (not on the session token).
+    const me = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id!),
+      columns: { major: true },
+    });
+    const userMajor = me?.major ?? null;
 
     const eligibleEvents = allEvents.filter((event) => {
       const targetThai = event.targetThai ?? true;
@@ -70,6 +81,12 @@ export async function GET() {
         const effectiveUserRoles = userRoles.map(r => ["professor", "officer"].includes(r) ? "staff" : r);
         const hasMatchingRole = effectiveUserRoles.some(r => (event.allowedRoles as string[]).includes(r));
         if (!hasMatchingRole) return false;
+      }
+
+      // Major-based access control: skip if event restricts majors and the user's
+      // major is not in the list. Admin roles always bypass.
+      if (!isAdminRole && event.allowedMajors && (event.allowedMajors as string[]).length > 0) {
+        if (!userMajor || !(event.allowedMajors as string[]).includes(userMajor)) return false;
       }
 
       return true;

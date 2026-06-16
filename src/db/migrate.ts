@@ -535,6 +535,13 @@ async function migrate() {
   `;
   console.log("  ✅ detached no-award activity rows from any house (feed entries kept)");
 
+  // 33. Major-based access control for events. Pairs with allowed_roles: an event
+  // can be limited to specific student majors (ANI, DG, DII, MMIT, SE). NULL or []
+  // means open to every major; a non-empty array restricts registration/visibility
+  // to those majors and is combined with allowed_roles as AND. Admin roles bypass.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS allowed_majors jsonb`;
+  console.log("  ✅ events.allowed_majors");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

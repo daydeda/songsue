@@ -23,7 +23,21 @@ To help you pitch this project to university deans, other faculties, or academic
 * **📡 SSE Real-Time Leaderboards:** persistent Server-Sent Events (SSE) connections broadcast point allocations and event updates to students' dashboards in **sub-50ms latency** with strict PDPA data filters.
 * **🔑 NextAuth Cookie Auto-Sync:** JWT session callback synchronization which dynamically updates browser cookies when onboarding or profiles are updated, letting students log in and proceed instantly without manual logouts.
 * **📋 Dynamic Google-Forms-like Builder:** High-fidelity form designer for admins supporting long-text answers, 1-5 star ratings, radio buttons, and multiselect checkboxes. Intercepted by a **Warning Modal** preventing non-attended students from submitting feedback.
+* **🛒 Integrated Merch Shop:** End-to-end store with per-variant stock/sizing, sale windows, PromptPay/QR payment with slip upload, and an admin approve/reject order flow — payment slips served only through an auth-guarded private bucket.
+* **📢 Live Dashboard Announcements:** Editable rich-text announcement banner (bold, links, colors) managed by admins with live preview — no redeploy needed, sanitized against stored-XSS.
+* **🔐 Layered Role-Based Access (incl. SMO scanner-only):** Access is gated across multiple layers (including `src/proxy.ts` middleware). The SMO role gets **scanner-only** admin access, routed straight to QR check-in without exposing the rest of the admin panel.
+* **🩺 PDPA Medical Signal vs. Detail:** Registration staff see only the *signal* that a student has a medical condition (categorized, translated); the actual *detail* and emergency contacts are restricted to admins.
 * **🔒 Immutable Audit Logs:** Append-only database logs tracking every admin access to sensitive student medical data, ensuring 100% university privacy compliance.
+
+---
+
+## 🗒️ บันทึกการอัปเดต (Changelog)
+
+Per-period release notes (Thai, written for Discord + the team) live in the [`updates/`](./updates) folder:
+
+* **[14–16 มิ.ย. 69](./updates/2026-06-14_to_06-16.md)** — PDPA medical signal/detail split, SMO scanner-only access, house rosters & feed fixes, registration cancellation lock, mobile fixes (eval form, Manage User modal + editable prefix).
+* **[13–14 มิ.ย. 69](./updates/2026-06-13_to_06-14.md)** — Merch shop, live dashboard announcements, house mascot logos & Thai house names.
+* **[11–12 มิ.ย. 69](./updates/2026-06-11_to_06-12.md)** — Earlier changes.
 
 ---
 

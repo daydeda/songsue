@@ -20,7 +20,7 @@ export async function PATCH(
     const body = await req.json();
 
     // Fields that can be updated by admin
-    const { name, major, houseId, studentId, nickname } = body;
+    const { name, prefix, major, houseId, studentId, nickname } = body;
     let { role, roles } = body;
 
     const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
@@ -63,6 +63,7 @@ export async function PATCH(
       changes.push(`roles: [${oldRoles.join(", ")}] → [${newRoles.join(", ")}]`);
     }
     if (name !== undefined && name !== targetUser.name) changes.push("name");
+    if (prefix !== undefined && prefix !== targetUser.prefix) changes.push("prefix");
     if (major !== undefined && major !== targetUser.major) changes.push("major");
     if (houseId !== undefined && houseId !== targetUser.houseId) changes.push("houseId");
     if (studentId !== undefined && studentId !== targetUser.studentId) changes.push("studentId");
@@ -72,6 +73,7 @@ export async function PATCH(
       await tx.update(users)
         .set({
           name,
+          prefix,
           role,
           roles,
           major,

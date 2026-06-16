@@ -1,8 +1,8 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { events } from "@/db/schema";
+import { events, attendance } from "@/db/schema";
 import { AuditService } from "@/modules/audit/audit.service";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -27,8 +27,6 @@ const eventSchema = z.object({
   allowedRoles: z.array(z.string()).optional().nullable(),
 });
 
-import { checkAndAwardPastEventPoints, checkAndAwardClosedForms } from "@/lib/award-points";
-
 // GET /api/admin/events — List all events with registration counts
 export async function GET() {
   try {
@@ -40,23 +38,30 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Automatically check and award past event points + closed-form contests
-    await checkAndAwardPastEventPoints();
-    await checkAndAwardClosedForms();
+    // Award runs deliberately do NOT live on this polled read path — they run on
+    // their own isolated, advisory-locked endpoints (/api/admin/award-check and
+    // /api/cron/award-points). Pulling every attendance row in here just to count
+    // it is what starved the DB pooler and 504'd the site; this is polled every 8s.
 
     const list = await db.query.events.findMany({
       orderBy: (events, { desc }) => [desc(events.startTime)],
-      with: {
-        attendances: true,
-      }
     });
 
-    // Map to include count
-    const eventsWithCount = list.map(e => ({
+    // Attendee counts via a single grouped aggregate — returns O(events) rows
+    // instead of loading the whole, event-time-growing attendance table into memory.
+    const counts = await db
+      .select({
+        eventId: attendance.eventId,
+        count: sql<number>`count(*)`,
+      })
+      .from(attendance)
+      .groupBy(attendance.eventId);
+
+    const countByEvent = new Map(counts.map((c) => [c.eventId, Number(c.count)]));
+
+    const eventsWithCount = list.map((e) => ({
       ...e,
-      attendeeCount: e.attendances.length,
-      // Remove the full attendances array to keep response small
-      attendances: undefined 
+      attendeeCount: countByEvent.get(e.id) ?? 0,
     }));
 
     return NextResponse.json(eventsWithCount);

@@ -71,6 +71,10 @@ export async function checkAndAwardPastEventPoints() {
         where: and(lte(events.endTime, now), sql`${events.winnerAwardedAt} IS NULL`),
       });
 
+      // Houses are stable across a single award run — fetch once and reuse, instead
+      // of re-querying the table on every iteration of the per-event loop below.
+      const dbHouses = await tx.query.houses.findMany();
+
       for (const event of pastEvents) {
         if (event.winnerAwardedAt) continue; // already processed
 
@@ -81,8 +85,6 @@ export async function checkAndAwardPastEventPoints() {
           ),
           with: { user: { columns: { houseId: true } } },
         });
-
-        const dbHouses = await tx.query.houses.findMany();
 
         if (attendees.length === 0) {
           // No attendees — record a house-less activity row (houseId: null) so the

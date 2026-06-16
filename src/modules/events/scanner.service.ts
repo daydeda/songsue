@@ -51,9 +51,10 @@ export class ScannerService {
     score?: number;
     reason?: string;
     actorId: string;
+    actorRole: string;
     ipAddress: string;
   }): Promise<ScanResult> {
-    const { qrToken, eventId, action, medsCheckOption, actorId, ipAddress } = params;
+    const { qrToken, eventId, action, medsCheckOption, actorId, actorRole, ipAddress } = params;
 
     const [student, event] = await Promise.all([
       UsersService.resolveStudentByToken(qrToken),
@@ -76,18 +77,29 @@ export class ScannerService {
       points: student.points ?? 0,
     };
 
-    // Full info: only returned when staff needs to act on a student at the gate
-    const studentWithMedical = {
-      ...baseStudentInfo,
-      hasMedicalCondition,
-      chronicDiseases: student.chronicDiseases,
-      medicalHistory: student.medicalHistory,
-      drugAllergies: student.drugAllergies,
-      foodAllergies: student.foodAllergies,
-      dietaryRestrictions: student.dietaryRestrictions,
-      faintingHistory: student.faintingHistory,
-      emergencyMedication: student.emergencyMedication,
-    };
+    // Medical DETAIL (raw free-text health records) is PDPA-restricted to
+    // super_admin/admin. Every other scanning role (registration/organizer/smo) gets
+    // only the boolean SIGNAL — enough to prompt a medical check at the gate without
+    // ever shipping the underlying records in the JSON response (DevTools-readable).
+    const canViewMedicalDetail = actorRole === "super_admin" || actorRole === "admin";
+
+    // Signal-only view: what non-admin scanners receive at the gate.
+    const studentWithSignal = { ...baseStudentInfo, hasMedicalCondition };
+
+    // Full info: only super_admin/admin sees the detail fields; everyone else falls
+    // back to the signal-only view.
+    const studentWithMedical = canViewMedicalDetail
+      ? {
+          ...studentWithSignal,
+          chronicDiseases: student.chronicDiseases,
+          medicalHistory: student.medicalHistory,
+          drugAllergies: student.drugAllergies,
+          foodAllergies: student.foodAllergies,
+          dietaryRestrictions: student.dietaryRestrictions,
+          faintingHistory: student.faintingHistory,
+          emergencyMedication: student.emergencyMedication,
+        }
+      : studentWithSignal;
 
     /* ── Score Awarding ─────────────────────────────────────────────────────── */
     if (action === "score") {

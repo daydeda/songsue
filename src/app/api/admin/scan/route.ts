@@ -54,6 +54,7 @@ export async function POST(req: Request) {
       score,
       reason,
       actorId: session.user.id!,
+      actorRole: session.user.role || "",
       ipAddress: ip,
     });
 

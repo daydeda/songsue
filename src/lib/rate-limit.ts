@@ -1,6 +1,19 @@
 // Lightweight In-Memory Client IP Rate Limiter to prevent spam/abuse
 const ipCache = new Map<string, { count: number; resetTime: number }>();
 
+// This Map lives for the lifetime of the serverless instance. Without eviction it
+// grows one entry per unique client IP forever, so a long-lived instance under a
+// busy event (or a spray of spoofed x-forwarded-for values) would leak memory. When
+// the Map crosses this size we sweep out windows that have already expired — cheap
+// and amortized, since expired entries are dead weight anyway.
+const SWEEP_THRESHOLD = 10_000;
+
+function sweepExpired(now: number): void {
+  for (const [key, record] of ipCache) {
+    if (now > record.resetTime) ipCache.delete(key);
+  }
+}
+
 export type RateLimitResult = {
   success: boolean;
   count: number;
@@ -14,6 +27,10 @@ export type RateLimitResult = {
  */
 export function rateLimit(ip: string, limit: number = 60, windowMs: number = 60000): RateLimitResult {
   const now = Date.now();
+
+  // Bound memory growth before doing any work this request.
+  if (ipCache.size > SWEEP_THRESHOLD) sweepExpired(now);
+
   const record = ipCache.get(ip);
 
   // If no record or reset window has passed, start a new window

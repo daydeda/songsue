@@ -42,6 +42,7 @@ yarn-error.log*
 next-env.d.ts
 
 # AI Agent memory and instructions
+.claude/
 .agents/
 AGENTS.md
 CLAUDE.md

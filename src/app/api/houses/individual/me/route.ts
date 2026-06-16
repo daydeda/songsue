@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 // Returns the current user's individual standing: their points, their exact
@@ -26,28 +26,24 @@ export async function GET() {
 
     const myPoints = me.points ?? 0;
 
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)` })
+    // Total student count AND how many outrank me in ONE scan of the table, via a
+    // FILTER aggregate — instead of two separate count(*) queries. This endpoint is
+    // polled every 60s by every signed-in student, so halving its query count matters.
+    const [{ total, ahead }] = await db
+      .select({
+        total: sql<number>`count(*)`,
+        ahead: sql<number>`count(*) filter (where ${users.points} > ${myPoints})`,
+      })
       .from(users)
       .where(eq(users.profileCompleted, true));
 
     // With 0 points you haven't earned a position yet — and when everyone is at 0
     // a numeric rank would just tie everybody at #1, which is misleading. Report
     // rank: null ("Unranked") until at least 1 point is earned.
-    if (myPoints <= 0) {
-      return NextResponse.json(
-        { points: myPoints, rank: null, total: Number(total) },
-        { headers: { "Cache-Control": "private, no-store" } }
-      );
-    }
-
-    const [{ ahead }] = await db
-      .select({ ahead: sql<number>`count(*)` })
-      .from(users)
-      .where(and(eq(users.profileCompleted, true), gt(users.points, myPoints)));
+    const rank = myPoints > 0 ? Number(ahead) + 1 : null;
 
     return NextResponse.json(
-      { points: myPoints, rank: Number(ahead) + 1, total: Number(total) },
+      { points: myPoints, rank, total: Number(total) },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (error) {

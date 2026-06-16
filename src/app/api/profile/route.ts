@@ -6,6 +6,17 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
+// Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
+// Validate the shape instead of accepting z.any() — the onboarding form always
+// sends this structure, and a typed schema stops arbitrary/oversized JSON (a jsonb
+// bloat vector) from being written straight into the row. Fields are tolerant of
+// empty strings because the second contact is optional in the UI.
+const emergencyContactSchema = z.object({
+  name: z.string(),
+  relationship: z.string(),
+  phone: z.string(),
+});
+
 const profileSchema = z.object({
   name: z.string().min(1),
   nickname: z.string().optional().nullable(),
@@ -19,7 +30,7 @@ const profileSchema = z.object({
   drugAllergies: z.string().optional().nullable(),
   foodAllergies: z.string().optional().nullable(),
   dietaryRestrictions: z.string().optional().nullable(),
-  emergencyContacts: z.any().optional().nullable(),
+  emergencyContacts: z.array(emergencyContactSchema).optional().nullable(),
   faintingHistory: z.boolean().optional().nullable(),
   emergencyMedication: z.string().optional().nullable(),
   image: z.string().optional().nullable(),
@@ -44,7 +55,9 @@ export async function GET() {
 
     return NextResponse.json(user);
   } catch (error) {
-    console.error(error);
+    // Log a plain message only — never the raw error, whose Postgres `detail` can
+    // carry PII (student id, phone) from the failing row.
+    console.error("Profile GET error:", error instanceof Error ? error.message : error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
@@ -115,7 +128,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "infoAlreadyInUse" }, { status: 400 });
     }
 
-    console.error(error);
+    // Message only — the raw error's Postgres `detail` can carry PII from the row.
+    console.error("Profile onboarding error:", error instanceof Error ? error.message : error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
@@ -167,7 +181,8 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "infoAlreadyInUse" }, { status: 400 });
     }
 
-    console.error(error);
+    // Message only — the raw error's Postgres `detail` can carry PII from the row.
+    console.error("Profile update error:", error instanceof Error ? error.message : error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

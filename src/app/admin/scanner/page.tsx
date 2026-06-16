@@ -20,11 +20,12 @@ import {
   Users,
   UserX,
   Award,
-  Plus
+  Plus,
+  Minus
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 
-type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "error";
+type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "found" | "not_registered" | "error";
 
 type ScanResult = {
   status: ScanStatus;
@@ -70,6 +71,7 @@ export default function QRScannerPage() {
   const [medsCheckOption, setMedsCheckOption] = useState<string | null>(null);
   const [scanMode, setScanMode] = useState<"checkin" | "score">("checkin");
   const [scoreInput, setScoreInput] = useState<string>("");
+  const [scoreSign, setScoreSign] = useState<1 | -1>(1);
   const [scoreReason, setScoreReason] = useState<string>("");
   const [submittingScore, setSubmittingScore] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -78,6 +80,7 @@ export default function QRScannerPage() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
   const eventIdRef = useRef<string>("");
+  const scanModeRef = useRef<"checkin" | "score">("checkin");
   const isMountedRef = useRef(true);
   const scanSessionIdRef = useRef(0);
 
@@ -106,6 +109,12 @@ export default function QRScannerPage() {
   useEffect(() => {
     eventIdRef.current = eventId;
   }, [eventId]);
+
+  // Keep scan mode in a ref: the camera's decode callback is registered once and
+  // would otherwise capture a stale mode, sending check-in scans while in score mode.
+  useEffect(() => {
+    scanModeRef.current = scanMode;
+  }, [scanMode]);
 
   // Fetch events for the selector
   useEffect(() => {
@@ -197,10 +206,12 @@ export default function QRScannerPage() {
             const res = await fetch("/api/admin/scan", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                qrToken: decodedText, 
-                eventId: eventIdRef.current, 
-                action: "scan" 
+              body: JSON.stringify({
+                qrToken: decodedText,
+                eventId: eventIdRef.current,
+                // Score mode just looks the student up (no check-in side effect);
+                // check-in mode runs the real scan.
+                action: scanModeRef.current === "score" ? "lookup" : "scan",
               }),
             });
             const data = await res.json();
@@ -319,6 +330,7 @@ export default function QRScannerPage() {
         lastTokenRef.current = null;
         setMedsCheckOption(null);
         setScoreInput("");
+        setScoreSign(1);
       }
     }, 300);
   };
@@ -353,11 +365,13 @@ export default function QRScannerPage() {
   };
 
   const confirmScore = async (token: string) => {
-    const val = parseInt(scoreInput);
-    if (isNaN(val) || val <= 0) {
+    // Input holds the magnitude (always positive); scoreSign decides award vs deduct.
+    const magnitude = parseInt(scoreInput);
+    if (isNaN(magnitude) || magnitude <= 0) {
       alert(t.invalidScoreAlert);
       return;
     }
+    const val = magnitude * scoreSign;
 
     setSubmittingScore(true);
     try {
@@ -425,7 +439,8 @@ export default function QRScannerPage() {
       const res = await fetch("/api/admin/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrToken, eventId, action: "scan" }),
+        // In score mode, only resolve the student (no check-in side effect).
+        body: JSON.stringify({ qrToken, eventId, action: scanMode === "score" ? "lookup" : "scan" }),
       });
       const data = await res.json();
       if (isMountedRef.current) {
@@ -478,11 +493,11 @@ export default function QRScannerPage() {
       desc: t.scanAlreadyCheckedIn,
       bg: "rgba(239, 68, 68, 0.1)"
     },
-    walk_ins_disabled: { 
-      color: "#f59e0b", 
-      icon: UserMinus, 
-      title: t.eventDisableFormLabel || "Walk-ins Disabled", 
-      desc: t.eventDisableFormLabel || "Walk-ins Disabled",
+    walk_ins_disabled: {
+      color: "#f59e0b",
+      icon: UserMinus,
+      title: t.walkInsDisabledLabel || "Walk-ins Not Allowed",
+      desc: t.walkInsDisabledError,
       bg: "rgba(245, 158, 11, 0.1)"
     },
     not_found: { 
@@ -492,12 +507,28 @@ export default function QRScannerPage() {
       desc: t.scanNotFound,
       bg: "rgba(239, 68, 68, 0.1)"
     },
-    quota_full: { 
-      color: "#f59e0b", 
-      icon: UserX, 
-      title: t.eventFull || "Event Full", 
+    quota_full: {
+      color: "#f59e0b",
+      icon: UserX,
+      title: t.eventFull || "Event Full",
       desc: t.eventFull || "Event Full",
       bg: "rgba(245, 158, 11, 0.1)"
+    },
+    // Score-mode student lookup (no check-in). Always overridden by the score-mode
+    // cfg block below; this entry just satisfies the Record<ScanStatus> type.
+    found: {
+      color: "var(--accent-primary)",
+      icon: Award,
+      title: t.scanModeScore,
+      desc: t.scanModeScore,
+      bg: "rgba(99, 102, 241, 0.1)"
+    },
+    not_registered: {
+      color: "#ef4444",
+      icon: UserX,
+      title: lang === "th" ? "ยังไม่ได้ลงทะเบียน" : lang === "cn" ? "未报名此活动" : lang === "mm" ? "ဤပွဲအတွက် စာရင်းမသွင်းရသေးပါ" : "Not Registered",
+      desc: lang === "th" ? "นักศึกษายังไม่ได้ลงทะเบียนกิจกรรมนี้" : lang === "cn" ? "该学生未报名此活动" : lang === "mm" ? "ဤကျောင်းသားသည် ဤပွဲတွင် စာရင်းမသွင်းထားပါ" : "This student is not registered for this event",
+      bg: "rgba(239, 68, 68, 0.1)"
     },
     error: { 
       color: "#ef4444", 
@@ -515,10 +546,17 @@ export default function QRScannerPage() {
       cfg = {
         color: "#10b981",
         icon: CheckCircle2,
-        title: lang === "th" ? "มอบคะแนนสำเร็จ" : "Score Awarded",
-        desc: lang === "th" ? "มอบคะแนนเรียบร้อยแล้ว" : "The score has been added successfully",
+        title: scoreSign === -1
+          ? (lang === "th" ? "หักคะแนนสำเร็จ" : lang === "cn" ? "扣分成功" : lang === "mm" ? "အမှတ်နှုတ်ပြီး" : "Points Deducted")
+          : (lang === "th" ? "มอบคะแนนสำเร็จ" : "Score Awarded"),
+        desc: scoreSign === -1
+          ? (lang === "th" ? "หักคะแนนเรียบร้อยแล้ว" : lang === "cn" ? "已成功扣分" : lang === "mm" ? "အမှတ်ကို အောင်မြင်စွာ နှုတ်ပြီးပါပြီ" : "The score has been deducted successfully")
+          : (lang === "th" ? "มอบคะแนนเรียบร้อยแล้ว" : "The score has been added successfully"),
         bg: "rgba(16, 185, 129, 0.1)"
       };
+    } else if (scanResult?.status === "not_registered") {
+      // Keep the "Not Registered" error styling — don't fall through to the score prompt.
+      cfg = STATUS_CONFIG.not_registered;
     } else {
       cfg = {
         color: "var(--accent-primary)",
@@ -1193,8 +1231,38 @@ export default function QRScannerPage() {
                 </div>
               )}
 
-              {/* Scan Score Mode inputs and banners */}
-              {scanMode === "score" && scanResult?.status !== "success" && scanResult?.rawToken && (
+              {/* Score Mode — blocked: student is not registered for this event */}
+              {scanMode === "score" && scanResult?.status === "not_registered" && (
+                <div
+                  style={{
+                    marginTop: 24,
+                    padding: 16,
+                    borderRadius: 16,
+                    background: "rgba(239, 68, 68, 0.08)",
+                    border: "1.5px dashed rgba(239, 68, 68, 0.35)",
+                    color: "#ef4444",
+                    textAlign: "center",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10
+                  }}
+                >
+                  <UserX size={20} />
+                  {lang === "th"
+                    ? "ไม่สามารถมอบ/หักคะแนนได้ เนื่องจากนักศึกษายังไม่ได้ลงทะเบียนกิจกรรมนี้"
+                    : lang === "cn"
+                    ? "无法给分/扣分：该学生未报名此活动"
+                    : lang === "mm"
+                    ? "ဤကျောင်းသားသည် ဤပွဲတွင် စာရင်းမသွင်းထားသဖြင့် အမှတ်ပေး/နှုတ်၍မရပါ"
+                    : "Can't award or deduct points — this student is not registered for this event."}
+                </div>
+              )}
+
+              {/* Score Mode inputs — only for students registered for this event (status "found") */}
+              {scanMode === "score" && scanResult?.status === "found" && scanResult?.rawToken && (
                 <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
@@ -1219,6 +1287,49 @@ export default function QRScannerPage() {
                     <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>
                       {t.scoreToAward}
                     </label>
+
+                    {/* Award / Deduct toggle — keeps the magnitude input positive and makes intent explicit */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => setScoreSign(1)}
+                        style={{
+                          flex: 1,
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          fontSize: 14,
+                          fontWeight: 800,
+                          border: scoreSign === 1 ? "1.5px solid #10b981" : "1.5px solid var(--border-subtle)",
+                          background: scoreSign === 1 ? "rgba(16,185,129,0.08)" : "var(--bg-elevated)",
+                          color: scoreSign === 1 ? "#10b981" : "var(--text-muted)",
+                          cursor: "pointer",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        <Plus size={16} /> {lang === "th" ? "เพิ่มคะแนน" : lang === "cn" ? "加分" : lang === "mm" ? "အမှတ်ပေါင်း" : "Add"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setScoreSign(-1)}
+                        style={{
+                          flex: 1,
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          fontSize: 14,
+                          fontWeight: 800,
+                          border: scoreSign === -1 ? "1.5px solid #ef4444" : "1.5px solid var(--border-subtle)",
+                          background: scoreSign === -1 ? "rgba(239,68,68,0.08)" : "var(--bg-elevated)",
+                          color: scoreSign === -1 ? "#ef4444" : "var(--text-muted)",
+                          cursor: "pointer",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        <Minus size={16} /> {lang === "th" ? "หักคะแนน" : lang === "cn" ? "扣分" : lang === "mm" ? "အမှတ်နှုတ်" : "Deduct"}
+                      </button>
+                    </div>
+
                     <input
                       type="number"
                       className="input"
@@ -1226,8 +1337,13 @@ export default function QRScannerPage() {
                       min={1}
                       value={scoreInput}
                       onChange={(e) => setScoreInput(e.target.value)}
-                      style={{ fontSize: 24, fontWeight: 900, textAlign: "center", padding: "12px 16px" }}
+                      style={{ fontSize: 24, fontWeight: 900, textAlign: "center", padding: "12px 16px", color: scoreSign === -1 ? "#ef4444" : "var(--text-primary)" }}
                     />
+                    {scoreInput && (parseInt(scoreInput) > 0) && (
+                      <p style={{ fontSize: 13, fontWeight: 800, textAlign: "center", marginTop: 8, color: scoreSign === -1 ? "#ef4444" : "#10b981" }}>
+                        {scoreSign === -1 ? "−" : "+"}{parseInt(scoreInput)} {lang === "th" ? "คะแนน" : "pts"}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -1248,18 +1364,22 @@ export default function QRScannerPage() {
                     className="btn btn-primary btn-full"
                     onClick={() => confirmScore(scanResult.rawToken!)}
                     disabled={submittingScore || !scoreInput}
-                    style={{ 
-                      background: !scoreInput ? "var(--bg-elevated)" : "var(--accent-primary)", 
+                    style={{
+                      background: !scoreInput ? "var(--bg-elevated)" : scoreSign === -1 ? "#ef4444" : "var(--accent-primary)",
                       color: !scoreInput ? "var(--text-muted)" : "white",
-                      minHeight: 56, 
-                      borderRadius: 16, 
-                      fontSize: 16, 
+                      minHeight: 56,
+                      borderRadius: 16,
+                      fontSize: 16,
                       fontWeight: 700,
                       opacity: !scoreInput ? 0.7 : 1,
                       cursor: !scoreInput ? "not-allowed" : "pointer"
                     }}
                   >
-                    {submittingScore ? t.scoreAwarding : t.confirmScoreBtn}
+                    {submittingScore
+                      ? t.scoreAwarding
+                      : scoreSign === -1
+                        ? (lang === "th" ? "ยืนยันการหักคะแนน" : lang === "cn" ? "确认扣分" : lang === "mm" ? "အမှတ်နှုတ်ခြင်းကို အတည်ပြုရန်" : "Confirm Deduction")
+                        : t.confirmScoreBtn}
                   </button>
                 </div>
               )}
@@ -1283,7 +1403,9 @@ export default function QRScannerPage() {
                   }}
                 >
                   <CheckCircle2 size={24} />
-                  {t.scoreAwardedSuccess}
+                  {scoreSign === -1
+                    ? (lang === "th" ? "หักคะแนนเรียบร้อยแล้ว" : lang === "cn" ? "已成功扣分" : lang === "mm" ? "အမှတ်ကို အောင်မြင်စွာ နှုတ်ပြီးပါပြီ" : "Points Deducted Successfully")
+                    : t.scoreAwardedSuccess}
                 </div>
               )}
 

@@ -8,7 +8,7 @@ import { AuditService } from "../audit/audit.service";
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
 
 export interface ScanResult {
-  status: "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "not_found" | "quota_full" | "walk_ins_disabled" | "error";
+  status: "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "not_found" | "quota_full" | "walk_ins_disabled" | "found" | "not_registered" | "error";
   student: {
     name: string;
     nickname: string | null;
@@ -46,7 +46,7 @@ export class ScannerService {
   static async processScan(params: {
     qrToken: string;
     eventId: string;
-    action: "scan" | "confirm" | "score";
+    action: "scan" | "confirm" | "score" | "lookup";
     medsCheckOption?: string | null;
     score?: number;
     reason?: string;
@@ -101,16 +101,59 @@ export class ScannerService {
         }
       : studentWithSignal;
 
+    /* ── Lookup (score mode) ────────────────────────────────────────────────── */
+    // Score mode resolves the student WITHOUT touching attendance (no check-in
+    // side effect). Scoring is restricted to students who belong to this event:
+    // a student with no attendance record (never registered and never walked in)
+    // cannot be given or deducted points here.
+    if (action === "lookup") {
+      const record = await db.query.attendance.findFirst({
+        where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, student.id)),
+      });
+      if (!record) {
+        return {
+          status: "not_registered",
+          student: baseStudentInfo,
+          error: "Student is not registered for this event.",
+        };
+      }
+      // Scoring needs no medical data — return the PDPA-safe base info only.
+      return {
+        status: "found",
+        student: baseStudentInfo,
+        checkedInAt: record.status === "attended" ? record.checkInTime : undefined,
+      };
+    }
+
     /* ── Score Awarding ─────────────────────────────────────────────────────── */
     if (action === "score") {
       const parsedScore = params.score !== undefined ? Number(params.score) : 0;
-      if (!Number.isInteger(parsedScore) || parsedScore < 1 || parsedScore > MAX_SCORE_AWARD) {
+      // Negative = deduction (penalty/correction); zero is a no-op and rejected.
+      if (!Number.isInteger(parsedScore) || parsedScore === 0 || Math.abs(parsedScore) > MAX_SCORE_AWARD) {
         return {
           status: "error",
           student: baseStudentInfo,
-          error: `Score must be an integer between 1 and ${MAX_SCORE_AWARD}.`,
+          error: `Score must be a non-zero integer between -${MAX_SCORE_AWARD} and ${MAX_SCORE_AWARD}.`,
         };
       }
+
+      // Gate scoring to event participants: a student with no attendance record
+      // for this event cannot be scored. Enforced server-side (not just in the UI)
+      // so a hand-crafted request can't award/deduct points off-event.
+      const enrollment = await db.query.attendance.findFirst({
+        where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, student.id)),
+      });
+      if (!enrollment) {
+        return {
+          status: "not_registered",
+          student: baseStudentInfo,
+          error: "Student is not registered for this event.",
+        };
+      }
+
+      // Wording for logs/audit: "Awarded 5" vs "Deducted 5" reads better than "Awarded -5".
+      const verb = parsedScore >= 0 ? "Awarded" : "Deducted";
+      const magnitude = Math.abs(parsedScore);
 
       let newPoints = 0;
 
@@ -120,7 +163,8 @@ export class ScannerService {
         // already-incremented value — no separate SELECT FOR UPDATE needed.
         const [result] = await tx
           .update(users)
-          .set({ points: sql`COALESCE(${users.points}, 0) + ${parsedScore}` })
+          // GREATEST floors at 0 so a deduction can never push a student into a negative balance.
+          .set({ points: sql`GREATEST(0, COALESCE(${users.points}, 0) + ${parsedScore})` })
           .where(eq(users.id, student.id))
           .returning({ newPoints: users.points });
 
@@ -129,8 +173,8 @@ export class ScannerService {
 
         if (student.houseId) {
           const logReason = params.reason?.trim()
-            ? `Awarded ${parsedScore} pts to ${student.name} - Reason: ${params.reason} (from activity "${event.title}")`
-            : `Awarded ${parsedScore} individual points to ${student.name} from activity "${event.title}"`;
+            ? `${verb} ${magnitude} pts to ${student.name} - Reason: ${params.reason} (from activity "${event.title}")`
+            : `${verb} ${magnitude} individual points to ${student.name} from activity "${event.title}"`;
 
           await tx.insert(scoreHistory).values({
             houseId: student.houseId,
@@ -161,7 +205,7 @@ export class ScannerService {
         await AuditService.logActionInternal(tx, {
           actorId,
           targetId: student.id,
-          action: `Awarded ${parsedScore} individual points to ${student.name} for activity "${event.title}"` +
+          action: `${verb} ${magnitude} individual points to ${student.name} for activity "${event.title}"` +
                   (params.reason?.trim() ? ` (Reason: ${params.reason})` : "") +
                   `. Points updated from ${previousPoints} to ${newPoints}.` +
                   (housePointsAdded > 0 ? ` House ${student.houseId} awarded +${housePointsAdded} points.` : ""),

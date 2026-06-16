@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { canGiveIndividualScore } from "@/lib/admin-access";
 import { ScannerService } from "@/modules/events/scanner.service";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
@@ -38,13 +39,21 @@ export async function POST(req: Request) {
 
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo"].includes(session?.user?.role || "");
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
     const { qrToken, eventId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
+
+    // Individual scoring is NOT part of the scanner-only president roles: they may
+    // check in attendees but must not award/deduct individual points. smo keeps it.
+    // The "lookup" action (score-mode student resolve) is a read-only prelude to a
+    // score, so block it here too — otherwise these roles could still use score UI.
+    if ((action === "score" || action === "lookup") && !canGiveIndividualScore(session.user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // Delegate business operation to ScannerService
     const result = await ScannerService.processScan({
@@ -141,7 +150,7 @@ export async function GET(req: Request) {
 
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo"].includes(session?.user?.role || "");
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -24,6 +24,8 @@ import {
   Minus
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { useSession } from "next-auth/react";
+import { canGiveIndividualScore } from "@/lib/admin-access";
 
 type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "found" | "not_registered" | "error";
 
@@ -56,6 +58,10 @@ type Event = { id: string; title: string };
 
 export default function QRScannerPage() {
   const { t, lang } = useLanguage();
+  const { data: session } = useSession();
+  // Club/Major presidents are check-in only — hide the Individual Score mode.
+  // The server (scan API + ScannerService) is the real gate; this is UX only.
+  const canScore = canGiveIndividualScore(session?.user?.role);
   const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState<string>("");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -582,10 +588,11 @@ export default function QRScannerPage() {
       <div className="mb-10" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
         <h1 style={{ fontSize: "clamp(32px,5vw,48px)", fontWeight: 900, letterSpacing: "-0.04em", lineHeight: 1.3 }}>{t.qrScanner}</h1>
         
-        {/* Mode Selector */}
-        <div style={{ 
-          display: "flex", 
-          background: "var(--bg-elevated)", 
+        {/* Mode Selector — hidden for check-in-only roles (Club/Major presidents) */}
+        {canScore && (
+        <div style={{
+          display: "flex",
+          background: "var(--bg-elevated)",
           padding: 4, 
           borderRadius: 12, 
           border: "1px solid var(--border-subtle)" 
@@ -625,6 +632,7 @@ export default function QRScannerPage() {
             {t.scanModeScore}
           </button>
         </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6 items-start">

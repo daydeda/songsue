@@ -4,6 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 import { AuditService } from "../audit/audit.service";
+import { canGiveIndividualScore } from "@/lib/admin-access";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
 
@@ -127,6 +128,16 @@ export class ScannerService {
 
     /* ── Score Awarding ─────────────────────────────────────────────────────── */
     if (action === "score") {
+      // Defense-in-depth: the scanner-only president roles are check-in only and
+      // must never award/deduct individual points, even if a request reaches here.
+      if (!canGiveIndividualScore(actorRole)) {
+        return {
+          status: "error",
+          student: baseStudentInfo,
+          error: "You do not have permission to give individual scores.",
+        };
+      }
+
       const parsedScore = params.score !== undefined ? Number(params.score) : 0;
       // Negative = deduction (penalty/correction); zero is a no-op and rejected.
       if (!Number.isInteger(parsedScore) || parsedScore === 0 || Math.abs(parsedScore) > MAX_SCORE_AWARD) {

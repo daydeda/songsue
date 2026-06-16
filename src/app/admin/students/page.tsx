@@ -292,7 +292,9 @@ export default function AdminStudentsDirectory() {
     { value: "admin", label: t.roleAdminPlural, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> },
     { value: "super_admin", label: t.roleSuperAdminPlural, icon: <Shield size={16} className="text-[#ef4444]" /> },
     { value: "registration", label: t.roleRegistrationPlural, icon: <UserIcon size={16} className="text-[#3b82f6]" /> },
-    { value: "organizer", label: t.roleOrganizerPlural, icon: <Award size={16} className="text-[#10b981]" /> }
+    { value: "organizer", label: t.roleOrganizerPlural, icon: <Award size={16} className="text-[#10b981]" /> },
+    { value: "club_president", label: t.roleClubPresidentPlural, icon: <Award size={16} className="text-[#f59e0b]" /> },
+    { value: "major_president", label: t.roleMajorPresidentPlural, icon: <Award size={16} className="text-[#06b6d4]" /> }
   ];
 
   const editRoleOptions = [
@@ -303,7 +305,9 @@ export default function AdminStudentsDirectory() {
     { value: "admin", label: t.roleAdmin, icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" /> },
     { value: "super_admin", label: t.roleSuperAdmin, icon: <Shield size={16} className="text-[#ef4444]" /> },
     { value: "registration", label: t.roleRegistration, icon: <UserIcon size={16} className="text-[#3b82f6]" /> },
-    { value: "organizer", label: t.roleOrganizer, icon: <Award size={16} className="text-[#10b981]" /> }
+    { value: "organizer", label: t.roleOrganizer, icon: <Award size={16} className="text-[#10b981]" /> },
+    { value: "club_president", label: t.roleClubPresident, icon: <Award size={16} className="text-[#f59e0b]" /> },
+    { value: "major_president", label: t.roleMajorPresident, icon: <Award size={16} className="text-[#06b6d4]" /> }
   ];
 
   const allowedEditRoleOptions = editRoleOptions.filter(opt => {
@@ -502,6 +506,16 @@ export default function AdminStudentsDirectory() {
                               if (r === "anusmo") return (
                                 <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(236,72,153,0.1)", color: "#ec4899", border: "1px solid rgba(236,72,153,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Junior Student Council (ANUSMO)">
                                   <Award size={10} /> {t.roleANUSMO}
+                                </span>
+                              );
+                              if (r === "club_president") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Club President">
+                                  <Award size={10} /> {t.roleClubPresident}
+                                </span>
+                              );
+                              if (r === "major_president") return (
+                                <span key={idx} className="badge" style={{ padding: "2px 8px", background: "rgba(6,182,212,0.1)", color: "#06b6d4", border: "1px solid rgba(6,182,212,0.2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }} title="Major President">
+                                  <Award size={10} /> {t.roleMajorPresident}
                                 </span>
                               );
                               if (["staff", "professor", "officer"].includes(r)) return (

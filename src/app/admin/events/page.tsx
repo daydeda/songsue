@@ -191,7 +191,7 @@ const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: strin
 // role is the highest-priority role they hold; "student" is the lowest, so an
 // attendee counts as a regular student only when they hold no elevated role
 // (smo, anusmo, registration, organizer, staff, office, etc.).
-const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
+const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "club_president", "major_president", "staff", "professor", "officer", "student"];
 
 const isRegularStudent = (user: AdminStudent | null | undefined): boolean => {
   if (!user) return false;

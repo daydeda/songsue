@@ -13,6 +13,7 @@ import {
   User
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { isScannerOnlyRole } from "@/lib/admin-access";
 
 const NAV = [
   { href: "/admin/dashboard", key: "overview",             icon: LayoutDashboard },
@@ -29,8 +30,9 @@ export function AdminNav({ role }: { role?: string | null }) {
   const { t } = useLanguage();
 
   const filteredNav = NAV.filter(item => {
-    // SMO is scanner-only: it may only see the QR Scanner entry.
-    if (role === "smo") {
+    // Scanner-only roles (smo, club_president, major_president) may only see the
+    // QR Scanner entry. Uses the shared predicate so this can't drift from proxy.
+    if (isScannerOnlyRole(role)) {
       return item.href === "/admin/scanner";
     }
     // Organizer cannot see Students list or Audit Logs

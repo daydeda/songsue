@@ -115,7 +115,7 @@ export default function AdminAuditLogsPage() {
                       </p>
                       {log.actor?.role && (
                         <span className="badge badge-purple" style={{ fontSize: 10, marginTop: 4 }}>
-                          {log.actor.role === "super_admin" ? t.roleSuperAdmin : log.actor.role === "admin" ? t.roleAdmin : log.actor.role === "registration" ? t.roleRegistration : log.actor.role === "organizer" ? t.roleOrganizer : (log.actor.role === "staff" || log.actor.role === "professor" || log.actor.role === "officer") ? t.roleStaff : log.actor.role === "smo" ? t.roleSMO : log.actor.role === "anusmo" ? t.roleANUSMO : t.roleStudent}
+                          {log.actor.role === "super_admin" ? t.roleSuperAdmin : log.actor.role === "admin" ? t.roleAdmin : log.actor.role === "registration" ? t.roleRegistration : log.actor.role === "organizer" ? t.roleOrganizer : (log.actor.role === "staff" || log.actor.role === "professor" || log.actor.role === "officer") ? t.roleStaff : log.actor.role === "smo" ? t.roleSMO : log.actor.role === "anusmo" ? t.roleANUSMO : log.actor.role === "club_president" ? t.roleClubPresident : log.actor.role === "major_president" ? t.roleMajorPresident : t.roleStudent}
                         </span>
                       )}
                     </td>

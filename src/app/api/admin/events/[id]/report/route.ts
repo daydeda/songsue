@@ -12,7 +12,7 @@ export async function GET(
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo"].includes(session?.user?.role || "");
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

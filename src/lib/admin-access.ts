@@ -4,12 +4,20 @@
 // move together. Pure data/predicates only — safe to import in the edge proxy.
 // Server-side API/route gates remain the source of truth for data access.
 
-// Roles allowed to open the admin area at all. "smo" is scanner-only — it can enter,
-// but AdminNav shows just the Scanner and the sensitive APIs still reject it.
-export const ADMIN_ENTRY_ROLES = ["super_admin", "admin", "registration", "organizer", "smo"] as const;
+// Roles allowed to open the admin area at all. "smo", "club_president" and
+// "major_president" are scanner-only — they can enter, but AdminNav shows just the
+// Scanner and the sensitive APIs still reject them.
+export const ADMIN_ENTRY_ROLES = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"] as const;
 
 // Scanner-only roles: allowed into /admin but confined to the QR scanner.
-export const SCANNER_ONLY_ROLES = ["smo"] as const;
+export const SCANNER_ONLY_ROLES = ["smo", "club_president", "major_president"] as const;
+
+// Roles permitted to award/deduct INDIVIDUAL student points in the scanner.
+// "smo" keeps full scanner (check-in + scoring); the president roles are check-in
+// only — they can scan attendance but must not give/deduct individual points.
+// Enforced server-side in /api/admin/scan and ScannerService; the UI just hides
+// the Score toggle for non-scoring roles.
+export const SCORING_ROLES = ["super_admin", "admin", "registration", "organizer", "smo"] as const;
 
 // Canonical scanner path — also the landing for scanner-only roles.
 export const SCANNER_HREF = "/admin/scanner";
@@ -21,6 +29,12 @@ export function canEnterAdmin(role?: string | null): boolean {
 // Scanner-only roles can enter the admin area but only reach the scanner.
 export function isScannerOnlyRole(role?: string | null): boolean {
   return (SCANNER_ONLY_ROLES as readonly string[]).includes(role || "");
+}
+
+// May this role award/deduct individual student points? Excludes the president
+// roles (check-in only) while keeping smo and the full admin roles.
+export function canGiveIndividualScore(role?: string | null): boolean {
+  return (SCORING_ROLES as readonly string[]).includes(role || "");
 }
 
 // Where an admin-capable user should land. SMO has no dashboard access, so it goes

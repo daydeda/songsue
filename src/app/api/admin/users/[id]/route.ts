@@ -23,7 +23,7 @@ export async function PATCH(
     const { name, prefix, major, houseId, studentId, nickname } = body;
     let { role, roles } = body;
 
-    const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
+    const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "club_president", "major_president", "staff", "professor", "officer", "student"];
     if (roles && Array.isArray(roles)) {
       // Find the primary role based on priority
       const primary = ROLE_PRIORITY.find(r => roles.includes(r));

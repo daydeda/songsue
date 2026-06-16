@@ -14,7 +14,7 @@ const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS ?? "daydedaa@gmail.co
   .split(",")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
-const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "staff", "professor", "officer", "student"];
+const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "club_president", "major_president", "staff", "professor", "officer", "student"];
 // Sign-ins by these roles are audit-logged. Students are deliberately NOT
 // logged — hundreds of sign-ins a day would just flood the audit table.
 const AUDITED_SIGNIN_ROLES = ["super_admin", "admin", "registration", "organizer"];

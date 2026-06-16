@@ -42,6 +42,7 @@ interface AdminEvent {
   quotaThai: number | null;
   quotaInternational: number | null;
   allowedRoles: string[] | null;
+  allowedMajors: string[] | null;
   attendeeCount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -202,7 +203,7 @@ const isRegularStudent = (user: AdminStudent | null | undefined): boolean => {
   return primary === "student";
 };
 
-const ALL_PARTICIPANT_ROLES = ["student", "staff", "smo", "anusmo"] as const;
+const ALL_PARTICIPANT_ROLES = ["student", "staff", "smo", "anusmo", "club_president", "major_president"] as const;
 type ParticipantRole = typeof ALL_PARTICIPANT_ROLES[number];
 
 const ROLE_LABELS: Record<ParticipantRole, string> = {
@@ -210,6 +211,20 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
   staff: "Staff",
   smo: "SMO",
   anusmo: "ANUSMO",
+  club_president: "Club President",
+  major_president: "Major President",
+};
+
+// Student majors that an event's registration can be restricted to. Mirrors the
+// hardcoded list in the profile form (src/app/dashboard/profile/page.tsx) and the
+// `major` text column on users (ANI, DG, DII, MMIT, SE). Empty selection = all majors.
+const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE"] as const;
+const MAJOR_LABELS: Record<string, string> = {
+  ANI: "ANI - Animation & Visual Effects",
+  DG: "DG - Digital Game",
+  DII: "DII - Digital Industry Integration",
+  MMIT: "MMIT - Modern Management & IT",
+  SE: "SE - Software Engineering",
 };
 
 const EMPTY_FORM = {
@@ -231,6 +246,7 @@ const EMPTY_FORM = {
   quotaThai: null as number | null,
   quotaInternational: null as number | null,
   allowedRoles: [] as string[], // empty = all roles allowed
+  allowedMajors: [] as string[], // empty = all majors allowed
 };
 
 export default function AdminEventsPage() {
@@ -1267,7 +1283,8 @@ export default function AdminEventsPage() {
       targetInternational: evt.targetInternational !== false,
       quotaThai: evt.quotaThai || null,
       quotaInternational: evt.quotaInternational || null,
-      allowedRoles: evt.allowedRoles || []
+      allowedRoles: evt.allowedRoles || [],
+      allowedMajors: evt.allowedMajors || []
     });
     setEditingId(evt.id);
     setShowForm(true);
@@ -1848,6 +1865,18 @@ export default function AdminEventsPage() {
                           text: isSelected ? "#ec4899" : "var(--text-secondary)",
                           badge: "#ec4899",
                         },
+                        club_president: {
+                          bg: isSelected ? "rgba(245,158,11,0.12)" : "var(--bg-elevated)",
+                          border: isSelected ? "rgba(245,158,11,0.5)" : "transparent",
+                          text: isSelected ? "#f59e0b" : "var(--text-secondary)",
+                          badge: "#f59e0b",
+                        },
+                        major_president: {
+                          bg: isSelected ? "rgba(6,182,212,0.12)" : "var(--bg-elevated)",
+                          border: isSelected ? "rgba(6,182,212,0.5)" : "transparent",
+                          text: isSelected ? "#06b6d4" : "var(--text-secondary)",
+                          badge: "#06b6d4",
+                        },
                       };
                       const c = roleColors[role];
                       return (
@@ -1913,6 +1942,91 @@ export default function AdminEventsPage() {
                       {formData.allowedRoles.length === 0
                         ? (lang === "th" ? "✓ เปิดให้ทุกบทบาท" : "✓ Open to all roles")
                         : `✓ ${lang === "th" ? "จำกัดเฉพาะ: " : "Restricted to: "}${formData.allowedRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Major Access Control — limits which student majors may join.
+                    Combined with the role filter as AND. Empty = all majors. */}
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} style={{ color: "var(--accent-primary)" }} />
+                    {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามสาขา)" : "Major-Based Access Control"}
+                  </label>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
+                    {lang === "th"
+                      ? "เลือกสาขาที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกสาขา"
+                      : "Select which majors can see & join this event. Leave all unchecked = open to every major."}
+                  </p>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {ALL_MAJORS.map((major) => {
+                      const isSelected = formData.allowedMajors.includes(major);
+                      return (
+                        <div
+                          key={major}
+                          onClick={() => {
+                            const current = formData.allowedMajors;
+                            const next = current.includes(major)
+                              ? current.filter((m) => m !== major)
+                              : [...current, major];
+                            setFormData({ ...formData, allowedMajors: next });
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px 16px",
+                            borderRadius: 14,
+                            background: isSelected ? "rgba(255,107,0,0.12)" : "var(--bg-elevated)",
+                            border: `1px solid ${isSelected ? "rgba(255,107,0,0.5)" : "transparent"}`,
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                            minWidth: 80,
+                          }}
+                        >
+                          <div style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: 6,
+                            background: isSelected ? "var(--accent-primary)" : "transparent",
+                            border: `2px solid ${isSelected ? "var(--accent-primary)" : "var(--border-medium)"}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            transition: "all 0.15s",
+                          }}>
+                            {isSelected && <CheckCircle2 size={13} color="white" />}
+                          </div>
+                          <span
+                            title={MAJOR_LABELS[major]}
+                            style={{ fontSize: 13, fontWeight: 800, color: isSelected ? "var(--accent-primary)" : "var(--text-secondary)" }}
+                          >
+                            {major}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Summary tag */}
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 12px",
+                      borderRadius: 99,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      background: formData.allowedMajors.length === 0
+                        ? "rgba(16,185,129,0.1)"
+                        : "rgba(255,107,0,0.1)",
+                      color: formData.allowedMajors.length === 0 ? "#10b981" : "var(--accent-primary)",
+                      border: `1px solid ${formData.allowedMajors.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(255,107,0,0.2)"}`,
+                    }}>
+                      {formData.allowedMajors.length === 0
+                        ? (lang === "th" ? "✓ เปิดให้ทุกสาขา" : "✓ Open to all majors")
+                        : `✓ ${lang === "th" ? "จำกัดเฉพาะ: " : "Restricted to: "}${formData.allowedMajors.join(", ")}`}
                     </div>
                   </div>
                 </div>
@@ -2223,6 +2337,31 @@ export default function AdminEventsPage() {
                       }}>
                         <Users size={10} />
                         {evt.allowedRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r.toUpperCase()).join(" • ")}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Major Restriction Badge — stacks below the role badge when both are set */}
+                  {evt.allowedMajors && evt.allowedMajors.length > 0 && (
+                    <div style={{ position: "absolute", top: evt.allowedRoles && evt.allowedRoles.length > 0 ? 60 : 28, left: 28 }}>
+                      <div style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        background: "rgba(255,107,0,0.85)",
+                        backdropFilter: "blur(6px)",
+                        color: "#fff",
+                        padding: "5px 10px",
+                        borderRadius: 99,
+                        fontSize: 10,
+                        fontWeight: 900,
+                        letterSpacing: "0.04em",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        boxShadow: "0 2px 8px rgba(255,107,0,0.3)",
+                        textTransform: "uppercase",
+                      }}>
+                        <Users size={10} />
+                        {evt.allowedMajors.join(" • ")}
                       </div>
                     </div>
                   )}

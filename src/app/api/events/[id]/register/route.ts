@@ -24,7 +24,7 @@ export async function POST(
     // can be stale (auth.ts only eagerly refreshes while profileCompleted is false).
     const profile = await db.query.users.findFirst({
       where: eq(users.id, userId),
-      columns: { profileCompleted: true },
+      columns: { profileCompleted: true, major: true },
     });
     if (!profile?.profileCompleted) {
       return NextResponse.json(
@@ -53,6 +53,19 @@ export async function POST(
       allowedRoles.length > 0 &&
       !adminRoles.includes(userRole) &&
       !allowedRoles.includes(userRole)
+    ) {
+      return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
+    }
+
+    // Major-based access control (mirrors the event-list filter). null/[] = open
+    // to all majors; admin-type roles always pass. A user with no major set can't
+    // satisfy a major restriction, so they're rejected like a non-matching major.
+    const allowedMajors = event.allowedMajors;
+    if (
+      Array.isArray(allowedMajors) &&
+      allowedMajors.length > 0 &&
+      !adminRoles.includes(userRole) &&
+      !(profile.major && allowedMajors.includes(profile.major))
     ) {
       return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
     }

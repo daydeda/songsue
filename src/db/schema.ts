@@ -136,8 +136,14 @@ export const events = pgTable("events", {
   quotaInternational: integer("quota_international"),
   // Role-based access control: which roles can see/register for this event
   // null or [] means all roles can access; otherwise restricted to listed roles
-  // Possible values: 'student', 'smo', 'anusmo' (admin roles always see everything)
+  // Possible values: 'student', 'staff', 'smo', 'anusmo', 'club_president',
+  // 'major_president' (admin roles always see everything)
   allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  // Major-based access control: which student majors can see/register for this
+  // event. null or [] means all majors; otherwise restricted to the listed
+  // majors (ANI, DG, DII, MMIT, SE). Combined with allowedRoles as AND — a user
+  // must satisfy both. Admin roles always bypass.
+  allowedMajors: jsonb("allowed_majors").$type<string[]>(),
   // Set once the event-winner house bonus has been awarded. This is the single
   // source of truth for "already processed" — never infer it from score_history,
   // because mid-event individual/milestone/manual rows also carry this eventId.

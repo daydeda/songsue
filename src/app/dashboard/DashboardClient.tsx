@@ -35,7 +35,8 @@ import {
   AlertCircle,
   Megaphone,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ClipboardCheck
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -68,6 +69,10 @@ type Event = {
   imageUrl?: string;
   imageUrls?: string[] | null;
   pointsAwarded?: number;
+  // Pre-test (K_pre) gate. Present when the event has a pre-test form; `status`
+  // is "open" (student must complete it), "submitted" (already done), or
+  // "upcoming"/"closed"/"awarded" (can't be submitted, so not forced).
+  preTest?: { formId: string; title: string; status: string } | null;
 };
 
 // An event's posters as an ordered list. Falls back to the single legacy imageUrl
@@ -374,6 +379,15 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     eventId: string;
     eventTitle: string;
   }>({ show: false, eventId: "", eventTitle: "" });
+  // Pre-test gate. Shown right after registering for an event whose K_pre form is
+  // open and not yet completed, so the student is pushed straight into the
+  // pre-test (rendered on the history page, which is deep-linked here).
+  const [preTestModal, setPreTestModal] = useState<{
+    show: boolean;
+    eventId: string;
+    formId: string;
+    eventTitle: string;
+  }>({ show: false, eventId: "", formId: "", eventTitle: "" });
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
   // Admin-editable dashboard announcement. null = not loaded yet or fetch failed
@@ -431,6 +445,14 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       );
       const eventTitle = targetEvent ? targetEvent.title : "";
       if (!registered) {
+        // If this event has an open pre-test the student hasn't completed, push
+        // them straight into it instead of the generic success modal.
+        const pre = targetEvent?.preTest;
+        if (pre && pre.status === "open") {
+          setPreTestModal({ show: true, eventId, formId: pre.formId, eventTitle });
+          setRegisteringId(null);
+          return;
+        }
         setSuccessModal({
           show: true,
           title: lang === "th" ? "ลงทะเบียนสำเร็จ!" : lang === "cn" ? "注册成功！" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း အောင်မြင်သည်!" : "Registration Complete!",
@@ -1202,6 +1224,89 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               onClick={() => setSuccessModal(prev => ({ ...prev, show: false }))}
             >
               {lang === "th" ? "ตกลง" : "OK"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pre-test gate. After registering for an event with an open K_pre form,
+          the student is pushed to complete it. "Take the pre-test" deep-links to
+          the history page, which auto-opens the form via ?form=&event= params. */}
+      {preTestModal.show && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 1350,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "90%",
+            maxWidth: 440,
+            borderRadius: 28,
+            padding: 32,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "rgba(255, 107, 0, 0.1)",
+              color: "var(--accent-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <ClipboardCheck size={28} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
+              {lang === "th" ? "กรุณาทำแบบทดสอบก่อนเรียน" : lang === "cn" ? "请先完成前测" : lang === "mm" ? "ကြိုတင်စာမေးပွဲ ဖြေဆိုပါ" : "Pre-Test Required"}
+            </h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              {lang === "th"
+                ? `คุณได้ลงทะเบียนกิจกรรม "${preTestModal.eventTitle}" แล้ว กิจกรรมนี้มีแบบทดสอบก่อนเรียน (Pre-Test) ที่ต้องทำให้เสร็จ`
+                : lang === "cn"
+                ? `您已注册活动 "${preTestModal.eventTitle}"。此活动要求先完成前测（Pre-Test）。`
+                : lang === "mm"
+                ? `"${preTestModal.eventTitle}" အတွက် မှတ်ပုံတင်ပြီးပါပြီ။ ဤပွဲတွင် ဖြည့်ရန်လိုသော ကြိုတင်စာမေးပွဲ (Pre-Test) ရှိသည်။`
+                : `You're registered for "${preTestModal.eventTitle}". This event has a pre-test you need to complete.`}
+            </p>
+            <button
+              className="btn"
+              style={{
+                width: "100%",
+                height: 46,
+                borderRadius: 12,
+                fontSize: 14,
+                fontWeight: 800,
+                background: "var(--accent-primary)",
+                color: "#fff",
+                border: "none",
+                boxShadow: "0 10px 25px var(--accent-glow)",
+                marginBottom: 12
+              }}
+              onClick={() => {
+                const { eventId, formId } = preTestModal;
+                setPreTestModal({ show: false, eventId: "", formId: "", eventTitle: "" });
+                router.push(`/dashboard/history?form=${formId}&event=${eventId}`);
+              }}
+            >
+              {lang === "th" ? "ทำแบบทดสอบเลย" : lang === "cn" ? "立即开始前测" : lang === "mm" ? "ယခု စာမေးပွဲ ဖြေဆိုမည်" : "Take the Pre-Test"}
+            </button>
+            <button
+              className="btn btn-ghost"
+              style={{ width: "100%", height: 46, borderRadius: 12, fontSize: 14, fontWeight: 800, border: "1px solid var(--border-medium)" }}
+              onClick={() => setPreTestModal({ show: false, eventId: "", formId: "", eventTitle: "" })}
+            >
+              {lang === "th" ? "ไว้ทีหลัง" : lang === "cn" ? "稍后" : lang === "mm" ? "နောက်မှ" : "Later"}
             </button>
           </div>
         </div>

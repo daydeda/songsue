@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { attendance, events, users, forms, formSubmissions } from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { getFormAvailability } from "@/lib/form-access";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 export const maxDuration = 20;
@@ -101,11 +102,52 @@ export async function GET() {
 
     const attendanceMap = new Map(userAttendances.map((a) => [a.eventId, a.status]));
 
-    const enrichedEvents = eligibleEvents.map((event) => ({
-      ...event,
-      isRegistered: attendanceMap.has(event.id),
-      attendanceStatus: attendanceMap.get(event.id) || null,
-    }));
+    // Pre-test (K_pre) status per event, so the dashboard can force a student to
+    // complete a required pre-test right after registering. We surface the form id
+    // plus a status: "open" (must complete), "submitted" (done), or
+    // "upcoming"/"closed" (can't submit yet/anymore, so not forced).
+    const eligibleIds = eligibleEvents.map((e) => e.id);
+    const preForms = eligibleIds.length
+      ? await db.query.forms.findMany({
+          where: and(eq(forms.formType, "K_pre"), inArray(forms.eventId, eligibleIds)),
+          orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
+        })
+      : [];
+
+    // First K_pre form per event (an event normally has at most one).
+    const preByEvent = new Map<string, (typeof preForms)[number]>();
+    for (const f of preForms) {
+      if (!preByEvent.has(f.eventId)) preByEvent.set(f.eventId, f);
+    }
+
+    const preFormIds = preForms.map((f) => f.id);
+    const preSubs = preFormIds.length
+      ? await db.query.formSubmissions.findMany({
+          where: and(
+            eq(formSubmissions.studentId, userId),
+            inArray(formSubmissions.formId, preFormIds)
+          ),
+          columns: { formId: true },
+        })
+      : [];
+    const submittedFormIds = new Set(preSubs.map((s) => s.formId));
+
+    const enrichedEvents = eligibleEvents.map((event) => {
+      const pf = preByEvent.get(event.id);
+      const preTest = pf
+        ? {
+            formId: pf.id,
+            title: pf.title,
+            status: submittedFormIds.has(pf.id) ? "submitted" : getFormAvailability(pf),
+          }
+        : null;
+      return {
+        ...event,
+        isRegistered: attendanceMap.has(event.id),
+        attendanceStatus: attendanceMap.get(event.id) || null,
+        preTest,
+      };
+    });
 
     return NextResponse.json(enrichedEvents);
   } catch (error) {

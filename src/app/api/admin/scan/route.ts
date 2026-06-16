@@ -11,9 +11,10 @@ export const maxDuration = 20;
 const scanSchema = z.object({
   qrToken: z.string(), // Allows fallback IDs as well
   eventId: z.string().uuid(),
-  action: z.enum(["scan", "confirm", "score"]).default("scan"),
+  action: z.enum(["scan", "confirm", "score", "lookup"]).default("scan"),
   medsCheckOption: z.string().nullish(),
-  score: z.number().int().min(1).max(500).optional(),
+  // Allow negatives so admins can deduct points (penalties/corrections); 0 is meaningless.
+  score: z.number().int().gte(-500).lte(500).refine((n) => n !== 0, "Score cannot be zero").optional(),
   reason: z.string().optional(),
 });
 
@@ -80,6 +81,17 @@ export async function POST(req: Request) {
     if (result.status === "quota_full") {
       return NextResponse.json(
         { status: result.status, error: result.error },
+        { status: 422 }
+      );
+    }
+
+    if (result.status === "not_registered") {
+      return NextResponse.json(
+        {
+          status: result.status,
+          student: result.student,
+          error: result.error,
+        },
         { status: 422 }
       );
     }

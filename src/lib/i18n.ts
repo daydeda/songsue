@@ -4,6 +4,7 @@ export type Language = "en" | "th" | "mm" | "cn";
 export const translations = {
   en: {
     welcome: "Welcome to ActiveCAMT",
+    walkInsDisabledLabel: "Walk-ins Not Allowed",
     signInTitle: "Experience ActiveCAMT",
     signInSub: "The all-in-one activity platform for CAMT students. Track your progress, collect points, and grow your community.",
     signInBtn: "Sign in with Google",
@@ -306,6 +307,7 @@ export const translations = {
   },
   th: {
     welcome: "ยินดีต้อนรับสู่ ActiveCAMT",
+    walkInsDisabledLabel: "กิจกรรมนี้ไม่อนุญาตให้ Walk-in",
     signInTitle: "สัมผัสประสบการณ์ ActiveCAMT",
     signInSub: "เว็บกิจกรรมสำหรับเด็ก CAMT — อัปเดตกิจกรรม สะสมคะแนนบ้าน และเช็กชั่วโมงกิจกรรมได้ง่ายๆ ครบจบในที่เดียว!",
     signInBtn: "เข้าสู่ระบบด้วย Google",
@@ -608,6 +610,7 @@ export const translations = {
   },
   mm: {
     welcome: "ActiveCAMT မှ ကြိုဆိုပါတယ်",
+    walkInsDisabledLabel: "ဤပွဲတွင် Walk-in ခွင့်မပြုပါ",
     signInTitle: "ActiveCAMT ကို အတွေ့အကြုံယူပါ",
     signInSub: "CAMT ကျောင်းသားများအတွက် အားလုံးပါဝင်သော လှုပ်ရှားမှုပလက်ဖောင်း။ သင်၏တိုးတက်မှုကို ခြေရာခံပါ၊ အမှတ်များစုဆောင်းပါ၊ သင်၏အသိုင်းအဝိုင်းကို တိုးတက်စေပါ။",
     signInBtn: "Google ဖြင့် ဝင်ရောက်ရန်",
@@ -910,6 +913,7 @@ export const translations = {
   },
   cn: {
     welcome: "欢迎来到 ActiveCAMT",
+    walkInsDisabledLabel: "该活动未开放现场报名",
     signInTitle: "体验 ActiveCAMT",
     signInSub: "CAMT 学生的一体化活动平台。跟踪您的进度，累积积分，并发展您的社区。",
     signInBtn: "使用 Google 登录",

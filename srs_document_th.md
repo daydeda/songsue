@@ -1,8 +1,8 @@
 # เอกสารข้อกำหนดความต้องการซอฟต์แวร์ (Software Requirements Specification — SRS)
 
 **ชื่อระบบ:** แพลตฟอร์มจัดการกิจกรรมและคะแนนบ้านแบบ real-time (ActiveCAMT)
-**เวอร์ชัน:** 1.1 (เพิ่มระบบฟอร์ม KAS, QR แบบ HMAC, audit log กันแก้แบบ hash chain, leaderboard รายบุคคล, โควต้า/ช่วงเวลาลงทะเบียน และโปสเตอร์หลายรูปต่อกิจกรรม)
-**อัปเดตล่าสุด:** 12 มิถุนายน 2569
+**เวอร์ชัน:** 1.2 (เพิ่ม: การแยกสิทธิ์ดูข้อมูลการแพทย์แบบ signal/detail ตาม PDPA, บทบาท SMO แบบ scanner-only, รายชื่อสมาชิกบ้าน + export รายชื่อผู้เข้าร่วม และล็อกการยกเลิกลงทะเบียนหลังปิดรับ · v1.1 เพิ่ม: ระบบฟอร์ม KAS, QR แบบ HMAC, audit log กันแก้แบบ hash chain, leaderboard รายบุคคล, โควต้า/ช่วงเวลาลงทะเบียน, โปสเตอร์หลายรูปต่อกิจกรรม)
+**อัปเดตล่าสุด:** 16 มิถุนายน 2569
 **สถานะ:** เสร็จแล้ว (พร้อมเสนอกรรมการและ admin ระบบ)
 
 ---
@@ -15,7 +15,7 @@
 ### 1.2 ขอบเขตระบบ (System Scope)
 ระบบเป็น Modular Monolith รันบน Next.js 16 (App Router) แบ่งความสามารถหลักเป็นกลุ่มดังนี้:
 
-* **จัดการผู้ใช้และสิทธิ์:** onboarding นักศึกษาใหม่, เก็บข้อมูลสุขภาพตาม PDPA และ role หลายระดับ (student, prof, officer, admin, super_admin)
+* **จัดการผู้ใช้และสิทธิ์:** onboarding นักศึกษาใหม่, เก็บข้อมูลสุขภาพตาม PDPA (ฝ่าย registration เห็นแค่ *สัญญาณ* ว่ามีภาวะทางการแพทย์ ส่วน *รายละเอียด* + meds-check เปิดเฉพาะแอดมิน) และ role หลายระดับ (student, smo, anusmo, registration, organizer, admin, super_admin) โดย SMO เป็นแบบ scanner-only (เข้า /admin ได้แต่จำกัดเฉพาะหน้าสแกน QR)
 * **ลงทะเบียนและเช็คอิน:** Dynamic QR เซ็นด้วย HMAC (อายุ 5 นาที), scanner เช็คอินแบบสองขั้น (Scan → Confirm), ช่วงเวลาเปิด/ปิดลงทะเบียน และโควต้าหลายชั้น (โควต้ารวม, โควต้าแยกไทย/อินเตอร์ และโควต้า Walk-in แบบบวกเพิ่ม)
 * **ระบบฟอร์ม KAS:** หนึ่งกิจกรรมมีหลายฟอร์ม (K_pre, K_post, A, S) หน้าตาแบบ Google Forms มี section, branching ตามคำตอบ, ให้คะแนนแบบ quiz, ปิด/มอบคะแนนอัตโนมัติตามเวลา และ export XLSX
 * **คะแนนและ leaderboard:** สะสมคะแนนบ้านและคะแนนรายบุคคลแบบ real-time มีอันดับของตัวเอง (self-rank) และสถานะ "ยังไม่ถูกจัดอันดับ" (Unranked)
@@ -79,9 +79,18 @@ src/
 * **หน้าที่หลัก:** จัดการ login, ยืนยันตัวตน และ session ผ่าน NextAuth v5 (beta) ร่วมกับ Google provider และ `@auth/drizzle-adapter`
 * **logic ภายใน:**
   * จำกัด login เฉพาะอีเมลที่ลงท้าย `@cmu.ac.th`
-  * เก็บ `role` (student, prof, officer, admin) ลงใน JWT
+  * เก็บ `role` (student, smo, anusmo, registration, organizer, admin, super_admin) ลงใน JWT
   * **[CRITICAL] sync session แบบ dynamic:** ใน `jwt` callback ดักสัญญาณ `trigger === "update"` เพื่อเขียน session cookie ใหม่ทันทีหลังนักศึกษา onboarding หรือแก้โปรไฟล์เสร็จ ทำให้เข้า dashboard ได้เลยโดยไม่ต้อง log out เพื่อ refresh สิทธิ์ใหม่
+  * **[FIX] กันบั๊ก lockout จากบทบาท:** user ที่มี `roles[]` ว่างแต่มี `role` เดี่ยว จะไม่โดนล็อกออกจากแอดมินอีกต่อไป (ยุบให้ตรรกะตรวจสิทธิ์อ่านได้ทั้งสองรูปแบบ)
   * กำหนด option การ auth และอายุ session (session expiry)
+  * **[NEW] admin landing ตัดสินใจฝั่ง server ตามบทบาท:** เลือกหน้าปลายทางหลังเข้า `/admin` ฝั่ง server เพื่อให้บทบาท SMO เด้งตรงไปหน้าสแกน QR โดยอัตโนมัติ
+
+#### 📂 [src/proxy.ts](file:///E:/OnlyWork/SMO Meetings/Web/activecamt/src/proxy.ts)
+* **หน้าที่หลัก:** middleware ชั้นนอกสุดที่กรองสิทธิ์เข้าถึง route ก่อน guard อื่น ๆ ทุกตัว
+* **logic ภายใน:**
+  * **[CRITICAL] ด่านแรกของการ gating:** middleware ตัวนี้ **รันก่อน** guard อื่น (เช่นใน `admin/layout.tsx`) จึงเป็นจุดที่พลาด/มองข้ามได้ง่ายเวลาปรับสิทธิ์
+  * **SMO แบบ scanner-only:** เปิดทางให้บทบาท SMO ผ่านเข้า `/admin` ได้ แต่จำกัดเฉพาะหน้าสแกน QR เท่านั้น (เห็นปุ่ม Admin Panel แล้ว route ไปหน้าสแกน ไม่เห็นส่วนอื่นของแอดมิน)
+  * **single source of truth:** รวม policy "SMO สแกนได้อย่างเดียว" ไว้ที่เดียวให้ทุก gating layer อ้างอิงตรงกัน เลิกกระจายตรรกะหลายที่
 
 #### 📂 [src/db/schema.ts](file:///E:/OnlyWork/SMO Meetings/Web/activecamt/src/db/schema.ts)
 * **หน้าที่หลัก:** นิยาม schema ของตารางในฐานข้อมูลด้วย TypeScript ผ่าน Drizzle ORM
@@ -125,6 +134,8 @@ src/
   * **[FIX] epoch date validation:** กันไม่ให้ขึ้นวันที่ 1 January 1970 ตอนที่ยังไม่เช็คอิน (check_in_time เป็น null) โดยใช้เวลาเปิดงานมาแสดงแทน
   * **[NEW] attendance warning modal:** ตอนกดปุ่ม "ส่งแบบประเมิน" (เปลี่ยน icon เป็น `<ClipboardList />` กันงง) ระบบจะเช็คสถานะเช็คอินก่อน ถ้าไม่เจอประวัติการสแกนจริง จะล็อกไม่ให้เปิด/ส่งฟอร์ม แล้วเด้ง modal สีแดงบอกเหตุผลเป็นภาษาของนักศึกษา
   * **dynamic form fields renderer:** render คำถามจากฝั่ง admin ครบทุกแบบ ทั้ง text ยาว, rating ดาว, choice เลือกเดียว และ checkbox หลายตัวเลือก
+  * **[NEW] ฟอร์มประเมินเลื่อนได้เต็มจอบนมือถือ:** ฟอร์มที่มีดาวให้คะแนนเลื่อนได้เต็มจอ หัวฟอร์มกระชับลงบนมือถือ และรีเซ็ตการเลื่อน (scroll) ทุกครั้งที่ขึ้น section ใหม่
+  * **[NAV] ดันแท็บประวัติกิจกรรมขึ้นมาเด่น:** ย้ายแท็บ Event History ขึ้นมาบน navigation ให้หาง่ายขึ้น พร้อมปรับ breakpoint ให้เป็นมิตรกับ iPad/แท็บเล็ตมากขึ้น
 
 ---
 
@@ -143,6 +154,12 @@ src/
     }
     ```
     ถ้ามีคนข้าม validation ฝั่ง client มาด้วยไฟล์ดิบขนาดใหญ่ ฝั่ง server จะยกเลิกการเขียนไฟล์และตอบ 400 Bad Request
+
+#### 📂 [src/app/api/admin/users/[id]/route.ts](file:///E:/OnlyWork/SMO Meetings/Web/activecamt/src/app/api/admin/users/[id]/route.ts)
+* **หน้าที่หลัก:** route ฝั่งแอดมินสำหรับแก้ข้อมูลผู้ใช้รายคน (เรียกจากโมดัล Manage User ในหน้า admin students)
+* **logic ภายใน:**
+  * **[NEW] รองรับฟิลด์คำนำหน้า (prefix):** `PATCH /api/admin/users/[id]` รับ บันทึก และลง audit ค่า `prefix` ที่แก้จากโมดัล (native select ข้างชื่อเต็ม)
+  * **[UI] โมดัล Manage User ใช้บนมือถือได้จริง:** ปรับ layout เป็น flex column + `maxHeight: 90vh` + body เลื่อนได้ ไม่ล้น/ไม่โดนตัดจอ, padding/radius แบบ `clamp()`, header/footer ไม่ยุบ
 
 #### 📂 [src/app/api/realtime/route.ts](file:///E:/OnlyWork/SMO Meetings/Web/activecamt/src/app/api/realtime/route.ts)
 * **หน้าที่หลัก:** ทำ Server-Sent Events (SSE) แบบ persistent ส่ง stream การเปลี่ยนแปลงไปยัง browser ของผู้ใช้
@@ -173,6 +190,8 @@ src/
 * **logic ภายใน:**
   * ดึงข้อมูลส่วนตัวของนักศึกษามาแสดงในหน้าค้นหา
   * encrypt/decrypt ฟิลด์ข้อมูลสุขภาพตอนเขียนหรืออ่าน
+  * **[CRITICAL — PDPA] แยกสิทธิ์ดูข้อมูลการแพทย์แบบ signal/detail:** ฝ่าย registration เห็นแค่ *สัญญาณ* ว่ามีภาวะทางการแพทย์ (เป็นหมวดแบบ bullet ที่แปลแล้ว) แต่ไม่เห็น *รายละเอียด* — รายละเอียดและ meds-check detail (`medsCheckOption`) เปิดให้เฉพาะแอดมิน ส่วน emergency contact ยังเห็นได้ตามเดิมสำหรับ role ที่ดูแลงาน
+  * **[FIX] ปิดช่องรั่ว meds-check:** เดิม badge meds-check บอกใบ้ว่าใครมีภาวะทางการแพทย์ ตอนนี้ตัดสัญญาณนั้นออกจากชั้นที่ไม่ใช่แอดมินแล้ว
 
 #### 📂 [src/modules/houses/houses.service.ts](file:///E:/OnlyWork/SMO Meetings/Web/activecamt/src/modules/houses/houses.service.ts)
 * **หน้าที่หลัก:** service คำนวณคะแนนบ้านและอัปเดต leaderboard
@@ -207,6 +226,7 @@ src/
   * **[SECURITY] QR token แบบ HMAC สไตล์ TOTP:** รูปแบบ `{userId}.{exp}.{signature}` โดย signature คือ HMAC-SHA256 ของ payload ด้วย `AUTH_SECRET` หมุน window ทุก 5 นาที (กระจาย offset รายคนกันรีเฟรชพร้อมกันถล่ม server) มี grace 30 วินาที และเช็คแบบ timing-safe กัน side-channel; มี fallback เป็น UUID แบบ static สำหรับเช็คอินด้วยมือ
   * **เช็คอินสองขั้น (Scan → Confirm):** ขั้น Scan โชว์ข้อมูลแจ้งเตือนสุขภาพให้เจ้าหน้าที่ดูก่อน แล้วค่อย Confirm บันทึกเวลาเช็คอินจริง อัปเดตแบบ atomic เฉพาะตอนสถานะยังเป็น `registered`
   * **บังคับโควต้าแบบ atomic:** ทั้งลงทะเบียนล่วงหน้าและเช็คอิน Walk-in ใช้ row lock (`FOR UPDATE`) กัน race condition (TOCTOU) — Walk-in เช็คทั้งความจุรวม (`quota + quotaWalkIn`) และเพดานย่อยของ Walk-in พร้อมกัน
+  * **[NEW] ล็อกการยกเลิกลงทะเบียน:** ยกเลิกการลงทะเบียนไม่ได้แล้วหลังเลยเวลาปิดรับ และมีหน้าต่างยืนยัน (confirm modal) ก่อนถอนชื่อกันกดพลาด
 
 ### 3.7 ระบบ audit log กันแก้ (Tamper-Evident Audit Trail)
 
@@ -224,6 +244,9 @@ src/
   * จัดอันดับบ้านตาม `points DESC` และอันดับรายบุคคลตาม `points DESC, id ASC` (ตัดเสมอด้วย id ให้ผลแน่นอน) เฉพาะคนที่กรอกโปรไฟล์ครบ
   * **[NEW] หาอันดับตัวเอง:** endpoint `/api/houses/individual/me` คืน `{points, rank, total}` ของ user ปัจจุบันทันทีเมื่อ session พร้อม กัน delay ตอน render รอบแรก
   * คนที่คะแนน ≤ 0 จะคืน `rank: null` แสดงเป็น "ยังไม่ถูกจัดอันดับ" (Unranked)
+  * **[NEW] ไม่ผูกกิจกรรมที่ไม่มีคะแนนเข้ากับบ้าน:** กิจกรรมที่ไม่มีคนเข้าร่วม / ให้ 0 คะแนน จะไม่ถูกผูกเข้ากับบ้านใด ๆ แต่ยังคงอยู่ในฟีดโดยระบุว่าไม่สังกัดบ้าน (no house)
+  * **[NEW] รายชื่อสมาชิกบ้าน + export:** เพิ่มรายชื่อสมาชิกบ้าน (ดูได้ว่าใครอยู่บ้านไหน) และให้แอดมิน export รายชื่อผู้เข้าร่วมกิจกรรมออกมาได้
+  * **[OPS] สคริปต์ diagnostic/recovery:** เพิ่มสคริปต์ตรวจสอบและกู้ข้อมูล activity feed ไว้ตรวจ/ซ่อมข้อมูลเมื่อจำเป็น
 
 ### 3.9 ระบบโปสเตอร์หลายรูปและการแสดงกิจกรรม (Multi-Poster & Event Presentation)
 

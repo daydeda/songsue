@@ -848,29 +848,47 @@ export default function AdminStudentsDirectory() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: 24
+          padding: "clamp(12px, 4vw, 24px)",
+          overflowY: "auto"
         }} onClick={() => setEditingStudent(null)}>
           <div className="animate-fade-in-up" style={{
             background: "var(--bg-surface)",
             width: "100%",
             maxWidth: 500,
-            borderRadius: 32,
-            overflow: "visible",
+            maxHeight: "90vh",
+            borderRadius: "clamp(20px, 5vw, 32px)",
+            overflow: "hidden",
             boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
-            border: "1px solid var(--border-medium)"
+            border: "1px solid var(--border-medium)",
+            display: "flex",
+            flexDirection: "column"
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: 32, borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", borderTopLeftRadius: 32, borderTopRightRadius: 32 }}>
-              <h3 style={{ fontSize: 20, fontWeight: 900 }}>{t.manageUser}</h3>
-              <button className="btn btn-ghost" onClick={() => setEditingStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}><X size={20} /></button>
+            <div style={{ flexShrink: 0, padding: "clamp(20px, 5vw, 32px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <h3 style={{ fontSize: "clamp(18px, 5vw, 20px)", fontWeight: 900 }}>{t.manageUser}</h3>
+              <button className="btn btn-ghost" onClick={() => setEditingStudent(null)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0, flexShrink: 0 }}><X size={20} /></button>
             </div>
-            <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 20 }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.fullName}</label>
-                <input
-                  className="input"
-                  value={editingStudent.name}
-                  onChange={e => setEditingStudent({ ...editingStudent, name: e.target.value })}
-                />
+            <div className="custom-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "clamp(20px, 5vw, 32px)", display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ display: "flex", gap: 16, alignItems: "flex-end" }}>
+                <div style={{ width: 110, flexShrink: 0 }}>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.prefix}</label>
+                  <select
+                    className="input"
+                    value={editingStudent.prefix || "นาย"}
+                    onChange={e => setEditingStudent({ ...editingStudent, prefix: e.target.value })}
+                  >
+                    <option value="นาย">{lang === "th" ? "นาย" : "Mr."}</option>
+                    <option value="นางสาว">{lang === "th" ? "น.ส." : "Ms."}</option>
+                    <option value="นาง">{lang === "th" ? "นาง" : "Mrs."}</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.fullName}</label>
+                  <input
+                    className="input"
+                    value={editingStudent.name}
+                    onChange={e => setEditingStudent({ ...editingStudent, name: e.target.value })}
+                  />
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -975,7 +993,7 @@ export default function AdminStudentsDirectory() {
                 />
               </div>
             </div>
-            <div style={{ padding: "20px 32px", background: "var(--bg-elevated)", display: "flex", justifyContent: "flex-end", gap: 12, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 }}>
+            <div style={{ flexShrink: 0, padding: "16px clamp(20px, 5vw, 32px)", background: "var(--bg-elevated)", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button className="btn btn-ghost" onClick={() => setEditingStudent(null)}>{t.cancel}</button>
               <button
                 className="btn btn-primary"

@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events, users } from "@/db/schema";
-import { and, count, eq, sql } from "drizzle-orm";
+import { attendance, events, users, forms, formSubmissions } from "@/db/schema";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { getFormAvailability } from "@/lib/form-access";
 
 // POST /api/events/[id]/register — One-click registration (FE-05)
 export async function POST(
@@ -190,7 +191,29 @@ export async function POST(
       throw e;
     }
 
-    return NextResponse.json({ success: true }, { status: 201 });
+    // Surface the event's pre-test (K_pre) state so the dashboard can force the
+    // student into a required pre-test immediately after registering — using this
+    // fresh value rather than the cached events list, which on a re-register still
+    // shows the now-cleared "submitted" status until the next poll. Mirrors the
+    // preTest shape returned by GET /api/events.
+    const preForm = await db.query.forms.findFirst({
+      where: and(eq(forms.eventId, eventId), eq(forms.formType, "K_pre")),
+      orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
+    });
+    let preTest: { formId: string; title: string; status: string } | null = null;
+    if (preForm) {
+      const submitted = await db.query.formSubmissions.findFirst({
+        where: and(eq(formSubmissions.formId, preForm.id), eq(formSubmissions.studentId, userId)),
+        columns: { id: true },
+      });
+      preTest = {
+        formId: preForm.id,
+        title: preForm.title,
+        status: submitted ? "submitted" : getFormAvailability(preForm),
+      };
+    }
+
+    return NextResponse.json({ success: true, preTest }, { status: 201 });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -241,6 +264,30 @@ export async function DELETE(
     await db
       .delete(attendance)
       .where(and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)));
+
+    // Wipe the student's pre-test (K_pre) submission(s) for this event so that
+    // re-registering forces them to retake it. GET /api/events derives the
+    // forced-pre-test "open" state purely from whether a submission exists, so
+    // clearing the row here is all that's needed to re-trigger the gate. Only
+    // pre-tests that haven't been finalized (isAwarded) are cleared — once points
+    // are distributed the submission is a permanent record (non-destructive rule).
+    // K_post/A/S are never touched: they require attendance, which un-registering
+    // precludes.
+    const preForms = await db.query.forms.findMany({
+      where: and(eq(forms.eventId, eventId), eq(forms.formType, "K_pre")),
+      columns: { id: true, isAwarded: true },
+    });
+    const clearableFormIds = preForms.filter((f) => !f.isAwarded).map((f) => f.id);
+    if (clearableFormIds.length > 0) {
+      await db
+        .delete(formSubmissions)
+        .where(
+          and(
+            inArray(formSubmissions.formId, clearableFormIds),
+            eq(formSubmissions.studentId, userId)
+          )
+        );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

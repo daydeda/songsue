@@ -378,7 +378,11 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     show: boolean;
     eventId: string;
     eventTitle: string;
-  }>({ show: false, eventId: "", eventTitle: "" });
+    // True when the student has already submitted this event's pre-test, so the
+    // confirm dialog can warn that cancelling will discard it (un-registering
+    // clears an un-awarded K_pre submission and forces a retake on re-register).
+    losesPreTest: boolean;
+  }>({ show: false, eventId: "", eventTitle: "", losesPreTest: false });
   // Pre-test gate. Shown right after registering for an event whose K_pre form is
   // open and not yet completed, so the student is pushed straight into the
   // pre-test (rendered on the history page, which is deep-linked here).
@@ -439,15 +443,22 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     const method = registered ? "DELETE" : "POST";
     const res = await fetch(`/api/events/${eventId}/register`, { method });
     if (res.ok) {
+      // POST returns the event's fresh pre-test state (DELETE does not). Using the
+      // server value avoids the stale cached status on an un-register → re-register,
+      // where the events list would still read "submitted" until the next poll.
+      const data = await res.json().catch(() => ({}));
+      const freshPreTest = data?.preTest as { formId: string; title: string; status: string } | null | undefined;
       const targetEvent = events.find(e => e.id === eventId);
       setEvents((evts) =>
-        evts.map((e) => (e.id === eventId ? { ...e, isRegistered: !registered } : e))
+        evts.map((e) => (e.id === eventId
+          ? { ...e, isRegistered: !registered, ...(freshPreTest !== undefined ? { preTest: freshPreTest } : {}) }
+          : e))
       );
       const eventTitle = targetEvent ? targetEvent.title : "";
       if (!registered) {
         // If this event has an open pre-test the student hasn't completed, push
         // them straight into it instead of the generic success modal.
-        const pre = targetEvent?.preTest;
+        const pre = freshPreTest ?? targetEvent?.preTest;
         if (pre && pre.status === "open") {
           setPreTestModal({ show: true, eventId, formId: pre.formId, eventTitle });
           setRegisteringId(null);
@@ -499,7 +510,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       return;
     }
     if (registered) {
-      setConfirmUnregister({ show: true, eventId, eventTitle });
+      const losesPreTest = events.find(e => e.id === eventId)?.preTest?.status === "submitted";
+      setConfirmUnregister({ show: true, eventId, eventTitle, losesPreTest });
     } else {
       handleRegister(eventId, false);
     }
@@ -1352,7 +1364,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
               {lang === "th" ? "ยกเลิกการลงทะเบียน?" : lang === "cn" ? "取消注册？" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း ပယ်ဖျက်မလား?" : "Cancel Registration?"}
             </h4>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: confirmUnregister.losesPreTest ? 16 : 28 }}>
               {lang === "th"
                 ? `คุณต้องการยกเลิกการลงทะเบียนสำหรับกิจกรรม "${confirmUnregister.eventTitle}" ใช่หรือไม่? ที่นั่งของคุณอาจถูกผู้อื่นจองแทน`
                 : lang === "cn"
@@ -1361,6 +1373,30 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                 ? `"${confirmUnregister.eventTitle}" လှုပ်ရှားမှုအတွက် မှတ်ပုံတင်ခြင်းကို ပယ်ဖျက်လိုသည်မှာ သေချာပါသလား? သင့်နေရာကို အခြားသူ ယူသွားနိုင်ပါသည်။`
                 : `Are you sure you want to cancel your registration for "${confirmUnregister.eventTitle}"? Your seat may be taken by someone else.`}
             </p>
+            {confirmUnregister.losesPreTest && (
+              <div style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+                textAlign: "left",
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px solid rgba(239, 68, 68, 0.25)",
+                borderRadius: 14,
+                padding: "12px 14px",
+                marginBottom: 28
+              }}>
+                <AlertCircle size={18} style={{ color: "#ef4444", flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55, fontWeight: 600 }}>
+                  {lang === "th"
+                    ? "คุณทำแบบทดสอบ Pre-Test ของกิจกรรมนี้ไปแล้ว การยกเลิกจะลบคำตอบของคุณ และต้องทำใหม่ทั้งหมดหากลงทะเบียนอีกครั้ง"
+                    : lang === "cn"
+                    ? "您已完成此活动的 Pre-Test。取消将删除您的作答，重新注册后需要再次完成。"
+                    : lang === "mm"
+                    ? "ဤပွဲ၏ Pre-Test ကို ဖြေပြီးပါပြီ။ ပယ်ဖျက်ပါက သင့်အဖြေများ ပျောက်ဆုံးပြီး ပြန်လည်မှတ်ပုံတင်ပါက အသစ်ပြန်ဖြေရပါမည်။"
+                    : "You've already completed this event's Pre-Test. Cancelling will delete your answers, and you'll have to retake it if you register again."}
+                </span>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 12 }}>
               <button
                 className="btn btn-ghost"

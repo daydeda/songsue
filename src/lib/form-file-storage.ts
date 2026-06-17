@@ -37,11 +37,21 @@ export async function uploadFormFile(buffer: Buffer, ext: string): Promise<strin
   if (hasSupabase()) {
     const { createClient } = await import("@supabase/supabase-js");
     const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(key, buffer, { contentType: contentTypeForKey(key), upsert: false });
-    if (error) {
-      console.error("Form file upload error:", error);
+    const opts = { contentType: contentTypeForKey(key), upsert: false };
+
+    let result = await supabase.storage.from(BUCKET).upload(key, buffer, opts);
+    // The private bucket must exist before any upload lands. It's meant to be
+    // created out-of-band (Supabase dashboard: Storage → New bucket → name
+    // "form-uploads", Public OFF), but on a fresh deploy where that step was
+    // missed EVERY upload 500s with "Bucket not found". So if it's missing we
+    // create it once — private, never public — and retry, instead of failing.
+    if (result.error && /bucket not found/i.test(result.error.message)) {
+      const created = await supabase.storage.createBucket(BUCKET, { public: false });
+      if (created.error) console.error("Form bucket auto-create error:", created.error);
+      result = await supabase.storage.from(BUCKET).upload(key, buffer, opts);
+    }
+    if (result.error) {
+      console.error("Form file upload error:", result.error);
       throw new Error("Failed to store the uploaded file.");
     }
     return key;

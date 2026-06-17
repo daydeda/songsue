@@ -3110,10 +3110,10 @@ export default function AdminEventsPage() {
                                   onChange={e => updateSection(section.id, "title", e.target.value)}
                                   placeholder={lang === "th" ? "ชื่อส่วน (ไม่บังคับ)" : lang === "cn" ? "章节标题（可选）" : lang === "mm" ? "အပိုင်းခေါင်းစဉ် (ရွေးချယ်ႏိုင်)" : "Section title (optional)"}
                                 />
-                                <input
-                                  type="text"
+                                <textarea
                                   className="input"
-                                  style={{ height: 36, borderRadius: 10, padding: "0 12px", fontSize: 13 }}
+                                  rows={1}
+                                  style={{ minHeight: 36, borderRadius: 10, padding: "8px 12px", fontSize: 13, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
                                   value={section.description || ""}
                                   onChange={e => updateSection(section.id, "description", e.target.value)}
                                   placeholder={lang === "th" ? "คำอธิบายส่วน (ไม่บังคับ)" : lang === "cn" ? "章节描述（可选）" : lang === "mm" ? "အပိုင်းဖော်ပြချက် (ရွေးချယ်ႏိုင်)" : "Section description (optional)"}
@@ -3154,12 +3154,12 @@ export default function AdminEventsPage() {
                                   >
                                     {/* Question Main Controls Row */}
                                     <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                      <div style={{ display: "flex", gap: 12, alignItems: "center", flex: "1 1 auto", width: "100%" }}>
-                                        <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20 }}>{idx + 1}.</span>
-                                        <input
-                                          type="text"
+                                      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: "1 1 auto", width: "100%" }}>
+                                        <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20, paddingTop: 9 }}>{idx + 1}.</span>
+                                        <textarea
                                           className="input"
-                                          style={{ flex: 1, height: 40, borderRadius: 10, padding: "0 12px" }}
+                                          rows={1}
+                                          style={{ flex: 1, minHeight: 40, borderRadius: 10, padding: "9px 12px", resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
                                           value={q.label}
                                           onChange={e => updateQuestion(section.id, q.id, "label", e.target.value)}
                                           placeholder={lang === "th" ? "ข้อความคำถาม..." : lang === "cn" ? "问题内容..." : lang === "mm" ? "မေးခွန်းစာသား..." : "Question Text..."}
@@ -3578,7 +3578,7 @@ export default function AdminEventsPage() {
                                   const ans = sub.answers?.[q.id];
                                   return (
                                     <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)" }}>{q.label}</span>
+                                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>{q.label}</span>
                                       {q.type === "file" ? (
                                         typeof ans === "string" && ans ? (
                                           <a

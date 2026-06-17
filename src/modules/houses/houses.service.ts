@@ -5,6 +5,24 @@ import { AuditService } from "../audit/audit.service";
 
 export class HousesService {
   /**
+   * Picks the house a new member should join for balanced distribution (FE-03):
+   * the house with the fewest members right now. Ties resolve to the first such
+   * house by query order. Shared by the onboarding profile submit and the staff
+   * onboarding-bypass provisioning so both stay in lockstep.
+   *
+   * Returns the house id, or null if no houses exist yet (caller leaves houseId
+   * unset rather than crashing).
+   */
+  static async pickBalancedHouseId(): Promise<string | null> {
+    const housesList = await db.query.houses.findMany({
+      with: { users: { columns: { id: true } } },
+    });
+    if (housesList.length === 0) return null;
+    const sorted = [...housesList].sort((a, b) => a.users.length - b.users.length);
+    return sorted[0].id;
+  }
+
+  /**
    * Adjusts house points atomically inside a database transaction,
    * inserts a record into score history, and writes an audit log.
    */

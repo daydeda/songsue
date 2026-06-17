@@ -1,5 +1,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { isStaffBypassEmail } from "@/lib/staff-bypass";
+import { UsersService } from "@/modules/users/users.service";
 import OnboardingClient from "./OnboardingClient";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +17,15 @@ export default async function OnboardingPage() {
   // If onboarding is already completed, redirect to dashboard
   const user = session.user;
   if (user.profileCompleted) {
+    redirect("/dashboard");
+  }
+
+  // Staff bypass: listed accounts never fill in the onboarding form. Provision
+  // them (nickname + staff role + balanced house) and send straight to the
+  // dashboard. The jwt callback's eager-refresh-while-incomplete picks up the
+  // freshly-set profileCompleted on that next request, so they don't bounce back.
+  if (user.id && isStaffBypassEmail(user.email)) {
+    await UsersService.provisionStaffBypass(user.id, user.email);
     redirect("/dashboard");
   }
 

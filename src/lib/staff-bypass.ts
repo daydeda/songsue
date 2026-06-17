@@ -1,0 +1,46 @@
+// Staff onboarding bypass list.
+//
+// Accounts listed here skip the student onboarding form entirely (no studentId,
+// major, medical info, emergency contacts or PDPA step). On their first visit to
+// /onboarding they are auto-provisioned as `staff` with ONLY a nickname, and are
+// dropped into a balanced house just like every other member (see
+// HousesService.pickBalancedHouseId / UsersService.provisionStaffBypass).
+//
+// To add someone: add `"<lowercased-email>": "<nickname>"`. Keys MUST be
+// lowercase — getStaffBypassNickname() lowercases the incoming email before
+// looking it up.
+const STAFF_BYPASS: Record<string, string> = {
+  "pailin358812@gmail.com": "ใบเตย",
+  "apisaraarunwong@gmail.com": "ดับบลิว",
+  "pornpattra.d@gmail.com": "พี่แอนท์",
+  "kamolluk.s@camt.info": "บีม",
+  "chalisa.s@camt.info": "เหนือ",
+  "yonlada.r@camt.info": "แป้ง",
+  "pranitnan@camt.info": "นุชชี่",
+  "paweena.y@camt.info": "อุ๋ย",
+  "settheekk@gmail.com": "อ.ต้นข้าว",
+  "kamchai.s1@gmail.com": "เฮง",
+  "hrkfan321@gmail.com": "ไทเกอร์",
+  "tanasan.te@gmail.com": "แบงค์",
+  "meendub@gmail.com": "มีนดุ้บ",
+  "sornkamon_int@camt.info": "เนิส",
+  "nammon.p@camt.info": "น้ำมนต์",
+  "natthakritta@camt.info": "แอมมี่",
+  "piyaporn.n@camt.info": "JJ",
+  "konlawat.k@camt.info": "อ.จูน",
+  "daydedaaa@gmail.com": "ดีเดย์",
+};
+
+/**
+ * Returns the staff nickname for a bypass-listed email, or null if the email is
+ * not on the list. Case-insensitive.
+ */
+export function getStaffBypassNickname(email: string | null | undefined): string | null {
+  if (!email) return null;
+  return STAFF_BYPASS[email.trim().toLowerCase()] ?? null;
+}
+
+/** True if the email belongs to a staff account that bypasses onboarding. */
+export function isStaffBypassEmail(email: string | null | undefined): boolean {
+  return getStaffBypassNickname(email) !== null;
+}

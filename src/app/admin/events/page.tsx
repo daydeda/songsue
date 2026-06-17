@@ -889,7 +889,14 @@ export default function AdminEventsPage() {
         row["Score"] = sub.score ?? 0;
         row["Max Score"] = sub.maxScore ?? 0;
       }
-      for (const c of qcols) row[c.key] = fmt(sub.answers?.[c.q.id]);
+      for (const c of qcols) {
+        const ans = sub.answers?.[c.q.id];
+        // File answers store an opaque key; export an absolute, auth-guarded URL
+        // the admin can open (the raw key is meaningless in a spreadsheet).
+        row[c.key] = c.q.type === "file"
+          ? (typeof ans === "string" && ans ? `${window.location.origin}/api/forms/file/${sub.id}?q=${c.q.id}` : "")
+          : fmt(ans);
+      }
       return row;
     });
 
@@ -3169,6 +3176,7 @@ export default function AdminEventsPage() {
                                           <option value="rating">{lang === "th" ? "คะแนนเรตติ้ง (1-5 ดาว)" : lang === "cn" ? "评分 (1-5 星)" : lang === "mm" ? "ကြယ်ပွင့်အဆင့်သတ်မှတ်ချက် (၁-၅)" : "Rating (1-5 Star)"}</option>
                                           <option value="choice">{lang === "th" ? "หลายตัวเลือก (เลือกได้ 1 ข้อ)" : lang === "cn" ? "单选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (တစ်ခုရွေးရန်)" : "Multiple Choice"}</option>
                                           <option value="multiple">{lang === "th" ? "เครื่องหมายเลือก (เลือกได้หลายข้อ)" : lang === "cn" ? "多选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (အများကြီးရွေးရန်)" : "Checkbox"}</option>
+                                          <option value="file">{lang === "th" ? "อัปโหลดไฟล์ (รูปภาพ/PDF)" : lang === "cn" ? "文件上传（图片/PDF）" : lang === "mm" ? "ဖိုင်တင်ခြင်း (ပုံ/PDF)" : "File Upload (Image/PDF)"}</option>
                                         </select>
                                         <button
                                           type="button"
@@ -3571,7 +3579,22 @@ export default function AdminEventsPage() {
                                   return (
                                     <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                                       <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)" }}>{q.label}</span>
-                                      {q.type === "rating" ? (
+                                      {q.type === "file" ? (
+                                        typeof ans === "string" && ans ? (
+                                          <a
+                                            href={`/api/forms/file/${sub.id}?q=${q.id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start", fontSize: 13, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(255,107,0,0.08)", border: "1px solid rgba(255,107,0,0.15)", borderRadius: 10, padding: "8px 14px", textDecoration: "none" }}
+                                          >
+                                            <Download size={14} /> {(ans.split(".").pop() || "file").toUpperCase()} · {lang === "th" ? "เปิดไฟล์" : lang === "cn" ? "查看文件" : lang === "mm" ? "ဖိုင်ဖွင့်ရန်" : "Open file"}
+                                          </a>
+                                        ) : (
+                                          <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: 13 }}>
+                                            {lang === "th" ? "ไม่มีไฟล์" : lang === "cn" ? "无文件" : lang === "mm" ? "ဖိုင်မရှိ" : "No file"}
+                                          </span>
+                                        )
+                                      ) : q.type === "rating" ? (
                                         <div style={{ display: "flex", gap: 2, color: "#ffb000" }}>
                                           {Array.from({ length: 5 }).map((_, starIdx) => (
                                             <span key={starIdx} style={{ fontSize: 16 }}>

@@ -89,6 +89,14 @@ export default function HistoryPage() {
   // True when the open form was repopulated from a locally-saved draft, so we
   // can show a small "restored" hint to the student.
   const [draftRestored, setDraftRestored] = useState(false);
+  // Per-question state for "file" answers: in-flight upload + last upload error.
+  const [fileUploading, setFileUploading] = useState<Record<string, boolean>>({});
+  const [fileErrors, setFileErrors] = useState<Record<string, string>>({});
+  // Keys uploaded this session that aren't yet committed to a submission. If the
+  // student removes/replaces a file or abandons the form, these are deleted from
+  // the private bucket so they don't orphan (cleared on a successful submit, since
+  // the submission then owns them).
+  const pendingFileKeysRef = useRef<Set<string>>(new Set());
 
   // Scroll container for the form modal. When the user moves between sections,
   // the new (shorter) section can leave the view scrolled partway down, landing
@@ -190,6 +198,10 @@ export default function HistoryPage() {
         if (raw) {
           const saved = JSON.parse(raw) as Record<string, string | number | string[]>;
           for (const q of allQuestions(nf)) {
+            // Never restore a "file" answer: its uploaded object may have been
+            // deleted when the form was last closed, so the saved key could be
+            // dead. The student re-uploads instead of submitting a broken link.
+            if (q.type === "file") continue;
             if (saved[q.id] !== undefined) {
               initialAnswers[q.id] = saved[q.id];
               restored = true;
@@ -231,6 +243,63 @@ export default function HistoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, history]);
 
+  // Upload a "file" answer to the private bucket and store the returned key as
+  // this question's answer. Images are re-encoded server-side; PDFs are kept.
+  const uploadFileAnswer = async (qId: string, file: File) => {
+    setFileErrors((e) => { const u = { ...e }; delete u[qId]; return u; });
+    setFileUploading((s) => ({ ...s, [qId]: true }));
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/forms/upload", { method: "POST", body });
+      const data = await res.json();
+      if (!res.ok) {
+        setFileErrors((e) => ({
+          ...e,
+          [qId]: data.error || (lang === "th" ? "อัปโหลดไฟล์ไม่สำเร็จ" : lang === "cn" ? "文件上传失败" : lang === "mm" ? "ဖိုင်တင်ခြင်း မအောင်မြင်ပါ" : "File upload failed."),
+        }));
+        return;
+      }
+      setAnswers((prev) => ({ ...prev, [qId]: data.key }));
+      // Track as un-committed so it's cleaned up if the student abandons the form.
+      pendingFileKeysRef.current.add(data.key);
+      if (formErrors[qId]) { const u = { ...formErrors }; delete u[qId]; setFormErrors(u); }
+    } catch {
+      setFileErrors((e) => ({
+        ...e,
+        [qId]: lang === "th" ? "อัปโหลดไฟล์ไม่สำเร็จ" : lang === "cn" ? "文件上传失败" : lang === "mm" ? "ဖိုင်တင်ခြင်း မအောင်မြင်ပါ" : "File upload failed.",
+      }));
+    } finally {
+      setFileUploading((s) => { const u = { ...s }; delete u[qId]; return u; });
+    }
+  };
+
+  // Remove an un-submitted "file" answer: clear it immediately, then best-effort
+  // delete the uploaded object so it isn't orphaned in the private bucket. The
+  // delete is fire-and-forget — if it fails the answer is still cleared.
+  const removeFileAnswer = (qId: string) => {
+    const key = answers[qId];
+    setAnswers((prev) => ({ ...prev, [qId]: "" }));
+    setFileErrors((e) => { const u = { ...e }; delete u[qId]; return u; });
+    if (typeof key === "string" && key) {
+      pendingFileKeysRef.current.delete(key);
+      fetch(`/api/forms/upload?key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => { /* best-effort */ });
+    }
+  };
+
+  // Close the form modal, deleting any file uploaded this session that wasn't
+  // committed to a submission so abandoning the form doesn't orphan it. No-op for
+  // the post-submit close (a successful submit clears the set first). Best-effort:
+  // a failed delete just leaves an orphan, same as before.
+  const closeStudentForm = () => {
+    const keys = [...pendingFileKeysRef.current];
+    pendingFileKeysRef.current.clear();
+    for (const key of keys) {
+      fetch(`/api/forms/upload?key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => { /* best-effort */ });
+    }
+    setShowStudentForm(false);
+  };
+
   const validateSection = (idx: number): boolean => {
     const section = normForm?.sections[idx];
     if (!section) return true;
@@ -266,9 +335,17 @@ export default function HistoryPage() {
     });
   };
 
+  // True while any "file" answer is still uploading. Submitting/advancing now
+  // would race the upload: the key lands after the POST, silently dropping the
+  // answer and orphaning the file. Block until uploads settle.
+  const uploadsInFlight = () => Object.values(fileUploading).some(Boolean);
+  const uploadWaitMessage = () =>
+    lang === "th" ? "กรุณารอให้อัปโหลดไฟล์เสร็จก่อน" : lang === "cn" ? "请等待文件上传完成" : lang === "mm" ? "ဖိုင်တင်ပြီးသည်အထိ စောင့်ပါ" : "Please wait for the file upload to finish.";
+
   const goNext = () => {
     setFormErrors({});
     setGeneralError(null);
+    if (uploadsInFlight()) { setGeneralError(uploadWaitMessage()); return; }
     if (!validateSection(sectionIndex)) return;
     const dest = nextDestination();
     if (dest === "submit") {
@@ -283,6 +360,7 @@ export default function HistoryPage() {
     if (!activeForm) return;
     setFormErrors({});
     setGeneralError(null);
+    if (uploadsInFlight()) { setGeneralError(uploadWaitMessage()); return; }
     if (!validateSection(sectionIndex)) return;
 
     setSubmitting(true);
@@ -298,13 +376,16 @@ export default function HistoryPage() {
         if (data.result?.hasGraded) {
           setScoreResult({ score: data.result.score, maxScore: data.result.maxScore });
         }
+        // The submission now owns its file answers, so don't clean them up on close.
+        pendingFileKeysRef.current.clear();
         // Submitted successfully — discard the local draft so it isn't restored next time.
         try { localStorage.removeItem(draftKey(activeForm.eventId, activeForm.id)); } catch { /* ignore */ }
         setGeneralSuccess("Submitted");
         fetchHistory();
       } else {
         if (res.status === 403) {
-          setShowStudentForm(false);
+          // Submission rejected — its file answers were never stored, so clean them up.
+          closeStudentForm();
           setWarningMessage(
             lang === "th"
               ? "คุณยังไม่ได้สแกนเช็คอินเข้าร่วมกิจกรรมนี้ กรุณาสแกนเช็คอินเพื่อเข้าร่วมกิจกรรมจริงก่อนจึงจะสามารถส่งแบบประเมินและสะสมคะแนนบ้านได้!"
@@ -609,7 +690,7 @@ export default function HistoryPage() {
           <div style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)",
             zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24
-          }} onClick={() => setShowStudentForm(false)}>
+          }} onClick={() => closeStudentForm()}>
             <div ref={modalScrollRef} className="animate-fade-in-up custom-scrollbar" style={{
               background: "var(--bg-surface)", width: "100%", maxWidth: 600, maxHeight: "85vh",
               borderRadius: 32, overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch",
@@ -629,7 +710,7 @@ export default function HistoryPage() {
                   </div>
                   <h3 style={{ fontSize: "clamp(16px, 4.5vw, 20px)", fontWeight: 900, color: "var(--text-primary)", lineHeight: 1.3, overflowWrap: "break-word", wordBreak: "break-word" }}>{activeForm?.title || t.evaluation}</h3>
                 </div>
-                <button className="btn btn-ghost" onClick={() => setShowStudentForm(false)} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0, flexShrink: 0 }}>
+                <button className="btn btn-ghost" onClick={() => closeStudentForm()} style={{ borderRadius: "50%", width: 40, height: 40, padding: 0, flexShrink: 0 }}>
                   <X size={18} />
                 </button>
               </div>
@@ -672,7 +753,7 @@ export default function HistoryPage() {
                     height: 46, borderRadius: 12, padding: "0 32px",
                     background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
                     color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(255,107,0,0.3)"
-                  }} onClick={() => { setShowStudentForm(false); setGeneralSuccess(null); }}>
+                  }} onClick={() => { closeStudentForm(); setGeneralSuccess(null); }}>
                     {t.closeWindow}
                   </button>
                 </div>
@@ -807,6 +888,44 @@ export default function HistoryPage() {
                                 );
                               })}
                             </div>
+                          ) : q.type === "file" ? (
+                            <div style={{ margin: "8px 0", display: "flex", flexDirection: "column", gap: 8 }}>
+                              {answers[q.id] ? (
+                                <div style={{
+                                  display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 14,
+                                  border: "1px solid var(--border-subtle)", background: "var(--bg-elevated)"
+                                }}>
+                                  <CheckCircle2 size={18} style={{ color: "#10b981", flexShrink: 0 }} />
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {(String(answers[q.id]).split(".").pop() || "file").toUpperCase()}{" "}
+                                    {lang === "th" ? "ไฟล์อัปโหลดแล้ว" : lang === "cn" ? "文件已上传" : lang === "mm" ? "ဖိုင်တင်ပြီးပါပြီ" : "file uploaded"}
+                                  </span>
+                                  <button type="button" onClick={() => removeFileAnswer(q.id)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#ef4444", fontWeight: 800, fontSize: 12 }}>
+                                    {lang === "th" ? "ลบ" : lang === "cn" ? "移除" : lang === "mm" ? "ဖယ်ရှားရန်" : "Remove"}
+                                  </button>
+                                </div>
+                              ) : (
+                                <label style={{
+                                  display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "16px",
+                                  borderRadius: 14, border: `2px dashed ${formErrors[q.id] ? "#ef4444" : "var(--border-medium)"}`,
+                                  background: "var(--bg-surface)", cursor: fileUploading[q.id] ? "wait" : "pointer", fontSize: 13, fontWeight: 800,
+                                  color: "var(--text-secondary)"
+                                }}>
+                                  {fileUploading[q.id]
+                                    ? (lang === "th" ? "กำลังอัปโหลด..." : lang === "cn" ? "上传中..." : lang === "mm" ? "တင်နေသည်..." : "Uploading...")
+                                    : (lang === "th" ? "📎 เลือกไฟล์ (รูปภาพ หรือ PDF)" : lang === "cn" ? "📎 选择文件（图片或 PDF）" : lang === "mm" ? "📎 ဖိုင်ရွေးပါ (ပုံ သို့မဟုတ် PDF)" : "📎 Choose a file (image or PDF)")}
+                                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={!!fileUploading[q.id]}
+                                    style={{ display: "none" }}
+                                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFileAnswer(q.id, f); e.target.value = ""; }} />
+                                </label>
+                              )}
+                              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>
+                                {lang === "th" ? "รองรับ JPG, PNG, WEBP, PDF • สูงสุด 4MB" : lang === "cn" ? "支持 JPG、PNG、WEBP、PDF • 最大 4MB" : lang === "mm" ? "JPG, PNG, WEBP, PDF • အများဆုံး 4MB" : "JPG, PNG, WEBP, PDF • max 4MB"}
+                              </span>
+                              {fileErrors[q.id] && (
+                                <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 700 }}>⚠️ {fileErrors[q.id]}</span>
+                              )}
+                            </div>
                           ) : (
                             <textarea className="input custom-scrollbar" style={{
                               width: "100%", minHeight: 100, borderRadius: 14, padding: "12px 16px", resize: "vertical",
@@ -831,7 +950,7 @@ export default function HistoryPage() {
                   {/* Footer */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 32 }}>
                     <button className="btn btn-ghost" type="button" style={{ height: 46, borderRadius: 12, padding: "0 24px", display: "flex", alignItems: "center", gap: 8 }}
-                      onClick={navStack.length > 0 ? goBack : () => setShowStudentForm(false)} disabled={submitting}>
+                      onClick={navStack.length > 0 ? goBack : () => closeStudentForm()} disabled={submitting}>
                       {navStack.length > 0 ? (
                         <><ArrowLeft size={16} /> {lang === "th" ? "ย้อนกลับ" : lang === "cn" ? "上一步" : lang === "mm" ? "နောက်သို့" : "Back"}</>
                       ) : t.cancel}

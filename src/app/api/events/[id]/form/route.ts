@@ -12,6 +12,10 @@ import {
 } from "@/lib/form-schema";
 import { canAccessSkillForm, getFormAvailability } from "@/lib/form-access";
 
+// A "file" answer must be an app-minted storage key ("<uuid>.<ext>"); mirrors the
+// pattern in /api/forms/file and /api/forms/upload so a forged value is rejected.
+const FILE_KEY_PATTERN = /^[0-9a-f-]{36}\.[a-z0-9]+$/i;
+
 // GET /api/events/[id]/form — fetch all relevant forms for a student
 // S-type forms are excluded for non-admin users.
 export async function GET(
@@ -170,11 +174,24 @@ export async function POST(
 
     for (const idx of getVisitedSectionIndices(normalized, answerMap)) {
       for (const q of normalized.sections[idx].questions) {
-        if (q.required && isQuestionVisible(q, answerMap) && isBlank(answerMap[q.id])) {
+        if (!isQuestionVisible(q, answerMap)) continue;
+        if (q.required && isBlank(answerMap[q.id])) {
           return NextResponse.json(
             { error: "Please answer all required questions before submitting." },
             { status: 400 }
           );
+        }
+        // A "file" answer is an opaque storage key this app minted ("<uuid>.<ext>").
+        // The POST body is otherwise stored verbatim, so without this a raw request
+        // could plant a forged or foreign string that later surfaces as a broken /
+        // cross-pointing link in the admin viewer and export. (Cross-user reuse is
+        // already infeasible — keys are unguessable random UUIDs — so format is the
+        // gap worth closing here.)
+        if (q.type === "file") {
+          const v = answerMap[q.id];
+          if (!isBlank(v) && (typeof v !== "string" || !FILE_KEY_PATTERN.test(v))) {
+            return NextResponse.json({ error: "Invalid file answer." }, { status: 400 });
+          }
         }
       }
     }

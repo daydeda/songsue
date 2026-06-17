@@ -10,7 +10,10 @@
 // normalizeForm() collapses both into the same in-memory shape so callers never
 // branch on storage format.
 
-export type QuestionType = "text" | "rating" | "choice" | "multiple";
+// "file" is an upload answer (image or PDF). Its answer value is an opaque
+// storage key string for a file in the PRIVATE "form-uploads" bucket (see
+// src/lib/form-file-storage.ts); it is never graded and never drives branching.
+export type QuestionType = "text" | "rating" | "choice" | "multiple" | "file";
 
 // Sentinel branch targets. A choice option can route to another section by id, or
 // to one of these special destinations.

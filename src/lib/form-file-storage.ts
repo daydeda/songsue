@@ -11,7 +11,7 @@
 // root, which is git-ignored and outside /public, so they are not web-accessible.
 
 import { randomUUID } from "crypto";
-import { mkdir, readFile, unlink, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "fs/promises";
 import path from "path";
 
 const BUCKET = "form-uploads";
@@ -93,5 +93,46 @@ export async function deleteFormFile(key: string): Promise<void> {
     await unlink(path.join(DEV_DIR, key));
   } catch {
     // Missing file (already gone) is fine; nothing else to do.
+  }
+}
+
+// List every object in the bucket with its creation time. Used by the scheduled
+// GC sweep (src/lib/form-file-gc.ts) to find orphans — files a crashed/closed
+// browser never got to clean up. createdAt is epoch ms; when the store can't tell
+// us an age we report "now" so the sweeper errs toward KEEPING the file.
+export async function listFormFiles(): Promise<{ key: string; createdAt: number }[]> {
+  if (hasSupabase()) {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+    const out: { key: string; createdAt: number }[] = [];
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase.storage
+        .from(BUCKET)
+        .list("", { limit: pageSize, offset, sortBy: { column: "created_at", order: "asc" } });
+      if (error) {
+        console.error("Form file list error:", error);
+        throw new Error("Failed to list form files");
+      }
+      if (!data || data.length === 0) break;
+      for (const obj of data) {
+        if (!obj.name) continue; // skip folder/prefix placeholders
+        out.push({ key: obj.name, createdAt: obj.created_at ? Date.parse(obj.created_at) : Date.now() });
+      }
+      if (data.length < pageSize) break;
+    }
+    return out;
+  }
+
+  try {
+    const names = await readdir(DEV_DIR);
+    const out: { key: string; createdAt: number }[] = [];
+    for (const name of names) {
+      const st = await stat(path.join(DEV_DIR, name));
+      out.push({ key: name, createdAt: st.mtimeMs });
+    }
+    return out;
+  } catch {
+    return []; // dir not created yet (no uploads in this dev env)
   }
 }

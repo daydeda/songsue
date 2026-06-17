@@ -803,7 +803,7 @@ export default function HistoryPage() {
                         </h4>
                       )}
                       {normForm.sections[sectionIndex]?.description && (
-                        <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500, lineHeight: 1.5, marginTop: 6 }}>
+                        <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500, lineHeight: 1.5, marginTop: 6, whiteSpace: "pre-wrap" }}>
                           {normForm.sections[sectionIndex].description}
                         </p>
                       )}
@@ -815,7 +815,7 @@ export default function HistoryPage() {
                       .filter((q: Question) => isQuestionVisible(q, answers as AnswerMap))
                       .map((q: Question) => (
                         <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          <label style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
+                          <label style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>
                             {q.label === "Overall Satisfaction" ? t.overallSatisfaction : q.label} {q.required && <span style={{ color: "#ef4444" }}>*</span>}
                           </label>
 

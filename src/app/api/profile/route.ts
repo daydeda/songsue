@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { HousesService } from "@/modules/houses/houses.service";
 
 // Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
 // Validate the shape instead of accepting z.any() — the onboarding form always
@@ -88,21 +89,16 @@ export async function POST(req: Request) {
     }
 
     // 2. BALANCED HOUSE ASSIGNMENT (FE-03)
-    // Find the house with the minimum number of members
-    const housesList = await db.query.houses.findMany({
-      with: { users: { columns: { id: true } } }
-    });
-
-    // Sort by user count
-    const sortedHouses = housesList.sort((a, b) => a.users.length - b.users.length);
-    const targetHouse = sortedHouses[0]; // House with the fewest people
+    // Assign to the house with the fewest members (shared helper, also used by
+    // the staff onboarding bypass so both stay balanced together).
+    const targetHouseId = await HousesService.pickBalancedHouseId();
 
     // 3. Update User
     const [updated] = await db
       .update(users)
       .set({
         ...data,
-        houseId: targetHouse.id,
+        houseId: targetHouseId,
         profileCompleted: true,
         updatedAt: new Date(),
       })

@@ -109,6 +109,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
       allowDangerousEmailAccountLinking: true,
+      // Force the Google account chooser on every sign-in. Without this, Google can
+      // complete silently (prompt=none) for users with an existing session — which,
+      // for people signed into MANY Google accounts (authuser=N), races/ mismatches
+      // the short-lived PKCE+state check cookie and surfaces as "Sign-in didn't
+      // complete / session expired" at /api/auth/callback/google. Forcing an
+      // interactive selection makes each sign-in plant a fresh, matching cookie.
+      authorization: { params: { prompt: "select_account" } },
     }),
   ],
   callbacks: {

@@ -102,6 +102,10 @@ interface FormBuilderSubmission {
   studentName: string;
   studentId: string;
   houseId: string;
+  nickname?: string;
+  major?: string;
+  phone?: string;
+  contactChannels?: string;
   answers: Record<string, string | number | string[]>;
   submittedAt: string;
   score?: number;
@@ -144,6 +148,16 @@ const ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
   smo: "SMO",
   anusmo: "ANUSMO",
   student: "Student",
+};
+
+// Size a <textarea> to fit its content so typed/loaded line breaks are visible.
+// Used as a ref callback (fires on mount + each render, so it also grows when an
+// existing multi-line value is loaded into the editor) and from onChange. Without
+// this a rows=1 textarea hides newlines off-screen, making line breaks look broken.
+const autoGrowTextarea = (el: HTMLTextAreaElement | null): void => {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
 };
 
 // Convert a stored ISO timestamp to a value for a <input type="datetime-local">
@@ -871,7 +885,7 @@ export default function AdminEventsPage() {
     const qcols = allFormQuestions.map((q, i) => ({ key: `Q${i + 1}: ${q.label || "Untitled"}`, q }));
     const anyGraded = allFormQuestions.some(q => q.graded);
     const header = [
-      "Name", "Student ID", "House", "Submitted (Bangkok)",
+      "Name", "Nickname", "Student ID", "Major", "Phone", "Contact Channels", "House", "Submitted (Bangkok)",
       ...(anyGraded ? ["Score", "Max Score"] : []),
       ...qcols.map(c => c.key),
     ];
@@ -881,7 +895,11 @@ export default function AdminEventsPage() {
     const rows = formSubmissions.map(sub => {
       const row: Record<string, string | number> = {
         "Name": sub.studentName,
+        "Nickname": sub.nickname || "",
         "Student ID": sub.studentId,
+        "Major": sub.major || "",
+        "Phone": sub.phone || "",
+        "Contact Channels": sub.contactChannels || "",
         "House": sub.houseId,
         "Submitted (Bangkok)": new Date(sub.submittedAt).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" }),
       };
@@ -3111,11 +3129,12 @@ export default function AdminEventsPage() {
                                   placeholder={lang === "th" ? "ชื่อส่วน (ไม่บังคับ)" : lang === "cn" ? "章节标题（可选）" : lang === "mm" ? "အပိုင်းခေါင်းစဉ် (ရွေးချယ်ႏိုင်)" : "Section title (optional)"}
                                 />
                                 <textarea
+                                  ref={autoGrowTextarea}
                                   className="input"
                                   rows={1}
-                                  style={{ minHeight: 36, borderRadius: 10, padding: "8px 12px", fontSize: 13, resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
+                                  style={{ minHeight: 36, borderRadius: 10, padding: "8px 12px", fontSize: 13, resize: "none", overflow: "hidden", fontFamily: "inherit", lineHeight: 1.4 }}
                                   value={section.description || ""}
-                                  onChange={e => updateSection(section.id, "description", e.target.value)}
+                                  onChange={e => { updateSection(section.id, "description", e.target.value); autoGrowTextarea(e.target); }}
                                   placeholder={lang === "th" ? "คำอธิบายส่วน (ไม่บังคับ)" : lang === "cn" ? "章节描述（可选）" : lang === "mm" ? "အပိုင်းဖော်ပြချက် (ရွေးချယ်ႏိုင်)" : "Section description (optional)"}
                                 />
                               </div>
@@ -3157,11 +3176,12 @@ export default function AdminEventsPage() {
                                       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: "1 1 auto", width: "100%" }}>
                                         <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20, paddingTop: 9 }}>{idx + 1}.</span>
                                         <textarea
+                                          ref={autoGrowTextarea}
                                           className="input"
                                           rows={1}
-                                          style={{ flex: 1, minHeight: 40, borderRadius: 10, padding: "9px 12px", resize: "vertical", fontFamily: "inherit", lineHeight: 1.4 }}
+                                          style={{ flex: 1, minHeight: 40, borderRadius: 10, padding: "9px 12px", resize: "none", overflow: "hidden", fontFamily: "inherit", lineHeight: 1.4 }}
                                           value={q.label}
-                                          onChange={e => updateQuestion(section.id, q.id, "label", e.target.value)}
+                                          onChange={e => { updateQuestion(section.id, q.id, "label", e.target.value); autoGrowTextarea(e.target); }}
                                           placeholder={lang === "th" ? "ข้อความคำถาม..." : lang === "cn" ? "问题内容..." : lang === "mm" ? "မေးခွန်းစာသား..." : "Question Text..."}
                                         />
                                       </div>

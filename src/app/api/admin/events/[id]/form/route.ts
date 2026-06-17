@@ -52,7 +52,17 @@ export async function GET(
       with: {
         submissions: {
           with: {
-            user: { columns: { name: true, studentId: true, houseId: true } },
+            user: {
+              columns: {
+                name: true,
+                studentId: true,
+                houseId: true,
+                nickname: true,
+                major: true,
+                phone: true,
+                contactChannels: true,
+              },
+            },
           },
         },
       },
@@ -91,6 +101,10 @@ export async function GET(
             studentName: sub.user?.name || "Student",
             studentId: sub.user?.studentId || "",
             houseId: sub.user?.houseId || "unassigned",
+            nickname: sub.user?.nickname || "",
+            major: sub.user?.major || "",
+            phone: sub.user?.phone || "",
+            contactChannels: sub.user?.contactChannels || "",
             answers: sub.answers,
             submittedAt: sub.submittedAt,
             score,

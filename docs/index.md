@@ -18,6 +18,15 @@
 ## 🚀 Agile Management
 - [01-product-backlog.md](./agile/01-product-backlog.md) — รายการฟีเจอร์และ User Stories (Product Backlog)
 - [02-sprint-planning.md](./agile/02-sprint-planning.md) — แผนงานการพัฒนาและไทม์ไลน์การอัปเดต (Release Timeline & Gantt)
+- **Sprint Backlogs:**
+  - [Sprint 04 Backlog (PWA)](./agile/sprint-backlogs/sprint-04.md) — แผนงานระยะที่ 4 (Add to Home Screen, Offline, Camera OS compatibility)
+  - [Sprint 05 Backlog (Interactive Game)](./agile/sprint-backlogs/sprint-05.md) — แผนงานระยะที่ 5 (Real-time Socket.IO, Quiz & Poll, Projector Screen)
+  - [Sprint 06 Backlog (Performance)](./agile/sprint-backlogs/sprint-06.md) — แผนงานระยะที่ 6 (Server Cache, JWT Optimization, Core Web Vitals)
+- **User Stories (Sprint 4):**
+  - [US-PWA-17a](./agile/user-stories/US-PWA-17a.md) — ติดตั้งแอปบน Home Screen
+  - [US-PWA-17b](./agile/user-stories/US-PWA-17b.md) — หน้า Offline Fallback
+  - [US-PWA-17c](./agile/user-stories/US-PWA-17c.md) — ประสบการณ์แบบ Native App
+  - [US-PWA-17d](./agile/user-stories/US-PWA-17d.md) — QR Scanner ทำงานได้ใน PWA Mode
 
 ---
 

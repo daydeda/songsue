@@ -1,6 +1,6 @@
 # Software Requirements Specification (SRS)
 
-> **English translation (derived).** Canonical source: `srs_document_th.md` (Thai). This file is a development-reference translation and may lag the Thai original. For funding/official use, the Thai version governs.
+> **English translation (derived).** Canonical source: `00-srs-th.md` (Thai). This file is a development-reference translation and may lag the Thai original. For funding/official use, the Thai version governs.
 
 **System name:** Real-time activity and house-score management platform (ActiveCAMT)
 **Version:** 1.2 (adds: PDPA medical signal/detail access split, SMO scanner-only role, house rosters + attendee export, and registration-cancellation lock. v1.1 added: KAS form system, HMAC-based QR, tamper-evident hash-chain audit log, per-individual leaderboard, registration quotas/time windows, multiple posters per event)

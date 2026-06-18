@@ -8,6 +8,7 @@
 ---
 
 ## 💻 Software Design
+- [00-srs-th.md](./software/00-srs-th.md) / [00-srs-en.md](./software/00-srs-en.md) — เอกสารข้อกำหนดความต้องการระบบ (Software Requirements Specification)
 - [01-system-design.md](./software/01-system-design.md) — โครงสร้างและโมดูลระบบย่อย (Subsystem Breakdown)
 - [02-class-diagram.md](./software/02-class-diagram.md) — แผนผังความสัมพันธ์และการไหลข้อมูล (Process Flows & Relationships)
 - [03-data-schema.md](./software/03-data-schema.md) — โครงสร้างฐานข้อมูล Drizzle Schema (Database Schema & Security)
@@ -22,6 +23,7 @@
 
 ## 📚 Resources & Guidelines
 - [Project Wiki](./wiki/wiki.md) — คลังข้อมูลกลางและเอกสารคู่มือพัฒนา/ติดตั้ง
+- [Project Proposal](./wiki/camt-fun/project_proposal_th.md) — เอกสารข้อเสนอโครงการเพื่อขอทุนสนับสนุนและการวางงบประมาณ
 - [Scoring Rules](./scoring-rules.md) — กฎเกณฑ์การคิดคะแนนระบบบ้านและนักศึกษารายบุคคล
 - [Documentation Changelog](./changelog.md) — ประวัติการปรับปรุงเอกสาร
 

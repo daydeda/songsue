@@ -6,6 +6,7 @@
 ---
 
 ## 🎯 เข้าถึงแบบรวดเร็ว (Quick Access)
+- **[เอกสารข้อกำหนดความต้องการระบบ (SRS)]**: [ภาษาไทย](../software/00-srs-th.md) / [ภาษาอังกฤษ](../software/00-srs-en.md)
 - **[โครงสร้างและการออกแบบระบบย่อย]**: [System Design](../software/01-system-design.md)
 - **[โครงสร้างและแผนผังสคีมาฐานข้อมูล]**: [Database Schema](../software/03-data-schema.md)
 - **[แผนผังกระบวนการสแกนและการล็อกความปลอดภัย]**: [Process Flows](../software/02-class-diagram.md)
@@ -19,6 +20,13 @@
 
 - **[สถาปัตยกรรมการวางเซิร์ฟเวอร์]**: [Deployment Architecture](./development/deployment-architecture.md)
 - **[คู่มือขั้นตอนการติดตั้ง Docker บน VM ของวิทยาลัย]**: [University Server Deployment Guide](./development/deployment-guide.md)
+
+---
+
+## 📄 เอกสารข้อเสนอโครงการและการงบประมาณ (Project Proposal & Budget)
+*รายละเอียดการเสนอโครงการกับคณะผู้บริหารและการวางงบประมาณ*
+
+- **[เอกสารข้อเสนอโครงการเพื่อขอทุนสนับสนุน]**: [project_proposal_th.md](./camt-fun/project_proposal_th.md) — แผนงานเชิงกลยุทธ์ ปัญหาของคณะผู้บริหาร และแผนงบประมาณโครงสร้างพื้นฐาน
 
 ---
 

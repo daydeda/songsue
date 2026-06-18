@@ -29,6 +29,15 @@ const STAFF_BYPASS: Record<string, string> = {
   "piyaporn.n@camt.info": "JJ",
   "konlawat.k@camt.info": "อ.จูน",
   "daydedaaa@gmail.com": "ดีเดย์",
+  "sumitra.kwan@gmail.com": "พี่ขวัญ",
+  "pattaradanai.p@camt.info": "ท๊อฟฟี่",
+  "nattawut.w@camt.info": "เบส",
+  "jirawit.y@gmail.com": "อ.แอมป์",
+  "noppon.w@camt.info": "อ.เอม",
+  "nat.t@camt.info": "ต่อ",
+  "pattarapansurina42@gmail.com": "มายกี้",
+  "apiradee.r@camt.info": "พี่ต้อม",
+  "thanutphorn.ch@camt.info": "พี่แยม",
 };
 
 /**

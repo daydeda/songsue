@@ -473,19 +473,15 @@ export default function ProfilePage() {
                   </div>
                   <div className="field flex-grow">
                     <label className="label">
-                      {t.fullName} {isProfileCompleted ? "(Locked)" : <span style={{ color: "#ef4444" }}>*</span>}
+                      {t.fullName} <span style={{ color: "#ef4444" }}>*</span>
                     </label>
                     <input
                       className="input"
                       name="name"
                       required
-                      disabled={isProfileCompleted}
                       value={formData.name}
                       onChange={(e) => set("name", e.target.value)}
                       style={{
-                        background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
-                        cursor: isProfileCompleted ? "not-allowed" : undefined,
-                        opacity: isProfileCompleted ? 0.7 : undefined,
                         borderColor: validationTriggered && !formData.name.trim() ? "#ef4444" : undefined,
                         boxShadow: validationTriggered && !formData.name.trim() ? "0 0 0 1px #ef4444" : undefined
                       }}

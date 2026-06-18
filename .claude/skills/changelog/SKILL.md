@@ -1,0 +1,42 @@
+---
+name: changelog
+description: Generate the next period update file in updates/ for ActiveCAMT, in the established Thai house style (date-range filename, ฝั่งนักศึกษา + ฝั่งทีม sections, Discord/funding framing). Summarizes the git commits since the last update file. Use when the user wants to write the period changelog, Discord update, or funding progress notes.
+---
+
+# Changelog / Period Update (ActiveCAMT)
+
+Produces the next `updates/<range>.md` file: a Thai-language period summary that gets
+posted to Discord, read by the team, and feeds the funding paper trail
+(`project_proposal_th.md` / `srs_document_th.md`). It is written **from the git
+commits in the period** — never invented.
+
+## Output contract — match the house style exactly
+
+Existing files (`updates/2026-06-13_to_06-14.md`, etc.) define the format. Reproduce it precisely:
+
+- **Filename:** `updates/YYYY-MM-DD_to_MM-DD.md` — Gregorian dates, start `YYYY-MM-DD`, end `MM-DD` (same year). e.g. `updates/2026-06-14_to_06-16.md`.
+- **Title line:** `# ActiveCAMT — อัปเดต <D–D เดือน ปีพ.ศ.-2หลัก>` using Thai month abbreviation and **2-digit Buddhist year** (2026 → `69`). e.g. `# ActiveCAMT — อัปเดต 14–16 มิ.ย. 69`.
+- **Subtitle:** `ช่วง: <same Thai range> · สรุปไว้สำหรับลง Discord และให้ทีมที่เกี่ยวข้องอ่าน`
+- `---` separator, then:
+- `## ฝั่งนักศึกษา (สิ่งที่ user จะเห็น)` — **user-visible changes only**, plain Thai, friendly tone, each bullet led by a **bold** phrase. No code, no file paths.
+- `---`, then `## ฝั่งทีม (technical changelog)` — grouped into `###` subsections **by domain** (e.g. PDPA, สิทธิ์เข้าถึง/roles, บ้าน (Houses), Registration, Mobile/UI, Security & Performance, plus a "แก้ตามหลัง" group for follow-up fixes). Technical but concise; file/column names and rationale are welcome here.
+- `---`, then footer: `สรุปจาก commit ช่วง <Thai range>`.
+- **Language: Thai only.** (The app is 4-language EN/TH/MM/CN, but these update docs are Thai.)
+
+### Date conversion
+- Buddhist year = Gregorian + 543; 2-digit form = last two digits (2569 → `69`).
+- Thai month abbreviations: ม.ค. ก.พ. มี.ค. เม.ย. พ.ค. มิ.ย. ก.ค. ส.ค. ก.ย. ต.ค. พ.ย. ธ.ค.
+- Range uses an en-dash between days: `14–16 มิ.ย. 69`.
+
+## Workflow
+1. **Determine the range.** List `updates/` and take the latest file's **end date** as the new start; the new end is today (use today's date from context). If the gap is large or ambiguous, confirm the range with the user before writing.
+2. **Gather the commits.** `git log --since=<start> --until=<end> --no-merges --pretty=...` (and skim diffstats where a message is terse). Read enough to tell **user-visible** changes from internal ones. Ignore pure merge/chore noise unless it's user-relevant.
+3. **Classify & group.** Each change → ฝั่งนักศึกษา (would a student notice?) or ฝั่งทีม (grouped by domain). When unsure whether something is user-visible, put it under ฝั่งทีม.
+4. **Write in Thai** matching the tone of prior files — concise bold-led bullets for students; precise grouped notes for the team. Reuse the house's existing terminology (e.g. บ้านมอม/โต/ลวง/มกร, "scanner-only", PDPA สัญญาณ vs รายละเอียด).
+5. **Write the file** to `updates/<range>.md`, then show it to the user for a phrasing pass.
+
+## Rules
+- **Never fabricate.** Every line must trace to a commit/diff in the range. If a feature isn't in the commits, it doesn't go in.
+- **Don't leak secrets or PDPA detail.** Describe medical/PDPA work at the level the existing files do ("เห็นแค่สัญญาณ ไม่เห็นรายละเอียด") — never include actual student data, tokens, or credentials.
+- **Don't auto-commit.** The user usually edits Thai phrasing first; leave committing to them (or to `/ship` afterward).
+- Keep section headers **verbatim** so every file in `updates/` stays consistent and greppable.

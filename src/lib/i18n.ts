@@ -89,6 +89,12 @@ export const translations = {
     houseTo: "To",
     houseLuang: "Luang",
     houseMakara: "Makon",
+    // Live check-in / score notifications
+    notifCheckinTitle: "You're checked in! ✅",
+    notifScorePosTitle: "Points awarded! 🎉",
+    notifScoreTitle: "Points updated",
+    notifPointsSuffix: "pts",
+    notifDismiss: "Dismiss",
     // Dashboard
     hey: "Hey",
     upcomingEvents: "Upcoming Events",
@@ -396,6 +402,12 @@ export const translations = {
     houseTo: "บ้านโต",
     houseLuang: "บ้านลวง",
     houseMakara: "บ้านมกร",
+    // Live check-in / score notifications
+    notifCheckinTitle: "เช็คอินสำเร็จ! ✅",
+    notifScorePosTitle: "ได้รับคะแนน! 🎉",
+    notifScoreTitle: "อัปเดตคะแนนแล้ว",
+    notifPointsSuffix: "คะแนน",
+    notifDismiss: "ปิด",
     // Dashboard
     hey: "สวัสดี",
     upcomingEvents: "กิจกรรมที่กำลังจะมาถึง",
@@ -703,6 +715,12 @@ export const translations = {
     houseTo: "To",
     houseLuang: "Luang",
     houseMakara: "Makon",
+    // Live check-in / score notifications
+    notifCheckinTitle: "ချက်အင်ဝင်ပြီးပါပြီ! ✅",
+    notifScorePosTitle: "အမှတ်ရရှိပါပြီ! 🎉",
+    notifScoreTitle: "အမှတ်ပြင်ဆင်ပြီးပါပြီ",
+    notifPointsSuffix: "မှတ်",
+    notifDismiss: "ပိတ်မည်",
     // Dashboard
     hey: "မင်္ဂလာပါ",
     upcomingEvents: "လာမည့်ပွဲများ",
@@ -1010,6 +1028,12 @@ export const translations = {
     houseTo: "To",
     houseLuang: "Luang",
     houseMakara: "Makon",
+    // Live check-in / score notifications
+    notifCheckinTitle: "已签到！✅",
+    notifScorePosTitle: "获得积分！🎉",
+    notifScoreTitle: "积分已更新",
+    notifPointsSuffix: "分",
+    notifDismiss: "关闭",
     // Dashboard
     hey: "你好",
     upcomingEvents: "即将举行的活动",

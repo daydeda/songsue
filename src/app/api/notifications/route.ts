@@ -1,0 +1,129 @@
+import { auth } from "@/auth";
+import { db } from "@/db";
+import { attendance, auditLogs, events } from "@/db/schema";
+import { and, desc, eq, gt, like, or } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+
+// Fail fast instead of hanging to the platform default if the DB pooler stalls.
+export const maxDuration = 20;
+
+// How far back we will ever look. A returning student who was away for a while
+// should not get a flood of stale pop-ups, and bounding the window keeps both
+// queries cheap (they ride the timestamp / check-in-time indexes).
+const MAX_LOOKBACK_MS = 5 * 60 * 1000;
+// When the client has no last-seen marker yet (fresh device / first load), only
+// surface the last minute and a half so a check-in that just happened is still
+// caught by the immediate-on-mount poll, without replaying history.
+const COLD_START_MS = 90 * 1000;
+
+// Per-student scores are not stored row-per-student anywhere except the audit
+// log (score_history is house-level with no studentId). We match the exact
+// wording ScannerService writes so only individual-score events are surfaced,
+// then parse the delta + activity title — never returning the raw action text
+// (it can contain staff-entered reason notes).
+const SCORE_ACTION = /^(Awarded|Deducted) (\d+) individual points to .* for activity "(.+?)"/;
+
+type Notification = {
+  id: string;
+  type: "checkin" | "score";
+  at: string;
+  eventTitle: string | null;
+  points?: number;
+};
+
+export async function GET(req: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = session.user.id;
+
+    const now = Date.now();
+    const floor = new Date(now - MAX_LOOKBACK_MS);
+    let since = new Date(now - COLD_START_MS);
+    const sinceParam = req.nextUrl.searchParams.get("since");
+    if (sinceParam) {
+      const parsed = new Date(sinceParam);
+      // Clamp the client's marker to the lookback floor so a long-stale marker
+      // can't widen the scan, and ignore an unparseable value.
+      if (!Number.isNaN(parsed.getTime())) {
+        since = parsed > floor ? parsed : floor;
+      }
+    }
+
+    const [checkins, scores] = await Promise.all([
+      db
+        .select({
+          id: attendance.id,
+          checkInTime: attendance.checkInTime,
+          eventTitle: events.title,
+        })
+        .from(attendance)
+        .innerJoin(events, eq(events.id, attendance.eventId))
+        .where(
+          and(
+            eq(attendance.studentId, userId),
+            eq(attendance.status, "attended"),
+            gt(attendance.checkInTime, since),
+          ),
+        )
+        .orderBy(desc(attendance.checkInTime))
+        .limit(20),
+      db
+        .select({
+          id: auditLogs.id,
+          timestamp: auditLogs.timestamp,
+          action: auditLogs.action,
+        })
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.targetId, userId),
+            gt(auditLogs.timestamp, since),
+            or(
+              like(auditLogs.action, "Awarded %individual points%"),
+              like(auditLogs.action, "Deducted %individual points%"),
+            ),
+          ),
+        )
+        .orderBy(desc(auditLogs.timestamp))
+        .limit(20),
+    ]);
+
+    const notifications: Notification[] = [];
+
+    for (const c of checkins) {
+      if (!c.checkInTime) continue;
+      notifications.push({
+        id: `ci:${c.id}`,
+        type: "checkin",
+        at: c.checkInTime.toISOString(),
+        eventTitle: c.eventTitle ?? null,
+      });
+    }
+
+    for (const s of scores) {
+      const m = s.action.match(SCORE_ACTION);
+      if (!m || !s.timestamp) continue;
+      const points = m[1] === "Deducted" ? -Number(m[2]) : Number(m[2]);
+      notifications.push({
+        id: `sc:${s.id}`,
+        type: "score",
+        at: s.timestamp.toISOString(),
+        eventTitle: m[3] ?? null,
+        points,
+      });
+    }
+
+    notifications.sort((a, b) => a.at.localeCompare(b.at));
+
+    return NextResponse.json(
+      { serverTime: new Date(now).toISOString(), notifications },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    console.error("Failed to fetch notifications:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

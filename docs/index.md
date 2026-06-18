@@ -31,6 +31,7 @@
 
 ## 📚 Resources & Guidelines
 - [Project Wiki](./wiki/wiki.md) — คลังข้อมูลกลางและเอกสารคู่มือพัฒนา/ติดตั้ง
+- [Google OAuth Guide](./wiki/auth/google-oauth.md) — เอกสารถอดบทเรียนระบบ Google OAuth (NextAuth v5)
 - [Project Proposal](./wiki/camt-fun/project_proposal_th.md) — เอกสารข้อเสนอโครงการเพื่อขอทุนสนับสนุนและการวางงบประมาณ
 - [Scoring Rules](./scoring-rules.md) — กฎเกณฑ์การคิดคะแนนระบบบ้านและนักศึกษารายบุคคล
 - [Documentation Changelog](./changelog.md) — ประวัติการปรับปรุงเอกสาร

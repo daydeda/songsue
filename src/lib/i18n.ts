@@ -95,6 +95,7 @@ export const translations = {
     notifScoreTitle: "Points updated",
     notifPointsSuffix: "pts",
     notifDismiss: "Dismiss",
+    notifTapToClose: "Tap anywhere to close",
     // Dashboard
     hey: "Hey",
     upcomingEvents: "Upcoming Events",
@@ -408,6 +409,7 @@ export const translations = {
     notifScoreTitle: "อัปเดตคะแนนแล้ว",
     notifPointsSuffix: "คะแนน",
     notifDismiss: "ปิด",
+    notifTapToClose: "แตะที่ใดก็ได้เพื่อปิด",
     // Dashboard
     hey: "สวัสดี",
     upcomingEvents: "กิจกรรมที่กำลังจะมาถึง",
@@ -721,6 +723,7 @@ export const translations = {
     notifScoreTitle: "အမှတ်ပြင်ဆင်ပြီးပါပြီ",
     notifPointsSuffix: "မှတ်",
     notifDismiss: "ပိတ်မည်",
+    notifTapToClose: "ပိတ်ရန် မည်သည့်နေရာမဆို တို့ပါ",
     // Dashboard
     hey: "မင်္ဂလာပါ",
     upcomingEvents: "လာမည့်ပွဲများ",
@@ -1034,6 +1037,7 @@ export const translations = {
     notifScoreTitle: "积分已更新",
     notifPointsSuffix: "分",
     notifDismiss: "关闭",
+    notifTapToClose: "点按任意处关闭",
     // Dashboard
     hey: "你好",
     upcomingEvents: "即将举行的活动",

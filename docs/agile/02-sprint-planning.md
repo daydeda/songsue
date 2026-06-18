@@ -15,6 +15,7 @@
 | **Sprint 1** | 11–12 มิ.ย. 2569 | ระบบเช็คอิน, ฟอร์ม KAS, ลีดเดอร์บอร์ดรายบุคคล และโครงสร้างความปลอดภัยหลัก | เสร็จสมบูรณ์ |
 | **Sprint 2** | 13–14 มิ.ย. 2569 | ระบบร้านค้าของที่ระลึก (Merch Shop), ประกาศใน Dashboard และความปลอดภัยของฐานข้อมูล | เสร็จสมบูรณ์ |
 | **Sprint 3** | 14–16 มิ.ย. 2569 | สิทธิ์ของ SMO (Scanner-only), ความเป็นส่วนตัวระดับฟิลด์ (PDPA) และการรองรับมือถือ | เสร็จสมบูรณ์ |
+| **Post-Sprint 3** | 16–18 มิ.ย. 2569 | บทบาท Club/Major President, Major Restriction, Scanner Score Deduction, Pre-test Gate, Form File Upload, Staff Bypass, Live Notifications, Digital ID Modal | เสร็จสมบูรณ์ |
 | **Sprint 4** | TBD | Progressive Web App (PWA) — ติดตั้งแอปบน Home Screen, Offline Fallback, App Manifest & Service Worker | 📋 วางแผน |
 | **Sprint 5** | TBD | Multi-Interactive Game Session (WebRTC/WebSocket) — Quiz, Mini-game, Live Poll, Leaderboard และ House Points Integration | 📋 วางแผน |
 | **Sprint 6** | TBD | Performance & API Cache Optimization — ลด DB query, JWT session caching, hot-path cleanup และวัด Core Web Vitals | 📋 วางแผน |
@@ -123,6 +124,21 @@ gantt
   * **SMO Scanner-Only:** บทบาท SMO สามารถเข้าช่วยแอดมินสแกนเช็คอินหน้างานได้ทันทีผ่านสิทธิ์แบบกล้องอย่างเดียว โดยไม่ผ่านหน้าข้อมูลอื่นๆ ของแอดมินส่วนกลาง
   * พัฒนาหน้าแสดงสมาชิกประจำบ้าน (House rosters) และปุ่มดาวน์โหลดรายงานข้อมูลผู้เข้าร่วมงานสำหรับแอดมิน
   * แก้ไข UI หน้าแบบประเมินให้มีขนาดพอเหมาะกับการเลื่อนบนหน้าจอมือถือ และปรับโมดัลแก้ไขรายละเอียดผู้ใช้ไม่ให้ล้นออกนอกจอสมาร์ทโฟน
+
+### 3.3.5 Post-Sprint 3 (16–18 มิ.ย. 69) — Feature Extensions & UX Enhancements (PR #33–51)
+* **หัวใจสำคัญ:** ชุด features เพิ่มเติมที่ ship หลัง Sprint 3 สิ้นสุด ครอบคลุมการขยายระบบ RBAC, การปรับปรุง UX แบบ Real-time และความสมบูรณ์ของฟอร์ม
+* **สิ่งที่ทำเสร็จ:**
+  * **Major-based Registration Limit & President Roles (PR #34, #35):** เพิ่มบทบาท Club/Major President ที่มีสิทธิ์สแกนเช็คอิน (scanner-only) และจำกัดการลงทะเบียนตามสาขาวิชา (`major`) ของกิจกรรม
+  * **Scanner Score Deduction (PR #33):** ผู้สแกนสามารถหักคะแนนนักศึกษาได้ผ่านหน้าสแกน พร้อมจำกัดการให้คะแนนเฉพาะผู้ที่ลงทะเบียนกิจกรรมเท่านั้น
+  * **Pre-test Gate & Reset (PR #36, #37):** บังคับทำ K_pre pre-test หลังลงทะเบียนกิจกรรม และรีเซ็ต K_pre อัตโนมัติพร้อมแจ้งเตือนเมื่อนักศึกษายกเลิกการลงทะเบียน
+  * **Form File Upload (image/PDF) + GC Sweep (PR #38, #39):** เพิ่มประเภทคำตอบ "ไฟล์" (อัปโหลดรูปหรือ PDF) ในแบบฟอร์มประเมิน พร้อม Scheduled GC sweep ล้างไฟล์ที่ไม่มีการเชื่อมโยงออก
+  * **Staff Onboarding Bypass (PR #40, #51):** เพิ่ม bypass list สำหรับบัญชีอาจารย์/เจ้าหน้าที่ 9+ คน ให้ข้าม onboarding form และได้รับบทบาท staff โดยอัตโนมัติ
+  * **Google Sign-in Fix (PR #41):** บังคับให้ Google แสดงหน้าเลือกบัญชีทุกครั้ง แก้ปัญหา session cookie หลุดเมื่อใช้หลายบัญชี
+  * **Form Multiline + Export Improvements (PR #42, #43):** รองรับคำถามแบบ multiline, auto-grow textarea, Private bucket สำหรับ file upload, และเพิ่ม contact columns (เบอร์โทร, ไลน์) ใน submissions export
+  * **Profile Full Name Editable (PR #44):** อนุญาตให้นักศึกษาแก้ไขชื่อ-นามสกุลหลังกรอก onboarding เสร็จแล้วได้
+  * **Dashboard Walk-in Checkins (PR #45):** แสดงประวัติเช็คอินแบบ manual/walk-in ในหน้า dashboard ของนักศึกษา (รวมถึงกิจกรรม restricted)
+  * **Live Check-in / Score Notifications (PR #46, #47):** pop-up real-time บนหน้า Dashboard และ Digital ID เมื่อถูกเช็คอินหรือได้รับ/ถูกหักคะแนน ผ่าน SSE
+  * **QR Dark Mode Fix (PR #49):** แก้ไข color scheme ของ QR Code ให้สแกนได้บนโหมดมืด (Dark Mode) ป้องกัน QR ดำบนพื้นดำ
 
 ### 3.4 Sprint 5 (TBD) — Multi-Interactive Game Session
 

@@ -11,6 +11,8 @@
 | 2026-06-18 | v1.4 | จัดทำ Sprint Backlogs (Sprint 4, 5, 6) และแตกรายละเอียด User Stories ย่อย (US-PWA-17a ถึง US-PWA-17d) สำหรับเตรียมการพัฒนาระบบ | Antigravity AI |
 | 2026-06-18 | v1.5 | จัดทำและแตกรายละเอียดโครงงานย่อย (User Stories) ของ Sprint 05 (US-GAME-18a ถึง 18i) และ Sprint 06 (US-OPT-19a ถึง 19f) ครบถ้วน | Antigravity AI |
 | 2026-06-18 | v1.6 | ย้ายเอกสารถอดบทเรียนระบบ Google OAuth ไปจัดเก็บใน docs/wiki/auth/google-oauth.md และเชื่อมโยงสารบัญหลัก | Antigravity AI |
+| 2026-06-18 | v1.8 | สร้างไฟล์ implemented-user-stories.md (reverse engineered จาก source code) รวบรวม 80+ implemented features ครอบคลุม Auth, QR Check-In, Events, Forms, Leaderboard, Shop, PDPA, Audit Log, Live Notifications, RBAC และ Cron Jobs พร้อม Role Matrix | Antigravity AI |
+| 2026-06-18 | v1.7 | อัปเดตแผนงานและ changelog ให้สอดคล้องกับ features ที่ ship ไปหลัง Sprint 3 จบ (PR #33–51): major-based registration limit, Club/Major President scanner roles, scanner score deduction, pre-test gate & reset, form file upload (image/PDF) + GC sweep, staff onboarding bypass, live check-in/score notifications, Digital ID modal, QR dark-mode fix | Antigravity AI |
 
 ---
 *จัดทำขึ้นโดยระบบจัดการเอกสารการพัฒนา ActiveCAMT*

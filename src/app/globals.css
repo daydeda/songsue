@@ -2,6 +2,14 @@
 
 /* ── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
+  /* This app is light-only by design. The `only` keyword forbids the user agent
+     from auto-darkening the page — without it, a phone in dark mode (e.g. Android
+     Chrome "Auto Dark Theme", Samsung Internet) algorithmically inverts the whole
+     page INCLUDING the QR code, turning the black-on-white attendance QR into
+     light-on-dark, which scanners cannot read. Keep this until a real dark theme
+     exists. See /dashboard/id and DashboardClient QR cards. */
+  color-scheme: only light;
+
   --bg-base:        #fcfcfd;
   --bg-surface:     #ffffff;
   --bg-elevated:    #f3f4f6;

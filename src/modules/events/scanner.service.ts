@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { attendance, users, houses, scoreHistory, events } from "@/db/schema";
+import { attendance, users, houses, scoreHistory, eventSessions } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
@@ -47,6 +47,9 @@ export class ScannerService {
   static async processScan(params: {
     qrToken: string;
     eventId: string;
+    // Which session (day) the check-in is recorded against. Resolved/defaulted by
+    // the API to the "current" session; always belongs to eventId.
+    sessionId: string;
     action: "scan" | "confirm" | "score" | "lookup";
     medsCheckOption?: string | null;
     score?: number;
@@ -55,15 +58,25 @@ export class ScannerService {
     actorRole: string;
     ipAddress: string;
   }): Promise<ScanResult> {
-    const { qrToken, eventId, action, medsCheckOption, actorId, actorRole, ipAddress } = params;
+    const { qrToken, eventId, sessionId, action, medsCheckOption, actorId, actorRole, ipAddress } = params;
 
-    const [student, event] = await Promise.all([
+    const [student, event, session] = await Promise.all([
       UsersService.resolveStudentByToken(qrToken),
       EventsService.getEventById(eventId),
+      db.query.eventSessions.findFirst({
+        where: and(eq(eventSessions.id, sessionId), eq(eventSessions.eventId, eventId)),
+      }),
     ]);
 
     if (!student) return { status: "not_found", student: null, error: "Student not found in the system." };
     if (!event)   return { status: "not_found", student: null, error: "Event not found" };
+    // The session must exist AND belong to this event — blocks a hand-crafted
+    // cross-event sessionId from recording attendance against the wrong day.
+    if (!session) return { status: "not_found", student: null, error: "Session not found for this event." };
+
+    // Human-readable day label for audit logs (e.g. "Day 1"). Sessions are ordered
+    // by sortOrder; the title overrides when set.
+    const sessionLabel = session.title?.trim() || "this session";
 
     const hasMedicalCondition = this.evaluateMedicalCondition(student);
 
@@ -228,9 +241,11 @@ export class ScannerService {
       return { status: "success", student: { ...baseStudentInfo, points: newPoints } };
     }
 
-    /* ── Check-in: pre-registered path ─────────────────────────────────────── */
+    /* ── Check-in: session-registered path ──────────────────────────────────── */
+    // The check-in key is the SESSION (day), not the event. A row here means the
+    // student is registered for — or already attended — THIS specific session.
     const record = await db.query.attendance.findFirst({
-      where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, student.id)),
+      where: and(eq(attendance.sessionId, sessionId), eq(attendance.studentId, student.id)),
     });
 
     if (record) {
@@ -258,7 +273,7 @@ export class ScannerService {
             await AuditService.logActionInternal(tx, {
               actorId,
               targetId: student.id,
-              action: `Confirmed check-in for pre-registered event: ${event.title}`,
+              action: `Confirmed check-in for pre-registered event: ${event.title} (${sessionLabel})`,
               ipAddress,
             });
           }
@@ -275,6 +290,55 @@ export class ScannerService {
       return { status: "pending_confirmation", student: studentWithMedical };
     }
 
+    /* ── Check-in: 'once'-mode, first time at THIS session ───────────────────── */
+    // In 'once' mode a student registers once for the whole event and may attend
+    // any/all sessions. With no row for THIS session yet but an event-level
+    // registration, the scan is an attendable check-in — create a fresh attended
+    // row for this session (counted as 'pre-registered', not a walk-in).
+    if (event.registrationMode === "once") {
+      const eventReg = await db.query.attendance.findFirst({
+        where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, student.id)),
+      });
+      if (eventReg) {
+        if (action === "confirm") {
+          const inserted = await db.transaction(async (tx) => {
+            // ON CONFLICT DO NOTHING handles a race where the session row was
+            // created between the findFirst above and this insert.
+            const rows = await tx
+              .insert(attendance)
+              .values({
+                eventId,
+                sessionId,
+                studentId: student.id,
+                scannedBy: actorId,
+                method: "pre-registered",
+                status: "attended",
+                checkInTime: new Date(),
+                medsCheckOption: medsCheckOption || null,
+              })
+              .onConflictDoNothing()
+              .returning({ id: attendance.id });
+
+            if (rows.length > 0) {
+              await AuditService.logActionInternal(tx, {
+                actorId,
+                targetId: student.id,
+                action: `Confirmed check-in for pre-registered event: ${event.title} (${sessionLabel})`,
+                ipAddress,
+              });
+            }
+            return rows;
+          });
+
+          if (inserted.length === 0) {
+            return { status: "already_checked_in", student: baseStudentInfo };
+          }
+          return { status: "success", student: studentWithMedical };
+        }
+        return { status: "pending_confirmation", student: studentWithMedical };
+      }
+    }
+
     /* ── Check-in: walk-in path ─────────────────────────────────────────────── */
     if (!event.walkInsEnabled) {
       return {
@@ -285,58 +349,57 @@ export class ScannerService {
     }
 
     if (action === "confirm") {
+      // Walk-in quota is PER SESSION (walk-ins re-open each day): prefer the
+      // session's own sub-cap, falling back to the event-wide one for legacy events.
+      const sessionWalkIn = session.quotaWalkIn ?? event.quotaWalkIn ?? null;
       try {
         await db.transaction(async (tx) => {
-          if (event.quota !== null || event.quotaWalkIn !== null) {
-            // Lock the event row so concurrent confirms serialize here, then
-            // recount — preventing the quota bypass TOCTOU window.
-            const [lockedEvent] = await tx
-              .select({
-                quota: events.quota,
-                quotaWalkIn: events.quotaWalkIn,
-              })
-              .from(events)
-              .where(eq(events.id, eventId))
+          if (event.quota !== null || sessionWalkIn !== null) {
+            // Lock the SESSION row so concurrent walk-in confirms for the same day
+            // serialize here, then recount within the session — quota is per-day,
+            // closing the TOCTOU window without blocking other sessions.
+            await tx
+              .select({ id: eventSessions.id })
+              .from(eventSessions)
+              .where(eq(eventSessions.id, sessionId))
               .for("update");
 
-            if (lockedEvent?.quota !== null) {
-              // Walk-ins are ADDITIVE capacity on top of the pre-registration quota:
-              // the total room cap is quota + quotaWalkIn (e.g. 400 registered + 20
-              // walk-in = 420 in the room). This lets walk-ins fill estimated extra
-              // space even when all pre-registered seats are taken. The walk-in
-              // sub-limit below still caps how many of those extra slots walk-ins take.
-              // (quotaWalkIn null = no explicit extra capacity → cap stays at quota.)
-              const totalCap = (lockedEvent?.quota ?? 0) + (lockedEvent?.quotaWalkIn ?? 0);
+            if (event.quota !== null) {
+              // Walk-ins are ADDITIVE capacity on top of the per-session seat quota:
+              // the day's room cap is quota + sessionWalkIn. The walk-in sub-limit
+              // below still caps how many of those extra slots walk-ins take.
+              const totalCap = event.quota + (sessionWalkIn ?? 0);
               const [{ n }] = await tx
                 .select({ n: sql<number>`count(*)` })
                 .from(attendance)
-                .where(and(eq(attendance.eventId, eventId), eq(attendance.status, "attended")));
+                .where(and(eq(attendance.sessionId, sessionId), eq(attendance.status, "attended")));
 
               if (Number(n) >= totalCap) throw new QuotaFullError();
             }
 
-            if (lockedEvent?.quotaWalkIn !== null) {
+            if (sessionWalkIn !== null) {
               const [{ nWalkIn }] = await tx
                 .select({ nWalkIn: sql<number>`count(*)` })
                 .from(attendance)
                 .where(
                   and(
-                    eq(attendance.eventId, eventId),
+                    eq(attendance.sessionId, sessionId),
                     eq(attendance.status, "attended"),
                     eq(attendance.method, "walk-in")
                   )
                 );
 
-              if (Number(nWalkIn) >= (lockedEvent?.quotaWalkIn ?? 0)) throw new WalkInQuotaFullError();
+              if (Number(nWalkIn) >= sessionWalkIn) throw new WalkInQuotaFullError();
             }
           }
 
           // ON CONFLICT DO NOTHING handles a race where the student was registered
-          // between the findFirst above and this insert.
+          // for this session between the findFirst above and this insert.
           const inserted = await tx
             .insert(attendance)
             .values({
               eventId,
+              sessionId,
               studentId: student.id,
               scannedBy: actorId,
               method: "walk-in",
@@ -352,7 +415,7 @@ export class ScannerService {
           await AuditService.logActionInternal(tx, {
             actorId,
             targetId: student.id,
-            action: `Recorded walk-in check-in for event: ${event.title}`,
+            action: `Recorded walk-in check-in for event: ${event.title} (${sessionLabel})`,
             ipAddress,
           });
         });

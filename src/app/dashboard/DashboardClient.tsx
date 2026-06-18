@@ -3,7 +3,7 @@
 
 import type { Session } from "next-auth";
 import { useSession, signOut } from "next-auth/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePolling } from "@/lib/usePolling";
 import { useQrToken } from "@/lib/useQrToken";
 import dynamic from "next/dynamic";
@@ -41,7 +41,8 @@ import {
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
-import { NotificationToasts, type NotifItem } from "@/components/NotificationToasts";
+import { NotificationToasts } from "@/components/NotificationToasts";
+import { useNotifications } from "@/lib/useNotifications";
 import { useRouter } from "next/navigation";
 
 // House mascot logos (background removed). Keyed by both the house id (color) and
@@ -428,58 +429,18 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       .then((d) => { setAnnouncement(d && typeof d.body === "string" ? d : null); })
       .catch(() => {});
 
-  // ── Live check-in / score pop-ups ──────────────────────────────────────────
-  // Folded into the same 60s poll below (no extra request cadence, so no added
-  // load): each tick asks for check-ins/scores recorded since our last-seen
-  // marker and shows a toast for anything new. The marker is per-user in
-  // localStorage so a fresh page load doesn't replay history. `seenIds` guards
-  // against showing the same row twice across the overlapping immediate /
-  // on-focus / interval ticks.
-  const [notifToasts, setNotifToasts] = useState<NotifItem[]>([]);
-  const notifSeenRef = useRef<Set<string>>(new Set());
-  const notifSinceKey = session?.user?.id ? `activecamt:notif-seen:${session.user.id}` : null;
-
-  const dismissNotif = useCallback((id: string) => {
-    setNotifToasts((prev) => prev.filter((n) => n.id !== id));
-  }, []);
-
-  const fetchNotifications = (signal?: AbortSignal) => {
-    if (!notifSinceKey) return Promise.resolve();
-    const since = typeof window !== "undefined" ? window.localStorage.getItem(notifSinceKey) : null;
-    const qs = since ? `?since=${encodeURIComponent(since)}` : "";
-    return fetch(`/api/notifications${qs}`, { signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d || !Array.isArray(d.notifications)) return;
-        const fresh: NotifItem[] = [];
-        for (const n of d.notifications) {
-          if (notifSeenRef.current.has(n.id)) continue;
-          notifSeenRef.current.add(n.id);
-          fresh.push({ id: n.id, type: n.type, eventTitle: n.eventTitle, points: n.points });
-        }
-        if (fresh.length > 0) setNotifToasts((prev) => [...prev, ...fresh]);
-        if (typeof d.serverTime === "string" && typeof window !== "undefined") {
-          window.localStorage.setItem(notifSinceKey, d.serverTime);
-        }
-      })
-      .catch(() => {});
-  };
+  // Live check-in / score toasts. The student's primary scan surface is the
+  // Digital ID page (immediate modal); here on the dashboard a gentle toast on
+  // the same 60s cadence catches anything that happened while they were
+  // elsewhere. The shared hook owns the fetch / dedup / last-seen bookkeeping.
+  const { items: notifToasts, dismiss: dismissNotif } = useNotifications(session?.user?.id, 60000);
 
   // Poll events + leaderboard. Slow interval (60s) because this is student-facing
   // across potentially ~1,500 devices — at 20s a single event hour approaches the
   // Vercel free-tier invocation budget. Polling also avoids the Supabase free-tier
   // 200 concurrent-connection cap and pauses while the tab is hidden. Return the
-  // combined promise so the poller awaits all and never stacks requests.
-  usePolling(
-    (signal) =>
-      Promise.all([
-        fetchEvents(signal),
-        fetchHouses(signal),
-        fetchAnnouncement(signal),
-        fetchNotifications(signal),
-      ]),
-    60000,
-  );
+  // combined promise so the poller awaits both and never stacks requests.
+  usePolling((signal) => Promise.all([fetchEvents(signal), fetchHouses(signal), fetchAnnouncement(signal)]), 60000);
 
   const handleRegister = async (eventId: string, registered: boolean) => {
     if (!session?.user) {

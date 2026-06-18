@@ -55,7 +55,7 @@ flowchart TD
     Start["เกิดเหตุการณ์ที่ต้องบันทึก (Action Event)"] --> AcquireLock["ขอ advisory lock (pg_advisory_xact_lock)"]
     AcquireLock --> GetLastRow["ดึงแถวล่าสุด (Order by timestamp DESC Limit 1)"]
     
-    subgraph คำนวณรหัส Chain
+    subgraph "คำนวณรหัส Chain"
         GetLastRow --> ExtractPrevHash["ดึงค่า rowHash ของแถวก่อนหน้ามาเป็น prevHash"]
         ExtractPrevHash --> ConcatFields["รวมฟิลด์: [id, timestamp, actorId, targetId, action, ipAddress, prevHash]"]
         ConcatFields --> CalculateHash["เข้ารหัส SHA-256 ได้ค่า row_hash ใหม่"]

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { CheckCircle2, Zap, X } from "lucide-react";
+import { CheckCircle2, Award, X } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import type { NotifItem } from "@/components/NotificationToasts";
 
@@ -104,7 +104,7 @@ export function NotificationModal({
             color: accent,
           }}
         >
-          {isCheckin ? <CheckCircle2 size={46} strokeWidth={2.5} /> : <Zap size={46} strokeWidth={2.5} />}
+          {isCheckin ? <CheckCircle2 size={46} strokeWidth={2.5} /> : <Award size={46} strokeWidth={2.5} />}
         </div>
 
         <h2 style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.02em", margin: 0 }}>{title}</h2>

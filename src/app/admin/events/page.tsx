@@ -4273,7 +4273,7 @@ export default function AdminEventsPage() {
                     animation: "pulse-glow 2s infinite",
                     flexShrink: 0,
                   }} />
-                  <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em", overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "normal", lineHeight: 1.25, minWidth: 0 }}>
                     {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
                   </h2>
                 </div>

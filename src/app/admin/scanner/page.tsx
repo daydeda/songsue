@@ -114,6 +114,8 @@ export default function QRScannerPage() {
   const [submittingScore, setSubmittingScore] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
+  const dayDropdownRef = useRef<HTMLDivElement>(null);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
@@ -133,11 +135,14 @@ export default function QRScannerPage() {
     };
   }, []);
 
-  // Handle closing custom event selector dropdown on click outside
+  // Handle closing the custom event / day selector dropdowns on click outside
   useEffect(() => {
     function handleClickOutside(event: PointerEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
+      }
+      if (dayDropdownRef.current && !dayDropdownRef.current.contains(event.target as Node)) {
+        setDayDropdownOpen(false);
       }
     }
     document.addEventListener("pointerdown", handleClickOutside);
@@ -826,18 +831,30 @@ export default function QRScannerPage() {
             const sessions = sortedSessions(ev?.sessions);
             if (sessions.length <= 1) return null;
             const dayWord = t.scanDayLabel || "Day";
+            const fmtDate = (iso: string) =>
+              new Date(iso).toLocaleDateString(lang === "th" ? "th-TH" : "en-GB", {
+                timeZone: "Asia/Bangkok",
+                day: "numeric",
+                month: "short",
+              });
+            const labelFor = (s: EventSession, i: number) => s.title?.trim() || `${dayWord} ${i + 1}`;
+            const selectedIdx = sessions.findIndex((s) => s.id === sessionId);
+            const selected = selectedIdx >= 0 ? sessions[selectedIdx] : sessions[0];
             return (
-              <div className="stat-card flex items-center gap-4" style={{ padding: 24 }}>
+              <div
+                className="stat-card flex items-center gap-4"
+                style={{ padding: 24, position: "relative", zIndex: dayDropdownOpen ? 10 : 1 }}
+              >
                 <div style={{ width: 48, height: 48, background: "var(--bg-elevated)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <Calendar size={24} color="var(--accent-primary)" />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, position: "relative" }} ref={dayDropdownRef}>
                   <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>
                     {(t.scanSessionLabel || "Day / Session").toUpperCase()}
                   </label>
-                  <select
-                    value={sessionId}
-                    onChange={(e) => setSessionId(e.target.value)}
+                  <button
+                    type="button"
+                    onClick={() => setDayDropdownOpen(!dayDropdownOpen)}
                     style={{
                       width: "100%",
                       fontSize: 18,
@@ -845,24 +862,93 @@ export default function QRScannerPage() {
                       padding: "4px 0",
                       border: "none",
                       background: "none",
-                      color: "var(--text-primary)",
+                      textAlign: "left",
                       cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      color: "var(--text-primary)",
                     }}
                   >
-                    {sessions.map((s, i) => {
-                      const label = s.title?.trim() || `${dayWord} ${i + 1}`;
-                      const date = new Date(s.startTime).toLocaleDateString(lang === "th" ? "th-TH" : "en-GB", {
-                        timeZone: "Asia/Bangkok",
-                        day: "numeric",
-                        month: "short",
-                      });
-                      return (
-                        <option key={s.id} value={s.id}>
-                          {label} — {date}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    <span style={{ flex: 1, overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "normal" }}>
+                      {selected ? `${labelFor(selected, selectedIdx >= 0 ? selectedIdx : 0)} — ${fmtDate(selected.startTime)}` : ""}
+                    </span>
+                    <ChevronDown
+                      size={18}
+                      style={{
+                        flexShrink: 0,
+                        opacity: 0.6,
+                        transform: dayDropdownOpen ? "rotate(180deg)" : "none",
+                        transition: "transform 0.2s",
+                      }}
+                    />
+                  </button>
+
+                  {dayDropdownOpen && (
+                    <div style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      zIndex: 50,
+                      marginTop: 8,
+                      background: "var(--bg-surface)",
+                      border: "1px solid var(--border-medium)",
+                      borderRadius: "var(--radius-md)",
+                      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                      maxHeight: 240,
+                      overflowY: "auto",
+                      padding: 4,
+                    }}>
+                      {sessions.map((s, i) => {
+                        const isSelected = s.id === sessionId;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSessionId(s.id);
+                              setDayDropdownOpen(false);
+                            }}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "10px 14px",
+                              borderRadius: "var(--radius-sm)",
+                              fontSize: 15,
+                              fontWeight: isSelected ? 700 : 500,
+                              background: isSelected ? "var(--bg-elevated)" : "transparent",
+                              color: isSelected ? "var(--accent-primary)" : "var(--text-primary)",
+                              border: "none",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              transition: "background 0.15s, color 0.15s",
+                              overflowWrap: "break-word",
+                              wordBreak: "break-word",
+                              whiteSpace: "normal",
+                            }}
+                            onMouseEnter={(event) => {
+                              if (event.currentTarget.style.background !== "var(--bg-elevated)") {
+                                event.currentTarget.style.background = "var(--bg-glass)";
+                              }
+                            }}
+                            onMouseLeave={(event) => {
+                              if (event.currentTarget.style.background !== "var(--bg-elevated)") {
+                                event.currentTarget.style.background = "transparent";
+                              }
+                            }}
+                          >
+                            <span style={{ flex: 1 }}>{labelFor(s, i)} — {fmtDate(s.startTime)}</span>
+                            {isSelected && <CheckCircle2 size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             );

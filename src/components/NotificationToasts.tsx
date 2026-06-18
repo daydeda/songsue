@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { CheckCircle2, Zap, X } from "lucide-react";
+import { CheckCircle2, Award, X } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 
 export type NotifItem = {
@@ -108,7 +108,7 @@ function Toast({ item, onDismiss }: { item: NotifItem; onDismiss: (id: string) =
           color: accent,
         }}
       >
-        {isCheckin ? <CheckCircle2 size={20} strokeWidth={2.5} /> : <Zap size={20} strokeWidth={2.5} />}
+        {isCheckin ? <CheckCircle2 size={20} strokeWidth={2.5} /> : <Award size={20} strokeWidth={2.5} />}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: "-0.01em" }}>{title}</div>

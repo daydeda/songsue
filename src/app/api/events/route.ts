@@ -64,14 +64,32 @@ export async function GET() {
     });
     const userMajor = me?.major ?? null;
 
+    // Fetch the user's attendance up front: a student who has an attendance row
+    // for an event must always see it on their dashboard, even if the event's
+    // audience/role/major restrictions would otherwise exclude them. Admins can
+    // manually check in (or walk in) a student to a restricted event via the
+    // scanner — which bypasses every eligibility rule below — so the dashboard
+    // has to honour that same bypass or the check-in silently vanishes here.
+    const userId = session.user.id!;
+    const userAttendances = await db.query.attendance.findMany({
+      where: eq(attendance.studentId, userId),
+      columns: { eventId: true, checkInTime: true, status: true },
+    });
+
+    const attendanceMap = new Map(userAttendances.map((a) => [a.eventId, a.status]));
+
     const eligibleEvents = allEvents.filter((event) => {
+      // Always surface an event the student is registered for / checked into,
+      // regardless of the eligibility rules below.
+      if (attendanceMap.has(event.id)) return true;
+
       const targetThai = event.targetThai ?? true;
       const targetInternational = event.targetInternational ?? true;
-      
+
       // If both targets are unchecked, it means anyone can join (default to both true)
       const effectiveThai = (!targetThai && !targetInternational) ? true : targetThai;
       const effectiveIntl = (!targetThai && !targetInternational) ? true : targetInternational;
-      
+
       if (isThai && !effectiveThai) return false;
       if (isIntl && !effectiveIntl) return false;
 
@@ -92,15 +110,6 @@ export async function GET() {
 
       return true;
     });
-
-    // For each event, check if the current user is registered
-    const userId = session.user.id!;
-    const userAttendances = await db.query.attendance.findMany({
-      where: eq(attendance.studentId, userId),
-      columns: { eventId: true, checkInTime: true, status: true },
-    });
-
-    const attendanceMap = new Map(userAttendances.map((a) => [a.eventId, a.status]));
 
     // Pre-test (K_pre) status per event, so the dashboard can force a student to
     // complete a required pre-test right after registering. We surface the form id

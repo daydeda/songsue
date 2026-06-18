@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attendance } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService } from "@/modules/audit/audit.service";
 
@@ -23,10 +23,18 @@ export async function GET(
     const canViewMedical = myRoles.includes("super_admin") || myRoles.includes("admin");
 
     const { id: eventId } = await params;
+    // Optional ?sessionId= filter narrows the roster to one day of a multi-day event.
+    const sessionIdFilter = new URL(req.url).searchParams.get("sessionId");
 
     const list = await db.query.attendance.findMany({
-      where: eq(attendance.eventId, eventId),
+      where: sessionIdFilter
+        ? and(eq(attendance.eventId, eventId), eq(attendance.sessionId, sessionIdFilter))
+        : eq(attendance.eventId, eventId),
       with: {
+        // Which session (day) this check-in belongs to, for per-day reporting.
+        session: {
+          columns: { id: true, title: true, sortOrder: true, startTime: true, endTime: true },
+        },
         user: {
           columns: {
             id: true,

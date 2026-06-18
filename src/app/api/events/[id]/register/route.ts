@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events, users, forms, formSubmissions } from "@/db/schema";
-import { and, count, eq, inArray, sql } from "drizzle-orm";
+import { attendance, events, users, forms, formSubmissions, eventSessions } from "@/db/schema";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getFormAvailability } from "@/lib/form-access";
 
@@ -126,19 +126,33 @@ export async function POST(
       await db.transaction(async (tx) => {
         await tx.select({ id: events.id }).from(events).where(eq(events.id, eventId)).for("update");
 
-        // Overall quota
+        // Anchor the registration to the event's first session. Single-session
+        // events have exactly one, so this is unchanged. For a multi-day 'once'
+        // event this single registration lets the student attend any day — the
+        // scanner creates the per-day attended rows on check-in.
+        const [firstSession] = await tx
+          .select({ id: eventSessions.id })
+          .from(eventSessions)
+          .where(eq(eventSessions.eventId, eventId))
+          .orderBy(asc(eventSessions.sortOrder), asc(eventSessions.startTime))
+          .limit(1);
+        if (!firstSession) throw new Error(`${QUOTA_FULL}:This event has no sessions yet`);
+
+        // Overall quota. Count DISTINCT students, not attendance rows: a multi-day
+        // 'once' event creates an extra attended row per day for the same person, so
+        // count(*) would inflate the seat count. Quota = number of people holding a seat.
         if (event.quota !== null && event.quota > 0) {
           const [{ value: currentCount }] = await tx
-            .select({ value: count() })
+            .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
             .from(attendance)
             .where(eq(attendance.eventId, eventId));
-          if (currentCount >= event.quota) throw new Error(`${QUOTA_FULL}:Event is full`);
+          if (Number(currentCount) >= event.quota) throw new Error(`${QUOTA_FULL}:Event is full`);
         }
 
         // Cohort quota: Thai students
         if (isThai && event.quotaThai !== null && event.quotaThai > 0) {
           const [{ value: currentThaiCount }] = await tx
-            .select({ value: count() })
+            .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
             .from(attendance)
             .innerJoin(users, eq(attendance.studentId, users.id))
             .where(
@@ -147,13 +161,13 @@ export async function POST(
                 sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) IN ('0', '1', '2', '3', '4')`
               )
             );
-          if (currentThaiCount >= event.quotaThai) throw new Error(`${QUOTA_FULL}:Thai student quota is full`);
+          if (Number(currentThaiCount) >= event.quotaThai) throw new Error(`${QUOTA_FULL}:Thai student quota is full`);
         }
 
         // Cohort quota: International students
         if (isIntl && event.quotaInternational !== null && event.quotaInternational > 0) {
           const [{ value: currentIntlCount }] = await tx
-            .select({ value: count() })
+            .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
             .from(attendance)
             .innerJoin(users, eq(attendance.studentId, users.id))
             .where(
@@ -162,15 +176,18 @@ export async function POST(
                 sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) = '5'`
               )
             );
-          if (currentIntlCount >= event.quotaInternational) throw new Error(`${QUOTA_FULL}:International student quota is full`);
+          if (Number(currentIntlCount) >= event.quotaInternational) throw new Error(`${QUOTA_FULL}:International student quota is full`);
         }
 
         // Register. ON CONFLICT DO NOTHING covers a duplicate-click race against the
-        // (event_id, student_id) unique index; 0 rows back means already registered.
+        // (session_id, student_id) unique index (the old event-level unique was
+        // swapped to a per-session one in migrate step 39); 0 rows back means the
+        // student already holds this session's seat.
         const inserted = await tx
           .insert(attendance)
           .values({
             eventId,
+            sessionId: firstSession.id,
             studentId: userId,
             method: "pre-registered",
             status: "registered",

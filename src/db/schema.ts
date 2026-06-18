@@ -130,6 +130,12 @@ export const events = pgTable("events", {
   imageUrls: jsonb("image_urls").$type<string[]>(),
   walkInsEnabled: boolean("walk_ins_enabled").default(false),
   quotaWalkIn: integer("quota_walk_in"),
+  // Multi-day / multi-session check-in. 'once' = student registers once at the
+  // event level and that registration is attendable at any/all sessions.
+  // 'per_session' = registration + walk-in quota are tracked independently per
+  // session (walk-ins re-open each day). Single-session events use 'once' and
+  // behave exactly as before. See docs/features/multi-day-checkin-implementation.md.
+  registrationMode: text("registration_mode").$type<"once" | "per_session">().notNull().default("once"),
   targetThai: boolean("target_thai").default(true),
   targetInternational: boolean("target_international").default(true),
   quotaThai: integer("quota_thai"),
@@ -152,9 +158,33 @@ export const events = pgTable("events", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
+// A session is one occurrence of an event — typically a day (CAMT LINK Day 1 /
+// Day 2), but could be a morning/afternoon block. "Day N" is just the Nth session
+// ordered by sortOrder (ties by startTime); there is no separate "day" column.
+// Every event has at least one session; a legacy single-day event has exactly one.
+// quotaWalkIn here is the PER-SESSION walk-in sub-cap (walk-ins re-open each day).
+export const eventSessions = pgTable("event_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
+  title: text("title"), // optional label e.g. "Day 1"; null → derive "Day N" in the UI
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  quotaWalkIn: integer("quota_walk_in"), // per-session walk-in sub-cap
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => ([
+  index("idx_event_sessions_event").on(table.eventId),
+  index("idx_event_sessions_event_order").on(table.eventId, table.sortOrder),
+]));
+
 export const attendance = pgTable("attendance", {
   id: uuid("id").defaultRandom().primaryKey(),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
+  // The precise check-in key. eventId is kept denormalized alongside it because
+  // report/export/winner-bonus paths roll up by event; sessionId is always
+  // derived-consistent with eventId on insert.
+  sessionId: uuid("session_id").references(() => eventSessions.id, { onDelete: "cascade" }).notNull(),
   studentId: text("student_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   checkInTime: timestamp("check_in_time", { withTimezone: true }),
   method: text("method"), // 'qr', 'manual', 'walk-in', 'pre-registered'
@@ -162,7 +192,10 @@ export const attendance = pgTable("attendance", {
   scannedBy: text("scanned_by").references(() => users.id, { onDelete: "set null" }),
   medsCheckOption: text("meds_check_option"),
 }, (table) => ([
-  uniqueIndex("idx_attendance_event_student").on(table.eventId, table.studentId),
+  // One row per student per SESSION. For a single-session 'once' event this is
+  // behaviourally identical to the old (event_id, student_id) uniqueness.
+  uniqueIndex("idx_attendance_session_student").on(table.sessionId, table.studentId),
+  index("idx_attendance_event_student").on(table.eventId, table.studentId),
   index("idx_attendance_student").on(table.studentId),
   index("idx_attendance_checkin_time").on(table.checkInTime),
 ]));
@@ -222,14 +255,27 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 }));
 
 export const eventsRelations = relations(events, ({ many }) => ({
+  sessions: many(eventSessions),
   attendances: many(attendance),
   scoreHistory: many(scoreHistory),
+}));
+
+export const eventSessionsRelations = relations(eventSessions, ({ one, many }) => ({
+  event: one(events, {
+    fields: [eventSessions.eventId],
+    references: [events.id],
+  }),
+  attendances: many(attendance),
 }));
 
 export const attendanceRelations = relations(attendance, ({ one }) => ({
   event: one(events, {
     fields: [attendance.eventId],
     references: [events.id],
+  }),
+  session: one(eventSessions, {
+    fields: [attendance.sessionId],
+    references: [eventSessions.id],
   }),
   user: one(users, {
     fields: [attendance.studentId],

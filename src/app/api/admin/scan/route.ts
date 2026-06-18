@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { canGiveIndividualScore } from "@/lib/admin-access";
 import { ScannerService } from "@/modules/events/scanner.service";
+import { EventsService } from "@/modules/events/events.service";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -12,6 +13,9 @@ export const maxDuration = 20;
 const scanSchema = z.object({
   qrToken: z.string(), // Allows fallback IDs as well
   eventId: z.string().uuid(),
+  // Which session (day) the check-in counts for. Optional so legacy clients still
+  // work — when omitted the server resolves the "current" session for the event.
+  sessionId: z.string().uuid().optional(),
   action: z.enum(["scan", "confirm", "score", "lookup"]).default("scan"),
   medsCheckOption: z.string().nullish(),
   // Allow negatives so admins can deduct points (penalties/corrections); 0 is meaningless.
@@ -45,7 +49,17 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { qrToken, eventId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
+    const { qrToken, eventId, sessionId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
+
+    // When the client doesn't pin a session, record the check-in against the
+    // event's "current" day (window containing now → upcoming → most recent).
+    const resolvedSessionId = sessionId ?? (await EventsService.resolveCurrentSessionId(eventId));
+    if (!resolvedSessionId) {
+      return NextResponse.json(
+        { status: "not_found", error: "Event has no sessions configured." },
+        { status: 404 }
+      );
+    }
 
     // Individual scoring is NOT part of the scanner-only president roles: they may
     // check in attendees but must not award/deduct individual points. smo keeps it.
@@ -59,6 +73,7 @@ export async function POST(req: Request) {
     const result = await ScannerService.processScan({
       qrToken,
       eventId,
+      sessionId: resolvedSessionId,
       action,
       medsCheckOption,
       score,

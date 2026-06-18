@@ -42,8 +42,10 @@ yarn-error.log*
 next-env.d.ts
 
 # AI Agent memory and instructions
-.claude/
-# .agents/
+# .claude/ tooling (agents, skills, hooks, shared settings) is tracked so the
+# team shares it. Personal/local files stay ignored:
+.claude/settings.local.json
+#.agents/
 AGENTS.md
 CLAUDE.md
 /scratch/

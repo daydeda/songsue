@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { canEnterAdmin, isScannerOnlyRole, SCANNER_HREF } from "@/lib/admin-access";
+import { canEnterAdmin, isScannerOnlyRole, isScannerOnlyAllowedPath, SCANNER_HREF } from "@/lib/admin-access";
 
 // Next.js 16: "middleware" renamed to "proxy"
 export async function proxy(req: NextRequest) {
@@ -58,13 +58,13 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // SMO is scanner-only: keep it on the scanner. "/admin" itself is allowed because
-  // its page redirects to the scanner; every other /admin/* path is off-limits.
+  // Scanner-only roles (smo, club_president, major_president) are confined to the
+  // scanner plus the events page (attendance-view only — see isScannerOnlyAllowedPath).
+  // Any other /admin/* path bounces back to the scanner.
   if (
     isScannerOnly &&
     pathname.startsWith("/admin") &&
-    pathname !== "/admin" &&
-    pathname !== SCANNER_HREF
+    !isScannerOnlyAllowedPath(pathname)
   ) {
     return NextResponse.redirect(new URL(SCANNER_HREF, req.url));
   }

@@ -405,10 +405,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
   
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
-    red:    { name: t.houseMom || "Mom",   color: "#ef4444" },
-    green:  { name: t.houseTo || "To",      color: "#14b8a6" },
-    yellow: { name: t.houseLuang || "Luang",  color: "#f59e0b" },
-    blue:   { name: t.houseMakara || "Makon", color: "#6366f1" },
+    red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red
+    green:  { name: t.houseTo || "To",      color: "#94a3b8" }, // White → silver/pewter
+    yellow: { name: t.houseLuang || "Luang",  color: "#3b82f6" }, // Blue
+    blue:   { name: t.houseMakara || "Makon", color: "#22c55e" }, // Green
   };
 
   const fetchEvents = (signal?: AbortSignal) =>

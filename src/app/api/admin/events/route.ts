@@ -40,10 +40,19 @@ export async function GET() {
     // Scanner-only roles (smo, club_president, major_president) are included here
     // (read-only list) because the QR Scanner's event picker fetches this endpoint;
     // write handlers (POST/PUT/DELETE) deliberately exclude them.
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
+    const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Event scoping for president roles: club_president / major_president see ONLY
+    // events whose allowedRoles is tagged with their role — untagged/open events are
+    // hidden from them. Staff roles and smo are unscoped (see all). This drives both
+    // the admin events page AND the scanner's event picker, which share this endpoint.
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    const scopeToPresidentTags = !isStaff && presidentTags.length > 0;
 
     // Award runs deliberately do NOT live on this polled read path — they run on
     // their own isolated, advisory-locked endpoints (/api/admin/award-check and
@@ -86,7 +95,13 @@ export async function GET() {
       sessions: sessionsByEvent.get(e.id) ?? [],
     }));
 
-    return NextResponse.json(eventsWithCount);
+    const scoped = scopeToPresidentTags
+      ? eventsWithCount.filter((e) =>
+          (e.allowedRoles ?? []).some((r) => presidentTags.includes(r))
+        )
+      : eventsWithCount;
+
+    return NextResponse.json(scoped);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

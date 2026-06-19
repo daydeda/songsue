@@ -8,11 +8,11 @@ Built using a state-of-the-art technical stack (**Next.js 16 + React 19 + Tailwi
 
 ## 📄 แผนงานเชิงกลยุทธ์และเอกสารเทคนิค (Strategic & Funding Documents)
 
-To help you pitch this project to university deans, other faculties, or academic committees to request funding, we have provided two comprehensive, professionally formatted documents in Thai directly in the root of this repository:
+To help you pitch this project to university deans, other faculties, or academic committees to request funding, we have provided comprehensive, professionally formatted documents:
 
-* **[เอกสารข้อเสนอโครงการเพื่อขอทุนสนับสนุน (Project Funding Proposal) 📄](./project_proposal_th.md)**  
+* **[เอกสารข้อเสนอโครงการเพื่อขอทุนสนับสนุน (Project Funding Proposal) 📄](./docs/wiki/camt-fun/project_proposal_th.md)**  
   *Detailed strategic pitch outlining deans' pain points, the gamification value proposition (House Points system), expected student engagement KPIs, and maximum infrastructure cost-efficiency (~500 - 1,000 Baht/month).*
-* **[เอกสารข้อกำหนดความต้องการทางซอฟต์แวร์ (Software Requirements Specification - SRS) 🛡️](./srs_document_th.md)**  
+* **[เอกสารข้อกำหนดความต้องการทางซอฟต์แวร์ (Software Requirements Specification - SRS) 🛡️](./docs/software/00-srs-th.md)**  
   *Rigorous software engineering specification detailing database schemas, NextAuth session updates, strict validation rules (such as 10-digit phone filtering, 9-digit Student ID, and 5MB image upload checks), encrypted medical data handling, and immutable administrative audit trails.*
 
 ---

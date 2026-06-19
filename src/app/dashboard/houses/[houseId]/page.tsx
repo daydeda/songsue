@@ -3,9 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Users, Trophy, ShieldAlert, Crown } from "lucide-react";
+import { Users, Trophy, ShieldAlert, Crown, MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
+
+// Shared LINE group everyone joins (same group on the rankings page and every
+// house page).
+const LINE_GROUP_URL =
+  "https://line.me/ti/g2/82BVV3y9-l4YuhV5uqFWNMY52Dqg42ZpvYYNFQ?utm_source=invitation&utm_medium=link_copy&utm_campaign=default";
 
 // House mascot logos, keyed by house id (color) and name — mirrors the leaderboard
 // page so the same artwork resolves whichever identifier the API returns.
@@ -22,7 +27,7 @@ type House = { id: string; name: string; color: string; points: number };
 type Member = { id: string; name: string; nickname: string | null; points: number };
 
 export default function HouseMembersPage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { data: session } = useSession();
   const myId = session?.user?.id;
   const params = useParams();
@@ -30,6 +35,7 @@ export default function HouseMembersPage() {
 
   const [house, setHouse] = useState<House | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   // 403 → trying to view a house that isn't yours; anything else → generic failure.
   const [error, setError] = useState<"forbidden" | "other" | null>(null);
@@ -93,8 +99,16 @@ export default function HouseMembersPage() {
   const logo = houseLogo(house.id);
   const maxPoints = Math.max(...members.map((m) => m.points), 1);
 
-  const podium = members.slice(0, 3);
-  const rest = members.slice(3);
+  // Pagination — 50 members per page. The top-3 podium only renders on page 1
+  // (and counts toward that page's 50), so page 1 shows podium + ranks 4–50.
+  const itemsPerPage = 50;
+  const totalPages = Math.max(1, Math.ceil(members.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+
+  const podium = currentPage === 1 ? members.slice(0, 3) : [];
+  // Skip the podium's top 3 on page 1; later pages list their full 50-slice.
+  const listStart = currentPage === 1 ? 3 : startIndex;
+  const rest = members.slice(listStart, startIndex + itemsPerPage);
   // Podium visual order: 2nd, 1st, 3rd (center-tallest), matching the leaderboard.
   const podiumOrder = [podium[1], podium[0], podium[2]];
   const placeClass = ["second-place", "first-place", "third-place"];
@@ -130,6 +144,19 @@ export default function HouseMembersPage() {
             </div>
           </div>
         </header>
+
+        {/* Join LINE group — sits right under the house banner */}
+        <div className="join-line-wrap">
+          <a
+            href={LINE_GROUP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="join-line-btn"
+          >
+            <MessageCircle size={24} />
+            {t.joinLineGroup}
+          </a>
+        </div>
 
         {/* Podium — top 3 members */}
         {podium.length > 0 && (
@@ -169,7 +196,7 @@ export default function HouseMembersPage() {
           <section style={{ marginTop: 8 }}>
             <div className="member-list">
               {rest.map((m, idx) => {
-                const rank = idx + 4;
+                const rank = listStart + idx + 1;
                 const isMe = m.id === myId;
                 return (
                   <div className={`member-row${isMe ? " is-me" : ""}`} key={m.id}>
@@ -192,6 +219,37 @@ export default function HouseMembersPage() {
               })}
             </div>
           </section>
+        )}
+
+        {/* Pagination controls */}
+        {totalPages > 1 && (
+          <div className="pagination">
+            <button
+              className="page-btn"
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <span className="page-indicator">
+              {lang === "th"
+                ? `หน้า ${currentPage} จาก ${totalPages}`
+                : lang === "cn"
+                  ? `第 ${currentPage} / ${totalPages} 页`
+                  : lang === "mm"
+                    ? `စာမျက်နှာ ${currentPage} / ${totalPages}`
+                    : `Page ${currentPage} of ${totalPages}`}
+            </span>
+            <button
+              className="page-btn"
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              aria-label="Next page"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
         )}
 
         {members.length === 0 && <div className="empty-state">{t.noMembersYet}</div>}
@@ -394,6 +452,63 @@ export default function HouseMembersPage() {
           color: var(--text-muted);
           font-size: 15px;
           font-weight: 600;
+        }
+
+        /* Pagination */
+        .pagination {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          margin-top: 28px;
+        }
+        .page-btn {
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
+          border: 1px solid var(--border-subtle);
+          background: var(--bg-surface);
+          color: var(--text-primary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .page-btn:hover:not(:disabled) { border-color: var(--accent-primary); }
+        .page-btn:disabled { opacity: 0.5; cursor: not-allowed; color: var(--text-muted); }
+        .page-indicator {
+          font-size: 15px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        /* Join LINE group button — large CTA directly under the house banner */
+        .join-line-wrap {
+          display: flex;
+          justify-content: center;
+          margin: -16px 0 36px;
+        }
+        .join-line-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          width: 100%;
+          max-width: 480px;
+          padding: 20px 36px;
+          border-radius: 20px;
+          background: #06c755;
+          color: #fff;
+          font-size: 18px;
+          font-weight: 900;
+          text-decoration: none;
+          box-shadow: 0 12px 32px rgba(6,199,85,0.32);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .join-line-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 18px 40px rgba(6,199,85,0.4);
         }
 
         @media (max-width: 640px) {

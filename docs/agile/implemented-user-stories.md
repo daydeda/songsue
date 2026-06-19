@@ -199,6 +199,17 @@
 
 ---
 
+### IMP-QR-08 — Custom Day Selector for Scanner
+| | |
+|:---|:---|
+| **Actor** | SMO, Club/Major President, Registration, Organizer, Admin |
+| **Action** | เลือกวันของกิจกรรมจาก Custom Dropdown แทนตัวเลือก native ของบราวเซอร์ |
+| **Benefit** | UI สวยงามกลมกลืนกับระบบ และลดข้อผิดพลาดในการเลือกวันสแกนเช็คอิน |
+| **Technical** | Custom Dropdown UI (button + chevron + popover + checkmark) แสดงคำว่า "Day N — <Date>" และมี Click-outside handler สำหรับปิด |
+| **Implementation** | PR #53, `/app/admin/scanner/page.tsx` |
+
+---
+
 ## 3. Event Management
 
 ### IMP-EVT-01 — Event CRUD (Create/Edit/Delete)
@@ -294,6 +305,17 @@
 | **Action** | เห็นประวัติเช็คอินแบบ manual/walk-in บน dashboard รวมถึงกิจกรรม restricted |
 | **Benefit** | แสดงประวัติเช็คอินครบถ้วน |
 | **Implementation** | PR #45 |
+
+---
+
+### IMP-EVT-10 — Multi-Day & Multi-Session Event Check-In
+| | |
+|:---|:---|
+| **Actor** | นักศึกษา, Admin |
+| **Action** | ลงทะเบียนและเช็คอินกิจกรรมแยกตามแต่ละวัน/รอบได้ (เช่น กิจกรรม 2 วันอย่าง CAMT LINK) |
+| **Benefit** | บันทึกประวัติและตรวจสอบการเข้าร่วมกิจกรรมแบบหลายวันได้แม่นยำ ไม่รวมคะแนนซ้ำซ้อน |
+| **Technical** | ตาราง `event_sessions` สำหรับเก็บหลายเซสชันของกิจกรรม; สลับ Unique Constraint จาก `(event_id, student_id)` → `(session_id, student_id)` เพื่อรองรับการเช็คอินแยกวัน; โหมดการลงทะเบียนแบบ 'once' (ลงทะเบียนครั้งเดียวเช็คอินได้ทุกเซสชัน) |
+| **Implementation** | PR #52, `/api/admin/events/route.ts`, `/api/events/[id]/register/route.ts` |
 
 ---
 
@@ -478,6 +500,28 @@
 | **Actor** | นักศึกษา, Admin |
 | **Action** | ดูรายชื่อสมาชิกทุกคนในบ้าน |
 | **Implementation** | `/api/houses/[houseId]/members/route.ts`, PR #13 |
+
+---
+
+### IMP-HOUSE-07 — Leaderboard LINE CTA & Member Pagination
+| | |
+|:---|:---|
+| **Actor** | นักศึกษา |
+| **Action** | กดเข้าร่วมกลุ่ม LINE ของบ้านผ่านปุ่ม CTA และดูรายชื่อสมาชิกบ้านแบบแบ่งหน้าละ 50 คน |
+| **Benefit** | เพิ่มการมีส่วนร่วมในบ้าน และลดภาระการโหลดข้อมูลสมาชิกจำนวนมากลงหน้าเดียว |
+| **Technical** | LINE group invite button บน leaderboard และหน้าสมาชิก; client-side pagination (50 items/page) โดยคง Top-3 Podium บนหน้าแรก; i18n keys สำหรับ 4 ภาษา |
+| **Implementation** | PR #54, `/app/dashboard/houses/[houseId]/page.tsx` |
+
+---
+
+### IMP-HOUSE-08 — House Recoloring & Mascot Assets
+| | |
+|:---|:---|
+| **Actor** | ระบบ (Database) |
+| **Action** | อัปเดตเฉดสีประจำบ้านให้ดูสวยงามทันสมัย พร้อมมาสคอตใหม่ |
+| **Benefit** | ปรับภาพลักษณ์บ้านให้พรีเมียมขึ้น: แดง (Mom), เงิน/เทาอมฟ้า (To), น้ำเงิน (Luang), เขียว (Makon) |
+| **Technical** | `scripts/recolor-houses.mjs` สคริปต์อัปเดตสีบ้านใน DB แบบ idempotent; อัปเดต CSS variables และชุดสีคงที่; เปลี่ยนไฟล์ mascot PNGs ใหม่ทั้งหมด |
+| **Implementation** | PR #55, `scripts/recolor-houses.mjs`, `globals.css` |
 
 ---
 
@@ -784,6 +828,17 @@
 
 ---
 
+### IMP-RBAC-07 — Read-Only Attendance Access for Scanner Roles
+| | |
+|:---|:---|
+| **Actor** | SMO, Club/Major President |
+| **Action** | เข้าดูรายชื่อและประวัติการเข้าร่วมกิจกรรมได้ (Read-Only) ผ่านหน้าแอดมิน เพื่อความสะดวกในการดูแลกิจกรรม |
+| **Benefit** | ตรวจสอบการเข้าร่วมกิจกรรมได้สะดวกรวดเร็ว แต่รักษาความปลอดภัย PDPA ของข้อมูลนักศึกษา |
+| **Technical** | ปรับปรุง `admin-access.ts` และ `proxy.ts` ให้เข้าถึงเฉพาะหน้า `/admin/events` (แบบสิทธิ์ดูเท่านั้น) และจำกัด API ดึงข้อมูล Rosters โดยคัดกรองเบอร์โทรศัพท์, ข้อมูลการแพทย์ และข้อมูลผู้ติดต่อฉุกเฉินออกฝั่งเซิร์ฟเวอร์ |
+| **Implementation** | PR #56, `src/lib/admin-access.ts`, `/api/admin/events/[id]/attendance/route.ts` |
+
+---
+
 ## 12. Background Tasks (Cron Jobs)
 
 ### IMP-CRON-01 — Award Points Cron Job
@@ -815,6 +870,7 @@
 | QR Scanner (check-in) | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Individual Score Award | — | ✓ | — | ✓ | ✓ | ✓ | ✓ |
 | Register Events | ✓ | — | — | — | — | — | — |
+| View Event Attendance (Read-Only) | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Create/Edit Events | — | — | — | ✓ | ✓ | ✓ | ✓ |
 | Fill Forms | ✓ | — | — | — | — | — | — |
 | Create Forms | — | — | — | — | ✓ | ✓ | ✓ |

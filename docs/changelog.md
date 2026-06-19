@@ -13,6 +13,7 @@
 | 2026-06-18 | v1.6 | ย้ายเอกสารถอดบทเรียนระบบ Google OAuth ไปจัดเก็บใน docs/wiki/auth/google-oauth.md และเชื่อมโยงสารบัญหลัก | Antigravity AI |
 | 2026-06-18 | v1.8 | สร้างไฟล์ implemented-user-stories.md (reverse engineered จาก source code) รวบรวม 80+ implemented features ครอบคลุม Auth, QR Check-In, Events, Forms, Leaderboard, Shop, PDPA, Audit Log, Live Notifications, RBAC และ Cron Jobs พร้อม Role Matrix | Antigravity AI |
 | 2026-06-18 | v1.7 | อัปเดตแผนงานและ changelog ให้สอดคล้องกับ features ที่ ship ไปหลัง Sprint 3 จบ (PR #33–51): major-based registration limit, Club/Major President scanner roles, scanner score deduction, pre-test gate & reset, form file upload (image/PDF) + GC sweep, staff onboarding bypass, live check-in/score notifications, Digital ID modal, QR dark-mode fix | Antigravity AI |
+| 2026-06-19 | v1.9 | อัปเดตความคืบหน้าการพัฒนาจาก Git Logs (PR #52–56): ระบบเช็คอินหลายวัน (Multi-day check-in), Custom Day selector ของสแกนเนอร์, เพิ่มปุ่ม LINE CTA และแบ่งหน้าสมาชิกบ้านทีละ 50 คน, ปรับปรุงสีประจำบ้านและรูปมาสคอตใหม่ทั้งหมด, และจำกัดสิทธิ์ SMO/ประธาน ในการเปิดดูเฉพาะรายชื่อผู้เข้าร่วมแบบสิทธิ์ดูอย่างเดียว (PDPA-safe Roster) | Antigravity AI |
 
 ---
 *จัดทำขึ้นโดยระบบจัดการเอกสารการพัฒนา ActiveCAMT*

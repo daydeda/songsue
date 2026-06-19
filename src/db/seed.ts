@@ -11,10 +11,10 @@ import { eq } from "drizzle-orm";
 import { assertDestructiveAllowed } from "./guard";
 
 const HOUSES = [
-  { id: "red",    name: "Mom",   color: "#ef4444" },
-  { id: "green",  name: "To",      color: "#14b8a6" },
-  { id: "yellow", name: "Luang",  color: "#f59e0b" },
-  { id: "blue",   name: "Makon", color: "#6366f1" },
+  { id: "red",    name: "Mom",   color: "#ef4444" }, // Red
+  { id: "green",  name: "To",      color: "#94a3b8" }, // White → silver/pewter (stays visible on the light theme)
+  { id: "yellow", name: "Luang",  color: "#3b82f6" }, // Blue
+  { id: "blue",   name: "Makon", color: "#22c55e" }, // Green
 ];
 
 const SUPER_ADMINS = [

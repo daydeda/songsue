@@ -100,13 +100,21 @@ export async function checkAndAwardPastEventPoints() {
           continue;
         }
 
-        // Count attendees grouped by house.
+        // Count attendees grouped by house. The event-winner bonus is AGGREGATE
+        // across sessions: a student who attends multiple days of a multi-day event
+        // counts ONCE for their house (COUNT(DISTINCT student) per house), so the
+        // bonus reflects distinct people, not raw check-in rows. For single-session
+        // events this is identical to before. (Per-day winner scoring is a parked
+        // decision — see docs/features/multi-day-points-policy.md.)
         const houseCounts: Record<string, { count: number; name: string; color: string }> = {};
         const houseMap = new Map(dbHouses.map((h) => [h.id, h]));
+        const countedStudents = new Set<string>();
 
         for (const att of attendees) {
           const houseId = att.user?.houseId;
           if (!houseId) continue;
+          if (countedStudents.has(att.studentId)) continue; // already counted on another day
+          countedStudents.add(att.studentId);
           const houseObj = houseMap.get(houseId);
           if (!houseObj) continue;
           if (!houseCounts[houseId]) {

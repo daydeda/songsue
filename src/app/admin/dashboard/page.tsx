@@ -28,10 +28,10 @@ type DashboardStats = {
 };
 
 const HOUSE_GRADIENT: Record<string, string> = {
-  red: "linear-gradient(135deg, #ef4444, #b91c1c)",
-  green: "linear-gradient(135deg, #14b8a6, #0f766e)",
-  yellow: "linear-gradient(135deg, #f59e0b, #b45309)",
-  blue: "linear-gradient(135deg, #6366f1, #4338ca)",
+  red: "linear-gradient(135deg, #ef4444, #b91c1c)", // Red (Mom)
+  green: "linear-gradient(135deg, #94a3b8, #64748b)", // White → silver/pewter (To)
+  yellow: "linear-gradient(135deg, #3b82f6, #1d4ed8)", // Blue (Luang)
+  blue: "linear-gradient(135deg, #22c55e, #15803d)", // Green (Makon)
 };
 
 export default function AdminDashboardOverview() {

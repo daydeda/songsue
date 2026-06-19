@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attendance } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService } from "@/modules/audit/audit.service";
 
@@ -12,8 +12,12 @@ export async function GET(
   try {
     const session = await auth();
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
-    if (!session?.user || !isAdminRole) {
+    // Staff roles get the full/standard roster. Scanner-only student-leader roles
+    // (smo, club_president, major_president) may also view attendance, but get a
+    // THIN roster only (see isThinRoster below).
+    const isStaffRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const isThinRosterRole = myRoles.some((r) => ["smo", "club_president", "major_president"].includes(r));
+    if (!session?.user || (!isStaffRole && !isThinRosterRole)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -21,12 +25,24 @@ export async function GET(
     // super_admin/admin (mirrors canExportAttendance on the admin events page).
     // registration/organizer get the roster without health info.
     const canViewMedical = myRoles.includes("super_admin") || myRoles.includes("admin");
+    // Thin roster: scanner-only student-leader roles see basic identity + check-in
+    // only — NO phone, emergency contacts, or medical signal. Any staff role
+    // overrides this (a user holding both staff + a leader role gets the full view).
+    const isThinRoster = !isStaffRole;
 
     const { id: eventId } = await params;
+    // Optional ?sessionId= filter narrows the roster to one day of a multi-day event.
+    const sessionIdFilter = new URL(req.url).searchParams.get("sessionId");
 
     const list = await db.query.attendance.findMany({
-      where: eq(attendance.eventId, eventId),
+      where: sessionIdFilter
+        ? and(eq(attendance.eventId, eventId), eq(attendance.sessionId, sessionIdFilter))
+        : eq(attendance.eventId, eventId),
       with: {
+        // Which session (day) this check-in belongs to, for per-day reporting.
+        session: {
+          columns: { id: true, title: true, sortOrder: true, startTime: true, endTime: true },
+        },
         user: {
           columns: {
             id: true,
@@ -94,6 +110,21 @@ export async function GET(
       const hasMedicalInfo = medicalCategories.length > 0;
       if (canViewMedical) {
         return { ...row, user: u ? { ...u, hasMedicalInfo } : u };
+      }
+      // Scanner-only student-leader roles: identity + check-in only. Strip phone,
+      // emergency contacts, and the medical signal (no hasMedicalInfo/categories).
+      if (isThinRoster) {
+        const thinUser = u && {
+          id: u.id,
+          name: u.name,
+          nickname: u.nickname,
+          studentId: u.studentId,
+          major: u.major,
+          role: u.role,
+          roles: u.roles,
+          house: u.house,
+        };
+        return { ...row, medsCheckOption: null, user: thinUser };
       }
       const safeUser = u && {
         id: u.id,

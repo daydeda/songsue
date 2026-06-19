@@ -54,7 +54,37 @@ type ScanResult = {
   rawToken?: string;
 };
 
-type Event = { id: string; title: string };
+type EventSession = {
+  id: string;
+  title: string | null;
+  startTime: string;
+  endTime: string;
+  sortOrder: number;
+};
+type Event = { id: string; title: string; sessions?: EventSession[] };
+
+// Sessions sorted into display order ("Day 1", "Day 2", …).
+function sortedSessions(sessions?: EventSession[]): EventSession[] {
+  return [...(sessions ?? [])].sort(
+    (a, b) => a.sortOrder - b.sortOrder || new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+  );
+}
+
+// Mirrors the server's resolveCurrentSessionId: the session whose window contains
+// now → the nearest upcoming → the most recent past. Keeps the default day in sync
+// with what the server would pick when sessionId is omitted.
+function pickCurrentSessionId(sessions?: EventSession[]): string {
+  const sorted = sortedSessions(sessions);
+  if (sorted.length === 0) return "";
+  const now = Date.now();
+  const current = sorted.find(
+    (s) => new Date(s.startTime).getTime() <= now && now <= new Date(s.endTime).getTime()
+  );
+  if (current) return current.id;
+  const upcoming = sorted.find((s) => new Date(s.startTime).getTime() > now);
+  if (upcoming) return upcoming.id;
+  return sorted[sorted.length - 1].id;
+}
 
 export default function QRScannerPage() {
   const { t, lang } = useLanguage();
@@ -64,6 +94,8 @@ export default function QRScannerPage() {
   const canScore = canGiveIndividualScore(session?.user?.role);
   const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState<string>("");
+  // Which session (day) check-ins are recorded against. Defaults to "today".
+  const [sessionId, setSessionId] = useState<string>("");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -82,10 +114,15 @@ export default function QRScannerPage() {
   const [submittingScore, setSubmittingScore] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
+  const dayDropdownRef = useRef<HTMLDivElement>(null);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
   const eventIdRef = useRef<string>("");
+  // The camera decode callback is registered once; mirror sessionId into a ref so
+  // it never sends a scan against a stale day after the staff switches sessions.
+  const sessionIdRef = useRef<string>("");
   const scanModeRef = useRef<"checkin" | "score">("checkin");
   const isMountedRef = useRef(true);
   const scanSessionIdRef = useRef(0);
@@ -98,11 +135,14 @@ export default function QRScannerPage() {
     };
   }, []);
 
-  // Handle closing custom event selector dropdown on click outside
+  // Handle closing the custom event / day selector dropdowns on click outside
   useEffect(() => {
     function handleClickOutside(event: PointerEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
+      }
+      if (dayDropdownRef.current && !dayDropdownRef.current.contains(event.target as Node)) {
+        setDayDropdownOpen(false);
       }
     }
     document.addEventListener("pointerdown", handleClickOutside);
@@ -115,6 +155,10 @@ export default function QRScannerPage() {
   useEffect(() => {
     eventIdRef.current = eventId;
   }, [eventId]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   // Keep scan mode in a ref: the camera's decode callback is registered once and
   // would otherwise capture a stale mode, sending check-in scans while in score mode.
@@ -140,6 +184,8 @@ export default function QRScannerPage() {
             setEvents(d);
             if (d.length > 0) {
               setEventId(d[0].id);
+              // Default to today's session for the first event.
+              setSessionId(pickCurrentSessionId(d[0].sessions));
             }
           } else {
             throw new Error("Invalid events list format received");
@@ -215,6 +261,7 @@ export default function QRScannerPage() {
               body: JSON.stringify({
                 qrToken: decodedText,
                 eventId: eventIdRef.current,
+                sessionId: sessionIdRef.current || undefined,
                 // Score mode just looks the student up (no check-in side effect);
                 // check-in mode runs the real scan.
                 action: scanModeRef.current === "score" ? "lookup" : "scan",
@@ -347,9 +394,10 @@ export default function QRScannerPage() {
       const res = await fetch("/api/admin/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          qrToken: token, 
-          eventId, 
+        body: JSON.stringify({
+          qrToken: token,
+          eventId,
+          sessionId: sessionId || undefined,
           action: "confirm",
           medsCheckOption: medsCheckOption || null,
         }),
@@ -446,7 +494,7 @@ export default function QRScannerPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // In score mode, only resolve the student (no check-in side effect).
-        body: JSON.stringify({ qrToken, eventId, action: scanMode === "score" ? "lookup" : "scan" }),
+        body: JSON.stringify({ qrToken, eventId, sessionId: sessionId || undefined, action: scanMode === "score" ? "lookup" : "scan" }),
       });
       const data = await res.json();
       if (isMountedRef.current) {
@@ -719,6 +767,7 @@ export default function QRScannerPage() {
                           type="button"
                           onClick={() => {
                             setEventId(e.id);
+                            setSessionId(pickCurrentSessionId(e.sessions));
                             setDropdownOpen(false);
                           }}
                           style={{
@@ -775,6 +824,135 @@ export default function QRScannerPage() {
               </a>
             )}
           </div>
+
+          {/* Session (Day) Selector — only shown for multi-session events */}
+          {(() => {
+            const ev = events.find((e) => e.id === eventId);
+            const sessions = sortedSessions(ev?.sessions);
+            if (sessions.length <= 1) return null;
+            const dayWord = t.scanDayLabel || "Day";
+            const fmtDate = (iso: string) =>
+              new Date(iso).toLocaleDateString(lang === "th" ? "th-TH" : "en-GB", {
+                timeZone: "Asia/Bangkok",
+                day: "numeric",
+                month: "short",
+              });
+            const labelFor = (s: EventSession, i: number) => s.title?.trim() || `${dayWord} ${i + 1}`;
+            const selectedIdx = sessions.findIndex((s) => s.id === sessionId);
+            const selected = selectedIdx >= 0 ? sessions[selectedIdx] : sessions[0];
+            return (
+              <div
+                className="stat-card flex items-center gap-4"
+                style={{ padding: 24, position: "relative", zIndex: dayDropdownOpen ? 10 : 1 }}
+              >
+                <div style={{ width: 48, height: 48, background: "var(--bg-elevated)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Calendar size={24} color="var(--accent-primary)" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0, position: "relative" }} ref={dayDropdownRef}>
+                  <label className="label" style={{ marginBottom: 4, display: "block", fontSize: 12, color: "var(--text-muted)" }}>
+                    {(t.scanSessionLabel || "Day / Session").toUpperCase()}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setDayDropdownOpen(!dayDropdownOpen)}
+                    style={{
+                      width: "100%",
+                      fontSize: 18,
+                      fontWeight: 700,
+                      padding: "4px 0",
+                      border: "none",
+                      background: "none",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    <span style={{ flex: 1, overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "normal" }}>
+                      {selected ? `${labelFor(selected, selectedIdx >= 0 ? selectedIdx : 0)} — ${fmtDate(selected.startTime)}` : ""}
+                    </span>
+                    <ChevronDown
+                      size={18}
+                      style={{
+                        flexShrink: 0,
+                        opacity: 0.6,
+                        transform: dayDropdownOpen ? "rotate(180deg)" : "none",
+                        transition: "transform 0.2s",
+                      }}
+                    />
+                  </button>
+
+                  {dayDropdownOpen && (
+                    <div style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      zIndex: 50,
+                      marginTop: 8,
+                      background: "var(--bg-surface)",
+                      border: "1px solid var(--border-medium)",
+                      borderRadius: "var(--radius-md)",
+                      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                      maxHeight: 240,
+                      overflowY: "auto",
+                      padding: 4,
+                    }}>
+                      {sessions.map((s, i) => {
+                        const isSelected = s.id === sessionId;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSessionId(s.id);
+                              setDayDropdownOpen(false);
+                            }}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "10px 14px",
+                              borderRadius: "var(--radius-sm)",
+                              fontSize: 15,
+                              fontWeight: isSelected ? 700 : 500,
+                              background: isSelected ? "var(--bg-elevated)" : "transparent",
+                              color: isSelected ? "var(--accent-primary)" : "var(--text-primary)",
+                              border: "none",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              transition: "background 0.15s, color 0.15s",
+                              overflowWrap: "break-word",
+                              wordBreak: "break-word",
+                              whiteSpace: "normal",
+                            }}
+                            onMouseEnter={(event) => {
+                              if (event.currentTarget.style.background !== "var(--bg-elevated)") {
+                                event.currentTarget.style.background = "var(--bg-glass)";
+                              }
+                            }}
+                            onMouseLeave={(event) => {
+                              if (event.currentTarget.style.background !== "var(--bg-elevated)") {
+                                event.currentTarget.style.background = "transparent";
+                              }
+                            }}
+                          >
+                            <span style={{ flex: 1 }}>{labelFor(s, i)} — {fmtDate(s.startTime)}</span>
+                            {isSelected && <CheckCircle2 size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* QR Camera Box */}
           <div

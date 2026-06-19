@@ -542,6 +542,98 @@ async function migrate() {
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS allowed_majors jsonb`;
   console.log("  ✅ events.allowed_majors");
 
+  // 34. Multi-day / multi-session check-in. A session = one occurrence of an event
+  // (a day). Every event gets ≥1 session; attendance keys on the session, not the
+  // event. Single-session events behave exactly as before. NON-DESTRUCTIVE and
+  // idempotent throughout: create table, add nullable column, backfill, then
+  // tighten the unique constraint and NOT NULL last. See
+  // docs/features/multi-day-checkin-implementation.md.
+  await sql`
+    CREATE TABLE IF NOT EXISTS event_sessions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      title text,
+      start_time timestamptz NOT NULL,
+      end_time timestamptz NOT NULL,
+      sort_order integer NOT NULL DEFAULT 0,
+      quota_walk_in integer,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_event_sessions_event ON event_sessions (event_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_event_sessions_event_order ON event_sessions (event_id, sort_order)`;
+  console.log("  ✅ event_sessions table");
+
+  // 35. registration_mode on events ('once' | 'per_session'). Default 'once' so
+  // every existing event is backward-compatible with zero behaviour change.
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS registration_mode text NOT NULL DEFAULT 'once'
+  `;
+  console.log("  ✅ events.registration_mode");
+
+  // 36. Add attendance.session_id NULLABLE first, so existing rows stay legal
+  // until backfilled below.
+  await sql`
+    ALTER TABLE attendance
+    ADD COLUMN IF NOT EXISTS session_id uuid REFERENCES event_sessions(id) ON DELETE CASCADE
+  `;
+  console.log("  ✅ attendance.session_id (nullable, pre-backfill)");
+
+  // 37. Backfill one default session per event that has none. Copies the event's
+  // own start/end + walk-in quota so a legacy single-day event becomes a 1-session
+  // event identical to before. Idempotent via NOT EXISTS.
+  await sql`
+    INSERT INTO event_sessions (event_id, title, start_time, end_time, sort_order, quota_walk_in)
+    SELECT e.id, NULL, e.start_time, e.end_time, 0, e.quota_walk_in
+    FROM events e
+    WHERE NOT EXISTS (SELECT 1 FROM event_sessions s WHERE s.event_id = e.id)
+  `;
+  console.log("  ✅ backfilled one default session per event");
+
+  // 38. Backfill attendance.session_id from each event's earliest session, only
+  // where NULL. After this every attendance row points at a session.
+  await sql`
+    UPDATE attendance a
+    SET session_id = (
+      SELECT s.id FROM event_sessions s
+      WHERE s.event_id = a.event_id
+      ORDER BY s.sort_order, s.start_time
+      LIMIT 1
+    )
+    WHERE a.session_id IS NULL
+  `;
+  console.log("  ✅ backfilled attendance.session_id");
+
+  // 39. Swap the uniqueness guard from (event_id, student_id) to
+  // (session_id, student_id). ADD-NEW-BEFORE-DROP-OLD so there is never a window
+  // without a duplicate-scan guard. Collision-safe: one event maps to exactly one
+  // default session during backfill (step 37/38), so no (session_id, student_id)
+  // pair can already be duplicated that wasn't already blocked by the old
+  // (event_id, student_id) constraint. The old object is kept as a plain
+  // non-unique index for the report/winner roll-ups that still query by event.
+  try {
+    await sql`
+      ALTER TABLE attendance
+      ADD CONSTRAINT attendance_session_student_unique UNIQUE (session_id, student_id)
+    `;
+    console.log("  ✅ attendance unique constraint on (session_id, student_id)");
+  } catch {
+    console.log("  ⚠️  attendance_session_student_unique already exists, skipping");
+  }
+  await sql`ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_event_student_unique`;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_attendance_event_student
+    ON attendance (event_id, student_id)
+  `;
+  console.log("  ✅ replaced (event_id, student_id) unique with non-unique index");
+
+  // 40. Enforce NOT NULL last, only after backfill + swap. If step 38 missed any
+  // row this fails loudly BEFORE an event rather than mid-scan.
+  await sql`ALTER TABLE attendance ALTER COLUMN session_id SET NOT NULL`;
+  console.log("  ✅ attendance.session_id set NOT NULL");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -43,10 +43,36 @@ interface AdminEvent {
   quotaInternational: number | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
+  registrationMode?: "once" | "per_session";
+  sessions?: EventSession[];
   attendeeCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }
+
+// A check-in day / session within an event. Returned by GET /api/admin/events
+// and reconciled by id on PUT (existing updated, new inserted, missing deleted
+// unless they have attendance). See backend contract in CLAUDE.md.
+interface EventSession {
+  id: string;
+  title: string | null;
+  startTime: string;
+  endTime: string;
+  sortOrder: number;
+  quotaWalkIn: number | null;
+}
+
+// Editable session row held in form state. `id` is present only for sessions
+// that already exist server-side (so PUT updates rather than recreates them);
+// new rows omit it. start/end are datetime-local strings, converted to ISO on
+// submit (same pattern as the event's own start/end).
+type SessionRow = {
+  id?: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  quotaWalkIn: number | null;
+};
 
 interface EmergencyContact {
   name: string;
@@ -94,6 +120,10 @@ interface AdminAttendance {
   status: string;
   scannedBy: string | null;
   medsCheckOption: string | null;
+  // Which day/session this row belongs to — present for multi-day events so the
+  // roster can be filtered/exported per day (the same person attending Day 1 and
+  // Day 2 yields two rows that differ only by this).
+  session?: { id: string; title: string | null; sortOrder: number } | null;
   user?: AdminStudent;
 }
 
@@ -271,10 +301,25 @@ export default function AdminEventsPage() {
   // contact data — are restricted to super_admin/admin only.
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
+  // Scanner-only roles (smo, club_president, major_president) reach this page to
+  // VIEW attendance only — no create/edit/delete/feedback controls. Mirrors the
+  // thin-roster gate in api/admin/events/[id]/attendance (a user with any staff
+  // role gets the full page). Students never reach here (proxy blocks them).
+  const isAttendanceOnly = !myRoles.some((r) =>
+    ["super_admin", "admin", "registration", "organizer"].includes(r)
+  );
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
+  // Multi-day / multi-session support. registrationMode is intentionally NOT
+  // pre-selected (null) — a plain single-day event needs no choice. Picking
+  // "once" (register once, attend any/all days) or "per_session" (each day
+  // independent) reveals the Days/Sessions editor. When left null on submit we
+  // send "once" and the sole seeded session (mirrored to the main start/end).
+  // `sessions` always carries at least one row (the create/edit handlers seed it).
+  const [registrationMode, setRegistrationMode] = useState<"once" | "per_session" | null>(null);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -293,6 +338,9 @@ export default function AdminEventsPage() {
   const [filterStudentsOnly, setFilterStudentsOnly] = useState(false);
   const [filterThai, setFilterThai] = useState(true);
   const [filterInternational, setFilterInternational] = useState(true);
+  // Per-day (session) filter for multi-day events. null = all days. Only shown
+  // when the active event has more than one session.
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
   // Custom Form Builder states
   const [showFormBuilder, setShowFormBuilder] = useState(false);
@@ -989,6 +1037,33 @@ export default function AdminEventsPage() {
 
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 
+  // ---- Sessions / days editor helpers ----
+  const updateSessionRow = (idx: number, patch: Partial<SessionRow>) => {
+    setSessions((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  };
+  const addSessionRow = () => {
+    setSessions((prev) => {
+      // Seed a new row two hours after the previous row's end (or empty if none).
+      const last = prev[prev.length - 1];
+      let startTime = "";
+      let endTime = "";
+      if (last?.endTime) {
+        const d = new Date(last.endTime);
+        if (!isNaN(d.getTime())) {
+          const offset = d.getTimezoneOffset() * 60000;
+          startTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+          d.setHours(d.getHours() + 2);
+          endTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+        }
+      }
+      return [...prev, { title: "", startTime, endTime, quotaWalkIn: null }];
+    });
+  };
+  const removeSessionRow = (idx: number) => {
+    // Never leave the event with zero sessions.
+    setSessions((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  };
+
   const lastInjectedRange = useRef<{ start: number, end: number } | null>(null);
 
   const injectMarkup = (prefix: string, suffix: string) => {
@@ -1213,12 +1288,27 @@ export default function AdminEventsPage() {
           endTime: new Date(formData.endTime).toISOString(),
           registrationOpenTime: formData.registrationOpenTime ? new Date(formData.registrationOpenTime).toISOString() : null,
           registrationCloseTime: formData.registrationCloseTime ? new Date(formData.registrationCloseTime).toISOString() : null,
+          registrationMode: registrationMode ?? "once",
+          // Send the full desired list of sessions. Existing rows carry their id
+          // (PUT updates them); new rows omit it (inserted). Drop rows with no
+          // valid start/end so the API's z.string().datetime() validation passes.
+          sessions: sessions
+            .filter((s) => s.startTime && s.endTime)
+            .map((s) => ({
+              ...(s.id ? { id: s.id } : {}),
+              title: s.title.trim() || null,
+              startTime: new Date(s.startTime).toISOString(),
+              endTime: new Date(s.endTime).toISOString(),
+              quotaWalkIn: s.quotaWalkIn,
+            })),
         }),
       });
 
       if (res.ok) {
         setShowForm(false);
         setFormData(EMPTY_FORM);
+        setRegistrationMode(null);
+        setSessions([]);
         setEditingId(null);
         fetchEvents();
       } else {
@@ -1311,6 +1401,26 @@ export default function AdminEventsPage() {
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || []
     });
+    // Only pre-select a mode (which reveals the Days editor) when the event is
+    // genuinely multi-day or per-session. A plain single-session "once" event
+    // edits cleanly with the mode left unselected, just like creating one.
+    const isMultiDay = (evt.sessions && evt.sessions.length > 1) || evt.registrationMode === "per_session";
+    setRegistrationMode(isMultiDay ? (evt.registrationMode === "per_session" ? "per_session" : "once") : null);
+    // Pre-populate the days editor from the event's sessions, carrying each id so
+    // PUT updates rather than recreates them. Sort by sortOrder for a stable order.
+    // Legacy events without sessions fall back to one row mirroring start/end.
+    const evtSessions = (evt.sessions && evt.sessions.length > 0)
+      ? [...evt.sessions]
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((s) => ({
+            id: s.id,
+            title: s.title || "",
+            startTime: toLocal(s.startTime),
+            endTime: toLocal(s.endTime),
+            quotaWalkIn: s.quotaWalkIn,
+          }))
+      : [{ title: "", startTime: toLocal(evt.startTime), endTime: toLocal(evt.endTime), quotaWalkIn: null }];
+    setSessions(evtSessions);
     setEditingId(evt.id);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1324,6 +1434,7 @@ export default function AdminEventsPage() {
     setFilterStudentsOnly(false);
     setFilterThai(true);
     setFilterInternational(true);
+    setSelectedSessionId(null);
     try {
       const res = await fetch(`/api/admin/events/${eventId}/attendance`);
       const data = await res.json();
@@ -1335,7 +1446,16 @@ export default function AdminEventsPage() {
     }
   };
 
+  // Sessions (days) of the event whose roster is open, sorted as displayed in the
+  // editor. Drives the per-day filter pills — shown only for true multi-day events.
+  const activeEventSessions = [...(events.find((e) => e.id === activeEventId)?.sessions ?? [])]
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const isMultiDayEvent = activeEventSessions.length > 1;
+
   const filteredAttendance = attendance.filter((m) => {
+    if (selectedSessionId && m.session?.id !== selectedSessionId) {
+      return false;
+    }
     if (filterMedical && !hasMedicalSignal(m.user)) {
       return false;
     }
@@ -1373,15 +1493,85 @@ export default function AdminEventsPage() {
     return true;
   });
 
-  const checkInCount = attendance.filter(m => m.status === "attended").length;
-  const registeredCount = attendance.length;
+  // Header tallies honor the selected day (but not the other roster filters) so
+  // "X / Y checked in" matches whichever day is being viewed.
+  const sessionScoped = selectedSessionId
+    ? attendance.filter((m) => m.session?.id === selectedSessionId)
+    : attendance;
+  const checkInCount = sessionScoped.filter(m => m.status === "attended").length;
+  const registeredCount = sessionScoped.length;
 
-  const groupedAttendance = filteredAttendance.reduce((acc: Record<string, AdminAttendance[]>, curr: AdminAttendance) => {
-    const houseId = curr.user?.house?.id || "Unassigned";
+  // Attendance summary for the day in view (mirrors the exported report's stats).
+  // Based on the day-scoped set, not the browsing filters (medical/nationality).
+  const summaryPreRegistered = sessionScoped.filter(m => m.method === "pre-registered").length;
+  const summaryAttendedPre = sessionScoped.filter(m => m.method === "pre-registered" && m.status === "attended").length;
+  const summaryWalkIns = sessionScoped.filter(m => m.method === "walk-in").length;
+  const summaryNoShows = Math.max(0, summaryPreRegistered - summaryAttendedPre);
+  const summaryNoShowPct = summaryPreRegistered > 0 ? Math.round((summaryNoShows / summaryPreRegistered) * 100) : 0;
+  const attendanceSummaryTiles = [
+    {
+      key: "checkedIn",
+      label: lang === "th" ? "เช็คอินแล้ว" : lang === "cn" ? "已签到" : lang === "mm" ? "ချက်အင်ပြီး" : "Checked In",
+      value: checkInCount,
+      color: "#10b981",
+    },
+    {
+      key: "preReg",
+      label: lang === "th" ? "ลงทะเบียนล่วงหน้า" : lang === "cn" ? "预先登记" : lang === "mm" ? "ကြိုတင်စာရင်းသွင်း" : "Pre-registered",
+      value: summaryPreRegistered,
+      color: "var(--accent-primary)",
+    },
+    {
+      key: "walkIn",
+      label: lang === "th" ? "วอล์กอิน" : lang === "cn" ? "现场加入" : lang === "mm" ? "ဝင်ရောက်" : "Walk-ins",
+      value: summaryWalkIns,
+      color: "#3b82f6",
+    },
+    {
+      key: "noShow",
+      label: lang === "th" ? "ไม่มา" : lang === "cn" ? "缺席" : lang === "mm" ? "မလာသူ" : "No-shows",
+      value: summaryNoShows,
+      sub: summaryPreRegistered > 0 ? `${summaryNoShowPct}%` : null,
+      color: "#ef4444",
+    },
+  ];
+
+  // In the "All days" view a person who attended several sessions has one
+  // attendance row per day. Collapse those into a single unit (one card with a
+  // per-day breakdown inside) so the roster shows people, not (person × day)
+  // duplicates. When a specific day is selected there's already ≤1 row per
+  // person, so each row is its own unit and the card renders exactly as before.
+  type AttendanceUnit = { key: string; primary: AdminAttendance; rows: AdminAttendance[] };
+  const attendanceUnits: AttendanceUnit[] = (() => {
+    if (selectedSessionId) {
+      return filteredAttendance.map((m) => ({ key: m.id, primary: m, rows: [m] }));
+    }
+    const byStudent = new Map<string, AttendanceUnit>();
+    const order: string[] = [];
+    for (const m of filteredAttendance) {
+      const k = m.studentId || m.user?.studentId || m.id;
+      let unit = byStudent.get(k);
+      if (!unit) {
+        unit = { key: k, primary: m, rows: [] };
+        byStudent.set(k, unit);
+        order.push(k);
+      }
+      unit.rows.push(m);
+    }
+    // Order each person's day rows Day 1 → Day N for a stable read.
+    for (const u of byStudent.values()) {
+      u.rows.sort((a, b) => (a.session?.sortOrder ?? 0) - (b.session?.sortOrder ?? 0));
+      u.primary = u.rows[0];
+    }
+    return order.map((k) => byStudent.get(k)!);
+  })();
+
+  const groupedAttendance = attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
+    const houseId = curr.primary.user?.house?.id || "Unassigned";
     if (!acc[houseId]) acc[houseId] = [];
     acc[houseId].push(curr);
     return acc;
-  }, {});
+  }, {} as Record<string, AttendanceUnit[]>);
 
   // Export the event's attendees as .xlsx. The file is built server-side at
   // /api/admin/events/[id]/export, which re-checks the super_admin/admin role
@@ -1389,12 +1579,40 @@ export default function AdminEventsPage() {
   // pull. We just trigger the download; the browser sends the session cookie.
   const exportAttendanceXlsx = () => {
     if (!activeEventId) return;
+    // Carry the selected day through to the server so the spreadsheet matches the
+    // on-screen roster (one sheet per day). No day selected → the whole event.
+    const qs = selectedSessionId ? `?sessionId=${encodeURIComponent(selectedSessionId)}` : "";
     const a = document.createElement("a");
-    a.href = `/api/admin/events/${activeEventId}/export`;
+    a.href = `/api/admin/events/${activeEventId}/export${qs}`;
     a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
     a.remove();
+  };
+
+  // Meds-check badge — PDPA-gated to super_admin/admin (canExportAttendance),
+  // since the presence of a meds check reveals who has a medical condition.
+  // Shared by the single-day card and each day-row of a collapsed multi-day card.
+  const renderMedsBadge = (option: string | null, badgeKey?: string) => {
+    if (!canExportAttendance || !option) return null;
+    const color = option === "brought" ? "#10b981" : option === "forgot" ? "#ef4444" : "#3b82f6";
+    const bg = option === "brought" ? "rgba(16, 185, 129, 0.12)" : option === "forgot" ? "rgba(239, 68, 68, 0.12)" : "rgba(59, 130, 246, 0.12)";
+    const border = option === "brought" ? "rgba(16, 185, 129, 0.2)" : option === "forgot" ? "rgba(239, 68, 68, 0.2)" : "rgba(59, 130, 246, 0.2)";
+    const label = option === "brought"
+      ? "Brought Meds / พกยามาด้วย"
+      : option === "forgot"
+      ? "No Meds (Risk) / ไม่ได้พกยา (รับความเสี่ยง)"
+      : "Acknowledged / รับทราบข้อมูล";
+    return (
+      <div key={badgeKey} style={{
+        display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6,
+        padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 800,
+        textTransform: "uppercase", background: bg, color, border: `1px solid ${border}`,
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, boxShadow: `0 0 8px ${color}` }} />
+        {label}
+      </div>
+    );
   };
 
   const filteredEvents = Array.isArray(events) ? events.filter(evt => {
@@ -1426,6 +1644,7 @@ export default function AdminEventsPage() {
         <div className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 20 }}>
           <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">{t.eventsTitle}</h1>
+          {!isAttendanceOnly && (
           <button
             className={`btn ${showForm ? "btn-ghost" : "btn-primary"} flex-shrink-0 transition-all duration-300 ${!showForm && "shadow-[0_12px_32px_var(--accent-glow)]"}`}
             style={{ gap: 10, minHeight: 52, paddingInline: 28, borderRadius: 99, fontSize: 15, fontWeight: 700 }}
@@ -1434,15 +1653,22 @@ export default function AdminEventsPage() {
                 setShowForm(false);
                 setEditingId(null);
                 setFormData(EMPTY_FORM);
+                setRegistrationMode(null);
+                setSessions([]);
               } else {
                 setEditingId(null);
                 setFormData(EMPTY_FORM);
+                setRegistrationMode(null);
+                // Seed one empty session row so a single-day event still submits
+                // a valid session; it stays in sync with start/end below.
+                setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]);
                 setShowForm(true);
               }
             }}
           >
             {showForm ? <><X size={18} /> {lang === "th" ? "ปิดตัวแก้ไข" : lang === "cn" ? "关闭编辑器" : lang === "mm" ? "အယ်ဒီတာ ပိတ်ရန်" : "Close Editor"}</> : <><Plus size={18} /> {t.addEventBtn}</>}
           </button>
+          )}
         </div>
 
         {/* Toolbar */}
@@ -1554,12 +1780,31 @@ export default function AdminEventsPage() {
                           newFormData.endTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
                         }
                         setFormData(newFormData);
+                        // For a single-day event (no mode chosen → Days editor
+                        // hidden), keep the sole session row mirrored to the main
+                        // start/end so the time still reaches the session on save.
+                        if (registrationMode === null && sessions.length === 1) {
+                          setSessions([{ ...sessions[0], startTime: val, endTime: newFormData.endTime }]);
+                        }
                       }}
                     />
                   </div>
                   <div className="field">
                     <label className="label">{t.eventEndTimeLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
-                    <input className="input" required type="datetime-local" lang="en-GB" value={formData.endTime} onChange={(e) => set("endTime", e.target.value)} />
+                    <input
+                      className="input"
+                      required
+                      type="datetime-local"
+                      lang="en-GB"
+                      value={formData.endTime}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        set("endTime", val);
+                        if (registrationMode === null && sessions.length === 1) {
+                          setSessions([{ ...sessions[0], endTime: val }]);
+                        }
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -1604,6 +1849,11 @@ export default function AdminEventsPage() {
                           walkInsEnabled: nextVal,
                           ...(!nextVal && { quotaWalkIn: null })
                         });
+                        // Walk-ins off → clear any per-day walk-in quotas too, so
+                        // re-enabling later starts clean (the per-day fields are hidden).
+                        if (!nextVal) {
+                          setSessions((prev) => prev.map((s) => ({ ...s, quotaWalkIn: null })));
+                        }
                       }}
                       style={{
                         height: 48,
@@ -1846,6 +2096,221 @@ export default function AdminEventsPage() {
                     );
                   })()}
                 </div>
+
+                {/* Registration mode + Sessions / Days editor */}
+                <div className="field" style={{ marginTop: 4 }}>
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Calendar size={16} style={{ color: "var(--accent-primary)" }} />
+                    {t.registrationModeLabel}
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "var(--text-muted)",
+                      border: "1px solid var(--border-medium)",
+                      borderRadius: 999,
+                      padding: "1px 8px",
+                    }}>
+                      {t.registrationModeOptional}
+                    </span>
+                  </label>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.45 }}>
+                    {t.registrationModeHint}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {([
+                      { value: "once" as const, label: t.registrationModeOnce, desc: t.registrationModeOnceDesc, recommended: true },
+                      // 'per_session' (separate sign-up each day) is intentionally
+                      // hidden: the student registration flow has no per-day path yet,
+                      // so picking it would create an event where Day-2 pre-registrants
+                      // get pushed into the walk-in path. Re-enable once per-session
+                      // registration ships. See docs/features/multi-day-checkin-implementation.md §10.
+                      // { value: "per_session" as const, label: t.registrationModePerSession, desc: t.registrationModePerSessionDesc, recommended: false },
+                    ]).map((opt) => {
+                      const active = registrationMode === opt.value;
+                      return (
+                        <div
+                          key={opt.value}
+                          onClick={() => setRegistrationMode(opt.value)}
+                          style={{
+                            minHeight: 48,
+                            background: "var(--bg-elevated)",
+                            borderRadius: 16,
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 12,
+                            padding: "12px 16px",
+                            cursor: "pointer",
+                            border: active ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                            transition: "all 0.2s",
+                          }}
+                        >
+                          <div style={{
+                            width: 22,
+                            height: 22,
+                            flexShrink: 0,
+                            marginTop: 1,
+                            borderRadius: "50%",
+                            border: active ? "2px solid var(--accent-primary)" : "2px solid var(--border-medium)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            transition: "all 0.1s",
+                          }}>
+                            {active && <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--accent-primary)" }} />}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: active ? "var(--text-primary)" : "var(--text-secondary)", lineHeight: 1.35 }}>
+                                {opt.label}
+                              </span>
+                              {opt.recommended && (
+                                <span style={{
+                                  fontSize: 10.5,
+                                  fontWeight: 700,
+                                  color: "var(--accent-primary)",
+                                  background: "color-mix(in srgb, var(--accent-primary) 14%, transparent)",
+                                  border: "1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent)",
+                                  borderRadius: 999,
+                                  padding: "1px 8px",
+                                  letterSpacing: 0.2,
+                                  whiteSpace: "nowrap",
+                                }}>
+                                  {t.registrationModeRecommended}
+                                </span>
+                              )}
+                            </span>
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                              {opt.desc}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Sessions / Days — only shown once a registration mode is chosen
+                    (multi-day events). A single-day event needs no mode and its
+                    lone session mirrors the main start/end above. At least one row
+                    is always required. */}
+                {registrationMode !== null && (
+                <div className="field">
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Clock size={16} style={{ color: "var(--accent-primary)" }} />
+                    {t.sessionsHeading}
+                  </label>
+                  <div style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "flex-start",
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--accent-primary)",
+                    borderRadius: 12,
+                    padding: "10px 14px",
+                    marginBottom: 14,
+                  }}>
+                    <Calendar size={15} style={{ color: "var(--accent-primary)", flexShrink: 0, marginTop: 2 }} />
+                    <span style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+                      {registrationMode === "per_session" ? t.sessionsNotePerSession : t.sessionsNoteOnce}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    {sessions.map((s, idx) => (
+                      <div
+                        key={s.id ?? `new-${idx}`}
+                        style={{
+                          background: "var(--bg-elevated)",
+                          borderRadius: 16,
+                          padding: 16,
+                          border: "1px solid var(--border-subtle, transparent)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <input
+                            className="input"
+                            value={s.title}
+                            onChange={(e) => updateSessionRow(idx, { title: e.target.value })}
+                            placeholder={`${t.sessionTitleLabel} (${lang === "th" ? "วันที่" : lang === "cn" ? "第" : lang === "mm" ? "နေ့" : "Day"} ${idx + 1})`}
+                            style={{ flex: 1, minWidth: 0 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeSessionRow(idx)}
+                            disabled={sessions.length <= 1}
+                            title={t.removeDay}
+                            style={{
+                              width: 40,
+                              height: 40,
+                              flexShrink: 0,
+                              borderRadius: 12,
+                              border: "1px solid var(--border-medium)",
+                              background: "transparent",
+                              color: sessions.length <= 1 ? "var(--text-muted)" : "#ef4444",
+                              cursor: sessions.length <= 1 ? "not-allowed" : "pointer",
+                              opacity: sessions.length <= 1 ? 0.4 : 1,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="field" style={{ marginBottom: 0 }}>
+                            <label className="label" style={{ fontSize: 12 }}>{t.eventStartTimeLabel}</label>
+                            <input
+                              className="input"
+                              type="datetime-local"
+                              lang="en-GB"
+                              value={s.startTime}
+                              onChange={(e) => updateSessionRow(idx, { startTime: e.target.value })}
+                            />
+                          </div>
+                          <div className="field" style={{ marginBottom: 0 }}>
+                            <label className="label" style={{ fontSize: 12 }}>{t.eventEndTimeLabel}</label>
+                            <input
+                              className="input"
+                              type="datetime-local"
+                              lang="en-GB"
+                              value={s.endTime}
+                              onChange={(e) => updateSessionRow(idx, { endTime: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        {formData.walkInsEnabled && (
+                          <div className="field" style={{ marginBottom: 0 }}>
+                            <label className="label" style={{ fontSize: 12 }}>{t.sessionWalkInQuota}</label>
+                            <div style={{ position: "relative" }}>
+                              <Users size={16} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                              <input
+                                className="input"
+                                type="number"
+                                min={1}
+                                value={s.quotaWalkIn ?? ""}
+                                onChange={(e) => updateSessionRow(idx, { quotaWalkIn: e.target.value ? Number(e.target.value) : null })}
+                                placeholder={t.unlimitedIfEmpty}
+                                style={{ paddingLeft: 40 }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addSessionRow}
+                    className="btn btn-ghost"
+                    style={{ marginTop: 12, gap: 8, borderRadius: 14 }}
+                  >
+                    <Plus size={16} /> {t.addDay}
+                  </button>
+                </div>
+                )}
               </div>
 
               {/* Right Column: Poster & Description */}
@@ -2273,7 +2738,9 @@ export default function AdminEventsPage() {
             <h3 style={{ fontSize: 24, fontWeight: 800 }}>{t.noEventsFoundLabel}</h3>
             <p style={{ color: "var(--text-muted)", marginTop: 8 }}>{lang === "th" ? "ลองปรับตัวกรองหรือสร้างกิจกรรมใหม่เพื่อเริ่มต้น" : lang === "cn" ? "尝试调整您的筛选条件或创建一个新活动以开始。" : lang === "mm" ? "စတင်ရန် စစ်ထုတ်မှုများကို ချိန်ညှိပါ သို့မဟုတ် ပွဲအသစ်တစ်ခု ဖန်တီးပါ။" : "Try adjusting your filters or create a new event to get started."}</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
+          {!isAttendanceOnly && (
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
+          )}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))", gap: 32 }}>
@@ -2502,6 +2969,7 @@ export default function AdminEventsPage() {
                        >
                          <BarChart3 size={15} /> {lang === "th" ? "การเช็คอิน" : lang === "cn" ? "签到情况" : lang === "mm" ? "ချက်အင်ဝင်ရောက်မှု" : "Attendance"}
                        </button>
+                       {!isAttendanceOnly && (
                        <button
                           className="btn"
                           style={{ 
@@ -2523,7 +2991,9 @@ export default function AdminEventsPage() {
                         >
                           <ClipboardList size={14} /> {lang === "th" ? "แบบประเมิน" : lang === "cn" ? "评估表单" : lang === "mm" ? "အကဲဖြတ်ပုံစံ" : "Feedback Form"}
                         </button>
+                        )}
                      </div>
+                     {!isAttendanceOnly && (
                      <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
                        <button
                          className="btn btn-ghost"
@@ -2542,6 +3012,7 @@ export default function AdminEventsPage() {
                          {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} {t.eventDeleteBtnLabel || "Delete"}
                        </button>
                      </div>
+                     )}
                    </div>
                 </div>
               </div>
@@ -2595,11 +3066,13 @@ export default function AdminEventsPage() {
           background: var(--bg-surface);
           width: 100%;
           max-width: 1100px;
-          height: 100%;
           max-height: 90vh;
           border-radius: clamp(20px, 4vw, 40px);
           padding: 0;
-          overflow: hidden;
+          /* The whole modal scrolls as one column. Only the header is pinned
+             (sticky), so the summary + filters scroll away and the roster gets
+             the full height instead of being squeezed by tall fixed chrome. */
+          overflow-y: auto;
           display: flex;
           flex-direction: column;
           border: 1px solid var(--border-medium);
@@ -2607,13 +3080,17 @@ export default function AdminEventsPage() {
           position: relative;
         }
         .attendance-modal-header {
-          padding: 16px 20px;
+          padding: 14px 20px;
           border-bottom: 1px solid var(--border-subtle);
           display: flex;
           justify-content: space-between;
           align-items: center;
+          gap: 12px;
           background: linear-gradient(to right, var(--bg-surface), var(--bg-elevated));
           flex-shrink: 0;
+          position: sticky;
+          top: 0;
+          z-index: 5;
         }
         .attendance-modal-header h2 {
           font-size: clamp(18px, 4vw, 28px);
@@ -2633,8 +3110,6 @@ export default function AdminEventsPage() {
           flex-shrink: 0;
         }
         .attendance-modal-list {
-          overflow-y: auto;
-          flex: 1;
           padding: 20px;
         }
 
@@ -3800,33 +4275,27 @@ export default function AdminEventsPage() {
       {showAttendance && (
         <div className="attendance-modal-overlay">
           <div className="animate-fade-in-up attendance-modal-container">
-            {/* Modal Header */}
+            {/* Modal Header — slim & sticky so the roster gets maximum height. */}
             <div className="attendance-modal-header">
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{
-                    width: 12,
-                    height: 12,
+                    width: 10,
+                    height: 10,
                     borderRadius: "50%",
                     background: "#10b981",
-                    boxShadow: "0 0 15px rgba(16,185,129,0.5)",
-                    animation: "pulse-glow 2s infinite"
+                    boxShadow: "0 0 12px rgba(16,185,129,0.6)",
+                    animation: "pulse-glow 2s infinite",
+                    flexShrink: 0,
                   }} />
-                  <p className="section-title" style={{ margin: 0, color: "#10b981", fontWeight: 800, fontSize: 12 }}>REAL-TIME ATTENDANCE</p>
+                  <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em", overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "normal", lineHeight: 1.25, minWidth: 0 }}>
+                    {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
+                  </h2>
                 </div>
-                <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em" }}>
-                  {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
-                </h2>
-                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} className="text-muted" />
-                    <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 15 }}>
-                      <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{checkInCount}</span> / <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{registeredCount}</span> checked in
-                    </p>
-                  </div>
-                  <div style={{ width: 1, height: 16, background: "var(--border-medium)" }} />
-                  <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                    Event ID: <span style={{ fontFamily: "monospace" }}>{activeEventId?.slice(0, 8)}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, paddingLeft: 20 }}>
+                  <Users size={15} className="text-muted" />
+                  <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 14 }}>
+                    <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{checkInCount}</span> / <span style={{ color: "var(--text-primary)", fontWeight: 800 }}>{registeredCount}</span> {lang === "th" ? "เช็คอินแล้ว" : lang === "cn" ? "已签到" : lang === "mm" ? "ချက်အင်ပြီး" : "checked in"}
                   </p>
                 </div>
               </div>
@@ -3866,12 +4335,88 @@ export default function AdminEventsPage() {
               </div>
             </div>
 
+            {/* Summary tiles — at-a-glance breakdown for the day in view, mirroring
+                the exported report's Summary sheet. */}
+            {!loadingAttendance && attendance.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                  gap: 12,
+                  padding: "12px 20px 0",
+                }}
+              >
+                {attendanceSummaryTiles.map((tile) => (
+                  <div
+                    key={tile.key}
+                    style={{
+                      background: "var(--bg-surface)",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: 14,
+                      padding: "14px 16px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>{tile.label}</span>
+                    <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                      <span style={{ fontSize: 26, fontWeight: 900, color: tile.color, letterSpacing: "-0.03em" }}>{tile.value}</span>
+                      {tile.sub && (
+                        <span style={{ fontSize: 13, fontWeight: 700, color: tile.color, opacity: 0.85 }}>({tile.sub})</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Filter Bar */}
             {!loadingAttendance && attendance.length > 0 && (
               <div className="attendance-modal-filter-bar">
+                {/* Per-day picker — only for true multi-day events. Lets the admin
+                    view (and export) one day at a time, so the same person who
+                    attended several days isn't read as duplicate people. */}
+                {isMultiDayEvent && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800, color: "var(--text-muted)", marginRight: 2 }}>
+                      <Calendar size={15} />
+                      {lang === "th" ? "วัน" : lang === "cn" ? "日期" : lang === "mm" ? "နေ့" : "Day"}:
+                    </span>
+                    {[{ id: null as string | null, label: lang === "th" ? "ทุกวัน" : lang === "cn" ? "全部" : lang === "mm" ? "အားလုံး" : "All days" },
+                      ...activeEventSessions.map((s) => ({
+                        id: s.id as string | null,
+                        label: s.title?.trim() || `${lang === "th" ? "วันที่" : lang === "cn" ? "第" : lang === "mm" ? "နေ့" : "Day"} ${s.sortOrder + 1}`,
+                      }))].map((opt) => {
+                      const active = selectedSessionId === opt.id;
+                      return (
+                        <button
+                          key={opt.id ?? "all"}
+                          onClick={() => setSelectedSessionId(opt.id)}
+                          style={{
+                            padding: "7px 14px",
+                            borderRadius: 99,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                            border: active ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                            background: active ? "var(--accent-glow)" : "var(--bg-surface)",
+                            color: active ? "var(--accent-primary)" : "var(--text-secondary)",
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   {/* Filtering to condition-holders is signal-level (who, not
-                      what), so it's available to all admin-area roles. */}
+                      what), so it's available to all STAFF admin roles — but not
+                      attendance-only (scanner) roles, whose thin roster has no
+                      medical signal to filter on. */}
+                  {!isAttendanceOnly && (
                   <button
                     onClick={() => setFilterMedical(!filterMedical)}
                     style={{
@@ -3892,6 +4437,7 @@ export default function AdminEventsPage() {
                     <HeartPulse size={16} />
                     {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
                   </button>
+                  )}
 
                   <button
                     onClick={() => setFilterNotCheckedIn(!filterNotCheckedIn)}
@@ -3981,10 +4527,10 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational) && (
+                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
-                    Filtered: Showing {filteredAttendance.length} of {attendance.length} students
+                    Filtered: Showing {filteredAttendance.length} of {attendance.length} records
                   </p>
                 )}
               </div>
@@ -4055,7 +4601,7 @@ export default function AdminEventsPage() {
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                    {Object.entries(groupedAttendance).map(([house, members]: [string, AdminAttendance[]]) => (
+                    {Object.entries(groupedAttendance).map(([house, members]: [string, AttendanceUnit[]]) => (
                       <div key={house}>
                         <div style={{
                           display: "flex",
@@ -4072,8 +4618,8 @@ export default function AdminEventsPage() {
                               width: 16,
                               height: 16,
                               borderRadius: 4,
-                              background: members[0]?.user?.house?.color || "var(--accent-primary)",
-                              boxShadow: `0 0 15px ${members[0]?.user?.house?.color}55`
+                              background: members[0]?.primary.user?.house?.color || "var(--accent-primary)",
+                              boxShadow: `0 0 15px ${members[0]?.primary.user?.house?.color}55`
                             }} />
                             {house === "red" ? t.houseMom : house === "green" ? t.houseTo : house === "yellow" ? t.houseLuang : house === "blue" ? t.houseMakara : house}
                           </h4>
@@ -4082,130 +4628,113 @@ export default function AdminEventsPage() {
                           </span>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
-                          {members.map((m: AdminAttendance) => (
-                            <div key={m.id} className="attendance-card" style={{
-                              padding: "20px",
+                          {members.map((unit) => {
+                            const m = unit.primary;
+                            // A person attending >1 session collapses into one card
+                            // with a Day 1 → Day N breakdown (only in the "All days"
+                            // view). Single-row units render exactly as before.
+                            const multiDay = unit.rows.length > 1;
+                            const attendedDays = unit.rows.filter((r) => r.status === "attended").length;
+                            return (
+                            <div key={unit.key} className="attendance-card" style={{
+                              padding: "18px",
                               background: "var(--bg-surface)",
-                              borderRadius: 24,
+                              borderRadius: 20,
                               border: "1px solid var(--border-subtle)",
                               display: "flex",
-                              alignItems: "center",
-                              gap: 16,
+                              flexDirection: "column",
+                              gap: 14,
                               transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                               boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
                             }}>
-                              <div style={{
-                                width: 52,
-                                height: 52,
-                                borderRadius: 16,
-                                background: "var(--bg-elevated)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 18,
-                                fontWeight: 900,
-                                color: "var(--accent-primary)",
-                                border: "1px solid var(--border-subtle)"
-                              }}>
-                                {m.user?.name?.charAt(0)}
-                              </div>
-                              <div style={{ flex: 1 }}>
-                                <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)" }}>{m.user?.name}</p>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-                                  <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>{m.user?.studentId || "No ID"}</p>
-                                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
-                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <Clock size={12} className="text-muted" />
-                                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
-                                      {m.checkInTime ? new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : "-"}
-                                    </p>
+                              {/* Header: identity on the left, actions + status on the right. */}
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)", overflowWrap: "anywhere" }}>{m.user?.name}</p>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+                                    <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{m.user?.studentId || "No ID"}</p>
+                                    {!multiDay && (
+                                      <>
+                                        <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
+                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                          <Clock size={12} className="text-muted" />
+                                          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                                            {m.checkInTime ? new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : "-"}
+                                          </p>
+                                        </div>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
-                                {/* The meds-check badge only appears for attendees who went
-                                    through the medication check, so it reveals who has a
-                                    medical condition — restrict to super_admin/admin. */}
-                                {canExportAttendance && m.medsCheckOption && (
-                                  <div style={{
-                                    display: "inline-flex", 
-                                    alignItems: "center", 
-                                    gap: 6, 
-                                    marginTop: 6, 
-                                    padding: "4px 10px", 
-                                    borderRadius: 8, 
-                                    fontSize: 11, 
-                                    fontWeight: 800,
-                                    textTransform: "uppercase",
-                                    background: m.medsCheckOption === "brought" 
-                                      ? "rgba(16, 185, 129, 0.12)" 
-                                      : m.medsCheckOption === "forgot" 
-                                      ? "rgba(239, 68, 68, 0.12)" 
-                                      : "rgba(59, 130, 246, 0.12)",
-                                    color: m.medsCheckOption === "brought" 
-                                      ? "#10b981" 
-                                      : m.medsCheckOption === "forgot" 
-                                      ? "#ef4444" 
-                                      : "#3b82f6",
-                                    border: m.medsCheckOption === "brought"
-                                      ? "1px solid rgba(16, 185, 129, 0.2)"
-                                      : m.medsCheckOption === "forgot"
-                                      ? "1px solid rgba(239, 68, 68, 0.2)"
-                                      : "1px solid rgba(59, 130, 246, 0.2)"
-                                  }}>
-                                    <span style={{ 
-                                      width: 6, 
-                                      height: 6, 
-                                      borderRadius: "50%", 
-                                      background: m.medsCheckOption === "brought" 
-                                        ? "#10b981" 
-                                        : m.medsCheckOption === "forgot" 
-                                        ? "#ef4444" 
-                                        : "#3b82f6",
-                                      boxShadow: m.medsCheckOption === "brought"
-                                        ? "0 0 8px #10b981"
-                                        : m.medsCheckOption === "forgot"
-                                        ? "0 0 8px #ef4444"
-                                        : "0 0 8px #3b82f6"
-                                    }} />
-                                    {m.medsCheckOption === "brought" 
-                                      ? "Brought Meds / พกยามาด้วย" 
-                                      : m.medsCheckOption === "forgot" 
-                                      ? "No Meds (Risk) / ไม่ได้พกยา (รับความเสี่ยง)" 
-                                      : "Acknowledged / รับทราบข้อมูล"}
-                                  </div>
-                                )}
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                  {hasMedicalSignal(m.user) && (
+                                    <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
+                                      <Activity size={20} />
+                                    </div>
+                                  )}
+                                  <button
+                                    className="btn btn-ghost"
+                                    style={{ padding: 8, borderRadius: 10 }}
+                                    onClick={() => setSelectedStudent(m.user || null)}
+                                  >
+                                    <Info size={18} />
+                                  </button>
+                                  {multiDay ? (
+                                    <div style={{ minWidth: 50, height: 32, padding: "0 10px", borderRadius: 16, background: attendedDays > 0 ? "rgba(16,185,129,0.1)" : "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, color: attendedDays > 0 ? "#10b981" : "var(--accent-primary)", fontSize: 13, fontWeight: 800, border: attendedDays > 0 ? "none" : "1px dashed var(--accent-primary)" }} title={`${attendedDays} / ${unit.rows.length} ${lang === "th" ? "วันเช็คอินแล้ว" : "days checked in"}`}>
+                                      <CheckCircle2 size={14} />
+                                      {attendedDays}/{unit.rows.length}
+                                    </div>
+                                  ) : m.status === "attended" ? (
+                                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }} title="Checked In">
+                                      <CheckCircle2 size={16} />
+                                    </div>
+                                  ) : (
+                                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", border: "1px dashed var(--accent-primary)" }} title="Registered (Not Checked In)">
+                                      <Clock size={14} className="animate-pulse" />
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                {hasMedicalSignal(m.user) && (
-                                  <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
-                                    <Activity size={20} />
-                                  </div>
-                                )}
-                                <button
-                                  className="btn btn-ghost"
-                                  style={{ padding: 8, borderRadius: 10 }}
-                                  onClick={() => setSelectedStudent(m.user || null)}
-                                >
-                                  <Info size={18} />
-                                </button>{m.status === "attended" ? (
 
-                                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }} title="Checked In">
-
-                                    <CheckCircle2 size={16} />
-
-                                  </div>
-
-                                ) : (
-
-                                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", border: "1px dashed var(--accent-primary)" }} title="Registered (Not Checked In)">
-
-                                    <Clock size={14} className="animate-pulse" />
-
-                                  </div>
-
-                                )}
-                              </div>
+                              {/* Body. The meds-check badge reveals who went through the
+                                  medication check (i.e. who has a medical condition), so
+                                  renderMedsBadge restricts it to super_admin/admin. */}
+                              {multiDay ? (
+                                // One contained row per session this person took part in:
+                                // day label, that day's check-in time / registered state,
+                                // and (for admins) that day's meds-check badge.
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                  {unit.rows.map((r) => {
+                                    const dayLabel = r.session?.title?.trim() || `${lang === "th" ? "วันที่" : lang === "cn" ? "第" : lang === "mm" ? "နေ့" : "Day"} ${(r.session?.sortOrder ?? 0) + 1}`;
+                                    const checked = r.status === "attended";
+                                    return (
+                                      <div key={r.id} style={{ padding: "10px 12px", borderRadius: 14, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                          <span style={{
+                                            display: "inline-flex", alignItems: "center", gap: 5,
+                                            fontSize: 12, fontWeight: 800, color: "var(--text-secondary)",
+                                          }}>
+                                            <Calendar size={12} />
+                                            {dayLabel}
+                                          </span>
+                                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: checked ? "#10b981" : "var(--accent-primary)", flexShrink: 0 }}>
+                                            {checked ? <CheckCircle2 size={13} /> : <Clock size={13} className="animate-pulse" />}
+                                            {checked
+                                              ? (r.checkInTime ? new Date(r.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : (lang === "th" ? "เช็คอินแล้ว" : lang === "cn" ? "已签到" : lang === "mm" ? "ချက်အင်ပြီး" : "Checked in"))
+                                              : (lang === "th" ? "ลงทะเบียน" : lang === "cn" ? "已登记" : lang === "mm" ? "စာရင်းသွင်း" : "Registered")}
+                                          </span>
+                                        </div>
+                                        {renderMedsBadge(r.medsCheckOption, r.id)}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                renderMedsBadge(m.medsCheckOption)
+                              )}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -4260,7 +4789,9 @@ export default function AdminEventsPage() {
                 </div>
               </div>
 
-              {/* Contact */}
+              {/* Contact — hidden from attendance-only (scanner) roles, whose thin
+                  roster carries no phone. */}
+              {!isAttendanceOnly && (
               <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
                 <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Contact Information</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -4268,12 +4799,15 @@ export default function AdminEventsPage() {
                   <span style={{ fontWeight: 700 }}>{selectedStudent.phone || "No phone provided"}</span>
                 </div>
               </div>
+              )}
 
               {/* Medical & Health Info: the raw detail the student filled in is
                   PDPA-sensitive and shown only to super_admin/admin
                   (canExportAttendance). Other admin-area roles (registration)
                   still see the "has a condition" signal, not the detail. */}
-              {/* Medical */}
+              {/* Medical — hidden from attendance-only (scanner) roles, whose thin
+                  roster carries no medical signal (so it can't be derived here). */}
+              {!isAttendanceOnly && (
               <div style={{
                 background: hasMedicalSignal(selectedStudent)
                   ? "rgba(239, 68, 68, 0.05)"
@@ -4335,6 +4869,7 @@ export default function AdminEventsPage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Emergency Contact — visible to all admin-area roles */}
               {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (

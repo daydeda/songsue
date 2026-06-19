@@ -10,12 +10,18 @@ import {
   TrendingUp,
   History,
   Crown,
+  MessageCircle,
   ChevronLeft,
   ChevronRight,
   ChevronRight as ArrowRight
 } from "lucide-react";
 import { houseSlug } from "@/lib/houses";
 import { StudentNav } from "@/components/layout/StudentNav";
+
+// Shared LINE group everyone joins (same group on both rankings tabs and every
+// house page).
+const LINE_GROUP_URL =
+  "https://line.me/ti/g2/82BVV3y9-l4YuhV5uqFWNMY52Dqg42ZpvYYNFQ?utm_source=invitation&utm_medium=link_copy&utm_campaign=default";
 
 // House mascot logos (background removed). Keyed by both the house id (color) and
 // its name so it resolves whichever identifier the API returns.
@@ -58,6 +64,21 @@ type StudentRanking = {
   } | null;
 };
  
+function JoinLineButton() {
+  const { t } = useLanguage();
+  return (
+    <a
+      href={LINE_GROUP_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="join-line-btn"
+    >
+      <MessageCircle size={20} />
+      {t.joinLineGroup}
+    </a>
+  );
+}
+
 export default function HousesPage() {
   const { t, lang } = useLanguage();
   const { data: session } = useSession();
@@ -456,6 +477,10 @@ export default function HousesPage() {
                 );
               })}
             </div>
+
+            <div className="join-line-wrap">
+              <JoinLineButton />
+            </div>
           </section>
         )}
 
@@ -682,9 +707,13 @@ export default function HousesPage() {
                 </button>
               </div>
             )}
+
+            <div className="join-line-wrap">
+              <JoinLineButton />
+            </div>
           </section>
         )}
- 
+
         {/* Recent Activity */}
         <section className="glass recent-activity-section animate-fade-in-up">
           <h2 className="recent-activity-title">
@@ -863,6 +892,31 @@ export default function HousesPage() {
           margin-top: 4px;
         }
  
+        /* Join LINE group button */
+        .join-line-wrap {
+          display: flex;
+          justify-content: center;
+          margin-top: 28px;
+        }
+        :global(a.join-line-btn) {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 14px 28px;
+          border-radius: 16px;
+          background: #06c755;
+          color: #fff;
+          font-size: 15px;
+          font-weight: 800;
+          text-decoration: none;
+          box-shadow: 0 8px 24px rgba(6,199,85,0.28);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        :global(a.join-line-btn:hover) {
+          transform: translateY(-2px);
+          box-shadow: 0 14px 32px rgba(6,199,85,0.36);
+        }
+
         /* Standings list */
         .standings-list {
           display: flex;

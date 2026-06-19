@@ -27,10 +27,10 @@
   --accent-glow:     rgba(255,107,0,0.15);
   --accent-secondary: #f59e0b;
 
-  --red-house:    #ef4444; /* มอม (Mom) */
-  --green-house:  #14b8a6; /* โต (To) */
-  --yellow-house: #f59e0b; /* ลวง (Luang) */
-  --blue-house:   #6366f1; /* มกร (Makara) */
+  --red-house:    #ef4444; /* มอม (Mom)   — Red */
+  --green-house:  #94a3b8; /* โต (To)     — White → silver/pewter (visible on the light theme) */
+  --yellow-house: #3b82f6; /* ลวง (Luang) — Blue */
+  --blue-house:   #22c55e; /* มกร (Makara) — Green */
 
   --radius-sm:  8px;
   --radius-md:  14px;

@@ -301,6 +301,13 @@ export default function AdminEventsPage() {
   // contact data — are restricted to super_admin/admin only.
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
+  // Scanner-only roles (smo, club_president, major_president) reach this page to
+  // VIEW attendance only — no create/edit/delete/feedback controls. Mirrors the
+  // thin-roster gate in api/admin/events/[id]/attendance (a user with any staff
+  // role gets the full page). Students never reach here (proxy blocks them).
+  const isAttendanceOnly = !myRoles.some((r) =>
+    ["super_admin", "admin", "registration", "organizer"].includes(r)
+  );
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1637,6 +1644,7 @@ export default function AdminEventsPage() {
         <div className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ marginBottom: 20 }}>
           <h1 className="text-[clamp(32px,5vw,48px)] font-black tracking-tighter text-[var(--text-primary)] leading-tight">{t.eventsTitle}</h1>
+          {!isAttendanceOnly && (
           <button
             className={`btn ${showForm ? "btn-ghost" : "btn-primary"} flex-shrink-0 transition-all duration-300 ${!showForm && "shadow-[0_12px_32px_var(--accent-glow)]"}`}
             style={{ gap: 10, minHeight: 52, paddingInline: 28, borderRadius: 99, fontSize: 15, fontWeight: 700 }}
@@ -1660,6 +1668,7 @@ export default function AdminEventsPage() {
           >
             {showForm ? <><X size={18} /> {lang === "th" ? "ปิดตัวแก้ไข" : lang === "cn" ? "关闭编辑器" : lang === "mm" ? "အယ်ဒီတာ ပိတ်ရန်" : "Close Editor"}</> : <><Plus size={18} /> {t.addEventBtn}</>}
           </button>
+          )}
         </div>
 
         {/* Toolbar */}
@@ -2729,7 +2738,9 @@ export default function AdminEventsPage() {
             <h3 style={{ fontSize: 24, fontWeight: 800 }}>{t.noEventsFoundLabel}</h3>
             <p style={{ color: "var(--text-muted)", marginTop: 8 }}>{lang === "th" ? "ลองปรับตัวกรองหรือสร้างกิจกรรมใหม่เพื่อเริ่มต้น" : lang === "cn" ? "尝试调整您的筛选条件或创建一个新活动以开始。" : lang === "mm" ? "စတင်ရန် စစ်ထုတ်မှုများကို ချိန်ညှိပါ သို့မဟုတ် ပွဲအသစ်တစ်ခု ဖန်တီးပါ။" : "Try adjusting your filters or create a new event to get started."}</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
+          {!isAttendanceOnly && (
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
+          )}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))", gap: 32 }}>
@@ -2958,6 +2969,7 @@ export default function AdminEventsPage() {
                        >
                          <BarChart3 size={15} /> {lang === "th" ? "การเช็คอิน" : lang === "cn" ? "签到情况" : lang === "mm" ? "ချက်အင်ဝင်ရောက်မှု" : "Attendance"}
                        </button>
+                       {!isAttendanceOnly && (
                        <button
                           className="btn"
                           style={{ 
@@ -2979,7 +2991,9 @@ export default function AdminEventsPage() {
                         >
                           <ClipboardList size={14} /> {lang === "th" ? "แบบประเมิน" : lang === "cn" ? "评估表单" : lang === "mm" ? "အကဲဖြတ်ပုံစံ" : "Feedback Form"}
                         </button>
+                        )}
                      </div>
+                     {!isAttendanceOnly && (
                      <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
                        <button
                          className="btn btn-ghost"
@@ -2998,6 +3012,7 @@ export default function AdminEventsPage() {
                          {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} {t.eventDeleteBtnLabel || "Delete"}
                        </button>
                      </div>
+                     )}
                    </div>
                 </div>
               </div>
@@ -4398,7 +4413,10 @@ export default function AdminEventsPage() {
                 )}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   {/* Filtering to condition-holders is signal-level (who, not
-                      what), so it's available to all admin-area roles. */}
+                      what), so it's available to all STAFF admin roles — but not
+                      attendance-only (scanner) roles, whose thin roster has no
+                      medical signal to filter on. */}
+                  {!isAttendanceOnly && (
                   <button
                     onClick={() => setFilterMedical(!filterMedical)}
                     style={{
@@ -4419,6 +4437,7 @@ export default function AdminEventsPage() {
                     <HeartPulse size={16} />
                     {filterMedical ? "Showing: Medical Conditions Only" : "Filter: Medical Conditions Only"}
                   </button>
+                  )}
 
                   <button
                     onClick={() => setFilterNotCheckedIn(!filterNotCheckedIn)}
@@ -4770,7 +4789,9 @@ export default function AdminEventsPage() {
                 </div>
               </div>
 
-              {/* Contact */}
+              {/* Contact — hidden from attendance-only (scanner) roles, whose thin
+                  roster carries no phone. */}
+              {!isAttendanceOnly && (
               <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
                 <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Contact Information</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -4778,12 +4799,15 @@ export default function AdminEventsPage() {
                   <span style={{ fontWeight: 700 }}>{selectedStudent.phone || "No phone provided"}</span>
                 </div>
               </div>
+              )}
 
               {/* Medical & Health Info: the raw detail the student filled in is
                   PDPA-sensitive and shown only to super_admin/admin
                   (canExportAttendance). Other admin-area roles (registration)
                   still see the "has a condition" signal, not the detail. */}
-              {/* Medical */}
+              {/* Medical — hidden from attendance-only (scanner) roles, whose thin
+                  roster carries no medical signal (so it can't be derived here). */}
+              {!isAttendanceOnly && (
               <div style={{
                 background: hasMedicalSignal(selectedStudent)
                   ? "rgba(239, 68, 68, 0.05)"
@@ -4845,6 +4869,7 @@ export default function AdminEventsPage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Emergency Contact — visible to all admin-area roles */}
               {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (

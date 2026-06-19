@@ -22,6 +22,20 @@ export const SCORING_ROLES = ["super_admin", "admin", "registration", "organizer
 // Canonical scanner path — also the landing for scanner-only roles.
 export const SCANNER_HREF = "/admin/scanner";
 
+// Pages a scanner-only role (smo, club_president, major_president) may open.
+// Besides the scanner they may now reach the events page, but ONLY to view the
+// attendance roster — every other control there is hidden (see admin/events
+// page) and the attendance API returns a thin roster with no phone/emergency/
+// medical signal (see api/admin/events/[id]/attendance). "/admin" is allowed
+// because its page just redirects to the scanner.
+export const SCANNER_ONLY_PAGES = ["/admin", SCANNER_HREF, "/admin/events"] as const;
+
+// May a scanner-only role reach this exact (page) path? Used by the proxy to
+// confine these roles. Exact-match only — no /admin/events/* sub-pages exist.
+export function isScannerOnlyAllowedPath(pathname: string): boolean {
+  return (SCANNER_ONLY_PAGES as readonly string[]).includes(pathname);
+}
+
 export function canEnterAdmin(role?: string | null): boolean {
   return (ADMIN_ENTRY_ROLES as readonly string[]).includes(role || "");
 }

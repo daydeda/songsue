@@ -30,10 +30,11 @@ export function AdminNav({ role }: { role?: string | null }) {
   const { t } = useLanguage();
 
   const filteredNav = NAV.filter(item => {
-    // Scanner-only roles (smo, club_president, major_president) may only see the
-    // QR Scanner entry. Uses the shared predicate so this can't drift from proxy.
+    // Scanner-only roles (smo, club_president, major_president) see the QR Scanner
+    // plus the Events page (attendance-view only). Uses the shared predicate so
+    // this can't drift from proxy/admin-access.
     if (isScannerOnlyRole(role)) {
-      return item.href === "/admin/scanner";
+      return item.href === "/admin/scanner" || item.href === "/admin/events";
     }
     // Organizer cannot see Students list or Audit Logs
     if (role === "organizer") {

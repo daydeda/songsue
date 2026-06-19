@@ -1501,14 +1501,34 @@ export default function AdminEventsPage() {
   const sessionScoped = selectedSessionId
     ? attendance.filter((m) => m.session?.id === selectedSessionId)
     : attendance;
-  const checkInCount = sessionScoped.filter(m => m.status === "attended").length;
-  const registeredCount = sessionScoped.length;
+  // In the "All days" view a person who took part in several sessions has one
+  // row per day. Counting the raw rows would SUM the days (e.g. Day1 271 +
+  // Day2 246 = 517), which double-counts anyone present on both days. Collapse
+  // to one unit per student — keyed exactly like the roster cards — so the
+  // tallies count distinct people. With a day selected there's ≤1 row per
+  // person already, so each row is its own unit (no behavior change).
+  const tallyUnits: AdminAttendance[][] = selectedSessionId
+    ? sessionScoped.map((m) => [m])
+    : (() => {
+        const byStudent = new Map<string, AdminAttendance[]>();
+        for (const m of sessionScoped) {
+          const k = m.studentId || m.user?.studentId || m.id;
+          const arr = byStudent.get(k);
+          if (arr) arr.push(m);
+          else byStudent.set(k, [m]);
+        }
+        return [...byStudent.values()];
+      })();
+  const checkInCount = tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length;
+  const registeredCount = tallyUnits.length;
 
   // Attendance summary for the day in view (mirrors the exported report's stats).
   // Based on the day-scoped set, not the browsing filters (medical/nationality).
-  const summaryPreRegistered = sessionScoped.filter(m => m.method === "pre-registered").length;
-  const summaryAttendedPre = sessionScoped.filter(m => m.method === "pre-registered" && m.status === "attended").length;
-  const summaryWalkIns = sessionScoped.filter(m => m.method === "walk-in").length;
+  // A person is classified once across all their day rows: pre-registered if any
+  // session was a pre-registration (else walk-in), attended if present on any day.
+  const summaryPreRegistered = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length;
+  const summaryAttendedPre = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length;
+  const summaryWalkIns = tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length;
   const summaryNoShows = Math.max(0, summaryPreRegistered - summaryAttendedPre);
   const summaryNoShowPct = summaryPreRegistered > 0 ? Math.round((summaryNoShows / summaryPreRegistered) * 100) : 0;
   const attendanceSummaryTiles = [

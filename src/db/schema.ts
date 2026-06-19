@@ -145,6 +145,12 @@ export const events = pgTable("events", {
   // Possible values: 'student', 'staff', 'smo', 'anusmo', 'club_president',
   // 'major_president' (admin roles always see everything)
   allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  // Which president role(s) MANAGE this event (club_president / major_president):
+  // controls whether they see it in their admin events list, can view
+  // attendance, scan, and export. This is SEPARATE from allowedRoles, which
+  // controls participant (student) visibility/registration. Empty/null = not
+  // president-managed (only staff manage it).
+  managedByRoles: jsonb("managed_by_roles").$type<string[]>(),
   // Major-based access control: which student majors can see/register for this
   // event. null or [] means all majors; otherwise restricted to the listed
   // majors (ANI, DG, DII, MMIT, SE). Combined with allowedRoles as AND — a user

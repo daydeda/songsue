@@ -6,7 +6,7 @@ import {
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
-  Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download
+  Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { parseRichText } from "@/lib/rich-text";
@@ -43,6 +43,7 @@ interface AdminEvent {
   quotaInternational: number | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
+  managedByRoles: string[] | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
   attendeeCount?: number;
@@ -291,6 +292,7 @@ const EMPTY_FORM = {
   quotaInternational: null as number | null,
   allowedRoles: [] as string[], // empty = all roles allowed
   allowedMajors: [] as string[], // empty = all majors allowed
+  managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
 };
 
 export default function AdminEventsPage() {
@@ -1399,7 +1401,8 @@ export default function AdminEventsPage() {
       quotaThai: evt.quotaThai || null,
       quotaInternational: evt.quotaInternational || null,
       allowedRoles: evt.allowedRoles || [],
-      allowedMajors: evt.allowedMajors || []
+      allowedMajors: evt.allowedMajors || [],
+      managedByRoles: evt.managedByRoles || []
     });
     // Only pre-select a mode (which reveals the Days editor) when the event is
     // genuinely multi-day or per-session. A plain single-session "once" event
@@ -2521,6 +2524,90 @@ export default function AdminEventsPage() {
                   </div>
                 </div>
 
+                {/* Managed By — which president role(s) MANAGE this event (see it in
+                    their admin list, view attendance, scan, export). Independent of
+                    the role/major access above, which only controls who can JOIN. */}
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <ShieldCheck size={16} style={{ color: "var(--accent-primary)" }} />
+                    {lang === "th" ? "ผู้ดูแลกิจกรรม (ประธาน)" : "Managed By (President)"}
+                  </label>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
+                    {lang === "th"
+                      ? "เลือกประธานที่ดูแลกิจกรรมนี้ (เห็นในรายการ ดูการเช็คอิน สแกน ส่งออก) — ไม่กระทบสิทธิ์การเข้าร่วมของนักศึกษา"
+                      : "Choose which president(s) manage this event (view it, see attendance, scan, export). Does NOT affect which students can join."}
+                  </p>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {(["club_president", "major_president"] as const).map((role) => {
+                      const isSelected = formData.managedByRoles.includes(role);
+                      const accent = role === "club_president" ? "#f59e0b" : "#06b6d4";
+                      return (
+                        <div
+                          key={role}
+                          onClick={() => {
+                            const current = formData.managedByRoles;
+                            const next = current.includes(role)
+                              ? current.filter((r) => r !== role)
+                              : [...current, role];
+                            setFormData({ ...formData, managedByRoles: next });
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px 16px",
+                            borderRadius: 14,
+                            background: isSelected ? `${accent}1f` : "var(--bg-elevated)",
+                            border: `1px solid ${isSelected ? `${accent}80` : "transparent"}`,
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                            minWidth: 100,
+                          }}
+                        >
+                          <div style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: 6,
+                            background: isSelected ? accent : "transparent",
+                            border: `2px solid ${isSelected ? accent : "var(--border-medium)"}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            transition: "all 0.15s",
+                          }}>
+                            {isSelected && <CheckCircle2 size={13} color="white" />}
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: isSelected ? accent : "var(--text-secondary)" }}>
+                            {ROLE_LABELS[role as ParticipantRole]}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Summary tag */}
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 12px",
+                      borderRadius: 99,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      background: formData.managedByRoles.length === 0
+                        ? "rgba(148,163,184,0.12)"
+                        : "rgba(99,102,241,0.1)",
+                      color: formData.managedByRoles.length === 0 ? "var(--text-muted)" : "#6366f1",
+                      border: `1px solid ${formData.managedByRoles.length === 0 ? "var(--border-subtle)" : "rgba(99,102,241,0.2)"}`,
+                    }}>
+                      {formData.managedByRoles.length === 0
+                        ? (lang === "th" ? "จัดการโดยทีมงานเท่านั้น" : "Staff-managed only")
+                        : `✓ ${lang === "th" ? "ดูแลโดย: " : "Managed by: "}${formData.managedByRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="field">
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {t.eventPosterLabel}
@@ -2825,6 +2912,32 @@ export default function AdminEventsPage() {
                           <Users size={10} style={{ flexShrink: 0 }} />
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {evt.allowedMajors.join(" • ")}
+                          </span>
+                        </div>
+                      )}
+                      {/* Managed-by badge — which president manages this event
+                          (admin context only; independent of participant access). */}
+                      {evt.managedByRoles && evt.managedByRoles.length > 0 && (
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: "rgba(15,23,42,0.78)",
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                          textTransform: "uppercase",
+                        }}>
+                          <ShieldCheck size={10} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {evt.managedByRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r.toUpperCase()).join(" • ")}
                           </span>
                         </div>
                       )}

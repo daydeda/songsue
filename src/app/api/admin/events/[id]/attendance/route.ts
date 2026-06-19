@@ -33,16 +33,16 @@ export async function GET(
     const { id: eventId } = await params;
 
     // Event scoping for president roles (mirrors the /api/admin/events list filter):
-    // club_president / major_president may only read attendance for events tagged
-    // with their role. Staff and smo are unscoped.
+    // club_president / major_president may only read attendance for events they
+    // manage (managedByRoles), independent of allowedRoles. Staff and smo unscoped.
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     if (!isStaffRole && presidentTags.length > 0) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
-        columns: { allowedRoles: true },
+        columns: { managedByRoles: true },
       });
-      const tagged = (ev?.allowedRoles ?? []).some((r) => presidentTags.includes(r));
-      if (!tagged) {
+      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }

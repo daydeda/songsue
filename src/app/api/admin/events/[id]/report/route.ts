@@ -24,7 +24,7 @@ export async function GET(
 
     const event = await db.query.events.findFirst({
       where: eq(events.id, eventId),
-      columns: { id: true, title: true, allowedRoles: true },
+      columns: { id: true, title: true, managedByRoles: true },
     });
     if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
@@ -32,12 +32,12 @@ export async function GET(
 
     // Event scoping for president roles (mirrors the /api/admin/events list filter
     // and the attendance route): club_president / major_president may only export
-    // events tagged with their role. Staff and smo are unscoped.
+    // events they manage (managedByRoles). Staff and smo are unscoped.
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     if (!isStaff && presidentTags.length > 0) {
-      const tagged = (event.allowedRoles ?? []).some((r) => presidentTags.includes(r));
-      if (!tagged) {
+      const managed = (event.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }

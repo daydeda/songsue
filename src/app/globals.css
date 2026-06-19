@@ -210,6 +210,36 @@ select.input { cursor: pointer; }
 .badge-blue    { background: rgba(99,102,241,0.12); color: #4f46e5;  border: 1px solid rgba(99,102,241,0.25); }
 .badge-purple  { background: rgba(168,85,247,0.12); color: #9333ea;  border: 1px solid rgba(168,85,247,0.25); }
 
+/* Event-card image overlays (restriction tags + status badges). On phones the
+   28px insets and full-size badges wrap into several rows and bury the image,
+   so tighten the insets and shrink the badges. !important overrides the inline
+   padding/font-size set on these elements in events/page.tsx. */
+@media (max-width: 640px) {
+  .event-card-overlay {
+    top: 14px !important;
+    left: 14px !important;
+    right: 14px !important;
+    gap: 5px !important;
+  }
+  .event-card-overlay .badge {
+    padding: 4px 9px !important;
+    font-size: 9.5px !important;
+  }
+  .event-card-tag {
+    padding: 4px 8px !important;
+    font-size: 9px !important;
+  }
+  /* Stack the status badges (Walk-in / All Students / Live·Upcoming·Past) into a
+     single right-aligned column instead of letting long labels wrap across the
+     image. Each badge gets its own line; the column hugs the top-right corner. */
+  .event-card-status {
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: flex-end !important;
+    gap: 5px !important;
+  }
+}
+
 /* ── Stat Card ───────────────────────────────────────────────────────────────── */
 .stat-card {
   background: var(--bg-surface);

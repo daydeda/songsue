@@ -2884,11 +2884,11 @@ export default function AdminEventsPage() {
                       badges (right) live in ONE flex row that wraps, so they never
                       overlap on narrow / mobile cards (was: two independent absolute
                       blocks both anchored top:28, which collided when the card shrank). */}
-                  <div style={{ position: "absolute", top: 28, left: 28, right: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+                  <div className="event-card-overlay" style={{ position: "absolute", top: 28, left: 28, right: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
                     {/* Restriction badges (role + major), stacked */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start", minWidth: 0, flexShrink: 1 }}>
                       {evt.allowedRoles && evt.allowedRoles.length > 0 && (
-                        <div style={{
+                        <div className="event-card-tag" style={{
                           display: "inline-flex",
                           alignItems: "center",
                           gap: 5,
@@ -2912,7 +2912,7 @@ export default function AdminEventsPage() {
                         </div>
                       )}
                       {evt.allowedMajors && evt.allowedMajors.length > 0 && (
-                        <div style={{
+                        <div className="event-card-tag" style={{
                           display: "inline-flex",
                           alignItems: "center",
                           gap: 5,
@@ -2938,7 +2938,7 @@ export default function AdminEventsPage() {
                       {/* Managed-by badge — which president manages this event
                           (admin context only; independent of participant access). */}
                       {evt.managedByRoles && evt.managedByRoles.length > 0 && (
-                        <div style={{
+                        <div className="event-card-tag" style={{
                           display: "inline-flex",
                           alignItems: "center",
                           gap: 5,
@@ -2964,7 +2964,7 @@ export default function AdminEventsPage() {
                     </div>
 
                     {/* Status badges */}
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0, flexShrink: 1, marginLeft: "auto" }}>
+                    <div className="event-card-status" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0, flexShrink: 1, marginLeft: "auto" }}>
                       {evt.walkInsEnabled && (
                         <div className="badge" style={{ background: "rgba(99, 102, 241, 0.2)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
                           <Zap size={12} style={{ marginRight: 4 }} />

@@ -2773,90 +2773,98 @@ export default function AdminEventsPage() {
                     )}
                   </div>
 
-                  {/* Status Overlay */}
-                  <div style={{ position: "absolute", top: 28, right: 28, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {evt.walkInsEnabled && (
-                      <div className="badge" style={{ background: "rgba(99, 102, 241, 0.2)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
-                        <Zap size={12} style={{ marginRight: 4 }} />
-                        Walk-in
-                      </div>
-                    )}
-                    {(evt.targetThai !== false && evt.targetInternational !== false) || (evt.targetThai === false && evt.targetInternational === false) ? (
-                      <div className="badge" style={{ background: "rgba(16, 185, 129, 0.2)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
-                        All Students
-                      </div>
-                    ) : evt.targetThai !== false ? (
-                      <div className="badge" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#3b82f6", border: "1px solid rgba(59, 130, 246, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
-                        Thai Only
-                      </div>
-                    ) : evt.targetInternational !== false ? (
-                      <div className="badge" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
-                        {"Int'l Only"}
-                      </div>
-                    ) : null}
-                    {isLive && (
-                      <div className="badge animate-pulse-glow" style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px" }}>
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", marginRight: 6 }} />
-                        {t.statusLive.toUpperCase()}
-                      </div>
-                    )}
-                    {!isLive && !isPast && (
-                      <div className="badge" style={{ background: "var(--accent-primary)", color: "#fff", border: "none", padding: "6px 12px" }}>{t.statusUpcoming.toUpperCase()}</div>
-                    )}
-                    {isPast && (
-                      <div className="badge" style={{ background: "rgba(0,0,0,0.4)", color: "#fff", border: "none", padding: "6px 12px", backdropFilter: "blur(4px)" }}>{t.statusPast.toUpperCase()}</div>
-                    )}
+                  {/* Top overlays: role/major restriction badges (left) and status
+                      badges (right) live in ONE flex row that wraps, so they never
+                      overlap on narrow / mobile cards (was: two independent absolute
+                      blocks both anchored top:28, which collided when the card shrank). */}
+                  <div style={{ position: "absolute", top: 28, left: 28, right: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+                    {/* Restriction badges (role + major), stacked */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start", minWidth: 0, flexShrink: 1 }}>
+                      {evt.allowedRoles && evt.allowedRoles.length > 0 && (
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: "rgba(99,102,241,0.85)",
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
+                          textTransform: "uppercase",
+                        }}>
+                          <Users size={10} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {evt.allowedRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r.toUpperCase()).join(" • ")}
+                          </span>
+                        </div>
+                      )}
+                      {evt.allowedMajors && evt.allowedMajors.length > 0 && (
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: "rgba(255,107,0,0.85)",
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          boxShadow: "0 2px 8px rgba(255,107,0,0.3)",
+                          textTransform: "uppercase",
+                        }}>
+                          <Users size={10} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {evt.allowedMajors.join(" • ")}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Status badges */}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0, flexShrink: 1, marginLeft: "auto" }}>
+                      {evt.walkInsEnabled && (
+                        <div className="badge" style={{ background: "rgba(99, 102, 241, 0.2)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                          <Zap size={12} style={{ marginRight: 4 }} />
+                          Walk-in
+                        </div>
+                      )}
+                      {(evt.targetThai !== false && evt.targetInternational !== false) || (evt.targetThai === false && evt.targetInternational === false) ? (
+                        <div className="badge" style={{ background: "rgba(16, 185, 129, 0.2)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                          All Students
+                        </div>
+                      ) : evt.targetThai !== false ? (
+                        <div className="badge" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#3b82f6", border: "1px solid rgba(59, 130, 246, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                          Thai Only
+                        </div>
+                      ) : evt.targetInternational !== false ? (
+                        <div className="badge" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)", padding: "6px 12px", backdropFilter: "blur(4px)" }}>
+                          {"Int'l Only"}
+                        </div>
+                      ) : null}
+                      {isLive && (
+                        <div className="badge animate-pulse-glow" style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px" }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", marginRight: 6 }} />
+                          {t.statusLive.toUpperCase()}
+                        </div>
+                      )}
+                      {!isLive && !isPast && (
+                        <div className="badge" style={{ background: "var(--accent-primary)", color: "#fff", border: "none", padding: "6px 12px" }}>{t.statusUpcoming.toUpperCase()}</div>
+                      )}
+                      {isPast && (
+                        <div className="badge" style={{ background: "rgba(0,0,0,0.4)", color: "#fff", border: "none", padding: "6px 12px", backdropFilter: "blur(4px)" }}>{t.statusPast.toUpperCase()}</div>
+                      )}
+                    </div>
                   </div>
-
-                  {/* Role Restriction Badge */}
-                  {evt.allowedRoles && evt.allowedRoles.length > 0 && (
-                    <div style={{ position: "absolute", top: 28, left: 28 }}>
-                      <div style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 5,
-                        background: "rgba(99,102,241,0.85)",
-                        backdropFilter: "blur(6px)",
-                        color: "#fff",
-                        padding: "5px 10px",
-                        borderRadius: 99,
-                        fontSize: 10,
-                        fontWeight: 900,
-                        letterSpacing: "0.04em",
-                        border: "1px solid rgba(255,255,255,0.15)",
-                        boxShadow: "0 2px 8px rgba(99,102,241,0.3)",
-                        textTransform: "uppercase",
-                      }}>
-                        <Users size={10} />
-                        {evt.allowedRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r.toUpperCase()).join(" • ")}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Major Restriction Badge — stacks below the role badge when both are set */}
-                  {evt.allowedMajors && evt.allowedMajors.length > 0 && (
-                    <div style={{ position: "absolute", top: evt.allowedRoles && evt.allowedRoles.length > 0 ? 60 : 28, left: 28 }}>
-                      <div style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 5,
-                        background: "rgba(255,107,0,0.85)",
-                        backdropFilter: "blur(6px)",
-                        color: "#fff",
-                        padding: "5px 10px",
-                        borderRadius: 99,
-                        fontSize: 10,
-                        fontWeight: 900,
-                        letterSpacing: "0.04em",
-                        border: "1px solid rgba(255,255,255,0.15)",
-                        boxShadow: "0 2px 8px rgba(255,107,0,0.3)",
-                        textTransform: "uppercase",
-                      }}>
-                        <Users size={10} />
-                        {evt.allowedMajors.join(" • ")}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Points Badge */}
                   {evt.pointsAwarded !== undefined && (

@@ -14,7 +14,8 @@ export async function GET(
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
+    const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -23,10 +24,22 @@ export async function GET(
 
     const event = await db.query.events.findFirst({
       where: eq(events.id, eventId),
-      columns: { id: true, title: true },
+      columns: { id: true, title: true, allowedRoles: true },
     });
     if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    // Event scoping for president roles (mirrors the /api/admin/events list filter
+    // and the attendance route): club_president / major_president may only export
+    // events tagged with their role. Staff and smo are unscoped.
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    if (!isStaff && presidentTags.length > 0) {
+      const tagged = (event.allowedRoles ?? []).some((r) => presidentTags.includes(r));
+      if (!tagged) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     // This report is reachable by scanner-only roles (smo) and registration/

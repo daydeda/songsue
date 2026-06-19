@@ -32,6 +32,8 @@ const eventUpdateSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Which president role(s) MANAGE this event — separate from allowedRoles.
+  managedByRoles: z.array(z.string()).optional().nullable(),
 });
 
 // PUT /api/admin/events/[id] — Update event
@@ -98,6 +100,9 @@ export async function PUT(
             }),
             ...(data.allowedMajors !== undefined && {
               allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null
+            }),
+            ...(data.managedByRoles !== undefined && {
+              managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null
             }),
             updatedAt: new Date(),
           })

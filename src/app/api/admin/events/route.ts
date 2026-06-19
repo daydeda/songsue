@@ -31,6 +31,9 @@ const eventSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Which president role(s) MANAGE this event (club_president / major_president).
+  // Separate from allowedRoles (participant visibility) — see GET scoping above.
+  managedByRoles: z.array(z.string()).optional().nullable(),
 });
 
 // GET /api/admin/events — List all events with registration counts
@@ -47,9 +50,10 @@ export async function GET() {
     }
 
     // Event scoping for president roles: club_president / major_president see ONLY
-    // events whose allowedRoles is tagged with their role — untagged/open events are
-    // hidden from them. Staff roles and smo are unscoped (see all). This drives both
-    // the admin events page AND the scanner's event picker, which share this endpoint.
+    // events whose managedByRoles is tagged with their role — i.e. events created
+    // for them to manage. This is independent of allowedRoles (participant
+    // visibility). Staff roles and smo are unscoped (see all). This drives both the
+    // admin events page AND the scanner's event picker, which share this endpoint.
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     const scopeToPresidentTags = !isStaff && presidentTags.length > 0;
@@ -97,7 +101,7 @@ export async function GET() {
 
     const scoped = scopeToPresidentTags
       ? eventsWithCount.filter((e) =>
-          (e.allowedRoles ?? []).some((r) => presidentTags.includes(r))
+          (e.managedByRoles ?? []).some((r) => presidentTags.includes(r))
         )
       : eventsWithCount;
 
@@ -161,6 +165,7 @@ export async function POST(req: Request) {
           quotaInternational: data.quotaInternational,
           allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
           allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
+          managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null,
         })
         .returning();
 

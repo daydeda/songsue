@@ -54,18 +54,18 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { qrToken, eventId, sessionId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
 
-    // President roles may only scan events tagged for their role (mirrors the
-    // /api/admin/events list + attendance/report scoping). Staff and smo unscoped.
+    // President roles may only scan events they manage (managedByRoles), mirroring
+    // the /api/admin/events list + attendance/report scoping. Staff and smo unscoped.
     const myRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     if (!isStaff && presidentTags.length > 0) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
-        columns: { allowedRoles: true },
+        columns: { managedByRoles: true },
       });
-      const tagged = (ev?.allowedRoles ?? []).some((r) => presidentTags.includes(r));
-      if (!tagged) {
+      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }

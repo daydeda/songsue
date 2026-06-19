@@ -77,13 +77,35 @@ export async function GET() {
     });
     const attendedEventIds = new Set(userAttendances.map((a) => a.eventId));
 
+    // A multi-session event has ONE attendance row per session (uniqueness is
+    // per-session, not per-event), but history shows one card per EVENT. Group
+    // the rows by event so a multi-day event collapses into a single entry
+    // (this also de-dups the event-level forms, which are otherwise repeated).
+    const attByEvent = new Map<string, typeof userAttendances>();
+    for (const a of userAttendances) {
+      const list = attByEvent.get(a.eventId) ?? [];
+      list.push(a);
+      attByEvent.set(a.eventId, list);
+    }
+
     // History entries for events the student registered for / attended.
     const history = await Promise.all(
-      userAttendances.map(async (att) => {
+      [...attByEvent.values()].map(async (group) => {
+        // Representative row for the card's date/rank/method: the earliest
+        // session the student actually checked into, else the first row if no
+        // session has a check-in yet.
+        const checkedIn = group.filter((a) => a.checkInTime);
+        const att =
+          checkedIn.length > 0
+            ? checkedIn.reduce((a, b) => (a.checkInTime! <= b.checkInTime! ? a : b))
+            : group[0];
         if (!att.event) return null;
 
-        // Rank = the order this student physically checked in among everyone who
-        // attended. Only set once they've actually checked in; null otherwise.
+        // Rank = the order this student physically checked in, scoped to the
+        // representative session so a multi-session event doesn't inflate the
+        // count with check-ins from its other sessions. (For a single-session
+        // event this is identical to scoping by event.) Only set once they've
+        // actually checked in; null otherwise.
         let rank: number | null = null;
         if (att.checkInTime) {
           const [{ value: earlier }] = await db
@@ -91,7 +113,7 @@ export async function GET() {
             .from(attendance)
             .where(
               and(
-                eq(attendance.eventId, att.eventId),
+                eq(attendance.sessionId, att.sessionId),
                 lt(attendance.checkInTime, att.checkInTime)
               )
             );

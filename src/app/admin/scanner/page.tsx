@@ -26,6 +26,13 @@ import {
 import { useLanguage } from "@/lib/LanguageContext";
 import { useSession } from "next-auth/react";
 import { canGiveIndividualScore } from "@/lib/admin-access";
+import dynamic from "next/dynamic";
+
+// Pre-test warning QR — client-only (qrcode.react reads the DOM). Same component
+// the dashboard uses to render the student QR.
+const QRCodeSVG = dynamic(() => import("qrcode.react").then((mod) => mod.QRCodeSVG), {
+  ssr: false,
+});
 
 type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "found" | "not_registered" | "error";
 
@@ -52,6 +59,9 @@ type ScanResult = {
   checkedInAt?: string;
   error?: string;
   rawToken?: string;
+  // Set by the scan API on a confirmed check-in when the event has a pre-test (K_pre)
+  // this attendee hasn't completed — drives the warning + QR shown below the result.
+  preTestWarning?: { formId: string; title: string } | null;
 };
 
 type EventSession = {
@@ -1416,6 +1426,69 @@ export default function QRScannerPage() {
                   {scanResult?.status === "already_checked_in" ? t.scanAlreadyCheckedIn : t.attended}
                 </div>
               )}
+
+              {/* Pre-test (K_pre) reminder — walk-ins skip the dashboard pre-test gate,
+                  so on a confirmed check-in we warn and show a QR/link the attendee can
+                  scan to complete it on their own phone. */}
+              {scanMode === "checkin" && scanResult?.preTestWarning && (() => {
+                const origin = typeof window !== "undefined" ? window.location.origin : "";
+                const preTestUrl = `${origin}/dashboard/history?form=${scanResult.preTestWarning.formId}&event=${eventId}`;
+                return (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 16,
+                      borderRadius: 16,
+                      background: "rgba(225, 29, 72, 0.06)",
+                      border: "1.5px dashed rgba(225, 29, 72, 0.4)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 12,
+                      textAlign: "center",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <AlertCircle size={18} color="#e11d48" style={{ flexShrink: 0 }} />
+                      <p style={{ fontSize: 13, fontWeight: 800, color: "#e11d48", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        {lang === "th" ? "ต้องทำแบบทดสอบ Pre-test" : lang === "cn" ? "需要完成前测" : lang === "mm" ? "Pre-Test ဖြေဆိုရန် လိုအပ်သည်" : "Pre-Test Required"}
+                      </p>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>
+                      {lang === "th"
+                        ? `กิจกรรมนี้มีแบบทดสอบ Pre-test “${scanResult.preTestWarning.title}” ที่ผู้เข้าร่วมยังทำไม่เสร็จ ให้สแกนเพื่อทำให้เสร็จ`
+                        : lang === "cn"
+                        ? `本活动有一个前测「${scanResult.preTestWarning.title}」，该参与者尚未完成。请扫码完成。`
+                        : lang === "mm"
+                        ? `ဤပွဲတွင် ဤတက်ရောက်သူ မဖြေဆိုရသေးသော Pre-Test「${scanResult.preTestWarning.title}」ရှိသည်။ ဖြေဆိုရန် စကန်ဖတ်ပါ။`
+                        : `This event has a pre-test “${scanResult.preTestWarning.title}” the attendee hasn't completed yet. Scan to complete it.`}
+                    </p>
+                    <div style={{ background: "#ffffff", padding: 12, borderRadius: 12, lineHeight: 0 }}>
+                      <QRCodeSVG value={preTestUrl} size={160} level="M" bgColor="#ffffff" fgColor="#000000" />
+                    </div>
+                    <a
+                      href={preTestUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "10px 18px",
+                        borderRadius: 12,
+                        background: "#e11d48",
+                        color: "white",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        textDecoration: "none",
+                      }}
+                    >
+                      {lang === "th" ? "เปิดแบบทดสอบ" : lang === "cn" ? "打开前测" : lang === "mm" ? "Pre-Test ဖွင့်ရန်" : "Open pre-test"}
+                      <ArrowRight size={16} />
+                    </a>
+                  </div>
+                );
+              })()}
 
               {/* Score Mode — blocked: student is not registered for this event */}
               {scanMode === "score" && scanResult?.status === "not_registered" && (

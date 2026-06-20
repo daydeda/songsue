@@ -41,7 +41,8 @@ import {
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
-import { NotificationToasts } from "@/components/NotificationToasts";
+import { NotificationModal } from "@/components/NotificationModal";
+import { FormsDueBanner } from "@/components/FormsDueBanner";
 import { useNotifications } from "@/lib/useNotifications";
 import { useRouter } from "next/navigation";
 
@@ -433,7 +434,11 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // Digital ID page (immediate modal); here on the dashboard a gentle toast on
   // the same 60s cadence catches anything that happened while they were
   // elsewhere. The shared hook owns the fetch / dedup / last-seen bookkeeping.
-  const { items: notifToasts, dismiss: dismissNotif } = useNotifications(session?.user?.id, 60000);
+  // Desktop / iPad students live on the dashboard (not the QR page), so surface the
+  // same live check-in / score / pre-test modal here. Poll at 15s — responsive
+  // enough to feel live, but gentler than the QR page's 4s since the dashboard
+  // stays open on many devices (hidden tabs pause polling, bounding the load).
+  const { items: notifItems, dismiss: dismissNotif } = useNotifications(session?.user?.id, 15000);
 
   // Poll events + leaderboard. Slow interval (60s) because this is student-facing
   // across potentially ~1,500 devices — at 20s a single event hour approaches the
@@ -615,6 +620,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             </div>
           )}
         </section>
+
+        {/* Outstanding forms (pre-test / post-test / feedback) — persists until done. */}
+        <FormsDueBanner userId={session?.user?.id} />
 
         {/* Dynamic Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8 items-start">
@@ -1288,11 +1296,11 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               <ClipboardCheck size={28} />
             </div>
             <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
-              {lang === "th" ? "กรุณาทำแบบทดสอบก่อนเรียน" : lang === "cn" ? "请先完成前测" : lang === "mm" ? "ကြိုတင်စာမေးပွဲ ဖြေဆိုပါ" : "Pre-Test Required"}
+              {lang === "th" ? "กรุณาทำแบบทดสอบ Pre-Test" : lang === "cn" ? "请先完成前测" : lang === "mm" ? "ကြိုတင်စာမေးပွဲ ဖြေဆိုပါ" : "Pre-Test Required"}
             </h4>
             <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
               {lang === "th"
-                ? `คุณได้ลงทะเบียนกิจกรรม "${preTestModal.eventTitle}" แล้ว กิจกรรมนี้มีแบบทดสอบก่อนเรียน (Pre-Test) ที่ต้องทำให้เสร็จ`
+                ? `คุณได้ลงทะเบียนกิจกรรม "${preTestModal.eventTitle}" แล้ว กิจกรรมนี้มีแบบทดสอบ Pre-Test ที่ต้องทำให้เสร็จ`
                 : lang === "cn"
                 ? `您已注册活动 "${preTestModal.eventTitle}"。此活动要求先完成前测（Pre-Test）。`
                 : lang === "mm"
@@ -1810,7 +1818,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         );
       })()}
 
-        <NotificationToasts items={notifToasts} onDismiss={dismissNotif} />
+        <NotificationModal items={notifItems} onDismiss={dismissNotif} />
 
         <style jsx global>{`
           .event-card-ig:hover {

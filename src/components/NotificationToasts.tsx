@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { CheckCircle2, Award, X } from "lucide-react";
+import { CheckCircle2, Award, ClipboardList, X } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 
 export type NotifItem = {
   id: string;
-  type: "checkin" | "score";
+  type: "checkin" | "score" | "pre_test_reminder";
   eventTitle?: string | null;
   points?: number;
+  // Deep-link a tap navigates to (pre_test_reminder → the K_pre form).
+  link?: string;
 };
 
 // How long a toast stays before auto-dismissing.
@@ -54,22 +56,29 @@ export function NotificationToasts({
 function Toast({ item, onDismiss }: { item: NotifItem; onDismiss: (id: string) => void }) {
   const { t } = useLanguage();
 
+  const isCheckin = item.type === "checkin";
+  const isPreTest = item.type === "pre_test_reminder";
+
   useEffect(() => {
+    // Confirmations (check-in / score) auto-expire. The pre-test reminder is
+    // actionable, so it stays until the student taps it (to open the form) or
+    // dismisses it — it must not vanish on its own before they act.
+    if (isPreTest) return;
     const timer = window.setTimeout(() => onDismiss(item.id), DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [item.id, onDismiss]);
-
-  const isCheckin = item.type === "checkin";
+  }, [item.id, isPreTest, onDismiss]);
   const positive = (item.points ?? 0) >= 0;
-  const accent = isCheckin ? "#14b8a6" : positive ? "var(--accent-primary)" : "#f59e0b";
+  const accent = isPreTest ? "#e11d48" : isCheckin ? "#14b8a6" : positive ? "var(--accent-primary)" : "#f59e0b";
 
-  const title = isCheckin
-    ? t.notifCheckinTitle
-    : positive
-      ? t.notifScorePosTitle
-      : t.notifScoreTitle;
+  const title = isPreTest
+    ? t.notifPreTestTitle
+    : isCheckin
+      ? t.notifCheckinTitle
+      : positive
+        ? t.notifScorePosTitle
+        : t.notifScoreTitle;
 
-  const detail = isCheckin
+  const detail = isPreTest || isCheckin
     ? item.eventTitle ?? ""
     : [
         item.points !== undefined ? `${positive ? "+" : ""}${item.points} ${t.notifPointsSuffix}` : "",
@@ -81,6 +90,10 @@ function Toast({ item, onDismiss }: { item: NotifItem; onDismiss: (id: string) =
   return (
     <div
       className="animate-fade-in-up"
+      onClick={() => {
+        // A reminder toast is actionable — tapping the body opens the pre-test.
+        if (item.link) window.location.href = item.link;
+      }}
       style={{
         pointerEvents: "auto",
         display: "flex",
@@ -93,6 +106,7 @@ function Toast({ item, onDismiss }: { item: NotifItem; onDismiss: (id: string) =
         border: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
         borderLeft: `4px solid ${accent}`,
         boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+        cursor: item.link ? "pointer" : "default",
       }}
     >
       <div
@@ -108,7 +122,13 @@ function Toast({ item, onDismiss }: { item: NotifItem; onDismiss: (id: string) =
           color: accent,
         }}
       >
-        {isCheckin ? <CheckCircle2 size={20} strokeWidth={2.5} /> : <Award size={20} strokeWidth={2.5} />}
+        {isPreTest ? (
+          <ClipboardList size={20} strokeWidth={2.5} />
+        ) : isCheckin ? (
+          <CheckCircle2 size={20} strokeWidth={2.5} />
+        ) : (
+          <Award size={20} strokeWidth={2.5} />
+        )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: "-0.01em" }}>{title}</div>
@@ -128,7 +148,10 @@ function Toast({ item, onDismiss }: { item: NotifItem; onDismiss: (id: string) =
       </div>
       <button
         aria-label={t.notifDismiss}
-        onClick={() => onDismiss(item.id)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismiss(item.id);
+        }}
         style={{
           flexShrink: 0,
           background: "transparent",

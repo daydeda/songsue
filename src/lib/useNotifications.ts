@@ -37,7 +37,7 @@ export function useNotifications(userId: string | undefined, intervalMs: number)
         for (const n of d.notifications) {
           if (seenRef.current.has(n.id)) continue;
           seenRef.current.add(n.id);
-          fresh.push({ id: n.id, type: n.type, eventTitle: n.eventTitle, points: n.points });
+          fresh.push({ id: n.id, type: n.type, eventTitle: n.eventTitle, points: n.points, link: n.link });
         }
         if (fresh.length > 0) setItems((prev) => [...prev, ...fresh]);
         if (typeof d.serverTime === "string" && typeof window !== "undefined") {

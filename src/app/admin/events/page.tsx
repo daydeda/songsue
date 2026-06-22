@@ -1035,7 +1035,7 @@ export default function AdminEventsPage() {
 
   // Poll the events listing instead of holding an SSE connection (free-tier
   // friendly, pauses when the tab is hidden).
-  usePolling(fetchEvents, 8000);
+  usePolling(fetchEvents, 15000);
 
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 

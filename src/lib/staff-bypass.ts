@@ -3,8 +3,9 @@
 // Accounts listed here skip the student onboarding form entirely (no studentId,
 // major, medical info, emergency contacts or PDPA step). On their first visit to
 // /onboarding they are auto-provisioned as `staff` with ONLY a nickname, and are
-// dropped into a balanced house just like every other member (see
-// HousesService.pickBalancedHouseId / UsersService.provisionStaffBypass).
+// dropped into the house with the fewest STAFF members (students are not counted),
+// so staff stay balanced across houses independently of the student population
+// (see HousesService.pickBalancedHouseIdForStaff / UsersService.provisionStaffBypass).
 //
 // To add someone: add `"<lowercased-email>": "<nickname>"`. Keys MUST be
 // lowercase — getStaffBypassNickname() lowercases the incoming email before
@@ -39,6 +40,8 @@ const STAFF_BYPASS: Record<string, string> = {
   "apiradee.r@camt.info": "พี่ต้อม",
   "thanutphorn.ch@camt.info": "พี่แยม",
   "witchayaphon.w@camt.info": "พี่ป่าน",
+  "sukwan24.56@gmail.com": "พี่สุขวัญ",
+  "chonthicha.ro@gmail.com": "พี่วันใหม่",
 };
 
 /**

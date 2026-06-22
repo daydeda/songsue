@@ -63,7 +63,9 @@ export class UsersService {
     const nickname = getStaffBypassNickname(email);
     if (!nickname) return false;
 
-    const houseId = await HousesService.pickBalancedHouseId();
+    // Balance staff among houses by STAFF count only (students are ignored), so
+    // staff spread evenly regardless of the much larger student population.
+    const houseId = await HousesService.pickBalancedHouseIdForStaff();
 
     const updated = await db
       .update(users)

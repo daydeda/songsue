@@ -31,6 +31,9 @@ const eventSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Which president role(s) MANAGE this event (club_president / major_president).
+  // Separate from allowedRoles (participant visibility) — see GET scoping above.
+  managedByRoles: z.array(z.string()).optional().nullable(),
 });
 
 // GET /api/admin/events — List all events with registration counts
@@ -40,10 +43,20 @@ export async function GET() {
     // Scanner-only roles (smo, club_president, major_president) are included here
     // (read-only list) because the QR Scanner's event picker fetches this endpoint;
     // write handlers (POST/PUT/DELETE) deliberately exclude them.
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
+    const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Event scoping for president roles: club_president / major_president see ONLY
+    // events whose managedByRoles is tagged with their role — i.e. events created
+    // for them to manage. This is independent of allowedRoles (participant
+    // visibility). Staff roles and smo are unscoped (see all). This drives both the
+    // admin events page AND the scanner's event picker, which share this endpoint.
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    const scopeToPresidentTags = !isStaff && presidentTags.length > 0;
 
     // Award runs deliberately do NOT live on this polled read path — they run on
     // their own isolated, advisory-locked endpoints (/api/admin/award-check and
@@ -86,7 +99,13 @@ export async function GET() {
       sessions: sessionsByEvent.get(e.id) ?? [],
     }));
 
-    return NextResponse.json(eventsWithCount);
+    const scoped = scopeToPresidentTags
+      ? eventsWithCount.filter((e) =>
+          (e.managedByRoles ?? []).some((r) => presidentTags.includes(r))
+        )
+      : eventsWithCount;
+
+    return NextResponse.json(scoped);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -146,6 +165,7 @@ export async function POST(req: Request) {
           quotaInternational: data.quotaInternational,
           allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
           allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
+          managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null,
         })
         .returning();
 

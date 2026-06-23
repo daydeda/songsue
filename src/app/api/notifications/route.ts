@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, auditLogs, events } from "@/db/schema";
-import { and, desc, eq, gt, like, or } from "drizzle-orm";
+import { attendance, auditLogs, events, forms, formSubmissions } from "@/db/schema";
+import { and, desc, eq, gt, inArray, like, or } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 // Fail fast instead of hanging to the platform default if the DB pooler stalls.
@@ -25,10 +25,12 @@ const SCORE_ACTION = /^(Awarded|Deducted) (\d+) individual points to .* for acti
 
 type Notification = {
   id: string;
-  type: "checkin" | "score";
+  type: "checkin" | "score" | "pre_test_reminder";
   at: string;
   eventTitle: string | null;
   points?: number;
+  // Deep-link to act on the notification (pre_test_reminder → the K_pre form).
+  link?: string;
 };
 
 export async function GET(req: NextRequest) {
@@ -56,6 +58,7 @@ export async function GET(req: NextRequest) {
       db
         .select({
           id: attendance.id,
+          eventId: attendance.eventId,
           checkInTime: attendance.checkInTime,
           eventTitle: events.title,
         })
@@ -101,6 +104,66 @@ export async function GET(req: NextRequest) {
         at: c.checkInTime.toISOString(),
         eventTitle: c.eventTitle ?? null,
       });
+    }
+
+    // Pre-test (K_pre) reminders. Walk-ins are checked in without ever passing the
+    // dashboard pre-test gate, so for any event a student just attended that still
+    // has an outstanding pre-test, nudge them — with a deep-link — while they're on
+    // the Digital ID page presenting their QR. Derived live (no table), keyed to the
+    // recent check-in window like the other notifications.
+    const eventIds = [...new Set(checkins.map((c) => c.eventId).filter(Boolean))] as string[];
+    if (eventIds.length > 0) {
+      const preTests = await db
+        .select({
+          id: forms.id,
+          eventId: forms.eventId,
+          isActive: forms.isActive,
+          closesAt: forms.closesAt,
+        })
+        .from(forms)
+        .where(and(inArray(forms.eventId, eventIds), eq(forms.formType, "K_pre")));
+
+      // Only forms that can still be taken: manually active and not past their close.
+      const takeable = preTests.filter(
+        (f) => f.isActive !== false && (!f.closesAt || f.closesAt.getTime() >= now),
+      );
+
+      if (takeable.length > 0) {
+        const submitted = await db
+          .select({ formId: formSubmissions.formId })
+          .from(formSubmissions)
+          .where(
+            and(
+              eq(formSubmissions.studentId, userId),
+              inArray(
+                formSubmissions.formId,
+                takeable.map((f) => f.id),
+              ),
+            ),
+          );
+        const submittedSet = new Set(submitted.map((s) => s.formId));
+
+        // Most-recent check-in per event (checkins are ordered by check-in time desc)
+        // gives the reminder its timestamp + event title.
+        const checkinByEvent = new Map<string, { at: string; title: string | null }>();
+        for (const c of checkins) {
+          if (!c.checkInTime || !c.eventId || checkinByEvent.has(c.eventId)) continue;
+          checkinByEvent.set(c.eventId, { at: c.checkInTime.toISOString(), title: c.eventTitle ?? null });
+        }
+
+        for (const f of takeable) {
+          if (submittedSet.has(f.id)) continue;
+          const ci = checkinByEvent.get(f.eventId);
+          if (!ci) continue;
+          notifications.push({
+            id: `pt:${f.id}`,
+            type: "pre_test_reminder",
+            at: ci.at,
+            eventTitle: ci.title,
+            link: `/dashboard/history?form=${f.id}&event=${f.eventId}`,
+          });
+        }
+      }
     }
 
     for (const s of scores) {

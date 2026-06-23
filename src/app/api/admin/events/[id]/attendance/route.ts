@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance } from "@/db/schema";
+import { attendance, events } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService } from "@/modules/audit/audit.service";
@@ -31,6 +31,21 @@ export async function GET(
     const isThinRoster = !isStaffRole;
 
     const { id: eventId } = await params;
+
+    // Event scoping for president roles (mirrors the /api/admin/events list filter):
+    // club_president / major_president may only read attendance for events they
+    // manage (managedByRoles), independent of allowedRoles. Staff and smo unscoped.
+    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    if (!isStaffRole && presidentTags.length > 0) {
+      const ev = await db.query.events.findFirst({
+        where: eq(events.id, eventId),
+        columns: { managedByRoles: true },
+      });
+      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      if (!managed) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
     // Optional ?sessionId= filter narrows the roster to one day of a multi-day event.
     const sessionIdFilter = new URL(req.url).searchParams.get("sessionId");
 

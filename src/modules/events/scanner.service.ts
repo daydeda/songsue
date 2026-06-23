@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { attendance, users, houses, scoreHistory, eventSessions } from "@/db/schema";
+import { attendance, users, houses, scoreHistory, eventSessions, forms, formSubmissions } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
@@ -31,6 +31,10 @@ export interface ScanResult {
   checkedInAt?: Date | null;
   error?: string;
   isWalkIn?: boolean;
+  // Set on a confirmed check-in when the event has a takeable K_pre (pre-test) form
+  // this student hasn't submitted. Walk-ins never pass through the dashboard pre-test
+  // gate, so the scanner surfaces a warning + a deep-link/QR to complete it.
+  preTestWarning?: { formId: string; title: string } | null;
 }
 
 const MAX_SCORE_AWARD = 500;
@@ -283,7 +287,8 @@ export class ScannerService {
         if (updated.length === 0) {
           return { status: "already_checked_in", student: baseStudentInfo };
         }
-        return { status: "success", student: studentWithMedical };
+        const preTestWarning = await this.getPreTestWarning(eventId, student.id);
+        return { status: "success", student: studentWithMedical, preTestWarning };
       }
 
       // Scan only — staff sees medical alert before deciding to confirm
@@ -333,7 +338,8 @@ export class ScannerService {
           if (inserted.length === 0) {
             return { status: "already_checked_in", student: baseStudentInfo };
           }
-          return { status: "success", student: studentWithMedical };
+          const preTestWarning = await this.getPreTestWarning(eventId, student.id);
+          return { status: "success", student: studentWithMedical, preTestWarning };
         }
         return { status: "pending_confirmation", student: studentWithMedical };
       }
@@ -432,11 +438,45 @@ export class ScannerService {
         throw e;
       }
 
-      return { status: "success_walk_in", student: studentWithMedical };
+      const preTestWarning = await this.getPreTestWarning(eventId, student.id);
+      return { status: "success_walk_in", student: studentWithMedical, preTestWarning };
     }
 
     // Walk-in scan only — staff sees medical alert before deciding to confirm
     return { status: "pending_confirmation", isWalkIn: true, student: studentWithMedical };
+  }
+
+  /**
+   * Pre-test (K_pre) gate for check-ins. Pre-registered students are forced through
+   * the pre-test at the dashboard before attending, but walk-ins never touch it — so
+   * after a confirmed check-in we surface a warning when the event has a takeable
+   * K_pre form this student hasn't submitted yet. The scanner renders this as a
+   * deep-link/QR (/dashboard/history?form=...&event=...) the attendee can complete
+   * on their own phone. Reads only form metadata — no medical data, no audit needed.
+   */
+  private static async getPreTestWarning(
+    eventId: string,
+    studentUserId: string
+  ): Promise<{ formId: string; title: string } | null> {
+    const preTest = await db.query.forms.findFirst({
+      where: and(eq(forms.eventId, eventId), eq(forms.formType, "K_pre")),
+      orderBy: (f, { asc }) => [asc(f.sortOrder)],
+    });
+    // No pre-test, or it's been manually deactivated → nothing to warn about.
+    if (!preTest || preTest.isActive === false) return null;
+    // Skip if the pre-test window has fully closed — it can no longer be taken.
+    if (preTest.closesAt && preTest.closesAt.getTime() < Date.now()) return null;
+
+    const submitted = await db.query.formSubmissions.findFirst({
+      where: and(
+        eq(formSubmissions.formId, preTest.id),
+        eq(formSubmissions.studentId, studentUserId)
+      ),
+      columns: { id: true },
+    });
+    if (submitted) return null;
+
+    return { formId: preTest.id, title: preTest.title };
   }
 
   static async searchStudents(query: string) {

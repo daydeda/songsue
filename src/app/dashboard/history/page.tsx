@@ -38,6 +38,15 @@ interface EventFormStatus {
   closesAt: string | null;
 }
 
+interface SessionStatus {
+  sessionId: string;
+  title: string | null; // null → derive "Day N" in the UI
+  startTime: string | null;
+  checkInTime: string | null;
+  method?: string | null;
+  rank: number | null; // check-in order within this session; null if not checked in
+}
+
 interface HistoryItem {
   id: string;
   eventId: string;
@@ -48,6 +57,7 @@ interface HistoryItem {
   eventEndTime?: string;
   eventQuota: number | null;
   rank: number | null; // check-in order; null when registered but not yet checked in
+  sessions: SessionStatus[]; // one per session the student joined; >1 for multi-day events
   forms: EventFormStatus[];
   method?: string | null;
   assignedOnly?: boolean; // entry surfaced only because the viewer is assigned to evaluate
@@ -456,7 +466,11 @@ export default function HistoryPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontWeight: 900, fontSize: 17, color: "var(--text-primary)", letterSpacing: "-0.01em", lineHeight: 1.35, overflowWrap: "break-word", wordBreak: "break-word" }}>{h.eventTitle}</p>
                     <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 700, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      {h.checkInTime ? (
+                      {h.sessions && h.sessions.length > 1 ? (
+                        // Multi-day event: the per-session dates are listed below,
+                        // so the subtitle just states how many sessions there are.
+                        <>{h.sessions.length}{" "}{lang === "th" ? "ช่วงกิจกรรม" : lang === "cn" ? "个场次" : lang === "mm" ? "ကြိမ်" : "sessions"}</>
+                      ) : h.checkInTime ? (
                         <>Completed on {new Date(h.checkInTime).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" })}</>
                       ) : (
                         <>Event Date: {new Date(h.eventStartTime).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" })}</>
@@ -465,6 +479,41 @@ export default function HistoryPage() {
                   </div>
                 </div>
 
+                {h.sessions && h.sessions.length > 1 ? (
+                  // Multi-day event: one row per session with its date + the
+                  // student's check-in order for that specific session.
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {h.sessions.map((s, i) => {
+                      const label = s.title || (lang === "th" ? `วันที่ ${i + 1}` : lang === "cn" ? `第 ${i + 1} 天` : lang === "mm" ? `နေ့ ${i + 1}` : `Day ${i + 1}`);
+                      const dateSrc = s.startTime || s.checkInTime;
+                      const dateStr = dateSrc
+                        ? new Date(dateSrc).toLocaleDateString(dateLocale, { day: "numeric", month: "short", timeZone: "Asia/Bangkok" })
+                        : "";
+                      return (
+                        <div key={s.sessionId} style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                          padding: "8px 14px", borderRadius: 14,
+                          background: s.checkInTime ? "rgba(255,107,0,0.08)" : "rgba(0,0,0,0.04)"
+                        }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            <ClipboardList size={14} style={{ flexShrink: 0, color: s.checkInTime ? "var(--accent-primary)" : "var(--text-muted)" }} />
+                            <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                              <span style={{ fontSize: 12, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{label}</span>
+                              {dateStr && <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)" }}>{dateStr}</span>}
+                            </span>
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 800, flexShrink: 0, textAlign: "right", color: s.checkInTime ? "var(--accent-primary)" : "var(--text-muted)" }}>
+                            {s.rank != null
+                              ? (h.eventQuota
+                                  ? t.joinedAsRank.replace("{rank}", s.rank.toString()).replace("{total}", h.eventQuota.toString())
+                                  : t.joinedAsRankNoLimit.replace("{rank}", s.rank.toString()))
+                              : t.registeredNotCheckedIn}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   {h.assignedOnly ? (
                     // Surfaced only because the viewer is assigned to evaluate this
@@ -520,6 +569,7 @@ export default function HistoryPage() {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* KAS Form Actions */}
                 {h.forms.length > 0 && (

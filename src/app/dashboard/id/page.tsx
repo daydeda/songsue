@@ -28,6 +28,7 @@ import { StudentNav } from "@/components/layout/StudentNav";
 import { useQrToken } from "@/lib/useQrToken";
 import { useNotifications } from "@/lib/useNotifications";
 import { NotificationModal } from "@/components/NotificationModal";
+import { FormsDueBanner } from "@/components/FormsDueBanner";
 
 // House mascot logos (background removed). Keyed by both the house id (color) and
 // its name so it resolves whichever identifier the API returns.
@@ -159,6 +160,10 @@ export default function DigitalIdPage() {
             {lang === "th" ? "บัตรประจำตัวกิจกรรมและคะแนนบ้านของคุณ" : "Your activity pass and house standing"}
           </p>
         </div>
+
+        {/* Outstanding forms (pre-test / post-test / feedback) — persists until done.
+            Sits right above the QR so a walk-in sees it before being scanned. */}
+        <FormsDueBanner userId={user?.id} />
 
         {/* House Stats Card */}
         {user && (

@@ -72,34 +72,72 @@ export async function GET() {
 
     const userAttendances = await db.query.attendance.findMany({
       where: eq(attendance.studentId, userId),
-      with: { event: true },
+      with: { event: true, session: true },
       orderBy: (a, { desc }) => [desc(a.checkInTime)],
     });
+
+    // Check-in order within a single session: how many attendees checked into
+    // this exact session before the given time. Scoped per-session so a
+    // multi-session event reports each session's own arrival order.
+    const sessionRank = async (sessionId: string, checkInTime: Date) => {
+      const [{ value: earlier }] = await db
+        .select({ value: count() })
+        .from(attendance)
+        .where(and(eq(attendance.sessionId, sessionId), lt(attendance.checkInTime, checkInTime)));
+      return (earlier || 0) + 1;
+    };
     const attendedEventIds = new Set(userAttendances.map((a) => a.eventId));
+
+    // A multi-session event has ONE attendance row per session (uniqueness is
+    // per-session, not per-event), but history shows one card per EVENT. Group
+    // the rows by event so a multi-day event collapses into a single entry
+    // (this also de-dups the event-level forms, which are otherwise repeated).
+    const attByEvent = new Map<string, typeof userAttendances>();
+    for (const a of userAttendances) {
+      const list = attByEvent.get(a.eventId) ?? [];
+      list.push(a);
+      attByEvent.set(a.eventId, list);
+    }
 
     // History entries for events the student registered for / attended.
     const history = await Promise.all(
-      userAttendances.map(async (att) => {
-        if (!att.event) return null;
+      [...attByEvent.values()].map(async (group) => {
+        const event = group[0].event;
+        if (!event) return null;
 
-        // Rank = the order this student physically checked in among everyone who
-        // attended. Only set once they've actually checked in; null otherwise.
-        let rank: number | null = null;
-        if (att.checkInTime) {
-          const [{ value: earlier }] = await db
-            .select({ value: count() })
-            .from(attendance)
-            .where(
-              and(
-                eq(attendance.eventId, att.eventId),
-                lt(attendance.checkInTime, att.checkInTime)
-              )
-            );
-          rank = (earlier || 0) + 1;
-        }
+        // The student's sessions for this event, in the session's own order
+        // (sortOrder, then start time), each with its own check-in rank.
+        const ordered = [...group].sort((a, b) => {
+          const oa = a.session?.sortOrder ?? 0;
+          const ob = b.session?.sortOrder ?? 0;
+          if (oa !== ob) return oa - ob;
+          const ta = a.session?.startTime ? new Date(a.session.startTime).getTime() : 0;
+          const tb = b.session?.startTime ? new Date(b.session.startTime).getTime() : 0;
+          return ta - tb;
+        });
+        const sessions = await Promise.all(
+          ordered.map(async (a) => ({
+            sessionId: a.sessionId,
+            title: a.session?.title ?? null,
+            startTime: a.session?.startTime ?? null,
+            checkInTime: a.checkInTime,
+            method: a.method,
+            rank: a.checkInTime ? await sessionRank(a.sessionId, a.checkInTime) : null,
+          }))
+        );
+
+        // Representative row for the top-level/single-session display + sort:
+        // the earliest session the student actually checked into, else the
+        // first row if no session has a check-in yet.
+        const checkedIn = group.filter((a) => a.checkInTime);
+        const rep =
+          checkedIn.length > 0
+            ? checkedIn.reduce((a, b) => (a.checkInTime! <= b.checkInTime! ? a : b))
+            : group[0];
+        const repSession = sessions.find((s) => s.sessionId === rep.sessionId);
 
         const eventForms = await db.query.forms.findMany({
-          where: eq(forms.eventId, att.eventId),
+          where: eq(forms.eventId, event.id),
           orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
         });
 
@@ -112,16 +150,17 @@ export async function GET() {
         );
 
         return {
-          id: att.id,
-          eventId: att.eventId,
-          eventTitle: att.event.title,
-          eventImageUrl: att.event.imageUrl,
-          eventQuota: att.event.quota,
-          eventStartTime: att.event.startTime,
-          eventEndTime: att.event.endTime,
-          checkInTime: att.checkInTime,
-          method: att.method,
-          rank,
+          id: rep.id,
+          eventId: event.id,
+          eventTitle: event.title,
+          eventImageUrl: event.imageUrl,
+          eventQuota: event.quota,
+          eventStartTime: event.startTime,
+          eventEndTime: event.endTime,
+          checkInTime: rep.checkInTime,
+          method: rep.method,
+          rank: repSession?.rank ?? null,
+          sessions,
           forms: studentForms,
         };
       })
@@ -162,6 +201,7 @@ export async function GET() {
           checkInTime: null,
           method: null,
           rank: null,
+          sessions: [],
           assignedOnly: true, // attended=false; viewer is here only to evaluate
           forms: formsList,
         };

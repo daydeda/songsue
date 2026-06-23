@@ -3,11 +3,14 @@ import { announcements } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-
 // GET /api/announcement — public. Returns the singleton dashboard announcement
 // ({ body, enabled }) read by the student dashboard banner. The table is treated
 // as a singleton, so we read the most-recently-updated row. Returns null if none.
+//
+// CDN-cached (mirrors /api/houses): the banner changes a few times a week at most,
+// but every student device polls it. s-maxage lets the edge serve it without
+// invoking the function for 30s, so an edit appears within ~30s instead of hitting
+// the DB on every poll.
 export async function GET() {
   try {
     const [row] = await db
@@ -16,7 +19,11 @@ export async function GET() {
       .orderBy(desc(announcements.updatedAt))
       .limit(1);
 
-    return NextResponse.json(row ?? null);
+    return NextResponse.json(row ?? null, {
+      headers: {
+        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+      },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

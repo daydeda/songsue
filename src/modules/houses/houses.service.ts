@@ -1,14 +1,16 @@
 import { db } from "@/db";
-import { houses, scoreHistory } from "@/db/schema";
+import { houses, scoreHistory, users } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { AuditService } from "../audit/audit.service";
 
 export class HousesService {
   /**
-   * Picks the house a new member should join for balanced distribution (FE-03):
-   * the house with the fewest members right now. Ties resolve to the first such
-   * house by query order. Shared by the onboarding profile submit and the staff
-   * onboarding-bypass provisioning so both stay in lockstep.
+   * Picks the house a new STUDENT should join for balanced distribution (FE-03):
+   * the house with the fewest members right now (counting everyone). Ties resolve
+   * to the first such house by query order. Used by the onboarding profile submit.
+   *
+   * Staff are balanced separately — see pickBalancedHouseIdForStaff — so that the
+   * (much larger) student population doesn't skew where staff land.
    *
    * Returns the house id, or null if no houses exist yet (caller leaves houseId
    * unset rather than crashing).
@@ -19,6 +21,35 @@ export class HousesService {
     });
     if (housesList.length === 0) return null;
     const sorted = [...housesList].sort((a, b) => a.users.length - b.users.length);
+    return sorted[0].id;
+  }
+
+  /**
+   * Picks the house a new STAFF member should join for balanced staff
+   * distribution: the house with the fewest `staff`-role members right now,
+   * counting ONLY staff (students are ignored). Ties resolve to the first such
+   * house by query order. Used by the staff onboarding-bypass provisioning so
+   * staff spread evenly across houses independently of the student population.
+   *
+   * Returns the house id, or null if no houses exist yet (caller leaves houseId
+   * unset rather than crashing).
+   */
+  static async pickBalancedHouseIdForStaff(): Promise<string | null> {
+    const housesList = await db.query.houses.findMany({ columns: { id: true } });
+    if (housesList.length === 0) return null;
+
+    // Count only staff-role members per house. Houses with zero staff don't
+    // appear in these rows, so default them to 0 when ranking below.
+    const staffCounts = await db
+      .select({ houseId: users.houseId, count: sql<number>`count(*)::int` })
+      .from(users)
+      .where(eq(users.role, "staff"))
+      .groupBy(users.houseId);
+
+    const countByHouse = new Map(staffCounts.map((r) => [r.houseId, r.count]));
+    const sorted = [...housesList].sort(
+      (a, b) => (countByHouse.get(a.id) ?? 0) - (countByHouse.get(b.id) ?? 0),
+    );
     return sorted[0].id;
   }
 

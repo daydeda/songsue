@@ -3,6 +3,9 @@ import { canGiveIndividualScore } from "@/lib/admin-access";
 import { ScannerService } from "@/modules/events/scanner.service";
 import { EventsService } from "@/modules/events/events.service";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { db } from "@/db";
+import { events } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -50,6 +53,22 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const { qrToken, eventId, sessionId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
+
+    // President roles may only scan events they manage (managedByRoles), mirroring
+    // the /api/admin/events list + attendance/report scoping. Staff and smo unscoped.
+    const myRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    if (!isStaff && presidentTags.length > 0) {
+      const ev = await db.query.events.findFirst({
+        where: eq(events.id, eventId),
+        columns: { managedByRoles: true },
+      });
+      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      if (!managed) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
 
     // When the client doesn't pin a session, record the check-in against the
     // event's "current" day (window containing now → upcoming → most recent).

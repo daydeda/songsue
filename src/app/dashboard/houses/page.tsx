@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
+import { usePolling } from "@/lib/usePolling";
 import {
   Trophy,
   Award,
@@ -223,18 +224,29 @@ export default function HousesPage() {
     return reason;
   };
  
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/houses").then(r => r.json()),
-      fetch("/api/houses/activity").then(r => r.json()),
-      fetch("/api/houses/individual").then(r => r.json())
-    ]).then(([hData, aData, iData]) => {
-      if (Array.isArray(hData)) setHouses(hData);
-      if (Array.isArray(aData)) setActivities(aData);
-      if (Array.isArray(iData)) setIndividuals(iData);
-      setLoading(false);
-    });
-  }, []);
+  // Auto-refresh the standings, activity feed and individual rankings on a short
+  // interval so the leaderboard updates live without a manual page reload. Uses the
+  // shared overlap-safe poller (fires immediately on mount, pauses when the tab is
+  // hidden, and never stacks requests). The student's own authoritative rank (/me)
+  // is refreshed in the same tick so the "Your rank" banner stays current too.
+  usePolling(async (signal) => {
+    const [hData, aData, iData] = await Promise.all([
+      fetch("/api/houses", { signal }).then((r) => r.json()),
+      fetch("/api/houses/activity", { signal }).then((r) => r.json()),
+      fetch("/api/houses/individual", { signal }).then((r) => r.json()),
+    ]);
+    if (Array.isArray(hData)) setHouses(hData);
+    if (Array.isArray(aData)) setActivities(aData);
+    if (Array.isArray(iData)) setIndividuals(iData);
+    if (myId) {
+      const meRes = await fetch("/api/houses/individual/me", { signal });
+      if (meRes.ok) {
+        const d = await meRes.json();
+        if (d && typeof d.points === "number") setMyStanding(d);
+      }
+    }
+    setLoading(false);
+  }, 30000);
 
   // Fetch the current user's authoritative rank + score as soon as the session is
   // ready. This is independent of the top-50 list above, so it stays correct even

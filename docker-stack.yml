@@ -36,6 +36,16 @@ services:
     environment:
       # Points at the `db` service below over the stack's internal network.
       DATABASE_URL: "postgres://activecamtuser:${POSTGRES_PASSWORD}@db:5432/activecamtdb?sslmode=disable"
+      # Per-instance Postgres connection pool size. We own this DB (not the Supabase
+      # pooler), so 15 is safe — well under Postgres's default max_connections of 100.
+      # Raise toward 20 only if event scan-ins still queue; the code default is 15.
+      DB_POOL_MAX: "15"
+      # Observability (src/lib/logger.ts). LOG_LEVEL: debug|info|warn|error (default
+      # info). ERROR_WEBHOOK_URL is OPTIONAL — set it in the Portainer stack env to a
+      # Discord/Slack incoming webhook (or any JSON endpoint / self-hosted GlitchTip)
+      # to receive redacted alerts on unhandled errors. Unset = structured logs only.
+      LOG_LEVEL: "info"
+      # ERROR_WEBHOOK_URL: "https://discord.com/api/webhooks/..."  # set in stack env, not here
       AUTH_SECRET: "${AUTH_SECRET}"
       # NextAuth v5 — must be the public URL + /api/auth, and match the Google
       # OAuth redirect URI (https://activecamt.camt.cmu.ac.th/api/auth/callback/google).

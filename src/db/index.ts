@@ -27,14 +27,23 @@ if (!globalForDb.errorGuardsInstalled) {
 // queries concurrently (Promise.all), and with max=1 they serialize over one
 // connection — worse, a single slow/stuck query then head-of-line-blocks every
 // other query on the instance (including the auth session lookup), which can hang
-// the whole function. A small pool (5) restores concurrency while staying well
-// within the pooler's client-slot budget for this app's traffic.
+// the whole function.
+//
+// The right size depends on what we connect to:
+//  - Supabase transaction pooler (:6543): keep it small (5) so we stay within the
+//    pooler's shared client-slot budget — many instances share that budget.
+//  - A dedicated Postgres we own (self-hosted, direct :5432): that shared budget
+//    no longer applies, so a larger pool (15) lets concurrent requests — event
+//    scan-ins, the dashboard's parallel reads — run instead of queueing. 15 stays
+//    far under Postgres's default max_connections of 100.
+// DB_POOL_MAX overrides the default for per-host tuning without an image rebuild.
 const usingTransactionPooler = (process.env.DATABASE_URL ?? "").includes(":6543");
+const poolMax = Number(process.env.DB_POOL_MAX) || (usingTransactionPooler ? 5 : 15);
 
 const conn =
   globalForDb.conn ??
   postgres(process.env.DATABASE_URL!, {
-    max: 5,
+    max: poolMax,
     prepare: !usingTransactionPooler,
     idle_timeout: 20,
     connect_timeout: 10,

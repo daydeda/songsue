@@ -26,6 +26,7 @@ import {
 import { useLanguage } from "@/lib/LanguageContext";
 import { useSession } from "next-auth/react";
 import { canGiveIndividualScore } from "@/lib/admin-access";
+import { usePolling } from "@/lib/usePolling";
 import dynamic from "next/dynamic";
 
 // Pre-test warning QR — client-only (qrcode.react reads the DOM). Same component
@@ -126,6 +127,9 @@ export default function QRScannerPage() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dayDropdownOpen, setDayDropdownOpen] = useState(false);
   const dayDropdownRef = useRef<HTMLDivElement>(null);
+  // Live count of check-ins for the selected event + day, shown so the organiser
+  // watches attendance climb in real time. null until the first fetch lands.
+  const [checkedInCount, setCheckedInCount] = useState<number | null>(null);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastTokenRef = useRef<string | null>(null);
@@ -211,6 +215,47 @@ export default function QRScannerPage() {
         }
       });
   }, []);
+
+  // Live check-in count for the selected event + day. Hits the lightweight /count
+  // endpoint (no roster, no PII, no audit log) so it's cheap to call repeatedly.
+  // Reads the event/session from refs so the poller always uses the current
+  // selection even though its callback was registered once.
+  const refreshCheckedInCount = async (signal?: AbortSignal) => {
+    const ev = eventIdRef.current;
+    if (!ev) return;
+    const qs = new URLSearchParams({ eventId: ev });
+    if (sessionIdRef.current) qs.set("sessionId", sessionIdRef.current);
+    try {
+      const res = await fetch(`/api/admin/scan/count?${qs.toString()}`, signal ? { signal } : undefined);
+      if (res.ok) {
+        const data = await res.json();
+        if (isMountedRef.current && typeof data.checkedIn === "number") {
+          setCheckedInCount(data.checkedIn);
+        }
+      }
+    } catch {
+      // Best-effort: the poller retries on the next tick.
+    }
+  };
+
+  // Poll the count on a short interval (overlap-safe, pauses on hidden tab). A
+  // successful check-in also refreshes it immediately (see confirmAttendance) so
+  // the number jumps the moment a student is scanned in.
+  usePolling((signal) => refreshCheckedInCount(signal), 8000);
+
+  // Reset + refetch the count immediately whenever the staff switches event or day,
+  // so the displayed number always matches the current selection without waiting
+  // for the next poll tick. The event/session refs are synced in effects declared
+  // above, so they hold the new ids by the time this runs.
+  useEffect(() => {
+    // Deferred (matching the scanner-start effect below) to avoid a synchronous
+    // setState inside the effect body.
+    const id = setTimeout(() => {
+      setCheckedInCount(null);
+      refreshCheckedInCount();
+    }, 0);
+    return () => clearTimeout(id);
+  }, [eventId, sessionId]);
 
   const startScanner = async () => {
     if (!isMountedRef.current) return;
@@ -416,6 +461,9 @@ export default function QRScannerPage() {
       if (isMountedRef.current) {
         setScanResult({ status: data.status ?? (res.ok ? "success" : "error"), ...data, rawToken: token });
       }
+      // A confirmed check-in changed the attendance total — refresh the live count
+      // now instead of waiting for the next poll tick.
+      if (res.ok) refreshCheckedInCount();
       if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
     } catch {
       if (isMountedRef.current) {
@@ -1056,6 +1104,27 @@ export default function QRScannerPage() {
 
         {/* Right: Manual Override & Stats */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Live check-in count — updates as students are scanned in, no reload. */}
+          <div className="stat-card" style={{ padding: 32 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Users size={20} color="var(--accent-primary)" />
+                <h3 style={{ fontSize: 18, fontWeight: 800 }}>
+                  {lang === "th" ? "เช็คอินแล้ว" : lang === "cn" ? "已签到" : lang === "mm" ? "ချက်အင်ပြီးသူ" : "Checked In"}
+                </h3>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span className="animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {lang === "th" ? "สด" : lang === "cn" ? "实时" : lang === "mm" ? "တိုက်ရိုက်" : "Live"}
+                </span>
+              </div>
+            </div>
+            <p style={{ fontSize: 48, fontWeight: 900, color: "var(--text-primary)", lineHeight: 1.1, marginTop: 12, letterSpacing: "-0.03em" }}>
+              {checkedInCount ?? "—"}
+            </p>
+          </div>
+
           <div className="stat-card" style={{ padding: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
               <Search size={20} color="var(--accent-primary)" />

@@ -45,7 +45,10 @@ COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/.next.nosync ./.next.nosync
+# next build writes to .next by default; the .next.nosync distDir in
+# next.config.ts only kicks in on the iCloud-synced local path, never in CI / the
+# container (path has no "CloudDocs"/"Mobile Documents"), so copy .next.
+COPY --from=builder /app/.next ./.next
 
 # Source + maintenance scripts needed to run migrations/seed/elevate/file-import
 # from the Portainer web console (there is no host shell on the swarm). These read

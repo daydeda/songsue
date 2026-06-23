@@ -1,10 +1,10 @@
 # =============================================================================
-# ActiveCAMT — Docker Swarm / Portainer stack for dev2.camt.cmu.ac.th
+# ActiveCAMT — Portainer stack for dev2.camt.cmu.ac.th (deployed via docker compose)
 #
-# Deploy: Portainer → Primary → Stacks → + Add Stack → paste this YAML → fill
-# every CHANGEME → Deploy the stack. (docker-compose.yml is for LOCAL dev only;
-# this file is production, because Portainer's editor can't `build:` and the
-# shared swarm gives you no host paths — so: pre-built image + named volumes.)
+# Deploy: Portainer → Stacks → + Add Stack → Build method "Web editor" → paste
+# this YAML → fill every CHANGEME → Deploy the stack. (docker-compose.yml is for
+# LOCAL dev only — it uses build: + bind mounts; this file is production: a
+# pre-built GHCR image + named volumes, which is what Portainer's editor needs.)
 #
 # BEFORE DEPLOYING:
 #   1. The image must be published to GHCR (push to main → GitHub Actions builds
@@ -12,7 +12,7 @@
 #      (Registries → Add → Custom, ghcr.io, your GitHub username + a PAT with
 #      read:packages) OR make the package public.
 #   2. Replace every CHANGEME below. These values live in the Portainer stack
-#      definition (there is no .env file on the swarm).
+#      definition (there is no .env file on the server).
 #   3. POSTGRES_PASSWORD must match the password in DATABASE_URL. Use only
 #      URL-safe characters (A–Z a–z 0–9 . _ -); special chars like @ : / break
 #      the DATABASE_URL and must be percent-encoded if you use them.
@@ -28,8 +28,9 @@ services:
       # CAMT-assigned public port 10780 → Next.js inside the container (3000).
       # The CAMT reverse proxy routes https://camtplaybase.camt.cmu.ac.th here.
       - "10780:3000"
+    restart: unless-stopped
     environment:
-      # Points at the `db` service below over the stack's internal overlay network.
+      # Points at the `db` service below over the stack's internal network.
       DATABASE_URL: "postgres://activeuser:CHANGEME_DB_PASSWORD@db:5432/activedb?sslmode=disable"
       # `openssl rand -base64 33`
       AUTH_SECRET: "CHANGEME_AUTH_SECRET"
@@ -41,28 +42,23 @@ services:
     volumes:
       - uploads:/app/public/uploads          # public posters/avatars/QR
       - uploads-private:/app/.uploads-private # PDPA: form docs + payment slips
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: any
-        delay: 5s
-    # NOTE: Swarm IGNORES depends_on. If web starts before db it crashes and the
-    # restart_policy brings it back until db accepts connections — expected.
+    # This Portainer environment deploys with `docker compose`, so depends_on +
+    # the db healthcheck below hold web back until Postgres is ready.
+    depends_on:
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: activeuser
       POSTGRES_PASSWORD: "CHANGEME_DB_PASSWORD" # MUST equal the one in DATABASE_URL
       POSTGRES_DB: activedb
     volumes:
       - pg-data:/var/lib/postgresql/data
-    # No published ports — the DB is reachable only by `web` over the internal
-    # overlay network, never exposed on the node / to the LAN.
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: any
+    # No published ports — the DB is reachable only by `web` over the stack's
+    # internal network, never exposed on the node / to the LAN.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U activeuser -d activedb"]
       interval: 5s

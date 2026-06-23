@@ -1,0 +1,28 @@
+# Keep secrets and local-only state OUT of the built image. On the swarm,
+# runtime env is injected by the Portainer stack (docker-stack.yml), so no
+# .env file is ever needed in the image.
+.env
+.env.*
+!.env.production.example
+
+# Dependencies & build output (reinstalled / rebuilt inside the image)
+node_modules
+.next
+.next.nosync
+
+# Local upload data — provided via bind mounts, must not be copied into the image
+public/uploads
+.uploads-private
+
+# VCS, tooling, and editor cruft
+.git
+.gitignore
+.vercel
+.agents
+.claude
+scratch
+*.log
+
+# Docs and one-off artifacts not needed at runtime
+*.md
+!README.md

@@ -1,5 +1,12 @@
 version: '3.8'
 
+# =============================================================================
+# LOCAL DEVELOPMENT stack (build from source + host bind mounts).
+# For the university server (Portainer / Docker Swarm on dev2.camt.cmu.ac.th)
+# use docker-stack.yml instead — that one runs a pre-built GHCR image and named
+# volumes, because Portainer's stack editor can't build and has no host paths.
+# =============================================================================
+
 services:
   # Next.js Web App Service
   web:
@@ -15,13 +22,25 @@ services:
       - AUTH_SECRET=${AUTH_SECRET}
       - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID}
       - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET}
+      # NextAuth v5 reads AUTH_URL (NEXTAUTH_URL kept for backward-compat). On the
+      # university server set AUTH_URL to https://<domain>/api/auth in .env.
+      - AUTH_URL=${AUTH_URL:-http://localhost:3000/api/auth}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      # Storage: with SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY UNSET, the upload
+      # code (src/app/api/upload/route.ts, form-file-storage.ts, shop-storage.ts)
+      # falls back to local disk — this is how we run without Supabase Storage.
+      # Do NOT set those two vars here on the self-hosted deploy.
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      # Bind local uploads folder to host to persist student posters/avatars
+      # Bind public uploads to the host so student posters/avatars survive rebuilds.
       - ./public/uploads:/app/public/uploads
+      # PRIVATE uploads (PDPA: form documents + payment slips). MUST be persisted —
+      # without this mount they live only inside the container and are wiped on
+      # every `docker compose up --build`. Mounted to /app/.uploads-private to match
+      # the DEV_DIR fallback in form-file-storage.ts / shop-storage.ts.
+      - ./uploads-private:/app/.uploads-private
 
   # Postgres Database Service
   db:

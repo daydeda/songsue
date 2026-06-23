@@ -1,23 +1,27 @@
 # =============================================================================
 # ActiveCAMT — Portainer stack for dev2.camt.cmu.ac.th (deployed via docker compose)
 #
-# Deploy: Portainer → Stacks → + Add Stack → Build method "Web editor" → paste
-# this YAML → fill every CHANGEME → Deploy the stack. (docker-compose.yml is for
-# LOCAL dev only — it uses build: + bind mounts; this file is production: a
-# pre-built GHCR image + named volumes, which is what Portainer's editor needs.)
+# AUTO-DEPLOY (GitOps): deploy this through Portainer's "Repository" build method
+# pointing at this file on main. On every merge to main, GitHub Actions builds +
+# pushes the image and then calls the Portainer stack webhook, which re-pulls the
+# image and redeploys. See docs/supabase-to-university-server-cutover.md.
 #
-# BEFORE DEPLOYING:
-#   1. The image must be published to GHCR (push to main → GitHub Actions builds
-#      it). If the GHCR package is PRIVATE, add a registry in Portainer
-#      (Registries → Add → Custom, ghcr.io, your GitHub username + a PAT with
-#      read:packages) OR make the package public.
-#   2. Replace every CHANGEME below. These values live in the Portainer stack
-#      definition (there is no .env file on the server).
-#   3. POSTGRES_PASSWORD must match the password in DATABASE_URL. Use only
-#      URL-safe characters (A–Z a–z 0–9 . _ -); special chars like @ : / break
-#      the DATABASE_URL and must be percent-encoded if you use them.
-#   4. SUPABASE_* are intentionally OMITTED → uploads fall back to local disk
-#      (the named volumes below). Do NOT add them here.
+# DEPLOY (Repository method):
+#   - Repository URL: https://github.com/daydeda/smocamt-website
+#     Authentication ON → GitHub username + a PAT (repo is private).
+#   - Reference: refs/heads/main   ·   Compose path: docker-stack.yml
+#   - Enable "GitOps updates" → Webhook, and "Re-pull image".
+#   - Define the env vars below in the stack's "Environment variables" section
+#     (NOT in this file — secrets must never be committed to git):
+#       POSTGRES_PASSWORD, AUTH_SECRET, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET
+#
+# NOTES:
+#   - The image must be pullable: make the GHCR package public, or add a ghcr.io
+#     registry credential in Portainer (username + PAT with read:packages).
+#   - POSTGRES_PASSWORD must be URL-safe (A–Z a–z 0–9 . _ -); special chars like
+#     @ : / break DATABASE_URL and would need percent-encoding.
+#   - SUPABASE_* are intentionally OMITTED → uploads fall back to local disk
+#     (the named volumes below). Do NOT add them.
 # =============================================================================
 version: '3.8'
 
@@ -26,19 +30,18 @@ services:
     image: ghcr.io/daydeda/smocamt-website:latest
     ports:
       # CAMT-assigned public port 10780 → Next.js inside the container (3000).
-      # The CAMT reverse proxy routes https://camtplaybase.camt.cmu.ac.th here.
+      # The CAMT reverse proxy routes https://activecamt.camt.cmu.ac.th here.
       - "10780:3000"
     restart: unless-stopped
     environment:
       # Points at the `db` service below over the stack's internal network.
-      DATABASE_URL: "postgres://activeuser:CHANGEME_DB_PASSWORD@db:5432/activedb?sslmode=disable"
-      # `openssl rand -base64 33`
-      AUTH_SECRET: "CHANGEME_AUTH_SECRET"
+      DATABASE_URL: "postgres://activecamtuser:${POSTGRES_PASSWORD}@db:5432/activecamtdb?sslmode=disable"
+      AUTH_SECRET: "${AUTH_SECRET}"
       # NextAuth v5 — must be the public URL + /api/auth, and match the Google
-      # OAuth redirect URI (https://camtplaybase.camt.cmu.ac.th/api/auth/callback/google).
-      AUTH_URL: "https://camtplaybase.camt.cmu.ac.th/api/auth"
-      AUTH_GOOGLE_ID: "CHANGEME_GOOGLE_CLIENT_ID"
-      AUTH_GOOGLE_SECRET: "CHANGEME_GOOGLE_CLIENT_SECRET"
+      # OAuth redirect URI (https://activecamt.camt.cmu.ac.th/api/auth/callback/google).
+      AUTH_URL: "https://activecamt.camt.cmu.ac.th/api/auth"
+      AUTH_GOOGLE_ID: "${AUTH_GOOGLE_ID}"
+      AUTH_GOOGLE_SECRET: "${AUTH_GOOGLE_SECRET}"
     volumes:
       - uploads:/app/public/uploads          # public posters/avatars/QR
       - uploads-private:/app/.uploads-private # PDPA: form docs + payment slips
@@ -52,15 +55,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: activeuser
-      POSTGRES_PASSWORD: "CHANGEME_DB_PASSWORD" # MUST equal the one in DATABASE_URL
-      POSTGRES_DB: activedb
+      POSTGRES_USER: activecamtuser
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}" # MUST equal the one in DATABASE_URL
+      POSTGRES_DB: activecamtdb
     volumes:
       - pg-data:/var/lib/postgresql/data
     # No published ports — the DB is reachable only by `web` over the stack's
     # internal network, never exposed on the node / to the LAN.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U activeuser -d activedb"]
+      test: ["CMD-SHELL", "pg_isready -U activecamtuser -d activecamtdb"]
       interval: 5s
       timeout: 5s
       retries: 5

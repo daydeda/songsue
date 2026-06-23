@@ -22,6 +22,7 @@ type AttendeeUser = {
   studentId: string | null;
   email: string;
   phone: string | null;
+  contactChannels?: string | null;
   major: string | null;
   role: string | null;
   house: { name: string } | null;
@@ -95,6 +96,7 @@ export async function GET(
             studentId: true,
             email: true,
             phone: true,
+            contactChannels: true,
             major: true,
             role: true,
             chronicDiseases: canViewMedical,
@@ -154,6 +156,7 @@ export async function GET(
         "Nationality": nationality(u?.studentId),
         "Email": u?.email || "",
         "Phone": u?.phone || "",
+        "Contact Channels": u?.contactChannels || "",
         "Major": u?.major || "",
         "Role": u?.role || "",
         "House": u?.house?.name || "",
@@ -176,7 +179,7 @@ export async function GET(
     };
 
     const header = [
-      "Name", "Nickname", "Student ID", "Nationality", "Email", "Phone",
+      "Name", "Nickname", "Student ID", "Nationality", "Email", "Phone", "Contact Channels",
       "Major", "Role", "House", "Status", "Check-in (Bangkok)", "Method", "Meds Check",
       ...(canViewMedical
         ? [

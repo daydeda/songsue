@@ -156,15 +156,17 @@ export default function AdminDashboardOverview() {
 
   // Poll the dashboard endpoint for near-real-time updates. The endpoint already
   // returns the full fresh state (counts, houses, recent activity), so a refetch
-  // replaces the previous incremental SSE logic. 5s is responsive for the handful
-  // of admins watching this screen, and polling pauses when the tab is hidden.
-  usePolling((signal) => fetchStats(signal), 5000);
+  // replaces the previous incremental SSE logic. 10s is responsive for the handful
+  // of admins watching this screen (who leave it open the whole event, so it is a
+  // constant drain), and polling pauses when the tab is hidden.
+  usePolling((signal) => fetchStats(signal), 10000);
 
-  // Nudge the event-winner award check on its own slower cadence (every 20s), as a
-  // separate fire-and-forget request. Decoupled from the 5s data poll so it adds
-  // far less load on the DB pooler; 20s is still effectively immediate for awarding
-  // the winner bonus when an event ends. Errors are ignored on purpose.
-  usePolling((signal) => fetch("/api/admin/award-check", { signal }).catch(() => {}), 20000);
+  // Nudge the event-winner award check on its own slow cadence (every 60s), as a
+  // separate fire-and-forget request. Decoupled from the data poll so it adds far
+  // less load on the DB pooler; awarding the winner bonus a minute after an event
+  // ends is invisible to everyone, so this is purely a background nudge. Errors are
+  // ignored on purpose.
+  usePolling((signal) => fetch("/api/admin/award-check", { signal }).catch(() => {}), 60000);
 
   const handleExportCSV = async () => {
     setExporting(true);

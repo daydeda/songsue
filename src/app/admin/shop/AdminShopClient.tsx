@@ -6,6 +6,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   ShoppingBag, Package, ReceiptText, Settings as SettingsIcon, Plus, Trash2, Pencil,
   Upload, Loader2, X, CheckCircle2, XCircle, Clock, GripVertical, Save, RotateCcw, Download,
+  Check, FileText,
 } from "lucide-react";
 
 const baht = (n: number) => `฿${n.toLocaleString()}`;
@@ -203,8 +204,8 @@ function ProductsTab({ th }: { th: boolean }) {
                   {p.maxPerOrder != null ? ` · ${th ? "จำกัด" : "max"} ${p.maxPerOrder}/${th ? "คน" : "person"}` : ""}
                 </p>
                 {(p.opensAt || p.closesAt) && (
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                    🕒 {p.opensAt ? new Date(p.opensAt).toLocaleString(th ? "th-TH" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : (th ? "เปิดอยู่" : "now")} → {p.closesAt ? new Date(p.closesAt).toLocaleString(th ? "th-TH" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : (th ? "ไม่กำหนด" : "open-ended")}
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <Clock size={12} style={{ flexShrink: 0 }} /> {p.opensAt ? new Date(p.opensAt).toLocaleString(th ? "th-TH" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : (th ? "เปิดอยู่" : "now")} → {p.closesAt ? new Date(p.closesAt).toLocaleString(th ? "th-TH" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : (th ? "ไม่กำหนด" : "open-ended")}
                   </p>
                 )}
               </div>
@@ -557,7 +558,7 @@ function AdminOrderRow({ order, th, busy, onReview }: { order: AdminOrder; th: b
         </div>
       </div>
 
-      {order.note && <p style={{ fontSize: 13, color: "var(--text-secondary)", background: "var(--bg-base)", padding: "8px 12px", borderRadius: 8, marginBottom: 8 }}>📝 {order.note}</p>}
+      {order.note && <p style={{ fontSize: 13, color: "var(--text-secondary)", background: "var(--bg-base)", padding: "8px 12px", borderRadius: 8, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><FileText size={13} style={{ flexShrink: 0 }} /> {order.note}</p>}
       {order.status === "rejected" && order.rejectionReason && <p style={{ fontSize: 13, color: "#ef4444", marginBottom: 8 }}>{th ? "เหตุผล: " : "Reason: "}{order.rejectionReason}</p>}
 
       {order.hasSlip ? (
@@ -672,7 +673,7 @@ function SettingsTab({ th }: { th: boolean }) {
         <button onClick={save} disabled={saving || uploading} className="btn btn-primary" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{th ? "บันทึก" : "Save"}
         </button>
-        {savedAt && !saving && <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>✓ {th ? "บันทึกแล้ว" : "Saved"}</span>}
+        {savedAt && !saving && <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}><Check size={13} style={{ flexShrink: 0 }} /> {th ? "บันทึกแล้ว" : "Saved"}</span>}
       </div>
     </div>
   );

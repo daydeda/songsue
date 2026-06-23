@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Save, User, Smartphone, BookOpen,
   HeartPulse, ShieldAlert, Phone, Camera, Loader2,
-  Maximize, Move
+  Maximize, Move, AlertTriangle, Check
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { useRouter } from "next/navigation";
@@ -176,8 +176,8 @@ export default function ProfilePage() {
               />
             )}
             {validationTriggered && !formData[fieldKey].trim() && (
-              <span className="error-text" style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, marginTop: 2 }}>
-                {t.back === "กลับ" ? "⚠️ กรุณาระบุรายละเอียด" : "⚠️ Required"}
+              <span className="error-text" style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, marginTop: 2, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
+                {t.back === "กลับ" ? "กรุณาระบุรายละเอียด" : "Required"}
               </span>
             )}
           </>
@@ -487,8 +487,8 @@ export default function ProfilePage() {
                       }}
                     />
                     {validationTriggered && !formData.name.trim() && (
-                      <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                        {t.back === "กลับ" ? "⚠️ กรุณากรอกชื่อ-นามสกุล" : "⚠️ This field is required"}
+                      <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
+                        {t.back === "กลับ" ? "กรุณากรอกชื่อ-นามสกุล" : "This field is required"}
                       </span>
                     )}
                   </div>
@@ -506,8 +506,8 @@ export default function ProfilePage() {
                     }}
                   />
                   {validationTriggered && !formData.nickname.trim() && (
-                    <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                      {t.back === "กลับ" ? "⚠️ กรุณากรอกชื่อเล่น" : "⚠️ This field is required"}
+                    <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
+                      {t.back === "กลับ" ? "กรุณากรอกชื่อเล่น" : "This field is required"}
                     </span>
                   )}
                 </div>
@@ -553,10 +553,10 @@ export default function ProfilePage() {
                     }}
                   />
                   {validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim())) && (
-                    <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
+                    <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
                       {!formData.phone.trim() 
-                        ? (t.back === "กลับ" ? "⚠️ กรุณากรอกเบอร์โทรศัพท์" : "⚠️ This field is required")
-                        : (t.back === "กลับ" ? "⚠️ เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก" : "⚠️ Phone number must be exactly 10 digits and numbers only")}
+                        ? (t.back === "กลับ" ? "กรุณากรอกเบอร์โทรศัพท์" : "This field is required")
+                        : (t.back === "กลับ" ? "เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก" : "Phone number must be exactly 10 digits and numbers only")}
                     </span>
                   )}
                 </div>
@@ -575,8 +575,8 @@ export default function ProfilePage() {
                     }}
                   />
                   {validationTriggered && !formData.contactChannels.trim() && (
-                    <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                      {t.back === "กลับ" ? "⚠️ กรุณากรอกช่องทางติดต่อ" : "⚠️ This field is required"}
+                    <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
+                      {t.back === "กลับ" ? "กรุณากรอกช่องทางติดต่อ" : "This field is required"}
                     </span>
                   )}
                 </div>
@@ -654,8 +654,8 @@ export default function ProfilePage() {
                             }}
                           />
                           {validationTriggered && isFieldRequired && !contact.name.trim() && (
-                            <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                              {t.back === "กลับ" ? "⚠️ กรุณากรอกชื่อ-นามสกุล" : "⚠️ This field is required"}
+                            <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
+                              {t.back === "กลับ" ? "กรุณากรอกชื่อ-นามสกุล" : "This field is required"}
                             </span>
                           )}
                         </div>
@@ -696,8 +696,8 @@ export default function ProfilePage() {
                             />
                           )}
                           {validationTriggered && isFieldRequired && (!contact.relationship.trim() || contact.relationship === "Other:") && (
-                            <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
-                              {t.back === "กลับ" ? "⚠️ กรุณากรอกความสัมพันธ์" : "⚠️ This field is required"}
+                            <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
+                              {t.back === "กลับ" ? "กรุณากรอกความสัมพันธ์" : "This field is required"}
                             </span>
                           )}
                         </div>
@@ -714,10 +714,10 @@ export default function ProfilePage() {
                             }}
                           />
                           {validationTriggered && isFieldRequired && (!contact.phone.trim() || !/^[0-9]{10}$/.test(contact.phone.trim())) && (
-                            <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "block" }}>
+                            <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 500, marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} />
                               {!contact.phone.trim()
-                                ? (t.back === "กลับ" ? "⚠️ กรุณากรอกเบอร์โทรศัพท์" : "⚠️ This field is required")
-                                : (t.back === "กลับ" ? "⚠️ เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก" : "⚠️ Phone number must be exactly 10 digits and numbers only")}
+                                ? (t.back === "กลับ" ? "กรุณากรอกเบอร์โทรศัพท์" : "This field is required")
+                                : (t.back === "กลับ" ? "เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก" : "Phone number must be exactly 10 digits and numbers only")}
                             </span>
                           )}
                         </div>
@@ -791,8 +791,8 @@ export default function ProfilePage() {
             {/* Footer Actions */}
             <div className="form-footer">
               <div className="status-msg-box">
-                {error && <p style={{ color: "var(--accent-primary)", fontWeight: 600, margin: 0 }}>⚠️ {error}</p>}
-                {success && <p style={{ color: "#10b981", fontWeight: 600, margin: 0 }}>✓ {t.complete}</p>}
+                {error && <p style={{ color: "var(--accent-primary)", fontWeight: 600, margin: 0, display: "inline-flex", alignItems: "center", gap: 6 }}><AlertTriangle size={14} style={{ flexShrink: 0 }} /> {error}</p>}
+                {success && <p style={{ color: "#10b981", fontWeight: 600, margin: 0, display: "inline-flex", alignItems: "center", gap: 6 }}><Check size={14} style={{ flexShrink: 0 }} /> {t.complete}</p>}
               </div>
 
               <button type="submit" disabled={saving || uploading} className="btn btn-primary btn-lg submit-btn">

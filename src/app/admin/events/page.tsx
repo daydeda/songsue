@@ -6,7 +6,8 @@ import {
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
-  Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck
+  Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
+  Lock, FileText, AlertTriangle, MessageSquare
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { parseRichText } from "@/lib/rich-text";
@@ -3335,7 +3336,7 @@ export default function AdminEventsPage() {
                       {FORM_TYPE_LABELS[f.formType] || f.formType}
                     </span>
                     <span style={{ maxWidth: 200, whiteSpace: "normal", overflowWrap: "break-word", wordBreak: "break-word", textAlign: "left", lineHeight: 1.3 }}>{f.title}</span>
-                    {f.isAwarded && <span style={{ fontSize: 10 }}>🔒</span>}
+                    {f.isAwarded && <Lock size={10} style={{ flexShrink: 0 }} />}
                     {!f.isActive && !f.isAwarded && <span style={{ fontSize: 10, opacity: 0.6 }}>●</span>}
                   </button>
                 );
@@ -3404,7 +3405,9 @@ export default function AdminEventsPage() {
                 }}
                 onClick={() => setFormTab("edit")}
               >
-                📝 {lang === "th" ? "ออกแบบฟอร์มและกฎ" : lang === "cn" ? "设计表单与规则" : lang === "mm" ? "ပုံစံနှင့် စည်းကမ်းများ ဒီဇိုင်းဆွဲရန်" : "Design Form & Rules"}
+                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <FileText size={16} style={{ flexShrink: 0 }} /> {lang === "th" ? "ออกแบบฟอร์มและกฎ" : lang === "cn" ? "设计表单与规则" : lang === "mm" ? "ပုံစံနှင့် စည်းကမ်းများ ဒီဇိုင်းဆွဲရန်" : "Design Form & Rules"}
+                </span>
               </button>
               <button
                 style={{
@@ -3421,7 +3424,9 @@ export default function AdminEventsPage() {
                 }}
                 onClick={() => setFormTab("stats")}
               >
-                🏆 {lang === "th" ? "กระดานผู้นำบ้านและการส่งข้อมูล" : lang === "cn" ? "学院排行榜与提交" : lang === "mm" ? "အိမ်တော် ဦးဆောင်သူစာရင်းနှင့် တင်သွင်းမှုများ" : "House Leaderboard & Submissions"} ({formSubmissions.length})
+                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <Trophy size={16} style={{ flexShrink: 0 }} /> {lang === "th" ? "กระดานผู้นำบ้านและการส่งข้อมูล" : lang === "cn" ? "学院排行榜与提交" : lang === "mm" ? "အိမ်တော် ဦးဆောင်သူစာရင်းနှင့် တင်သွင်းမှုများ" : "House Leaderboard & Submissions"} ({formSubmissions.length})
+                </span>
               </button>
             </div>
 
@@ -3455,7 +3460,7 @@ export default function AdminEventsPage() {
                     alignItems: "center",
                     gap: 10
                   }}>
-                    <span style={{ fontSize: 16 }}>✅</span> {formBuilderSuccess}
+                    <CheckCircle2 size={16} style={{ flexShrink: 0 }} /> {formBuilderSuccess}
                   </div>
                 )}
 
@@ -3473,7 +3478,7 @@ export default function AdminEventsPage() {
                     alignItems: "center",
                     gap: 10
                   }}>
-                    <span style={{ fontSize: 16 }}>⚠️</span> {formBuilderError}
+                    <AlertTriangle size={16} style={{ flexShrink: 0 }} /> {formBuilderError}
                   </div>
                 )}
                 {formTab === "edit" ? (
@@ -3602,10 +3607,10 @@ export default function AdminEventsPage() {
                         </div>
                       </div>
                       {!formClosesAt && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700 }}>⚠️ A close time is required so the form can auto-close and award points.</p>
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> A close time is required so the form can auto-close and award points.</p>
                       )}
                       {formOpensAt && formClosesAt && new Date(formClosesAt) <= new Date(formOpensAt) && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700 }}>⚠️ Close time is before open time — students will never be able to submit.</p>
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> Close time is before open time — students will never be able to submit.</p>
                       )}
                     </div>
 
@@ -3723,7 +3728,7 @@ export default function AdminEventsPage() {
                           style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(99,102,241,0.1)", color: "#6366f1", border: "none", cursor: "pointer" }}
                           onClick={addSection}
                         >
-                          ➕ {lang === "th" ? "เพิ่มส่วน" : lang === "cn" ? "添加章节" : lang === "mm" ? "အပိုင်းထည့်ရန်" : "Add Section"}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={14} style={{ flexShrink: 0 }} /> {lang === "th" ? "เพิ่มส่วน" : lang === "cn" ? "添加章节" : lang === "mm" ? "အပိုင်းထည့်ရန်" : "Add Section"}</span>
                         </button>
                       </div>
 
@@ -3901,7 +3906,7 @@ export default function AdminEventsPage() {
                                           style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 800, color: "var(--accent-primary)", padding: "4px 12px", height: 32, borderRadius: 8, marginTop: 4 }}
                                           onClick={() => addOption(section.id, q.id)}
                                         >
-                                          ➕ {lang === "th" ? "เพิ่มตัวเลือก" : lang === "cn" ? "添加选项" : lang === "mm" ? "ရွေးချယ်စရာထည့်ရန်" : "Add Option"}
+                                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={12} style={{ flexShrink: 0 }} /> {lang === "th" ? "เพิ่มตัวเลือก" : lang === "cn" ? "添加选项" : lang === "mm" ? "ရွေးချယ်စရာထည့်ရန်" : "Add Option"}</span>
                                         </button>
                                       </div>
                                     )}
@@ -4005,7 +4010,7 @@ export default function AdminEventsPage() {
                               style={{ alignSelf: "flex-start", borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)", border: "none", cursor: "pointer" }}
                               onClick={() => addQuestion(section.id)}
                             >
-                              ➕ {t.eventAddQuestionLabel}
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={14} style={{ flexShrink: 0 }} /> {t.eventAddQuestionLabel}</span>
                             </button>
                           </div>
                         ))}
@@ -4084,7 +4089,7 @@ export default function AdminEventsPage() {
                               </div>
                             </div>
                             <div style={{ padding: "8px 16px", borderRadius: 10, background: "rgba(16,185,129,0.1)", color: "#10b981", fontSize: 12, fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>
-                              🔒 Permanent Lock
+                              <Lock size={14} style={{ flexShrink: 0 }} /> Permanent Lock
                             </div>
                           </div>
                         );
@@ -4118,7 +4123,7 @@ export default function AdminEventsPage() {
 
                     {/* Stats Leaderboard Cards */}
                     <div>
-                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20 }}>📊 House Submission Standings</h4>
+                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 6 }}><BarChart3 size={16} style={{ flexShrink: 0 }} /> House Submission Standings</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         {["red", "green", "yellow", "blue"].map(hId => {
                           const houseColors: Record<string, string> = {
@@ -4158,7 +4163,7 @@ export default function AdminEventsPage() {
                     {/* List of Submissions */}
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-                        <h4 style={{ fontSize: 16, fontWeight: 900 }}>💬 Student Submissions ({formSubmissions.length})</h4>
+                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> Student Submissions ({formSubmissions.length})</h4>
                         <button
                           type="button"
                           className="btn"
@@ -4983,7 +4988,7 @@ export default function AdminEventsPage() {
                       {selectedStudent.foodAllergies && selectedStudent.foodAllergies.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.foodAllergies}:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.foodAllergies}</span></p>}
                       {selectedStudent.dietaryRestrictions && selectedStudent.dietaryRestrictions.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.dietaryRestrictions}:</b> {selectedStudent.dietaryRestrictions}</p>}
                       {selectedStudent.emergencyMedication && selectedStudent.emergencyMedication.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.emergencyMed}:</b> <span style={{ color: "#ef4444", fontWeight: 700 }}>{selectedStudent.emergencyMedication}</span></p>}
-                      {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700 }}>⚠️ {t.faintingHistory}</p>}
+                      {selectedStudent.faintingHistory && <p style={{ fontSize: 14, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={14} style={{ flexShrink: 0 }} /> {t.faintingHistory}</p>}
 
                       {!hasActualMedicalInfo(selectedStudent) && (
                         <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic" }}>{t.noMedicalConditions}</p>

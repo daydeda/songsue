@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Ship the current changes end-to-end for ActiveCAMT — branch off main, commit, push, open a PR, merge it into main, and delete the branch (local + remote). Use when the user says "ship this", "commit + PR + merge", "open a PR and merge", or otherwise wants the full feature-branch → PR → merge → cleanup flow in one go. For deploys that touch the DB schema or read a new column, run /safe-deploy first.
+description: Ship the current changes end-to-end for ActiveCAMT — branch off main, commit, push, open a PR, merge it into main, delete the branch (local + remote), and record the day's entry in updates/ via the updates-changelog agent. Use when the user says "ship this", "commit + PR + merge", "open a PR and merge", or otherwise wants the full feature-branch → PR → merge → cleanup flow in one go. For deploys that touch the DB schema or read a new column, run /safe-deploy first.
 ---
 
 # Ship (ActiveCAMT)
@@ -72,6 +72,15 @@ PR — that is the only sanctioned path to `main` (see CLAUDE.md: **never push t
    git branch                  # the feature branch is gone
    git log --oneline -1        # -> the merge commit
    ```
+
+7. **Record the changelog (always — last step).** After the merge lands, launch the
+   **`updates-changelog`** subagent to write/extend the day's entry in `updates/` for
+   what was just shipped (Thai house style: ฝั่งนักศึกษา + ฝั่งทีม). Pass it the merge
+   commit / PR number and a short summary of the change so it can derive details from
+   the diff. This is not optional and not automatic anywhere else — shipping without a
+   changelog entry is incomplete. (It creates a per-day `updates/YYYY-MM-DD.md`, or
+   extends the current period file.) The agent only writes Markdown under `updates/`,
+   so this never touches code or `main` history.
 
 ## Notes
 - If branch protection blocks `gh pr merge` (required reviews/checks), stop and tell

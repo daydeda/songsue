@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { CheckCircle2, Award, X } from "lucide-react";
+import { CheckCircle2, Award, ClipboardList, ArrowRight, X } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import type { NotifItem } from "@/components/NotificationToasts";
 
@@ -27,21 +27,28 @@ export function NotificationModal({
 
   useEffect(() => {
     if (!current) return;
+    // Confirmations (check-in / score) auto-clear so the student doesn't have to
+    // tap. The pre-test reminder is actionable — it stays until they tap the CTA,
+    // the close button, or the backdrop, so it can't disappear before they act.
+    if (current.type === "pre_test_reminder") return;
     const timer = window.setTimeout(() => onDismiss(current.id), AUTO_MS);
     return () => window.clearTimeout(timer);
-  }, [current?.id, onDismiss]);
+  }, [current?.id, current?.type, onDismiss]);
 
   if (!current) return null;
 
   const isCheckin = current.type === "checkin";
+  const isPreTest = current.type === "pre_test_reminder";
   const positive = (current.points ?? 0) >= 0;
-  const accent = isCheckin ? "#14b8a6" : positive ? "var(--accent-primary)" : "#f59e0b";
+  const accent = isPreTest ? "#e11d48" : isCheckin ? "#14b8a6" : positive ? "var(--accent-primary)" : "#f59e0b";
 
-  const title = isCheckin
-    ? t.notifCheckinTitle
-    : positive
-      ? t.notifScorePosTitle
-      : t.notifScoreTitle;
+  const title = isPreTest
+    ? t.notifPreTestTitle
+    : isCheckin
+      ? t.notifCheckinTitle
+      : positive
+        ? t.notifScorePosTitle
+        : t.notifScoreTitle;
 
   return (
     <div
@@ -104,7 +111,13 @@ export function NotificationModal({
             color: accent,
           }}
         >
-          {isCheckin ? <CheckCircle2 size={46} strokeWidth={2.5} /> : <Award size={46} strokeWidth={2.5} />}
+          {isPreTest ? (
+            <ClipboardList size={46} strokeWidth={2.5} />
+          ) : isCheckin ? (
+            <CheckCircle2 size={46} strokeWidth={2.5} />
+          ) : (
+            <Award size={46} strokeWidth={2.5} />
+          )}
         </div>
 
         <h2 style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.02em", margin: 0 }}>{title}</h2>
@@ -131,6 +144,45 @@ export function NotificationModal({
           >
             {current.eventTitle}
           </p>
+        )}
+
+        {isPreTest && (
+          <p
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--text-secondary)",
+              marginTop: 8,
+              lineHeight: 1.5,
+            }}
+          >
+            {t.notifPreTestBody}
+          </p>
+        )}
+
+        {isPreTest && current.link && (
+          <a
+            href={current.link}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              marginTop: 20,
+              padding: "12px 20px",
+              borderRadius: 14,
+              background: accent,
+              color: "white",
+              fontSize: 15,
+              fontWeight: 800,
+              textDecoration: "none",
+              boxShadow: `0 8px 20px ${accent}40`,
+            }}
+          >
+            {t.notifPreTestCta}
+            <ArrowRight size={16} />
+          </a>
         )}
 
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 22 }}>{t.notifTapToClose}</p>

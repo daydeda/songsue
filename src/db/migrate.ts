@@ -634,6 +634,15 @@ async function migrate() {
   await sql`ALTER TABLE attendance ALTER COLUMN session_id SET NOT NULL`;
   console.log("  ✅ attendance.session_id set NOT NULL");
 
+  // 41. President-managed events. managed_by_roles lists which president role(s)
+  // (club_president / major_president) MANAGE this event — i.e. see it in their
+  // admin events list, view attendance, scan, and export. This is SEPARATE from
+  // allowed_roles, which governs participant (student) visibility/registration.
+  // NULL or [] = not president-managed (only staff manage it). Nullable, no
+  // default, non-destructive.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS managed_by_roles jsonb`;
+  console.log("  ✅ events.managed_by_roles");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

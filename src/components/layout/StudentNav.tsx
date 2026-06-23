@@ -134,12 +134,6 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
         </Link>
       );
     })}
-    {(canEnterAdmin(user?.role)) && (
-      <Link href="/admin" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
-        <ShieldCheck size={16} />
-        {t.adminPanel}
-      </Link>
-    )}
     <div className="dropdown-divider" />
     <button className="dropdown-item text-danger" onClick={() => signOut({ callbackUrl: "/" })}>
       <LogOut size={16} />
@@ -340,7 +334,7 @@ aria-label="Close Menu"
 </div>
 
 <div className="sidebar-body">
-{[...primaryLinks, ...secondaryLinks].map((link) => {
+{primaryLinks.map((link) => {
 const Icon = link.icon;
 const isActive = pathname === link.href;
 return (

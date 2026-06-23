@@ -12,7 +12,8 @@ import {
   Download,
   Trophy,
   Plus,
-  ArrowUpRight
+  ArrowUpRight,
+  User
 } from "lucide-react";
 
 type DashboardStats = {
@@ -502,7 +503,7 @@ export default function AdminDashboardOverview() {
                         fontSize: 12,
                         color: a.type === "score" ? a.houseColor : "inherit"
                       }}>
-                        {a.type === "score" ? <Trophy size={14} /> : "👤"}
+                        {a.type === "score" ? <Trophy size={14} /> : <User size={14} />}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, overflowWrap: "break-word", wordBreak: "break-word" }}>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock } from "lucide-react";
+import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock, Save, AlertTriangle, Paperclip } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
 import {
@@ -815,7 +815,7 @@ export default function HistoryPage() {
                       padding: "12px 16px", marginBottom: 20, color: "#6366f1", fontSize: 13, fontWeight: 700,
                       display: "flex", alignItems: "center", gap: 10
                     }}>
-                      <span style={{ fontSize: 16 }}>💾</span>
+                      <Save size={16} style={{ flexShrink: 0 }} />
                       {lang === "th"
                         ? "กู้คืนคำตอบที่บันทึกไว้ในเครื่องนี้แล้ว"
                         : lang === "cn"
@@ -831,7 +831,7 @@ export default function HistoryPage() {
                       padding: "16px 20px", marginBottom: 28, color: "#ef4444", fontSize: 13, fontWeight: 700,
                       display: "flex", alignItems: "center", gap: 10
                     }}>
-                      <span style={{ fontSize: 16 }}>⚠️</span> {generalError}
+                      <AlertTriangle size={16} style={{ flexShrink: 0 }} /> {generalError}
                     </div>
                   )}
 
@@ -963,7 +963,7 @@ export default function HistoryPage() {
                                 }}>
                                   {fileUploading[q.id]
                                     ? (lang === "th" ? "กำลังอัปโหลด..." : lang === "cn" ? "上传中..." : lang === "mm" ? "တင်နေသည်..." : "Uploading...")
-                                    : (lang === "th" ? "📎 เลือกไฟล์ (รูปภาพ หรือ PDF)" : lang === "cn" ? "📎 选择文件（图片或 PDF）" : lang === "mm" ? "📎 ဖိုင်ရွေးပါ (ပုံ သို့မဟုတ် PDF)" : "📎 Choose a file (image or PDF)")}
+                                    : (<><Paperclip size={14} style={{ flexShrink: 0 }} />{lang === "th" ? "เลือกไฟล์ (รูปภาพ หรือ PDF)" : lang === "cn" ? "选择文件（图片或 PDF）" : lang === "mm" ? "ဖိုင်ရွေးပါ (ပုံ သို့မဟုတ် PDF)" : "Choose a file (image or PDF)"}</>)}
                                   <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={!!fileUploading[q.id]}
                                     style={{ display: "none" }}
                                     onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFileAnswer(q.id, f); e.target.value = ""; }} />
@@ -973,7 +973,7 @@ export default function HistoryPage() {
                                 {lang === "th" ? "รองรับ JPG, PNG, WEBP, PDF • สูงสุด 4MB" : lang === "cn" ? "支持 JPG、PNG、WEBP、PDF • 最大 4MB" : lang === "mm" ? "JPG, PNG, WEBP, PDF • အများဆုံး 4MB" : "JPG, PNG, WEBP, PDF • max 4MB"}
                               </span>
                               {fileErrors[q.id] && (
-                                <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 700 }}>⚠️ {fileErrors[q.id]}</span>
+                                <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {fileErrors[q.id]}</span>
                               )}
                             </div>
                           ) : (
@@ -990,7 +990,7 @@ export default function HistoryPage() {
 
                           {formErrors[q.id] && (
                             <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 700, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-                              ⚠️ {formErrors[q.id]}
+                              <AlertTriangle size={12} style={{ flexShrink: 0 }} /> {formErrors[q.id]}
                             </span>
                           )}
                         </div>

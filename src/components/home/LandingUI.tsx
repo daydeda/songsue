@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { ArrowRight, ShieldCheck, Zap, UserCheck, Sparkles } from "lucide-react";
+import { ArrowRight, ShieldCheck, Zap, UserCheck, Sparkles, AlertTriangle } from "lucide-react";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { signIn } from "next-auth/react";
 
@@ -176,7 +176,7 @@ export function LandingUI({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>⚠️</span>
+                  <AlertTriangle size={16} style={{ flexShrink: 0, color: "#b91c1c" }} />
                   <span style={{ fontSize: 15, fontWeight: 800, color: "#b91c1c" }}>{t.signInErrorTitle}</span>
                 </div>
                 <p style={{ fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.55, margin: 0 }}>{t.signInErrorBody}</p>

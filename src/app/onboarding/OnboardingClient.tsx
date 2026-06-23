@@ -3,7 +3,7 @@
 import { useSession, signOut } from "next-auth/react";
 import type { Session } from "next-auth";
 import { useState } from "react";
-import { Camera, Check, Loader2, LogOut, User, Menu, X } from "lucide-react";
+import { Camera, Check, Loader2, LogOut, User, Menu, X, AlertTriangle, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 
@@ -275,7 +275,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
             />
             <ErrMsg
               show={validationTriggered && !formData[fieldKey].trim()}
-              msg={isTh ? "⚠️ กรุณาระบุรายละเอียด" : "⚠️ Required"}
+              msg={isTh ? "กรุณาระบุรายละเอียด" : "Required"}
             />
           </>
         )}
@@ -290,7 +290,11 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
     boxShadow: bad ? "0 0 0 2px rgba(239,68,68,0.2)" : undefined,
   });
   const ErrMsg = ({ show, msg }: { show: boolean; msg: string }) =>
-    show ? <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, marginTop: 2 }}>{msg}</span> : null;
+    show ? (
+      <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, marginTop: 2, display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <AlertTriangle size={12} style={{ flexShrink: 0 }} /> {msg}
+      </span>
+    ) : null;
 
   /* ── Shared: navigation buttons (used in both mobile bar + desktop form) */
   const NavButtons = ({ inline }: { inline?: boolean }) => (
@@ -389,7 +393,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
                   ? "หากคุณเป็นคนไทย กรุณาเขียนชื่อเป็นภาษาไทย"
                   : "If you are a Thai citizen, please write your name in Thai (ให้เขียนชื่อเป็นภาษาไทย)"}
               </span>
-              <ErrMsg show={validationTriggered && !formData.name.trim()} msg={isTh ? "⚠️ กรุณากรอกชื่อ-นามสกุล" : "⚠️ This field is required"} />
+              <ErrMsg show={validationTriggered && !formData.name.trim()} msg={isTh ? "กรุณากรอกชื่อ-นามสกุล" : "This field is required"} />
             </div>
           </div>
 
@@ -398,12 +402,12 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
             <div className="field flex-1">
               <label className={lbl}>{t.studentId} <span style={{ color: "#ef4444" }}>*</span></label>
               <input className={inp} maxLength={9} placeholder="640510000" inputMode="numeric" value={formData.studentId} onChange={(e) => set("studentId", e.target.value.replace(/[^0-9]/g, "").slice(0, 9))} style={errStyle(validationTriggered && !!(isStudent && formData.studentId.trim().length !== 9))} />
-              <ErrMsg show={validationTriggered && !!(isStudent && formData.studentId.trim().length !== 9)} msg={isTh ? "⚠️ รหัสนักศึกษาต้องมี 9 หลัก" : "⚠️ Must be exactly 9 digits"} />
+              <ErrMsg show={validationTriggered && !!(isStudent && formData.studentId.trim().length !== 9)} msg={isTh ? "รหัสนักศึกษาต้องมี 9 หลัก" : "Must be exactly 9 digits"} />
             </div>
             <div className="field flex-1">
               <label className={lbl}>{t.nickname} <span style={{ color: "#ef4444" }}>*</span></label>
               <input className={inp} placeholder={t.nickname} value={formData.nickname} onChange={(e) => set("nickname", e.target.value)} style={errStyle(validationTriggered && !formData.nickname.trim())} />
-              <ErrMsg show={validationTriggered && !formData.nickname.trim()} msg={isTh ? "⚠️ กรุณากรอกชื่อเล่น" : "⚠️ This field is required"} />
+              <ErrMsg show={validationTriggered && !formData.nickname.trim()} msg={isTh ? "กรุณากรอกชื่อเล่น" : "This field is required"} />
             </div>
           </div>
 
@@ -442,12 +446,12 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
             <div className="field flex-1">
               <label className={lbl}>{t.phone} <span style={{ color: "#ef4444" }}>*</span></label>
               <input className={inp} placeholder="0812345678" inputMode="tel" value={formData.phone} onChange={(e) => set("phone", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))} style={errStyle(validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim())))} />
-              <ErrMsg show={validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim()))} msg={!formData.phone.trim() ? (isTh ? "⚠️ กรุณากรอกเบอร์โทรศัพท์" : "⚠️ Required") : (isTh ? "⚠️ ต้องเป็นตัวเลข 10 หลัก" : "⚠️ Must be exactly 10 digits")} />
+              <ErrMsg show={validationTriggered && (!formData.phone.trim() || !/^[0-9]{10}$/.test(formData.phone.trim()))} msg={!formData.phone.trim() ? (isTh ? "กรุณากรอกเบอร์โทรศัพท์" : "Required") : (isTh ? "ต้องเป็นตัวเลข 10 หลัก" : "Must be exactly 10 digits")} />
             </div>
             <div className="field flex-1">
               <label className={lbl}>{t.contactChannels} <span style={{ color: "#ef4444" }}>*</span></label>
               <input className={inp} placeholder="IG: smocamt / LINE: smocamt" value={formData.contactChannels} onChange={(e) => set("contactChannels", e.target.value)} style={errStyle(validationTriggered && !formData.contactChannels.trim())} />
-              <ErrMsg show={validationTriggered && !formData.contactChannels.trim()} msg={isTh ? "⚠️ กรุณากรอกช่องทางติดต่อ" : "⚠️ Required"} />
+              <ErrMsg show={validationTriggered && !formData.contactChannels.trim()} msg={isTh ? "กรุณากรอกช่องทางติดต่อ" : "Required"} />
             </div>
           </div>
         </>
@@ -457,7 +461,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
       {step === 1 && (
         <>
           <div className="alert alert-info" style={{ fontSize: 13 }}>
-            <span>🔒</span><span>{t.medicalInfoDetail}</span>
+            <Lock size={14} style={{ flexShrink: 0 }} /><span>{t.medicalInfoDetail}</span>
           </div>
           <div className="flex flex-col sm:flex-row gap-4">
             {renderMedicalField("chronicDiseases", t.chronicDiseases)}
@@ -508,7 +512,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
                   <div className="field">
                     <label className={lbl}>{t.fullName} {required && <span style={{ color: "#ef4444" }}>*</span>}</label>
                     <input className={inp} placeholder={t.fullName} value={contact.name} onChange={(e) => setEC(i, "name", e.target.value)} style={errStyle(validationTriggered && required && !contact.name.trim())} />
-                    <ErrMsg show={validationTriggered && required && !contact.name.trim()} msg={isTh ? "⚠️ กรุณากรอกชื่อ-นามสกุล" : "⚠️ Required"} />
+                    <ErrMsg show={validationTriggered && required && !contact.name.trim()} msg={isTh ? "กรุณากรอกชื่อ-นามสกุล" : "Required"} />
                   </div>
                   <div className="flex flex-col sm:flex-row gap-4">
                     <div className="field flex-1">
@@ -541,12 +545,12 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
                           onChange={(e) => setEC(i, "relationship", "Other:" + e.target.value)}
                         />
                       )}
-                      <ErrMsg show={validationTriggered && required && (!contact.relationship.trim() || contact.relationship === "Other:")} msg={isTh ? "⚠️ กรุณากรอกความสัมพันธ์" : "⚠️ Required"} />
+                      <ErrMsg show={validationTriggered && required && (!contact.relationship.trim() || contact.relationship === "Other:")} msg={isTh ? "กรุณากรอกความสัมพันธ์" : "Required"} />
                     </div>
                     <div className="field flex-1">
                       <label className={lbl}>{t.phone} {required && <span style={{ color: "#ef4444" }}>*</span>}</label>
                       <input className={inp} placeholder="0812345678" inputMode="tel" value={contact.phone} onChange={(e) => setEC(i, "phone", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))} style={errStyle(validationTriggered && required && (!contact.phone.trim() || !/^[0-9]{10}$/.test(contact.phone.trim())))} />
-                      <ErrMsg show={validationTriggered && required && (!contact.phone.trim() || !/^[0-9]{10}$/.test(contact.phone.trim()))} msg={!contact.phone.trim() ? (isTh ? "⚠️ กรุณากรอกเบอร์" : "⚠️ Required") : (isTh ? "⚠️ ต้องเป็นตัวเลข 10 หลัก" : "⚠️ Must be 10 digits")} />
+                      <ErrMsg show={validationTriggered && required && (!contact.phone.trim() || !/^[0-9]{10}$/.test(contact.phone.trim()))} msg={!contact.phone.trim() ? (isTh ? "กรุณากรอกเบอร์" : "Required") : (isTh ? "ต้องเป็นตัวเลข 10 หลัก" : "Must be 10 digits")} />
                     </div>
                   </div>
                 </div>
@@ -592,20 +596,20 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{t.pdpaConsent}</p>
               <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>{t.pdpaDetail}</p>
               <div className="alert alert-warning" style={{ fontSize: 12, padding: "10px 14px", borderRadius: 10, marginTop: 12, display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 14, marginTop: -2 }}>⚠️</span>
+                <AlertTriangle size={14} style={{ marginTop: -2, flexShrink: 0 }} />
                 <span style={{ lineHeight: 1.5, color: "var(--text-primary)" }}>{t.pdpaWarning}</span>
               </div>
             </div>
           </label>
 
-          {error && <div className="alert alert-error"><span>⚠️</span> {error}</div>}
+          {error && <div className="alert alert-error"><AlertTriangle size={14} style={{ flexShrink: 0 }} /> {error}</div>}
         </>
       )}
 
       {/* Error banner for steps 0–2 */}
       {error && step < 3 && (
         <div className="alert alert-error" style={{ marginTop: 4 }}>
-          <span>⚠️</span> {error}
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} /> {error}
         </div>
       )}
     </div>

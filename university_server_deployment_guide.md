@@ -1,5 +1,12 @@
 # Step-by-Step University Server Deployment Guide (Option A)
 
+> ⚠️ **DEPRECATED for the CAMT `dev2` server.** This guide assumes you own a VM
+> with SSH access and run `docker compose up` yourself. The CAMT server
+> (`dev2.camt.cmu.ac.th`) is a **shared Docker Swarm managed through Portainer** —
+> no SSH, no host filesystem, deploy by pasting a stack into the web UI. Use
+> **`docs/supabase-to-university-server-cutover.md`** + **`docker-stack.yml`**
+> instead. This file is kept only for a self-owned-VM scenario.
+
 This guide takes you through the step-by-step process of deploying the **ActiveCAMT** ecosystem onto a university-provided virtual machine (typically running Ubuntu Server). 
 
 By using Docker Compose, the deployment behaves identically to a local setup, ensuring zero compatibility issues regardless of what OS or library versions the university server runs.

@@ -41,11 +41,16 @@ services:
       # Raise toward 20 only if event scan-ins still queue; the code default is 15.
       DB_POOL_MAX: "15"
       # Observability (src/lib/logger.ts). LOG_LEVEL: debug|info|warn|error (default
-      # info). ERROR_WEBHOOK_URL is OPTIONAL — set it in the Portainer stack env to a
-      # Discord/Slack incoming webhook (or any JSON endpoint / self-hosted GlitchTip)
-      # to receive redacted alerts on unhandled errors. Unset = structured logs only.
-      LOG_LEVEL: "info"
-      # ERROR_WEBHOOK_URL: "https://discord.com/api/webhooks/..."  # set in stack env, not here
+      # info). ERROR_WEBHOOK_URL is OPTIONAL — a Discord/Slack incoming webhook (or any
+      # JSON endpoint / self-hosted GlitchTip) that receives redacted alerts on
+      # unhandled errors. Unset (the `:-` default below → empty) = structured logs only.
+      #
+      # IMPORTANT: like AUTH_SECRET etc., these must be MAPPED here to reach the
+      # container — defining a Portainer stack variable alone does nothing unless the
+      # compose file interpolates it. Set the value in the stack's Environment
+      # variables; this line injects it.
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      ERROR_WEBHOOK_URL: "${ERROR_WEBHOOK_URL:-}"
       AUTH_SECRET: "${AUTH_SECRET}"
       # NextAuth v5 — must be the public URL + /api/auth, and match the Google
       # OAuth redirect URI (https://activecamt.camt.cmu.ac.th/api/auth/callback/google).

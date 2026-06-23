@@ -1,27 +1,18 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
+import { captureException } from "@/lib/logger";
 
-export async function GET(req: Request) {
-  try {
-    // PDPA: the individual standings expose real student names — authenticated users only.
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
-    // Default to the full leaderboard (the standings page paginates client-side).
-    // The 2000 ceiling is just a safety valve against a pathological payload — the
-    // result set is small (a few hundred students), the response is edge-cached for
-    // 30s, and the page only renders 10 rows at a time, so returning all is cheap.
-    const limit = Math.min(2000, Math.max(1, parseInt(searchParams.get("limit") || "2000")));
-    const offset = (page - 1) * limit;
-
-    const list = await db.query.users.findMany({
+// The individual standings are the same global ranking for every viewer, so cache
+// the read for 15s and share it across all polling clients — decoupling DB cost
+// from how many students are watching at once. Keyed on page/limit (unstable_cache
+// includes the function args in its key). The auth() gate stays OUTSIDE the cache.
+const getIndividualStandings = unstable_cache(
+  (page: number, limit: number) =>
+    db.query.users.findMany({
       where: eq(users.profileCompleted, true),
       columns: {
         id: true,
@@ -41,9 +32,30 @@ export async function GET(req: Request) {
       // Deterministic tie-break: equal points sort by id so rows don't shuffle
       // between refreshes (matches the RANK() ordering used by the /me endpoint).
       orderBy: (users, { desc, asc }) => [desc(users.points), asc(users.id)],
-      limit: limit,
-      offset: offset,
-    });
+      limit,
+      offset: (page - 1) * limit,
+    }),
+  ["individual-standings"],
+  { revalidate: 15 },
+);
+
+export async function GET(req: Request) {
+  try {
+    // PDPA: the individual standings expose real student names — authenticated users only.
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
+    // Default to the full leaderboard (the standings page paginates client-side).
+    // The 2000 ceiling is just a safety valve against a pathological payload — the
+    // result set is small (a few hundred students), the response is edge-cached for
+    // 30s, and the page only renders 10 rows at a time, so returning all is cheap.
+    const limit = Math.min(2000, Math.max(1, parseInt(searchParams.get("limit") || "2000")));
+
+    const list = await getIndividualStandings(page, limit);
 
     return NextResponse.json(list, {
       headers: {
@@ -53,7 +65,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (error) {
-    console.error("Failed to fetch individual leaderboard:", error);
+    captureException(error, { route: "GET /api/houses/individual" });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

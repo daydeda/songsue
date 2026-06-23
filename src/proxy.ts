@@ -78,5 +78,11 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|smocamt-logo-icon.png|icon.png).*)"],
+  // `uploads` is excluded so public posters/avatars/QR — served from disk as
+  // /uploads/* on the self-hosted deploy — bypass the auth gate. They are public
+  // assets (private slips/form docs live in .uploads-private behind an auth API),
+  // and gating them sent <img> requests to /login, rendering as broken images.
+  // Supabase-backed deploys serve these from a cross-origin URL the proxy never
+  // sees, so this only affects the self-hosted (local-disk) deploy.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|smocamt-logo-icon.png|icon.png|uploads).*)"],
 };

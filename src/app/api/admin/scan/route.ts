@@ -8,6 +8,7 @@ import { events } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { captureException } from "@/lib/logger";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 // Scanning must stay responsive during the event even under load.
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    console.error("Scan POST endpoint error:", error);
+    captureException(error, { route: "POST /api/admin/scan" });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
@@ -200,7 +201,7 @@ export async function GET(req: Request) {
     const results = await ScannerService.searchStudents(query);
     return NextResponse.json(results);
   } catch (error) {
-    console.error("Scan GET endpoint error:", error);
+    captureException(error, { route: "GET /api/admin/scan" });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

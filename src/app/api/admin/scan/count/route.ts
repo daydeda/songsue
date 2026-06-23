@@ -1,0 +1,90 @@
+import { auth } from "@/auth";
+import { db } from "@/db";
+import { attendance, events } from "@/db/schema";
+import { and, eq, count } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { captureException } from "@/lib/logger";
+
+// GET /api/admin/scan/count?eventId=<uuid>&sessionId=<uuid>
+//
+// Returns ONLY an aggregate check-in count for the live scanner display:
+//   { checkedIn: number }
+//
+// Deliberately separate from /api/admin/events/[id]/attendance, which reads the
+// full roster INCLUDING medical detail and writes a PDPA audit log on every call —
+// far too heavy to poll every few seconds. This endpoint touches no PII and reads
+// no medical data, so it needs no audit log and is cheap to poll during an event.
+export async function GET(req: Request) {
+  try {
+    const session = await auth();
+    // Mirror the scan POST gate: every scanner-capable role may see the count.
+    const isAdminRole = [
+      "super_admin",
+      "admin",
+      "registration",
+      "organizer",
+      "smo",
+      "club_president",
+      "major_president",
+    ].includes(session?.user?.role || "");
+    if (!session?.user || !isAdminRole) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const url = new URL(req.url);
+    const eventId = url.searchParams.get("eventId");
+    const sessionId = url.searchParams.get("sessionId");
+    if (!eventId) {
+      return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+    }
+
+    // President roles may only read events they manage (managedByRoles), mirroring
+    // the /api/admin/scan and attendance scoping. Staff and smo are unscoped.
+    const myRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
+    const isStaff = myRoles.some((r) =>
+      ["super_admin", "admin", "registration", "organizer"].includes(r),
+    );
+    const presidentTags = myRoles.filter((r) =>
+      ["club_president", "major_president"].includes(r),
+    );
+    if (!isStaff && presidentTags.length > 0) {
+      const ev = await db.query.events.findFirst({
+        where: eq(events.id, eventId),
+        columns: { managedByRoles: true },
+      });
+      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      if (!managed) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
+    // Count only students who actually CHECKED IN (status 'attended'), not those
+    // who merely pre-registered. Pre-registration writes an attendance row with
+    // status 'registered' (method 'pre-registered'); scanning flips it to
+    // 'attended'. Without this filter the live "Checked In" card would include
+    // no-shows and would not climb as students scan in.
+    const [row] = await db
+      .select({ value: count() })
+      .from(attendance)
+      .where(
+        sessionId
+          ? and(
+              eq(attendance.eventId, eventId),
+              eq(attendance.sessionId, sessionId),
+              eq(attendance.status, "attended"),
+            )
+          : and(
+              eq(attendance.eventId, eventId),
+              eq(attendance.status, "attended"),
+            ),
+      );
+
+    return NextResponse.json(
+      { checkedIn: row?.value ?? 0 },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    captureException(error, { route: "GET /api/admin/scan/count" });
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

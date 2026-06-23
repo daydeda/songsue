@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Megaphone, Save, Eye, EyeOff, Bold, Link2 } from "lucide-react";
+import { Megaphone, Save, Eye, EyeOff, Bold, Link2, AlertTriangle, Check } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { parseRichText } from "@/lib/rich-text";
 
@@ -238,7 +238,7 @@ export function AnnouncementEditor() {
 
             {error && (
               <div className="alert alert-error" style={{ marginTop: 20, fontSize: 13 }}>
-                <span>⚠️</span>
+                <AlertTriangle size={16} style={{ flexShrink: 0 }} />
                 <span>{error}</span>
               </div>
             )}
@@ -256,8 +256,8 @@ export function AnnouncementEditor() {
                 {saving ? t.saving : t.saveChanges}
               </button>
               {savedAt && !saving && (
-                <span style={{ fontSize: 13, color: "var(--accent-success, #16a34a)", fontWeight: 600 }}>
-                  ✓ {t.announcementSaved}
+                <span style={{ fontSize: 13, color: "var(--accent-success, #16a34a)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <Check size={14} style={{ flexShrink: 0 }} /> {t.announcementSaved}
                 </span>
               )}
             </div>

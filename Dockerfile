@@ -1,5 +1,5 @@
 # Base image
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -33,8 +33,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Set the correct permission for prerender cache and uploads
-RUN mkdir -p public/uploads && chown -R nextjs:nodejs public/uploads
+# Set the correct permission for prerender cache and uploads.
+# .uploads-private holds PDPA form docs + payment slips when running without
+# Supabase Storage; it must exist and be writable by the nextjs user, and is
+# bind-mounted to the host in docker-compose.yml so the data persists.
+RUN mkdir -p public/uploads .uploads-private && chown -R nextjs:nodejs public/uploads .uploads-private
 
 # Copy built code and configuration
 COPY --from=builder /app/package.json ./package.json
@@ -42,7 +45,19 @@ COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/.next.nosync ./.next.nosync
+# next build writes to .next by default; the .next.nosync distDir in
+# next.config.ts only kicks in on the iCloud-synced local path, never in CI / the
+# container (path has no "CloudDocs"/"Mobile Documents"), so copy .next.
+COPY --from=builder /app/.next ./.next
+
+# Source + maintenance scripts needed to run migrations/seed/elevate/file-import
+# from the Portainer web console (there is no host shell on the swarm). These read
+# DATABASE_URL straight from the container env — no .env file required. tsx is
+# present because the `deps` stage runs `npm ci` (installs devDependencies too).
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/elevate-admin.ts ./elevate-admin.ts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 USER nextjs
 

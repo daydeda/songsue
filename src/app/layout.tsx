@@ -58,6 +58,17 @@ import { LanguageProvider } from "@/lib/LanguageContext";
 import { LanguageWrapper } from "@/lib/LanguageWrapper";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { MovedNotice } from "@/components/MovedNotice";
+
+// The app is now self-hosted at activecamt.camt.cmu.ac.th. The retired Vercel
+// deployment points at a separate, now-stale Supabase DB — so on Vercel we
+// replace the entire app with a "we've moved" screen to prevent split-brain
+// writes. `VERCEL` is set automatically on every Vercel deployment; the
+// self-hosted Docker build never sets it. NEXT_PUBLIC_SITE_MOVED is a manual
+// override (set to "1" to force the notice, "0" to force-disable it on Vercel).
+const SITE_MOVED =
+  process.env.NEXT_PUBLIC_SITE_MOVED === "1" ||
+  (process.env.VERCEL === "1" && process.env.NEXT_PUBLIC_SITE_MOVED !== "0");
 
 export default function RootLayout({
   children,
@@ -67,15 +78,19 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${ibmPlexSans.variable} ${ibmPlexSansThai.variable} ${notoSansMyanmar.variable} ${notoSansSC.variable} h-full`} data-scroll-behavior="smooth">
       <body className="min-h-full flex flex-col antialiased">
-        <LanguageProvider>
-          <LanguageWrapper>
-            <SessionProvider>
-              {children}
-              <Analytics />
-              <SpeedInsights />
-            </SessionProvider>
-          </LanguageWrapper>
-        </LanguageProvider>
+        {SITE_MOVED ? (
+          <MovedNotice />
+        ) : (
+          <LanguageProvider>
+            <LanguageWrapper>
+              <SessionProvider>
+                {children}
+                <Analytics />
+                <SpeedInsights />
+              </SessionProvider>
+            </LanguageWrapper>
+          </LanguageProvider>
+        )}
       </body>
     </html>
   );

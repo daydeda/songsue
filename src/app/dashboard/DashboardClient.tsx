@@ -24,8 +24,8 @@ import {
   MapPin,
   Clock,
   Calendar,
+  CalendarClock,
   CheckCircle2,
-  Zap,
   User,
   RefreshCw,
   Trophy,
@@ -36,7 +36,9 @@ import {
   Megaphone,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck
+  ClipboardCheck,
+  LayoutGrid,
+  List
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -353,6 +355,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const { t, lang } = useLanguage();
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  // How the events section is rendered. "grid" is the action-first card grid
+  // (upcoming only, default). "timeline" is the at-a-glance agenda — every event,
+  // past included, grouped by Today / This Week / Upcoming / Past.
+  const [eventView, setEventView] = useState<"grid" | "timeline">("grid");
   const [registeringId, setRegisteringId] = useState<string | null>(null);
   const [errorModal, setErrorModal] = useState<{
     show: boolean;
@@ -570,6 +576,41 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     return "upcoming";
   };
 
+  // --- Timeline view: group every event into Today / This Week / Upcoming / Past. ---
+  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+  const weekEnd = new Date(startOfToday); weekEnd.setDate(weekEnd.getDate() + 7);
+
+  const timelineGroupOf = (e: Event): "today" | "week" | "later" | "past" => {
+    const start = new Date(e.startTime);
+    if (new Date(e.endTime) < now) return "past";
+    if (start <= endOfToday) return "today"; // happening now, or starts later today
+    if (start < weekEnd) return "week";
+    return "later";
+  };
+  const byStartAsc = (a: Event, b: Event) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+  const byStartDesc = (a: Event, b: Event) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+
+  const timelineSections = [
+    { key: "today", label: t.secToday, items: events.filter((e) => timelineGroupOf(e) === "today").sort(byStartAsc) },
+    { key: "week", label: t.secThisWeek, items: events.filter((e) => timelineGroupOf(e) === "week").sort(byStartAsc) },
+    { key: "later", label: t.secLater, items: events.filter((e) => timelineGroupOf(e) === "later").sort(byStartAsc) },
+    // Past sorted most-recent-first so the freshly-ended events are at the top.
+    { key: "past", label: t.secPast, items: events.filter((e) => timelineGroupOf(e) === "past").sort(byStartDesc) },
+  ].filter((s) => s.items.length > 0);
+
+  // --- Overview stats strip (logged-in students only). Counts are derived from the
+  // events list; pointsEarned sums the point value of events the student attended. ---
+  const thisWeekCount = upcoming.filter((e) => new Date(e.startTime) < weekEnd).length;
+  const attendedEvents = events.filter((e) => e.attendanceStatus === "attended");
+  const pointsEarned = attendedEvents.reduce((sum, e) => sum + (e.pointsAwarded || 0), 0);
+  const stats: { key: string; label: string; value: number; icon: typeof Calendar }[] = [
+    { key: "upcoming", label: t.statUpcoming, value: upcoming.length, icon: Calendar },
+    { key: "week", label: t.statThisWeek, value: thisWeekCount, icon: CalendarClock },
+    { key: "attended", label: t.statAttended, value: attendedEvents.length, icon: CheckCircle2 },
+    { key: "points", label: t.statPoints, value: pointsEarned, icon: Trophy },
+  ];
+
   return (
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
       {/* Decorative Orbs */}
@@ -649,23 +690,72 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             )}
 
             <div style={{ marginBottom: 40 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
                 <h2 style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-0.03em" }}>{t.upcomingEvents}</h2>
-                <button 
-                  className="btn btn-ghost btn-sm" 
-                  onClick={() => {
-                    setLoadingEvents(true);
-                    fetch("/api/events")
-                      .then(r => r.json())
-                      .then(d => { if (Array.isArray(d)) setEvents(d); })
-                      .finally(() => setLoadingEvents(false));
-                  }}
-                  style={{ gap: 6 }}
-                >
-                   <RefreshCw size={14} />
-                   {t.refresh}
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {/* View toggle — Cards (action-first grid) vs Timeline (at-a-glance agenda). */}
+                  <div style={{ display: "flex", background: "var(--bg-elevated)", borderRadius: 12, padding: 3, border: "1px solid var(--border-subtle)" }}>
+                    {([
+                      { key: "grid", label: t.gridView, Icon: LayoutGrid },
+                      { key: "timeline", label: t.timelineView, Icon: List },
+                    ] as const).map(({ key, label, Icon }) => {
+                      const active = eventView === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setEventView(key)}
+                          aria-pressed={active}
+                          aria-label={label}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "7px 12px", borderRadius: 9, border: "none", cursor: "pointer",
+                            fontSize: 13, fontWeight: 800,
+                            background: active ? "var(--bg-surface)" : "transparent",
+                            color: active ? "var(--accent-primary)" : "var(--text-muted)",
+                            boxShadow: active ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+                            transition: "all 0.2s",
+                          }}
+                        >
+                          <Icon size={14} />
+                          <span className="hidden sm:inline">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setLoadingEvents(true);
+                      fetch("/api/events")
+                        .then(r => r.json())
+                        .then(d => { if (Array.isArray(d)) setEvents(d); })
+                        .finally(() => setLoadingEvents(false));
+                    }}
+                    style={{ gap: 6 }}
+                  >
+                     <RefreshCw size={14} />
+                     {t.refresh}
+                  </button>
+                </div>
               </div>
+
+              {/* Overview stats strip — quick counts regardless of which view is active. */}
+              {user && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
+                  {stats.map(({ key, label, value, icon: Icon }) => (
+                    <div key={key} className="glass" style={{ padding: "16px 18px", borderRadius: 18, display: "flex", alignItems: "center", gap: 14, background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(255,107,0,0.06)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
+                        <Icon size={18} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 24, fontWeight: 900, color: "var(--text-primary)", lineHeight: 1 }}>{value}</p>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {loadingEvents ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24 }}>
@@ -682,6 +772,80 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     />
                   ))}
                 </div>
+              ) : eventView === "timeline" ? (
+                timelineSections.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+                    {timelineSections.map((section) => (
+                      <div key={section.key}>
+                        {/* Section header with a count badge and a hairline rule. */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                          <h3 style={{ fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)" }}>{section.label}</h3>
+                          <span style={{ fontSize: 11, fontWeight: 900, background: "var(--bg-elevated)", color: "var(--text-muted)", padding: "2px 8px", borderRadius: 99 }}>{section.items.length}</span>
+                          <div style={{ flex: 1, height: 1, background: "var(--border-subtle)" }} />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {section.items.map((e) => {
+                            const st = getEventStatus(e);
+                            const start = new Date(e.startTime);
+                            const end = new Date(e.endTime);
+                            const timeOpts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" };
+                            const attended = e.attendanceStatus === "attended";
+                            const statusColor = st === "live" ? "#ef4444" : st === "past" ? "var(--text-muted)" : "var(--accent-primary)";
+                            return (
+                              <button
+                                key={e.id}
+                                type="button"
+                                onClick={() => setPreviewEvent(e)}
+                                className="timeline-row"
+                                style={{
+                                  display: "flex", alignItems: "center", gap: 16, width: "100%", textAlign: "left",
+                                  padding: "12px 16px", borderRadius: 16, cursor: "pointer",
+                                  background: "var(--bg-surface)", border: "1px solid var(--border-subtle)",
+                                  opacity: section.key === "past" ? 0.65 : 1, transition: "all 0.2s",
+                                }}
+                              >
+                                {/* Date chip */}
+                                <div style={{ flexShrink: 0, width: 54, textAlign: "center", background: "var(--bg-elevated)", borderRadius: 12, padding: "8px 4px" }}>
+                                  <p style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em", color: statusColor }}>
+                                    {start.toLocaleDateString("en-GB", { month: "short", timeZone: "Asia/Bangkok" })}
+                                  </p>
+                                  <p style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", lineHeight: 1.1 }}>
+                                    {start.toLocaleDateString("en-GB", { day: "numeric", timeZone: "Asia/Bangkok" })}
+                                  </p>
+                                </div>
+                                {/* Title + time + location */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontSize: 15, fontWeight: 800, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.title}</p>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, fontSize: 12, color: "var(--text-muted)", fontWeight: 600, flexWrap: "wrap" }}>
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                                      <Clock size={12} /> {start.toLocaleTimeString("en-GB", timeOpts)}–{end.toLocaleTimeString("en-GB", timeOpts)}
+                                    </span>
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      <MapPin size={12} /> {e.location || "CAMT Building"}
+                                    </span>
+                                  </div>
+                                </div>
+                                {/* Status + registration state */}
+                                <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                                  <span style={{ padding: "4px 10px", background: statusColor, color: "#fff", borderRadius: 99, fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.04em" }}>{st}</span>
+                                  {attended ? (
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 800, color: "#10b981" }}><CheckCircle2 size={12} /> {t.attended}</span>
+                                  ) : e.isRegistered ? (
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 800, color: "var(--accent-primary)" }}><CheckCircle2 size={12} /> {t.registered}</span>
+                                  ) : null}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: "80px 40px", textAlign: "center", background: "var(--bg-surface)", borderRadius: 24, border: "2px dashed var(--border-subtle)" }}>
+                     <p style={{ color: "var(--text-muted)", fontWeight: 500 }}>{t.noEvents}</p>
+                  </div>
+                )
               ) : upcoming.length > 0 ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24 }}>
                   {upcoming.map((e) => (
@@ -1831,6 +1995,11 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
           }
           .event-card-ig:hover img {
             transform: scale(1.05);
+          }
+          .timeline-row:hover {
+            border-color: var(--accent-primary) !important;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+            transform: translateX(2px);
           }
         `}</style>
       </div>

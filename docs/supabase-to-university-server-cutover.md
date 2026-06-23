@@ -12,7 +12,7 @@ Portainer** (web UI). Key constraints of this environment:
 
 Supabase does two jobs today — the **database** and **file storage** (3 buckets) —
 both must be migrated. Assigned: public port **10780**, hostname
-**`camtplaybase.camt.cmu.ac.th`**.
+**`activecamt.camt.cmu.ac.th`**.
 
 > Follows `/safe-deploy` rules: feature branch, idempotent + non-destructive steps.
 
@@ -22,8 +22,8 @@ both must be migrated. Assigned: public port **10780**, hostname
 - **Log in:** https://dev2.camt.cmu.ac.th → *Use internal authentication* →
   `camtplaybase` / your password. **Rotate the password** immediately.
 - **Google OAuth:** add redirect URI
-  `https://camtplaybase.camt.cmu.ac.th/api/auth/callback/google` and origin
-  `https://camtplaybase.camt.cmu.ac.th`.
+  `https://activecamt.camt.cmu.ac.th/api/auth/callback/google` and origin
+  `https://activecamt.camt.cmu.ac.th`.
 - **Maintenance window:** put the live Vercel site in read-only so no new
   rows/uploads land on Supabase after you snapshot it.
 
@@ -39,12 +39,19 @@ Because the repo is **private**, the GHCR package defaults to private. Either:
 - **Keep it private** and in Portainer: *Registries → Add registry → Custom*,
   URL `ghcr.io`, username = your GitHub login, password = a PAT with `read:packages`.
 
-## 2. Deploy the stack in Portainer
-*Primary → Stacks → + Add Stack*. Name it (e.g. `activecamt`), paste
-**`docker-stack.yml`** from the repo, replace every `CHANGEME` (DB password,
-`AUTH_SECRET` via `openssl rand -base64 33`, Google OAuth) → **Deploy the stack**.
-The `web` service may restart a few times until `db` is ready (Swarm ignores
-`depends_on`) — that's expected.
+## 2. Deploy the stack in Portainer (Repository / GitOps method)
+*Stacks → + Add Stack*, name it `activecamt`, **Build method: Repository**:
+- **Repository URL:** `https://github.com/daydeda/smocamt-website` ·
+  **Authentication: ON** → GitHub username + a PAT (repo is private).
+- **Reference:** `refs/heads/main` · **Compose path:** `docker-stack.yml`
+- **Environment variables** (the `${...}` placeholders in the compose — secrets
+  live here, never in git): `POSTGRES_PASSWORD` (URL-safe chars),
+  `AUTH_SECRET` (`openssl rand -base64 33`), `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`.
+- Enable **GitOps updates → Webhook** and **Re-pull image** (this is what makes
+  merges to `main` auto-deploy — see "Updating later"). → **Deploy the stack**.
+
+`web` waits for `db` to pass its healthcheck (`depends_on` is honored under
+`docker compose`) before starting.
 
 ## 3. Build the schema
 *Containers → `activecamt_web` → Console → `/bin/sh` → Connect*, then:
@@ -93,7 +100,7 @@ Idempotent, and it **refuses to run against a Supabase DB**. Private files (slip
 form docs) are referenced by key, not URL — no rewrite needed.
 
 ## 7. Promote your admin account
-Sign in once at `https://camtplaybase.camt.cmu.ac.th` via Google, then in the web
+Sign in once at `https://activecamt.camt.cmu.ac.th` via Google, then in the web
 console (note the `CONFIRM=yes` — `guard.ts` blocks privileged scripts under
 `NODE_ENV=production`):
 ```sh
@@ -110,19 +117,27 @@ CONFIRM=yes npx tsx elevate-admin.ts you@cmu.ac.th
 - `/scanner-verify` — re-test QR scan + medical-gating-by-role.
 
 ## 9. Cut over & decommission
-- Confirm `https://camtplaybase.camt.cmu.ac.th` resolves through the CAMT proxy to
+- Confirm `https://activecamt.camt.cmu.ac.th` resolves through the CAMT proxy to
   port 10780 (request from IT if not already wired).
 - Keep the Supabase project **read-only for a grace period** as a rollback path
   before deleting it.
 
-## Updating later
-Merge to `main` → GitHub Actions rebuilds + pushes the image → in Portainer:
-*Stacks → your stack → Editor → Update the stack → enable "Pull latest image
-version" → Update*.
+## Updating later (automatic)
+Once set up, it's hands-off: **merge to `main` → GitHub Actions builds + pushes
+the image → calls the Portainer webhook → Portainer re-pulls the image and
+redeploys.** One-time wiring:
+1. After deploying (step 2) with the webhook enabled, copy the stack's **webhook
+   URL** from Portainer.
+2. Add it as a GitHub **repo secret** named `PORTAINER_WEBHOOK_URL`
+   (Settings → Secrets and variables → Actions). The workflow's final step calls
+   it; until the secret exists that step safely no-ops.
+
+Manual fallback (e.g. webhook misconfigured): *Stacks → activecamt → Editor →
+Update the stack → enable "Pull latest image version" → Update*.
 
 ## Backups (your responsibility now)
 Self-hosted Postgres has no managed backups. Periodically, from the `db` container
-console: `pg_dump -U activeuser activedb > /tmp/backup.sql` and copy it off the
+console: `pg_dump -U activecamtuser activecamtdb > /tmp/backup.sql` and copy it off the
 server (e.g. `docker cp` is unavailable without host access — instead pipe to a
 download, or run `pg_dump` from the web container to an off-site target). Schedule
 this before each migration at minimum.

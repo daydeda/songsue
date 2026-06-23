@@ -44,3 +44,18 @@ jobs:
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Auto-deploy: tell Portainer to re-pull the new image and redeploy the
+      # stack. Runs only once PORTAINER_WEBHOOK_URL is set as a repo secret (until
+      # then this step no-ops, so the build never fails for a missing webhook).
+      # Get the URL from the stack: Portainer → stack → Webhooks (GitOps updates).
+      - name: Trigger Portainer redeploy
+        env:
+          WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "PORTAINER_WEBHOOK_URL secret not set — skipping auto-redeploy."
+            exit 0
+          fi
+          echo "Triggering Portainer redeploy…"
+          curl -fsS -X POST "$WEBHOOK"

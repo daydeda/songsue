@@ -1,0 +1,45 @@
+name: CI
+
+# Quality gate for pull requests into main. The existing docker-publish.yml builds
+# and ships the image AFTER merge; this runs BEFORE merge so broken code never
+# reaches main. Hard gates: unit tests + production build. Lint is currently
+# informational (see below).
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Non-blocking for now: the repo has a handful of pre-existing lint errors
+      # unrelated to current work. Once those are cleared, drop continue-on-error so
+      # lint becomes a hard gate too.
+      - name: Lint (informational)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build-time placeholders only. The app reads these at RUNTIME (injected by
+          # Portainer), and postgres-js connects lazily, so a dummy URL lets the
+          # production build complete with no real database — mirroring the Docker
+          # image build, which also has no DB at build time.
+          DATABASE_URL: "postgres://ci:ci@localhost:5432/ci"
+          AUTH_SECRET: "ci-build-only-not-a-real-secret"
+          NEXT_TELEMETRY_DISABLED: "1"

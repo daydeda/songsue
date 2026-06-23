@@ -5,6 +5,7 @@ import { count, gte, sql, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { csvCell } from "@/lib/csv";
 import { AuditService } from "@/modules/audit/audit.service";
+import { captureException, logger } from "@/lib/logger";
 
 // Hard ceiling: a request must never hang at the platform's 300s default. If a DB
 // call stalls (e.g. the Supabase pooler is momentarily queueing), fail fast at 20s,
@@ -223,13 +224,14 @@ export async function GET(req: Request) {
     // A deadline miss is a transient pooler/connection stall, not a real error.
     // Return 503 so the client's next poll retries quickly, and tell it when.
     if (error instanceof TimeoutError) {
-      console.warn(`[dashboard] read timed out (${error.message}); returning 503`);
+      // Transient pooler/connection stall — log at warn, don't alert.
+      logger.warn("dashboard read timed out; returning 503", { message: error.message });
       return NextResponse.json(
         { error: "Service busy, retrying shortly" },
         { status: 503, headers: { "Retry-After": "5" } },
       );
     }
-    console.error(error);
+    captureException(error, { route: "GET /api/admin/dashboard" });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

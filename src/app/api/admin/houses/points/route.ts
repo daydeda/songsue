@@ -3,7 +3,9 @@ import { db } from "@/db";
 import { houses, scoreHistory } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { AuditService } from "@/modules/audit/audit.service";
+import { captureException, logger } from "@/lib/logger";
 
 export async function POST(req: Request) {
   try {
@@ -58,9 +60,19 @@ export async function POST(req: Request) {
       });
     });
 
+    // Bust the cached leaderboard so this manual adjustment appears on the next
+    // poll instead of waiting out the 15s cache window. Best-effort: the cache TTL
+    // is the backstop, so never let a purge hiccup fail the points write itself.
+    // (Next 16's revalidateTag takes a cache-life profile as its second argument.)
+    try {
+      revalidateTag("house-standings", { expire: 0 });
+    } catch (e) {
+      logger.warn("leaderboard cache purge failed (TTL will catch up)", { error: String(e) });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to update house points:", error);
+    captureException(error, { route: "POST /api/admin/houses/points" });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

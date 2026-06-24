@@ -987,11 +987,10 @@ export default function CalendarClient({
           gap: 6px;
         }
         .modal-poster {
+          display: block;
           width: 100%;
-          max-height: 280px;
-          object-fit: contain;
+          height: auto;
           border-radius: 12px;
-          background: var(--bg-base, #fafafa);
           margin-bottom: 12px;
         }
         .modal-desc {
@@ -1203,11 +1202,24 @@ function SubscribePanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <style jsx>{`
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(4px);
+          z-index: 3000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
         .sub-modal {
           background: var(--bg-elevated, #fff);
           border-radius: 18px;
           width: 100%;
           max-width: 480px;
+          max-height: 88vh;
+          overflow-y: auto;
           padding: 20px;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
         }

@@ -22,6 +22,8 @@ export interface CalendarItem {
   allDay: boolean;
   /** For an entry, the optional linked event id; for an event, always null. */
   eventId: string | null;
+  /** Event cover poster (imageUrls[0] ?? imageUrl). Always null for entries. */
+  imageUrl: string | null;
   updatedAt: string | null;
   // Visibility — surfaced so the manager edit form can prefill without a reset.
   // Not sensitive (events already expose these via /api/events).
@@ -45,6 +47,7 @@ function mapEvent(e: EventRow): CalendarItem {
     endTime: e.endTime.toISOString(),
     allDay: false,
     eventId: null,
+    imageUrl: e.imageUrls?.[0] ?? e.imageUrl ?? null,
     updatedAt: e.updatedAt ? e.updatedAt.toISOString() : null,
     allowedRoles: e.allowedRoles ?? null,
     allowedMajors: e.allowedMajors ?? null,
@@ -64,6 +67,7 @@ function mapEntry(e: EntryRow): CalendarItem {
     endTime: e.endTime.toISOString(),
     allDay: e.allDay,
     eventId: e.eventId ?? null,
+    imageUrl: null,
     updatedAt: e.updatedAt ? e.updatedAt.toISOString() : null,
     allowedRoles: e.allowedRoles ?? null,
     allowedMajors: e.allowedMajors ?? null,

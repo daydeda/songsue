@@ -7,6 +7,14 @@
 
 ---
 
+## 🎮 Game Design (GDD) — P2P Battle Platform
+- [00-concept.md](./gdd/00-concept.md) — ภาพรวม Platform (WebRTC P2P + QR/Code Entry + Game Registry + DB Schema)
+- [01-mechanics.md](./gdd/01-mechanics.md) — กลไก Platform (WebRTC Signaling Flow, Turn System, Timer, Fallback Mode, Game Module Interface)
+- **Game Modules:**
+  - [games/ox.md](./gdd/games/ox.md) — OX (Tic-Tac-Toe) — Game Module แรก (MVP)
+
+---
+
 ## 💻 Software Design
 - [00-srs-th.md](./software/00-srs-th.md) / [00-srs-en.md](./software/00-srs-en.md) — เอกสารข้อกำหนดความต้องการระบบ (Software Requirements Specification)
 - [01-system-design.md](./software/01-system-design.md) — โครงสร้างและโมดูลระบบย่อย (Subsystem Breakdown)

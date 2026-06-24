@@ -23,6 +23,15 @@
 
 ---
 
+## 💡 Feature Specifications (เอกสารระบุคุณสมบัติเฉพาะ)
+- [multi-day-checkin-implementation.md](./features/multi-day-checkin-implementation.md) — รายละเอียดระบบการเช็คอินแบบหลายวัน (Multi-Day Check-in)
+- [calendar-and-ics-feed.md](./features/calendar-and-ics-feed.md) — ระบบปฏิทินแสดงผลรายเดือนและการส่งออกปฏิทินภายนอก (.ics feed)
+- [form-reopening-points-clawback.md](./features/form-reopening-points-clawback.md) — ระบบดึงคะแนนรางวัลบ้านคืนเมื่อมีการเปิดแบบประเมินประเมินผลอีกครั้ง
+- [multi-day-points-policy.md](./features/multi-day-points-policy.md) — [DRAFT] นโยบายและเกณฑ์คะแนนแบบละเอียดสำหรับกิจกรรมหลายวัน
+- [multi-day-partial-attendance.md](./features/multi-day-partial-attendance.md) — [DRAFT] นโยบายและการจัดการกรณีผู้เรียนมาเข้าร่วมไม่ครบทุกวัน
+
+---
+
 ## 🚀 Agile Management
 - [01-product-backlog.md](./agile/01-product-backlog.md) — รายการฟีเจอร์และ User Stories (Product Backlog)
 - [02-sprint-planning.md](./agile/02-sprint-planning.md) — แผนงานการพัฒนาและไทม์ไลน์การอัปเดต (Release Timeline & Gantt)

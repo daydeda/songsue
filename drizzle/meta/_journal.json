@@ -43,6 +43,13 @@
       "when": 1781067232533,
       "tag": "0005_faithful_virginia_dare",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782278364989,
+      "tag": "0006_mushy_nightcrawler",
+      "breakpoints": true
     }
   ]
 }

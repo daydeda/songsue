@@ -352,7 +352,7 @@ export default function AdminEventsPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formPoints, setFormPoints] = useState(50);
+  const [formPoints, setFormPoints] = useState(0);
   const [formSections, setFormSections] = useState<FormSection[]>([]);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
   // Scheduling window + S-form assignment
@@ -489,7 +489,7 @@ export default function AdminEventsPage() {
         }];
         setFormTitle("");
         setFormDescription("");
-        setFormPoints(50);
+        setFormPoints(0);
         setFormSections(defaultSections);
         setFormIsAwarded(false);
         setFormOpensAt("");
@@ -499,7 +499,7 @@ export default function AdminEventsPage() {
         setFormStats(null);
         setFormSubmissions([]);
         setPristineFingerprint(builderFingerprint({
-          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 50,
+          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0,
           formSections: defaultSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
           formAssignedRoles: [], formAssignedUserIds: [],
         }));
@@ -541,7 +541,7 @@ export default function AdminEventsPage() {
     }];
     setFormTitle(newTitle);
     setFormDescription("");
-    setFormPoints(50);
+    setFormPoints(0);
     setFormSections(newSections);
     setFormIsAwarded(false);
     setFormOpensAt("");
@@ -555,13 +555,13 @@ export default function AdminEventsPage() {
     setFormBuilderSuccess(null);
     // Baseline = the default template, so closing an untouched new form is silent.
     setPristineFingerprint(builderFingerprint({
-      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 50,
+      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0,
       formSections: newSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
       formAssignedRoles: [], formAssignedUserIds: [],
     }));
   };
 
-  const saveForm = async () => {
+  const saveForm = async (skipReopenConfirm = false) => {
     if (!formEventId) return;
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
@@ -574,6 +574,29 @@ export default function AdminEventsPage() {
     }
     if (formOpensAt && new Date(formClosesAt) <= new Date(formOpensAt)) {
       setFormBuilderError('"Closes at" must be after "Opens at".');
+      return;
+    }
+
+    // Re-opening an already-awarded form (pushing its close time back into the
+    // future) claws back the points it already gave the winning house. Confirm
+    // first — the server then reverts the award and re-arms the form.
+    const reopening = formIsAwarded && new Date(formClosesAt).getTime() > Date.now();
+    if (reopening && !skipReopenConfirm) {
+      setConfirmModal({
+        show: true,
+        title: lang === "th" ? "เปิดแบบฟอร์มที่ให้คะแนนแล้วอีกครั้ง?" : lang === "cn" ? "重新开放已计分的表单？" : lang === "mm" ? "အမှတ်ပေးပြီးသော ဖောင်ကို ပြန်ဖွင့်မလား?" : "Re-open this awarded form?",
+        message: lang === "th"
+          ? "แบบฟอร์มนี้ปิดและให้คะแนนบ้านที่ชนะไปแล้ว การตั้งเวลาปิดใหม่ในอนาคตจะ ดึงคะแนนที่ให้ไปแล้วคืน และเปิดรับคำตอบอีกครั้ง คะแนนจะถูกมอบใหม่เมื่อปิดอีกครั้ง"
+          : lang === "cn"
+          ? "此表单已关闭并向获胜宿舍计分。将关闭时间设为未来将会收回已发放的分数，并重新开放提交。下次关闭时会重新计分。"
+          : lang === "mm"
+          ? "ဤဖောင်သည် ပိတ်ပြီး အနိုင်ရအိမ်သို့ အမှတ်ပေးပြီးဖြစ်သည်။ ပိတ်ချိန်ကို အနာဂတ်သို့ ပြန်သတ်မှတ်ပါက ပေးပြီးသားအမှတ်များကို ပြန်ရုပ်သိမ်းပြီး တင်သွင်းမှုများ ပြန်ဖွင့်ပါမည်။ နောက်တစ်ကြိမ်ပိတ်သည့်အခါ အမှတ်ပြန်ပေးပါမည်။"
+          : "This form already closed and awarded points to the winning house. Setting the close time in the future will take those points back and re-open it for entries. Points are re-awarded when it closes again.",
+        confirmText: lang === "th" ? "เปิดอีกครั้งและดึงคะแนนคืน" : lang === "cn" ? "重新开放并收回分数" : lang === "mm" ? "ပြန်ဖွင့်ပြီး အမှတ်ပြန်ယူမည်" : "Re-open & revert points",
+        cancelText: lang === "th" ? "ยกเลิก" : lang === "cn" ? "取消" : lang === "mm" ? "မလုပ်တော့ပါ" : "Cancel",
+        isDanger: true,
+        onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); saveForm(true); },
+      });
       return;
     }
 
@@ -3580,6 +3603,12 @@ export default function AdminEventsPage() {
                       <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -4 }}>
                         Set when this form opens and closes (Bangkok time). Leave <b>Opens at</b> blank to open immediately. <b>Closes at</b> is required: when it passes, entries stop and the winning house is awarded automatically.
                       </p>
+                      {formIsAwarded && (
+                        <p style={{ fontSize: 12, color: "#b45309", fontWeight: 700, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 12, padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 6 }}>
+                          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                          <span>This form already closed and awarded its points. Setting <b>Closes at</b> back to a future time re-opens it and <b>takes the awarded points back</b> from the winning house — they are re-awarded when it closes again.</span>
+                        </p>
+                      )}
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 16 }}>
                         <div className="field">
                           <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Opens at</label>
@@ -3590,7 +3619,6 @@ export default function AdminEventsPage() {
                             style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px" }}
                             value={formOpensAt}
                             onChange={(e) => setFormOpensAt(e.target.value)}
-                            disabled={formIsAwarded}
                           />
                         </div>
                         <div className="field">
@@ -3602,7 +3630,6 @@ export default function AdminEventsPage() {
                             style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", borderColor: !formClosesAt ? "#ef4444" : undefined }}
                             value={formClosesAt}
                             onChange={(e) => setFormClosesAt(e.target.value)}
-                            disabled={formIsAwarded}
                           />
                         </div>
                       </div>
@@ -4052,10 +4079,10 @@ export default function AdminEventsPage() {
                           className="btn btn-primary"
                           type="button"
                           style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
-                          disabled={formSaving || formIsAwarded}
-                          onClick={saveForm}
+                          disabled={formSaving}
+                          onClick={() => saveForm()}
                         >
-                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : activeFormId ? "Save Changes" : "Create Form"}
+                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : formIsAwarded ? "Re-open & Save" : activeFormId ? "Save Changes" : "Create Form"}
                         </button>
                       </div>
                     </div>

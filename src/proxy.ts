@@ -78,6 +78,12 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
+  // NOTE: this matcher excludes ALL `/api/*` — the proxy never runs on API
+  // routes. The tokenized calendar feed (/api/calendar/feed/[token]) relies on
+  // that: it is public-by-design and authenticates via its per-user secret token
+  // inside the route handler. Do NOT add it to isPublicPath (no effect on /api)
+  // or start gating /api here without revisiting that route's own auth.
+  //
   // `uploads` is excluded so public posters/avatars/QR — served from disk as
   // /uploads/* on the self-hosted deploy — bypass the auth gate. They are public
   // assets (private slips/form docs live in .uploads-private behind an auth API),

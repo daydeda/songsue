@@ -214,11 +214,18 @@ export const scoreHistory = pgTable("score_history", {
   // row — it shows in the Recent Activity feed but is attributed to no house.
   houseId: text("house_id").references(() => houses.id, { onDelete: "cascade" }),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
+  // The specific form whose contest award produced this row, when applicable.
+  // Lets a re-opened form precisely revert ITS OWN award — other rows that share
+  // the same eventId (scans, manual edits, the event-winner bonus) are untouched.
+  // Null for non-form rows. SET NULL on form delete so the ledger entry survives.
+  formId: uuid("form_id").references(() => forms.id, { onDelete: "set null" }),
   delta: integer("delta").notNull(), // positive = gain, negative = loss
   reason: text("reason").notNull(),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
 }, (table) => ([
   index("idx_score_history_event").on(table.eventId),
+  // Lets revertFormAward() find a single form's award rows without scanning.
+  index("idx_score_history_form").on(table.formId),
   // Leaderboard recent-activity and the dashboard both ORDER BY timestamp DESC;
   // without this they degrade to a full sort as score_history grows (one row per scan/award).
   index("idx_score_history_timestamp").on(table.timestamp),
@@ -517,5 +524,70 @@ export const shopOrderItemsRelations = relations(shopOrderItems, ({ one }) => ({
   variant: one(shopVariants, {
     fields: [shopOrderItems.variantId],
     references: [shopVariants.id],
+  }),
+}));
+
+// ============================================================================
+// CALENDAR
+// A calendar surface over events plus lightweight, calendar-only "entries"
+// (deadlines, registration windows, "exam week"). Visibility columns mirror
+// `events` EXACTLY so the same eligibility predicate (src/lib/event-access.ts)
+// filters both. IMPORTANT: calendar_entries is NEVER read by the dashboard,
+// scanner, attendance, or house-points paths — those query `events`/`attendance`
+// only. Keep it that way so entries can't leak into participation/scoring.
+// ============================================================================
+export const calendarEntries = pgTable("calendar_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"),
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }).notNull(),
+  // All-day annotation → rendered as an all-day block and emitted in .ics with
+  // DTSTART;VALUE=DATE (no time/timezone).
+  allDay: boolean("all_day").notNull().default(false),
+  // Optional informational link to a real event. ON DELETE SET NULL so deleting
+  // the event keeps the annotation (non-destructive). This link NEVER creates an
+  // attendance/score row — it is display metadata only.
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  // Visibility — identical semantics + nullability to events.*. null/[] = visible
+  // to everyone eligible. Admin roles always bypass (see event-access.ts).
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  targetThai: boolean("target_thai").default(true),
+  targetInternational: boolean("target_international").default(true),
+  // Creator user id, no FK (like audit_logs.actorId historically / announcements)
+  // so creator deletion never blocks or cascades.
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => ([
+  index("idx_calendar_entries_start").on(table.startTime),
+  index("idx_calendar_entries_event").on(table.eventId),
+]));
+
+// Per-user secret token for the subscribe-able .ics feed. The token IS the auth
+// for /api/calendar/feed/[token] (which never calls auth()), so it must be a
+// STORED, revocable random secret — unlike the stateless HMAC qr-token, which
+// can't be revoked. One active token per user (PK on userId); regenerate =
+// overwrite the row, instantly killing the old URL.
+export const calendarFeedTokens = pgTable("calendar_feed_tokens", {
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).primaryKey(),
+  token: text("token").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+});
+
+export const calendarEntriesRelations = relations(calendarEntries, ({ one }) => ({
+  event: one(events, {
+    fields: [calendarEntries.eventId],
+    references: [events.id],
+  }),
+}));
+
+export const calendarFeedTokensRelations = relations(calendarFeedTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [calendarFeedTokens.userId],
+    references: [users.id],
   }),
 }));

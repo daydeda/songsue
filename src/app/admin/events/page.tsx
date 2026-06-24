@@ -352,7 +352,7 @@ export default function AdminEventsPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formPoints, setFormPoints] = useState(50);
+  const [formPoints, setFormPoints] = useState(0);
   const [formSections, setFormSections] = useState<FormSection[]>([]);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
   // Scheduling window + S-form assignment
@@ -489,7 +489,7 @@ export default function AdminEventsPage() {
         }];
         setFormTitle("");
         setFormDescription("");
-        setFormPoints(50);
+        setFormPoints(0);
         setFormSections(defaultSections);
         setFormIsAwarded(false);
         setFormOpensAt("");
@@ -499,7 +499,7 @@ export default function AdminEventsPage() {
         setFormStats(null);
         setFormSubmissions([]);
         setPristineFingerprint(builderFingerprint({
-          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 50,
+          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0,
           formSections: defaultSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
           formAssignedRoles: [], formAssignedUserIds: [],
         }));
@@ -541,7 +541,7 @@ export default function AdminEventsPage() {
     }];
     setFormTitle(newTitle);
     setFormDescription("");
-    setFormPoints(50);
+    setFormPoints(0);
     setFormSections(newSections);
     setFormIsAwarded(false);
     setFormOpensAt("");
@@ -555,13 +555,13 @@ export default function AdminEventsPage() {
     setFormBuilderSuccess(null);
     // Baseline = the default template, so closing an untouched new form is silent.
     setPristineFingerprint(builderFingerprint({
-      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 50,
+      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0,
       formSections: newSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
       formAssignedRoles: [], formAssignedUserIds: [],
     }));
   };
 
-  const saveForm = async () => {
+  const saveForm = async (skipReopenConfirm = false) => {
     if (!formEventId) return;
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
@@ -574,6 +574,29 @@ export default function AdminEventsPage() {
     }
     if (formOpensAt && new Date(formClosesAt) <= new Date(formOpensAt)) {
       setFormBuilderError('"Closes at" must be after "Opens at".');
+      return;
+    }
+
+    // Re-opening an already-awarded form (pushing its close time back into the
+    // future) claws back the points it already gave the winning house. Confirm
+    // first — the server then reverts the award and re-arms the form.
+    const reopening = formIsAwarded && new Date(formClosesAt).getTime() > Date.now();
+    if (reopening && !skipReopenConfirm) {
+      setConfirmModal({
+        show: true,
+        title: lang === "th" ? "เปิดแบบฟอร์มที่ให้คะแนนแล้วอีกครั้ง?" : lang === "cn" ? "重新开放已计分的表单？" : lang === "mm" ? "အမှတ်ပေးပြီးသော ဖောင်ကို ပြန်ဖွင့်မလား?" : "Re-open this awarded form?",
+        message: lang === "th"
+          ? "แบบฟอร์มนี้ปิดและให้คะแนนบ้านที่ชนะไปแล้ว การตั้งเวลาปิดใหม่ในอนาคตจะ ดึงคะแนนที่ให้ไปแล้วคืน และเปิดรับคำตอบอีกครั้ง คะแนนจะถูกมอบใหม่เมื่อปิดอีกครั้ง"
+          : lang === "cn"
+          ? "此表单已关闭并向获胜宿舍计分。将关闭时间设为未来将会收回已发放的分数，并重新开放提交。下次关闭时会重新计分。"
+          : lang === "mm"
+          ? "ဤဖောင်သည် ပိတ်ပြီး အနိုင်ရအိမ်သို့ အမှတ်ပေးပြီးဖြစ်သည်။ ပိတ်ချိန်ကို အနာဂတ်သို့ ပြန်သတ်မှတ်ပါက ပေးပြီးသားအမှတ်များကို ပြန်ရုပ်သိမ်းပြီး တင်သွင်းမှုများ ပြန်ဖွင့်ပါမည်။ နောက်တစ်ကြိမ်ပိတ်သည့်အခါ အမှတ်ပြန်ပေးပါမည်။"
+          : "This form already closed and awarded points to the winning house. Setting the close time in the future will take those points back and re-open it for entries. Points are re-awarded when it closes again.",
+        confirmText: lang === "th" ? "เปิดอีกครั้งและดึงคะแนนคืน" : lang === "cn" ? "重新开放并收回分数" : lang === "mm" ? "ပြန်ဖွင့်ပြီး အမှတ်ပြန်ယူမည်" : "Re-open & revert points",
+        cancelText: lang === "th" ? "ยกเลิก" : lang === "cn" ? "取消" : lang === "mm" ? "မလုပ်တော့ပါ" : "Cancel",
+        isDanger: true,
+        onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); saveForm(true); },
+      });
       return;
     }
 
@@ -3301,7 +3324,7 @@ export default function AdminEventsPage() {
             <div style={{ padding: "20px clamp(16px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 16 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{lang === "th" ? "แบบประเมินผู้เข้าร่วม" : lang === "cn" ? "互动反馈" : lang === "mm" ? "အပြန်အလှန် အကြံပြုချက်" : "Interactive Feedback"}</span>
-                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{formEventTitle || "Event"} Form</h3>
+                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{formEventTitle || "Event"} {t.fbFormSuffix || "Form"}</h3>
               </div>
               <button
                 className="btn btn-ghost"
@@ -3351,7 +3374,7 @@ export default function AdminEventsPage() {
                   color: "var(--accent-primary)", border: "1.5px dashed var(--accent-primary)",
                 }}
               >
-                + Add Form
+                {t.fbAddForm || "+ Add Form"}
               </button>
             </div>
 
@@ -3359,7 +3382,7 @@ export default function AdminEventsPage() {
             {showNewFormPicker && !formLoading && (
               <div style={{ padding: "20px clamp(12px,4vw,32px)", background: "var(--bg-surface)", borderBottom: "1px solid var(--border-subtle)" }}>
                 <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  Select the type of form to create for this event:
+                  {t.fbSelectFormTypePicker || "Select the type of form to create for this event:"}
                 </p>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   {(["K_pre", "K_post", "A", "S"] as const).map((type) => {
@@ -3377,7 +3400,7 @@ export default function AdminEventsPage() {
                           background: c.bg, color: c.text, border: `1.5px solid ${c.border}`,
                           transition: "all 0.15s",
                         }}
-                        title={alreadyExists ? "A form of this type already exists for this event" : ""}
+                        title={alreadyExists ? (t.fbFormTypeAlreadyExists || "A form of this type already exists for this event") : ""}
                       >
                         {FORM_TYPE_LABELS[type]}
                         {alreadyExists && " ✓"}
@@ -3434,14 +3457,14 @@ export default function AdminEventsPage() {
             {formLoading ? (
               <div style={{ padding: "80px 0", textAlign: "center" }}>
                 <div className="spinner w-8 h-8 border-4 border-t-transparent" style={{ margin: "0 auto 16px" }} />
-                <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>Fetching evaluation system data...</p>
+                <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbFetchingData || "Fetching evaluation system data..."}</p>
               </div>
             ) : showNewFormPicker && !activeFormId ? (
               <div style={{ padding: "60px 40px", textAlign: "center" }}>
                 <ClipboardList size={48} style={{ color: "var(--text-muted)", margin: "0 auto 20px", opacity: 0.3, display: "block" }} />
-                <h4 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Select a form type above to get started</h4>
+                <h4 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{t.fbSelectFormTypeToStart || "Select a form type above to get started"}</h4>
                 <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                  Each form type (K Pre-Test, K Post-Test, A - Attitude, S - Skill) can only be created once per event.
+                  {t.fbSelectFormTypeDesc || "Each form type (K Pre-Test, K Post-Test, A - Attitude, S - Skill) can only be created once per event."}
                 </p>
               </div>
             ) : (
@@ -3519,16 +3542,16 @@ export default function AdminEventsPage() {
                             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 12, background: c.bg, border: `1px solid ${c.border}` }}>
                               <span style={{ fontSize: 12, fontWeight: 900, color: c.text }}>{FORM_TYPE_LABELS[activeFormType] || activeFormType}</span>
                               <span style={{ fontSize: 11, color: c.text, opacity: 0.7 }}>
-                                {activeFormType === "K_pre" ? "— No attendance required" : activeFormType === "S" ? "— Admin/staff only" : "— Requires check-in"}
+                                {activeFormType === "K_pre" ? (t.fbFormTypeNoAttendance || "— No attendance required") : activeFormType === "S" ? (t.fbFormTypeAdminOnly || "— Admin/staff only") : (t.fbFormTypeRequiresCheckin || "— Requires check-in")}
                               </span>
                             </div>
                           );
                         })()}
                         <div className="field">
                           <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-                            <Zap size={14} style={{ color: "var(--accent-primary)" }} /> House Points Reward
+                            <Zap size={14} style={{ color: "var(--accent-primary)" }} /> {t.fbHousePointsReward || "House Points Reward"}
                           </label>
-                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Winning house gets these points.</p>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t.fbWinningHouseGetsPoints || "Winning house gets these points."}</p>
                           <input
                             type="number"
                             className="input"
@@ -3546,24 +3569,24 @@ export default function AdminEventsPage() {
                           const opens = formOpensAt ? new Date(formOpensAt) : null;
                           const closes = formClosesAt ? new Date(formClosesAt) : null;
                           let dot = "var(--green-house)";
-                          let label = "Open for entries";
+                          let label = t.fbStatusOpenForEntries || "Open for entries";
                           if (formIsAwarded) {
-                            dot = "#10b981"; label = "Finalized & points awarded";
+                            dot = "#10b981"; label = t.fbStatusFinalizedAwarded || "Finalized & points awarded";
                           } else if (closes && now > closes) {
-                            dot = "var(--text-muted)"; label = "Closed — points will be awarded automatically";
+                            dot = "var(--text-muted)"; label = t.fbStatusClosedAutoAward || "Closed — points will be awarded automatically";
                           } else if (opens && now < opens) {
-                            dot = "#6366f1"; label = "Scheduled — not open yet";
+                            dot = "#6366f1"; label = t.fbStatusScheduledNotOpen || "Scheduled — not open yet";
                           }
                           return (
                             <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.02)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: dot }} />
                                 <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)" }}>
-                                  Status: {label}
+                                  {t.fbStatusPrefix || "Status:"} {label}
                                 </span>
                               </div>
                               <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                                Set the open/close times in the schedule below. When the close time passes, the house with the most submissions automatically wins the points — no manual action needed.
+                                {t.fbStatusDesc || "Set the open/close times in the schedule below. When the close time passes, the house with the most submissions automatically wins the points — no manual action needed."}
                               </p>
                             </div>
                           );
@@ -3575,14 +3598,20 @@ export default function AdminEventsPage() {
                     <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Calendar size={16} style={{ color: "var(--accent-primary)" }} />
-                        <h4 style={{ fontSize: 14, fontWeight: 900 }}>Schedule</h4>
+                        <h4 style={{ fontSize: 14, fontWeight: 900 }}>{t.fbScheduleHeading || "Schedule"}</h4>
                       </div>
                       <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -4 }}>
-                        Set when this form opens and closes (Bangkok time). Leave <b>Opens at</b> blank to open immediately. <b>Closes at</b> is required: when it passes, entries stop and the winning house is awarded automatically.
+                        {t.fbScheduleDescPart1 || "Set when this form opens and closes (Bangkok time). Leave "}<b>{t.fbOpensAt || "Opens at"}</b>{t.fbScheduleDescPart2 || " blank to open immediately. "}<b>{t.fbClosesAt || "Closes at"}</b>{t.fbScheduleDescPart3 || " is required: when it passes, entries stop and the winning house is awarded automatically."}
                       </p>
+                      {formIsAwarded && (
+                        <p style={{ fontSize: 12, color: "#b45309", fontWeight: 700, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 12, padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 6 }}>
+                          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                          <span>{t.fbReopenWarningPart1 || "This form already closed and awarded its points. Setting "}<b>{t.fbClosesAt || "Closes at"}</b>{t.fbReopenWarningPart2 || " back to a future time re-opens it and "}<b>{t.fbReopenWarningBold || "takes the awarded points back"}</b>{t.fbReopenWarningPart3 || " from the winning house — they are re-awarded when it closes again."}</span>
+                        </p>
+                      )}
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 16 }}>
                         <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Opens at</label>
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.fbOpensAt || "Opens at"}</label>
                           <input
                             type="datetime-local"
                             lang="en-GB"
@@ -3590,11 +3619,10 @@ export default function AdminEventsPage() {
                             style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px" }}
                             value={formOpensAt}
                             onChange={(e) => setFormOpensAt(e.target.value)}
-                            disabled={formIsAwarded}
                           />
                         </div>
                         <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Closes at <span style={{ color: "#ef4444" }}>*</span></label>
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.fbClosesAt || "Closes at"} <span style={{ color: "#ef4444" }}>*</span></label>
                           <input
                             type="datetime-local"
                             lang="en-GB"
@@ -3602,15 +3630,14 @@ export default function AdminEventsPage() {
                             style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", borderColor: !formClosesAt ? "#ef4444" : undefined }}
                             value={formClosesAt}
                             onChange={(e) => setFormClosesAt(e.target.value)}
-                            disabled={formIsAwarded}
                           />
                         </div>
                       </div>
                       {!formClosesAt && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> A close time is required so the form can auto-close and award points.</p>
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {t.fbValidationCloseRequired || "A close time is required so the form can auto-close and award points."}</p>
                       )}
                       {formOpensAt && formClosesAt && new Date(formClosesAt) <= new Date(formOpensAt) && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> Close time is before open time — students will never be able to submit.</p>
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {t.fbValidationCloseBeforeOpen || "Close time is before open time — students will never be able to submit."}</p>
                       )}
                     </div>
 
@@ -3619,15 +3646,15 @@ export default function AdminEventsPage() {
                       <div style={{ background: "rgba(239,68,68,0.04)", padding: 24, borderRadius: 24, border: "1px solid rgba(239,68,68,0.2)", display: "flex", flexDirection: "column", gap: 16 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <ClipboardList size={16} style={{ color: "#ef4444" }} />
-                          <h4 style={{ fontSize: 14, fontWeight: 900 }}>Who can do this form</h4>
+                          <h4 style={{ fontSize: 14, fontWeight: 900 }}>{t.fbSFormWhoCanFill || "Who can do this form"}</h4>
                         </div>
                         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8 }}>
-                          Skill forms are hidden from everyone except super-admins/admins and the people you assign here (by role or by person). It appears in their dashboard history to fill — no event check-in needed.
+                          {t.fbSFormDesc || "Skill forms are hidden from everyone except super-admins/admins and the people you assign here (by role or by person). It appears in their dashboard history to fill — no event check-in needed."}
                         </p>
 
                         {/* By role */}
                         <div>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assign by role</span>
+                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.fbSFormAssignByRole || "Assign by role"}</span>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
                             {ASSIGNABLE_FORM_ROLES.map((role) => {
                               const on = formAssignedRoles.includes(role);
@@ -3653,7 +3680,7 @@ export default function AdminEventsPage() {
 
                         {/* By person */}
                         <div>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assign specific people ({formAssignedUserIds.length})</span>
+                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.fbSFormAssignPeople || "Assign specific people"} ({formAssignedUserIds.length})</span>
                           {/* Selected chips */}
                           {formAssignedUserIds.length > 0 && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
@@ -3672,7 +3699,7 @@ export default function AdminEventsPage() {
                             type="text"
                             className="input"
                             style={{ width: "100%", height: 42, borderRadius: 12, padding: "0 14px", marginTop: 10 }}
-                            placeholder="Search people by name or student ID…"
+                            placeholder={t.fbSFormSearchPlaceholder || "Search people by name or student ID…"}
                             value={assigneeSearch}
                             onChange={(e) => setAssigneeSearch(e.target.value)}
                             disabled={formIsAwarded}
@@ -3696,12 +3723,12 @@ export default function AdminEventsPage() {
                                       style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(239,68,68,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
                                     >
                                       <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}</span></span>
-                                      <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#ef4444" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
+                                      <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#ef4444" : "var(--accent-primary)" }}>{on ? (t.fbSFormAddedLabel || "✓ Added") : (t.fbSFormAddLabel || "+ Add")}</span>
                                     </button>
                                   );
                                 })}
                               {assigneeUsers.length === 0 && (
-                                <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>Loading people…</p>
+                                <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>{t.fbSFormLoadingPeople || "Loading people…"}</p>
                               )}
                             </div>
                           )}
@@ -3709,7 +3736,7 @@ export default function AdminEventsPage() {
 
                         {formAssignedRoles.length === 0 && formAssignedUserIds.length === 0 && (
                           <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                            No one assigned yet — only super-admins/admins can see and fill this form.
+                            {t.fbSFormNoOneAssigned || "No one assigned yet — only super-admins/admins can see and fill this form."}
                           </p>
                         )}
                       </div>
@@ -4027,15 +4054,15 @@ export default function AdminEventsPage() {
                             style={{ height: 40, borderRadius: 12, padding: "0 16px", fontSize: 12 }}
                             onClick={() => setConfirmModal({
                               show: true,
-                              title: "Delete this form?",
-                              message: "This will permanently delete the form and all its submissions.",
-                              confirmText: "Delete Form",
-                              cancelText: "Cancel",
+                              title: t.fbDeleteFormTitle || "Delete this form?",
+                              message: t.fbDeleteFormMessage || "This will permanently delete the form and all its submissions.",
+                              confirmText: t.fbBtnDeleteForm || "Delete Form",
+                              cancelText: t.cancel || "Cancel",
                               isDanger: true,
                               onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); deleteActiveForm(); }
                             })}
                           >
-                            <Trash2 size={13} style={{ marginRight: 6 }} /> Delete Form
+                            <Trash2 size={13} style={{ marginRight: 6 }} /> {t.fbBtnDeleteForm || "Delete Form"}
                           </button>
                         )}
                       </div>
@@ -4046,16 +4073,16 @@ export default function AdminEventsPage() {
                           style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
                           onClick={closeFormBuilder}
                         >
-                          Cancel
+                          {t.cancel || "Cancel"}
                         </button>
                         <button
                           className="btn btn-primary"
                           type="button"
                           style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
-                          disabled={formSaving || formIsAwarded}
-                          onClick={saveForm}
+                          disabled={formSaving}
+                          onClick={() => saveForm()}
                         >
-                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : activeFormId ? "Save Changes" : "Create Form"}
+                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : formIsAwarded ? (t.fbBtnReopen || "Re-open & Save") : activeFormId ? (t.fbBtnSaveChanges || "Save Changes") : (t.fbBtnCreateForm || "Create Form")}
                         </button>
                       </div>
                     </div>
@@ -4082,14 +4109,14 @@ export default function AdminEventsPage() {
                                 <CheckCircle2 size={22} />
                               </div>
                               <div>
-                                <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>Contest Finalized &amp; Closed</h4>
+                                <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>{t.fbContestFinalizedTitle || "Contest Finalized & Closed"}</h4>
                                 <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                                  Points have been awarded to the winning house and this evaluation form is frozen.
+                                  {t.fbContestFinalizedDesc || "Points have been awarded to the winning house and this evaluation form is frozen."}
                                 </p>
                               </div>
                             </div>
                             <div style={{ padding: "8px 16px", borderRadius: 10, background: "rgba(16,185,129,0.1)", color: "#10b981", fontSize: 12, fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>
-                              <Lock size={14} style={{ flexShrink: 0 }} /> Permanent Lock
+                              <Lock size={14} style={{ flexShrink: 0 }} /> {t.fbPermanentLock || "Permanent Lock"}
                             </div>
                           </div>
                         );
@@ -4106,7 +4133,7 @@ export default function AdminEventsPage() {
                             </div>
                             <div>
                               <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--accent-primary)", marginBottom: 4 }}>
-                                {hasClosed ? "Closed — awaiting automatic award" : "Awards automatically when the form closes"}
+                                {hasClosed ? (t.fbClosedAwaitingAward || "Closed — awaiting automatic award") : (t.fbAwardsWhenFormCloses || "Awards automatically when the form closes")}
                               </h4>
                               <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
                                 {hasClosed
@@ -4123,7 +4150,7 @@ export default function AdminEventsPage() {
 
                     {/* Stats Leaderboard Cards */}
                     <div>
-                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 6 }}><BarChart3 size={16} style={{ flexShrink: 0 }} /> House Submission Standings</h4>
+                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 6 }}><BarChart3 size={16} style={{ flexShrink: 0 }} /> {t.fbHouseSubmissionStandings || "House Submission Standings"}</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         {["red", "green", "yellow", "blue"].map(hId => {
                           const houseColors: Record<string, string> = {
@@ -4153,7 +4180,7 @@ export default function AdminEventsPage() {
                             >
                               <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>{houseNames[hId]}</p>
                               <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-primary)" }}>{count}</p>
-                              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>submissions</p>
+                              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t.fbSubmissionsCount || "submissions"}</p>
                             </div>
                           );
                         })}
@@ -4163,7 +4190,7 @@ export default function AdminEventsPage() {
                     {/* List of Submissions */}
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> Student Submissions ({formSubmissions.length})</h4>
+                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> {t.fbStudentSubmissions || "Student Submissions"} ({formSubmissions.length})</h4>
                         <button
                           type="button"
                           className="btn"
@@ -4176,8 +4203,8 @@ export default function AdminEventsPage() {
                       </div>
                       {formSubmissions.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "60px 20px", border: "1px dashed var(--border-subtle)", borderRadius: 20 }}>
-                          <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>No feedback submissions yet.</p>
-                          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Once students complete the form, their answers will appear here live!</p>
+                          <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbNoSubmissionsYet || "No feedback submissions yet."}</p>
+                          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{t.fbNoSubmissionsDesc || "Once students complete the form, their answers will appear here live!"}</p>
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -4676,7 +4703,7 @@ export default function AdminEventsPage() {
                 {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
-                    Filtered: Showing {filteredAttendance.length} of {attendance.length} records
+                    Filtered: Showing {attendanceUnits.length} of {tallyUnits.length} records
                   </p>
                 )}
               </div>

@@ -15,7 +15,8 @@ Settings,
 LayoutDashboard,
 QrCode,
 ShoppingBag,
-Users
+Users,
+CalendarDays
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { houseSlug } from "@/lib/houses";
@@ -51,6 +52,7 @@ const user = session?.user;
 // Top-bar tabs — only the core destinations, kept lean.
 const primaryLinks = user ? [
 { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
+{ href: "/dashboard/calendar", label: t.calendar || "Calendar", icon: CalendarDays },
 { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
 { href: "/dashboard/history", label: t.eventHistory, icon: History },
 { href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },

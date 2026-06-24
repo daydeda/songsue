@@ -3,9 +3,11 @@ import { db } from "@/db";
 import { forms } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
 import { ASSIGNABLE_ROLES } from "@/lib/form-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { revertFormAward } from "@/lib/award-points";
 
 const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 
@@ -238,29 +240,72 @@ export async function PATCH(
       return NextResponse.json({ error: "\"Closes at\" must be after \"Opens at\"." }, { status: 400 });
     }
 
-    const [result] = await db
-      .update(forms)
-      .set({
-        title: title ?? existing.title,
-        description: description ?? existing.description,
-        questions: questions ?? existing.questions,
-        pointsAwarded: pointsAwarded !== undefined ? parseInt(pointsAwarded) || 0 : existing.pointsAwarded,
-        isActive: isActive !== undefined ? !!isActive : existing.isActive,
-        sortOrder: sortOrder !== undefined ? sortOrder : existing.sortOrder,
-        opensAt: effectiveOpensAt,
-        closesAt: effectiveClosesAt,
-        assignedRoles: "assignedRoles" in body ? sanitizeRoles(assignedRoles) : existing.assignedRoles,
-        assignedUserIds: "assignedUserIds" in body ? sanitizeUserIds(assignedUserIds) : existing.assignedUserIds,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))
-      .returning();
+    // Re-open: an already-awarded form whose new close time is back in the future
+    // will accept entries again, so the points it already handed out must be
+    // clawed back (and the form re-armed) — otherwise the next close double-counts.
+    const reopening =
+      existing.isAwarded && effectiveClosesAt.getTime() > Date.now();
 
-    await AuditService.logAction({
-      actorId: session.user.id!,
-      action: `Updated form "${result.title}" (${formId}) for event ${eventId}`,
-      ipAddress: getClientIp(req),
+    // Reverting real house points is sensitive — confine it to full admins, even
+    // though registration/organizer may otherwise edit a form.
+    if (reopening && !["super_admin", "admin"].includes(session.user.role || "")) {
+      return NextResponse.json(
+        { error: "Only an admin can re-open a form that has already awarded points." },
+        { status: 403 }
+      );
+    }
+
+    const result = await db.transaction(async (tx) => {
+      let revertNote = "";
+      if (reopening) {
+        const reverted = await revertFormAward(tx, formId);
+        revertNote = reverted.length
+          ? " Reverted award: " +
+            reverted.map((r) => `${r.houseId} -${r.points} PTS`).join(", ") +
+            "."
+          : " No points needed reverting.";
+      }
+
+      const [updated] = await tx
+        .update(forms)
+        .set({
+          title: title ?? existing.title,
+          description: description ?? existing.description,
+          questions: questions ?? existing.questions,
+          pointsAwarded: pointsAwarded !== undefined ? parseInt(pointsAwarded) || 0 : existing.pointsAwarded,
+          // A re-open re-arms the form; otherwise honour an explicit isActive.
+          isActive: reopening ? true : (isActive !== undefined ? !!isActive : existing.isActive),
+          isAwarded: reopening ? false : existing.isAwarded,
+          sortOrder: sortOrder !== undefined ? sortOrder : existing.sortOrder,
+          opensAt: effectiveOpensAt,
+          closesAt: effectiveClosesAt,
+          assignedRoles: "assignedRoles" in body ? sanitizeRoles(assignedRoles) : existing.assignedRoles,
+          assignedUserIds: "assignedUserIds" in body ? sanitizeUserIds(assignedUserIds) : existing.assignedUserIds,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))
+        .returning();
+
+      await AuditService.logActionInternal(tx, {
+        actorId: session.user!.id!,
+        action: reopening
+          ? `Re-opened awarded form "${updated.title}" (${formId}) for event ${eventId}.${revertNote}`
+          : `Updated form "${updated.title}" (${formId}) for event ${eventId}`,
+        ipAddress: getClientIp(req),
+      });
+
+      return updated;
     });
+
+    // A revert changed house totals — bust the cached leaderboard so it reflects
+    // the clawback on the next poll instead of waiting out the 15s window.
+    if (reopening) {
+      try {
+        revalidateTag("house-standings", { expire: 0 });
+      } catch {
+        // Best-effort: the cache TTL is the backstop, never fail the write on this.
+      }
+    }
 
     return NextResponse.json({ success: true, form: result });
   } catch (error) {

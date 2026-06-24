@@ -1,0 +1,98 @@
+import { db } from "@/db";
+import { calendarFeedTokens, users } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { buildViewer } from "@/lib/event-access";
+import { getCalendarItemsForViewer } from "@/modules/calendar/calendar.service";
+import { buildVCalendar, type CalItem } from "@/lib/ical";
+
+export const maxDuration = 20;
+
+const DAY_MS = 86_400_000;
+
+// PUBLIC, token-authenticated .ics subscribe feed.
+//
+// This route is intentionally reachable WITHOUT a session: src/proxy.ts (matcher
+// at proxy.ts:87) never runs on /api/* paths, and we do NOT call auth() here. The
+// per-user secret token IS the authentication — a calendar app polling this URL
+// in the background can't carry a Google session. Do NOT "fix" the public access
+// by adding a path to proxy.ts isPublicPath (irrelevant for /api) or by gating
+// /api in the proxy matcher; the token is validated server-side below.
+//
+// PDPA: the URL is a bearer credential — anyone with the link sees this user's
+// eligible event/entry titles, times, and locations. No medical data is exposed
+// (entries/events carry none), so no audit-log write is required. The token is
+// rotatable/revocable via /api/calendar/feed/token.
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  try {
+    const { token } = await params;
+    if (!token) return new Response("Not found", { status: 404 });
+
+    const tokenRow = await db.query.calendarFeedTokens.findFirst({
+      where: eq(calendarFeedTokens.token, token),
+    });
+    if (!tokenRow) return new Response("Not found", { status: 404 });
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, tokenRow.userId),
+      columns: { id: true, role: true, roles: true, major: true, studentId: true },
+    });
+    if (!user) return new Response("Not found", { status: 404 });
+
+    const viewer = buildViewer({
+      roles: user.roles ?? (user.role ? [user.role] : ["student"]),
+      studentId: user.studentId,
+      major: user.major,
+    });
+
+    const items = await getCalendarItemsForViewer(viewer, user.id);
+
+    // Bound the window (−90d … +365d) to keep subscribed clients' polls small.
+    const now = Date.now();
+    const lower = now - 90 * DAY_MS;
+    const upper = now + 365 * DAY_MS;
+    const origin = new URL(req.url).origin;
+
+    const calItems: CalItem[] = items
+      .filter((it) => {
+        const t = new Date(it.startTime).getTime();
+        return t >= lower && t <= upper;
+      })
+      .map((it) => ({
+        uid: `${it.kind}-${it.id}`,
+        title: it.title,
+        description: it.description,
+        location: it.location,
+        start: new Date(it.startTime),
+        end: new Date(it.endTime),
+        allDay: it.allDay,
+        url:
+          it.kind === "event"
+            ? `${origin}/dashboard`
+            : `${origin}/dashboard/calendar`,
+        updatedAt: it.updatedAt ? new Date(it.updatedAt) : null,
+      }));
+
+    const ics = buildVCalendar(calItems);
+
+    // Best-effort lastUsedAt bump — never fail the feed if this errors.
+    db.update(calendarFeedTokens)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(calendarFeedTokens.token, token))
+      .catch(() => {});
+
+    return new Response(ics, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="activecamt.ics"',
+        "Cache-Control": "private, no-store",
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    return new Response("Internal Server Error", { status: 500 });
+  }
+}

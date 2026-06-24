@@ -284,6 +284,7 @@ export async function checkAndAwardClosedForms() {
           await tx.insert(scoreHistory).values({
             houseId: null,
             eventId: formObj.eventId,
+            formId: formObj.id,
             delta: 0,
             reason: `Evaluation form "${formObj.title}" closed. No points awarded.`,
           });
@@ -314,6 +315,7 @@ export async function checkAndAwardClosedForms() {
           await tx.insert(scoreHistory).values({
             houseId: winnerId,
             eventId: formObj.eventId,
+            formId: formObj.id,
             delta: pointsToAward,
             reason: reasonStr,
             timestamp: new Date(),
@@ -324,4 +326,59 @@ export async function checkAndAwardClosedForms() {
   } catch (error) {
     console.error("Failed to automatically check and award closed form points:", error);
   }
+}
+
+// The transaction handle type, derived from db.transaction's callback, so the
+// revert helper can run inside a caller-owned transaction.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Reverses a single form's contest award so the form can be re-opened.
+ *
+ * Sums the net points this form currently contributes per house (its award rows,
+ * plus any earlier offsets that also carry this formId), subtracts that back out
+ * of each house's running total, then deletes the form's score_history rows so
+ * the void award stops cluttering the public Recent Activity feed. The staff
+ * action itself is recorded separately in audit_logs by the caller.
+ *
+ * Tightly scoped by formId: event scans, manual adjustments, and the event-winner
+ * bonus all share the same eventId but never carry a formId, so they are left
+ * untouched. Idempotent — a second call finds no rows and is a no-op.
+ *
+ * Runs inside the CALLER's transaction (so the revert, the is_awarded flip, and
+ * the audit log all commit or roll back together). Returns what was clawed back
+ * per house for the audit message.
+ */
+export async function revertFormAward(
+  tx: Tx,
+  formId: string
+): Promise<{ houseId: string; points: number }[]> {
+  const rows = await tx
+    .select({
+      houseId: scoreHistory.houseId,
+      // Cast to int: SUM() yields bigint, which the driver returns as a string.
+      net: sql<number>`COALESCE(SUM(${scoreHistory.delta}), 0)::int`,
+    })
+    .from(scoreHistory)
+    .where(eq(scoreHistory.formId, formId))
+    .groupBy(scoreHistory.houseId);
+
+  const reverted: { houseId: string; points: number }[] = [];
+  for (const r of rows) {
+    // House-less rows (e.g. a 0-point "form closed" marker) and zero-net houses
+    // need no points adjustment — they're cleaned up by the delete below.
+    if (r.houseId && r.net) {
+      await tx
+        .update(houses)
+        .set({ points: sql`${houses.points} - ${r.net}` })
+        .where(eq(houses.id, r.houseId));
+      reverted.push({ houseId: r.houseId, points: r.net });
+    }
+  }
+
+  // Scoped DELETE — only THIS form's ledger rows. The re-open makes them void;
+  // the audit trail lives in audit_logs, not here.
+  await tx.delete(scoreHistory).where(eq(scoreHistory.formId, formId));
+
+  return reverted;
 }

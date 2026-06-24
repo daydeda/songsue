@@ -20,6 +20,7 @@ import {
   Rss,
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { parseRichText } from "@/lib/rich-text";
 import { StudentNav } from "@/components/layout/StudentNav";
 import {
   buildVCalendar,
@@ -40,6 +41,7 @@ interface CalendarItem {
   endTime: string;
   allDay: boolean;
   eventId: string | null;
+  imageUrl: string | null;
   updatedAt: string | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
@@ -460,6 +462,14 @@ export default function CalendarClient({
                 <X size={18} />
               </button>
             </div>
+            {detail.imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className="modal-poster"
+                src={detail.imageUrl}
+                alt={detail.title}
+              />
+            )}
             <h2 className="modal-title">{detail.title}</h2>
             <div className="modal-meta">
               <div>
@@ -478,7 +488,12 @@ export default function CalendarClient({
               )}
             </div>
             {detail.description && (
-              <p className="modal-desc">{detail.description}</p>
+              <div
+                className="modal-desc"
+                dangerouslySetInnerHTML={{
+                  __html: parseRichText(detail.description),
+                }}
+              />
             )}
 
             {detail.kind === "event" && (
@@ -971,10 +986,20 @@ export default function CalendarClient({
           align-items: center;
           gap: 6px;
         }
+        .modal-poster {
+          width: 100%;
+          max-height: 280px;
+          object-fit: contain;
+          border-radius: 12px;
+          background: var(--bg-base, #fafafa);
+          margin-bottom: 12px;
+        }
         .modal-desc {
           font-size: 14px;
           color: var(--text-secondary);
+          line-height: 1.6;
           white-space: pre-wrap;
+          word-break: break-word;
           margin: 8px 0;
         }
         .export-row {

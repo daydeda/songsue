@@ -685,6 +685,33 @@ async function migrate() {
   `;
   console.log("  ✅ calendar_feed_tokens table");
 
+  // 44. score_history.form_id — ties a contest-award ledger row to the specific
+  // form that produced it, so a re-opened form can revert ITS OWN award without
+  // touching the event scans, manual adjustments, and event-winner bonus that
+  // share the same event_id. Nullable + ON DELETE SET NULL: existing rows stay
+  // legal (form_id NULL) and the ledger entry survives if the form is deleted.
+  // Additive only — no data is rewritten or removed.
+  await sql`
+    ALTER TABLE score_history
+    ADD COLUMN IF NOT EXISTS form_id uuid
+  `;
+  // Add the FK only if it isn't already present (Postgres has no
+  // ADD CONSTRAINT IF NOT EXISTS). Guarded so re-runs are a no-op.
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'score_history_form_id_forms_id_fk'
+      ) THEN
+        ALTER TABLE score_history
+          ADD CONSTRAINT score_history_form_id_forms_id_fk
+          FOREIGN KEY (form_id) REFERENCES forms(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_score_history_form ON score_history (form_id)`;
+  console.log("  ✅ score_history.form_id (+ FK, index)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

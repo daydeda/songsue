@@ -214,11 +214,18 @@ export const scoreHistory = pgTable("score_history", {
   // row — it shows in the Recent Activity feed but is attributed to no house.
   houseId: text("house_id").references(() => houses.id, { onDelete: "cascade" }),
   eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
+  // The specific form whose contest award produced this row, when applicable.
+  // Lets a re-opened form precisely revert ITS OWN award — other rows that share
+  // the same eventId (scans, manual edits, the event-winner bonus) are untouched.
+  // Null for non-form rows. SET NULL on form delete so the ledger entry survives.
+  formId: uuid("form_id").references(() => forms.id, { onDelete: "set null" }),
   delta: integer("delta").notNull(), // positive = gain, negative = loss
   reason: text("reason").notNull(),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
 }, (table) => ([
   index("idx_score_history_event").on(table.eventId),
+  // Lets revertFormAward() find a single form's award rows without scanning.
+  index("idx_score_history_form").on(table.formId),
   // Leaderboard recent-activity and the dashboard both ORDER BY timestamp DESC;
   // without this they degrade to a full sort as score_history grows (one row per scan/award).
   index("idx_score_history_timestamp").on(table.timestamp),

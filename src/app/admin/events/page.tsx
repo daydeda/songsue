@@ -4676,7 +4676,7 @@ export default function AdminEventsPage() {
                 {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
-                    Filtered: Showing {filteredAttendance.length} of {attendance.length} records
+                    Filtered: Showing {attendanceUnits.length} of {tallyUnits.length} records
                   </p>
                 )}
               </div>

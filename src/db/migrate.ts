@@ -643,6 +643,48 @@ async function migrate() {
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS managed_by_roles jsonb`;
   console.log("  ✅ events.managed_by_roles");
 
+  // 42. Calendar entries — lightweight, calendar-only annotations (deadlines,
+  // registration windows, "exam week"), optionally linked to an event. New table
+  // only → inherently non-destructive. event_id is ON DELETE SET NULL so deleting
+  // an event keeps the annotation. Visibility columns mirror events.* exactly so
+  // the same eligibility predicate filters both. NEVER read by dashboard/scan/
+  // attendance/points paths.
+  await sql`
+    CREATE TABLE IF NOT EXISTS calendar_entries (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      title text NOT NULL,
+      description text,
+      location text,
+      start_time timestamptz NOT NULL,
+      end_time timestamptz NOT NULL,
+      all_day boolean NOT NULL DEFAULT false,
+      event_id uuid REFERENCES events(id) ON DELETE SET NULL,
+      allowed_roles jsonb,
+      allowed_majors jsonb,
+      target_thai boolean DEFAULT true,
+      target_international boolean DEFAULT true,
+      created_by text,
+      created_at timestamptz DEFAULT now(),
+      updated_at timestamptz DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_calendar_entries_start ON calendar_entries (start_time)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_calendar_entries_event ON calendar_entries (event_id)`;
+  console.log("  ✅ calendar_entries table");
+
+  // 43. Per-user subscribe-feed token. The token IS the auth for the .ics feed
+  // (the feed route never calls auth()), so it must be a stored, revocable secret.
+  // One active token per user (PK on user_id); regenerate = overwrite the row.
+  await sql`
+    CREATE TABLE IF NOT EXISTS calendar_feed_tokens (
+      user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      token text NOT NULL UNIQUE,
+      created_at timestamptz DEFAULT now(),
+      last_used_at timestamptz
+    )
+  `;
+  console.log("  ✅ calendar_feed_tokens table");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -777,7 +777,7 @@ export default function CalendarClient({
         }
         .cal-grid {
           display: grid;
-          grid-template-columns: repeat(7, 1fr);
+          grid-template-columns: repeat(7, minmax(0, 1fr));
           gap: 1px;
           background: var(--border-subtle);
           border: 1px solid var(--border-subtle);
@@ -797,6 +797,7 @@ export default function CalendarClient({
         .cal-cell {
           background: var(--bg-elevated, #fff);
           min-height: 96px;
+          min-width: 0;
           padding: 6px;
           display: flex;
           flex-direction: column;
@@ -829,6 +830,7 @@ export default function CalendarClient({
           display: flex;
           flex-direction: column;
           gap: 3px;
+          min-width: 0;
           overflow: hidden;
         }
         .cal-chip {
@@ -843,6 +845,7 @@ export default function CalendarClient({
           cursor: pointer;
           text-align: left;
           width: 100%;
+          min-width: 0;
           overflow: hidden;
         }
         .cal-chip.event {
@@ -862,6 +865,7 @@ export default function CalendarClient({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          min-width: 0;
         }
         .cal-state {
           text-align: center;

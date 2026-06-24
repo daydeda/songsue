@@ -410,7 +410,23 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // so the user can keep swiping at full size.
   const [previewImage, setPreviewImage] = useState<{ posters: string[]; index: number } | null>(null);
   const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
-  
+
+  // Deep-link from the calendar: /dashboard?event=<id> opens that event's preview.
+  // Read once events have loaded so the matching row exists, then strip the param
+  // (replaceState, not router.replace — avoids a refetch) so back/refresh is clean.
+  const deepLinkedEvent = useRef(false);
+  useEffect(() => {
+    if (deepLinkedEvent.current || events.length === 0) return;
+    const id = new URLSearchParams(window.location.search).get("event");
+    if (!id) return;
+    const match = events.find((e) => e.id === id);
+    if (match) {
+      setPreviewEvent(match);
+      deepLinkedEvent.current = true;
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, [events]);
+
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red
     green:  { name: t.houseTo || "To",      color: "#94a3b8" }, // White → silver/pewter

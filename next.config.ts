@@ -19,6 +19,15 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // Runtime-uploaded images are written to public/uploads, but `next start` only
+  // serves files that existed in public/ at build time — so /uploads/<file> 404s
+  // in production. This afterFiles rewrite (runs only when no real static file
+  // matches) sends those requests to the streaming handler in
+  // src/app/api/media/[name]/route.ts. Keeps every /uploads/... URL already saved
+  // in the DB working. No-op when Supabase Storage is configured (absolute URLs).
+  async rewrites() {
+    return [{ source: "/uploads/:name", destination: "/api/media/:name" }];
+  },
   async headers() {
     return [
       {
@@ -30,6 +39,16 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
           { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+        ],
+      },
+      {
+        // Runtime-uploaded images have content-unique UUID filenames, so their
+        // bytes never change — cache hard. Set here rather than in the route
+        // handler, which Next forces to max-age=0. Matches the original request
+        // path before the /uploads -> /api/media rewrite.
+        source: "/uploads/:name",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
     ];

@@ -481,6 +481,16 @@ export default function CalendarClient({
               <p className="modal-desc">{detail.description}</p>
             )}
 
+            {detail.kind === "event" && (
+              <a
+                className="btn-primary"
+                href={`/dashboard?event=${detail.id}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 16 }}
+              >
+                <Link2 size={14} /> {t.calendarViewOnDashboard}
+              </a>
+            )}
+
             <div className="export-row">
               <span className="export-label">
                 <CalendarPlus size={14} /> {t.calendarAddToCalendar}

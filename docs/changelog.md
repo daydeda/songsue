@@ -4,7 +4,7 @@
 
 | วันที่ | เวอร์ชันเอกสาร | รายละเอียดการแก้ไข | ผู้รับผิดชอบ |
 | :--- | :--- | :--- | :--- |
-| 2026-06-25 | v2.3 | ปรับปรุงระบบเอกสารการออกแบบและพัฒนา (docs/software และ docs/features) ให้สอดคล้องกับคุณสมบัติจริงที่พัฒนาแล้ว (ระบบปฏิทิน Month-view Calendar, .ics Feed Subscription, Points Clawback, Media Proxy, connection pooling/caching) พร้อมเพิ่ม feature specs ใหม่ | Antigravity AI |
+| 2026-06-25 | v2.3 | ปรับปรุงระบบเอกสารการออกแบบและพัฒนา (docs/software และ docs/features) ให้สอดคล้องกับระบบจริง, จัดทำคู่มือ Drizzle ORM, และพัฒนาสคริปต์ run-local.ps1 เพื่อใช้รันระบบและตรวจสอบไลบรารีบน Local | Antigravity AI |
 | 2026-06-25 | v2.2 | จัดทำเอกสารสรุปความคืบหน้าการพัฒนาและรายงานการพัฒนา (updates/2026-06-24_to_06-25.md) รวบรวมฟีเจอร์เด่นระบบปฏิทินรายเดือน การเชื่อมต่อ .ics feed, แถบสถิติสะสมแดชบอร์ด, หน้าจอแจ้งย้ายระบบ Vercel, และการปรับปรุงประสิทธิภาพ/ระบบ Deploy และการแปลภาษา | Antigravity AI |
 | 2026-06-24 | v2.1 | ปรับปรุง GDD ครั้งใหญ่: ยกระดับ docs/gdd/00-concept.md เป็น Platform Concept (WebRTC P2P + QR Code/Room Code entry + Extensible Game Modules), เขียน docs/gdd/01-mechanics.md ใหม่เป็น Platform Mechanics (WebRTC Signaling Flow, Hybrid architecture, Turn/Timer system, Fallback mode, Game Module Interface), และสร้าง docs/gdd/games/ox.md สำหรับ OX Game Design โดยเฉพาะ (Game State, Win Conditions, UI Mockups) | Developer |
 | 2026-06-24 | v2.0 | สร้างชุดเอกสาร GDD ครั้งแรก: docs/gdd/00-concept.md และ docs/gdd/01-mechanics.md สำหรับ OX Battle | Developer |

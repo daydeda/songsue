@@ -22,6 +22,7 @@
 10. [Live Notifications (SSE)](#10-live-notifications-sse)
 11. [Role-Based Access Control (RBAC)](#11-role-based-access-control-rbac)
 12. [Background Tasks (Cron Jobs)](#12-background-tasks-cron-jobs)
+13. [P2P Game Arena (OX Tic-Tac-Toe)](#13-p2p-game-arena-ox-tic-tac-toe)
 
 ---
 
@@ -861,6 +862,74 @@
 
 ---
 
+## 13. P2P Game Arena (OX Tic-Tac-Toe)
+
+### IMP-GAME-01 — Create P2P Battle Room
+| | |
+|:---|:---|
+| **Actor** | นักศึกษา (ที่เป็นสมาชิก) |
+| **Action** | สร้างห้องเกมใหม่เพื่อรอคู่แข่งเข้าร่วมเล่น |
+| **Benefit** | สามารถตั้งห้องเกมเพื่อท้าดวลกับเพื่อนในงานได้ทันที |
+| **Technical** | สร้าง Room Code 4 หลักแบบสุ่ม (ตัดตัวอักษรที่สับสนออกเช่น 0, O, 1, I) และเก็บข้อมูลห้องเกมพร้อมสถานะ 'waiting' |
+| **Implementation** | `/api/battle/rooms/route.ts`, `/app/battle/create/page.tsx` |
+
+---
+
+### IMP-GAME-02 — Join Battle via QR or Room Code
+| | |
+|:---|:---|
+| **Actor** | นักศึกษา (ที่เป็นสมาชิก) |
+| **Action** | เข้าร่วมห้องเกมผ่านการกรอกรหัสห้อง 4 หลัก หรือสแกน QR Code ด้วยกล้องบนมือถือ |
+| **Benefit** | เข้าร่วมเล่นเกมได้อย่างรวดเร็วและสะดวก |
+| **Technical** | ใช้กล้องสแกน QR Code ผ่าน `html5-qrcode` หรือป้อน 4-digit code บน UI, ตรวจสอบผู้เล่นว่าไม่ใช่คนเดียวกันกับ Host ก่อนอัปเดตสเตตัสห้องเป็น 'connecting' |
+| **Implementation** | `/api/battle/rooms/[code]/join/route.ts`, `/app/battle/join/page.tsx`, `/app/battle/join/JoinClient.tsx` |
+
+---
+
+### IMP-GAME-03 — WebRTC Peer Signaling with REST API Fallback
+| | |
+|:---|:---|
+| **Actor** | ระบบเชื่อมต่อ (Network Layer) |
+| **Action** | ทำการเชื่อมต่อแบบ Peer-to-Peer (WebRTC) เพื่อรับส่งข้อมูลหมากและเกมสเตต และรองรับการทำ Fallback เป็น HTTP Polling เมื่อการเชื่อมต่อล้มเหลว |
+| **Benefit** | เล่นเกมแบบเรียลไทม์ไม่มี Latency โดยไม่ทำให้เกิดคอขวดบนเซิร์ฟเวอร์ และมีความเสถียรสูงเมื่อติดบล็อก NAT/Firewall |
+| **Technical** | พัฒนา Signaling REST API เพื่อแลกเปลี่ยน SDP Offer/Answer และ ICE Candidates บันทึกลงตาราง `webrtc_signals` และทำ Long polling/Interval fallback ดึงสเตตัสผ่าน HTTP GET ทุก 2 วินาทีเมื่อ WebRTC ตัดการเชื่อมต่อ |
+| **Implementation** | `/api/battle/rooms/[code]/signal/route.ts`, `/api/battle/rooms/[code]/state/route.ts`, `/app/battle/room/[code]/RoomClient.tsx` |
+
+---
+
+### IMP-GAME-04 — Real-time OX Game Board & Turn Timer
+| | |
+|:---|:---|
+| **Actor** | นักศึกษาคู่แข่งขัน |
+| **Action** | ผลัดกันวางหมาก (X หรือ O) บนกระดานขนาด 3x3 ช่อง ภายในเวลากำหนด 60 วินาที หรือกดปุ่ม Resign ยอมแพ้ |
+| **Benefit** | เล่นเกมได้อย่างลื่นไหล ตรวจสอบความถูกต้องและแพ้ชนะแบบเรียลไทม์ และระบบตัดการเล่นอัตโนมัติหากอีกฝั่งแกล้งปล่อยให้เวลาหมด |
+| **Technical** | ตรวจสอบแพทเทิร์นการชนะ 8 แบบฝั่ง Server ป้องกันการโกง, ระบบ Lazy turn deadline check ใน API ตรวจจับว่าเวลาเทิร์นหมด (เกิน 60 วินาที) แล้วปรับผลเป็น forfeit ให้อีกฝั่งชนะทันที |
+| **Implementation** | `src/lib/games/ox.ts`, `/api/battle/rooms/[code]/move/route.ts`, `/api/battle/rooms/[code]/resign/route.ts` |
+
+---
+
+### IMP-GAME-05 — Live Leaderboard & Battle Statistics
+| | |
+|:---|:---|
+| **Actor** | นักศึกษา (ที่เป็นสมาชิก) |
+| **Action** | ดูสถิติการดวลของตนเอง (จำนวนนัด ชนะ/แพ้/เสมอ, สตรีคปัจจุบัน, สตรีคสูงสุด) และตารางอันดับ Leaderboard ของผู้เล่นทั้งหมดในแพลตฟอร์ม |
+| **Benefit** | สร้างความตื่นเต้นท้าทายและการแข่งขันระหว่างผู้เล่นภายในบ้านต่างๆ |
+| **Technical** | อัปเดตสถิติลงตาราง `game_stats` แบบ Transactional ในระดับฐานข้อมูลร่วมกับการจบห้องเกม, ดึงตารางอันดับ Top 20 เรียงตามจำนวนครั้งที่ชนะและสตรีค |
+| **Implementation** | `src/lib/games/stats-helper.ts`, `/api/battle/stats/me/route.ts`, `/api/battle/leaderboard/route.ts`, `/app/battle/page.tsx`, `/app/battle/BattleHubClient.tsx` |
+
+---
+
+### IMP-GAME-06 — Secure Authentication Guard (Members Only)
+| | |
+|:---|:---|
+| **Actor** | ระบบความปลอดภัย (Auth Middleware) |
+| **Action** | ตรวจสอบสิทธิ์ของทุกคนที่เข้าถึง API หรือหน้าจอเล่นเกม P2P Battle ต้องเป็นล็อกอิน CMU Account และกรอกข้อมูลส่วนตัว Onboarding เสร็จสมบูรณ์แล้วเท่านั้น (ไม่อนุญาตให้ Guest/Anonymous เข้าเล่น) |
+| **Benefit** | ป้องกันการสแปมบอทและจำกัดสิทธิ์เฉพาะสมาชิกจริงของงาน CAMT |
+| **Technical** | ตรวจสอบ Session ผ่าน `auth()` จาก `@/auth` ในทุก Endpoint ภายใต้ `/api/battle` และทำ Redirect ผู้ใช้บน frontend |
+| **Implementation** | `StudentNav.tsx` (ซ่อนปุ่ม P2P Battle หากไม่ผ่านเกณฑ์), API endpoints เช็ค `session?.user` และ Profile Completed |
+
+---
+
 ## ตาราง Matrix: Feature × Role
 
 | Feature | student | smo | club/major president | registration | organizer | admin | super_admin |
@@ -884,6 +953,7 @@
 | View Medical Signal (boolean) | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | View Audit Logs | — | — | — | — | — | ✓ | ✓ |
 | Verify Audit Chain | — | — | — | — | — | — | ✓ |
+| Play P2P Battle (OX) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ---
 

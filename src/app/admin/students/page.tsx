@@ -216,6 +216,7 @@ export default function AdminStudentsDirectory() {
   const [houses, setHouses] = useState<{ id: string; name: string }[]>([]);
   const [houseFilter, setHouseFilter] = useState<string>("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [majorFilter, setMajorFilter] = useState<string>("all");
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [updating, setUpdating] = useState(false);
 
@@ -228,7 +229,7 @@ export default function AdminStudentsDirectory() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, houseFilter, roleFilter]);
+  }, [debouncedSearch, houseFilter, roleFilter, majorFilter]);
 
   const refreshData = () => {
     setLoading(true);
@@ -297,6 +298,19 @@ export default function AdminStudentsDirectory() {
     { value: "major_president", label: t.roleMajorPresidentPlural, icon: <Award size={16} className="text-[#06b6d4]" /> }
   ];
 
+  const majorOptions = [
+    { value: "all", label: t.allMajors, icon: <BookOpen size={16} className="text-muted" /> },
+    ...Array.from(
+      new Set(
+        students
+          .map(s => (s.major || "").trim())
+          .filter(m => m !== "")
+      )
+    )
+      .sort((a, b) => a.localeCompare(b))
+      .map(m => ({ value: m, label: m, icon: <BookOpen size={16} className="text-[var(--accent-primary)]" /> }))
+  ];
+
   const editRoleOptions = [
     { value: "student", label: t.roleStudent, icon: <GraduationCap size={16} className="text-muted" /> },
     { value: "staff", label: t.roleStaff, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
@@ -334,7 +348,9 @@ export default function AdminStudentsDirectory() {
         s.nickname?.toLowerCase().includes(debouncedSearch.toLowerCase());
 
       const matchesHouse = houseFilter === "all" || s.houseId === houseFilter;
-      
+
+      const matchesMajor = majorFilter === "all" || (s.major || "").trim() === majorFilter;
+
       const studentRoles = s.roles || (s.role ? [s.role] : ["student"]);
       const matchesRole = roleFilter === "all" ||
         studentRoles.some((r: string) => {
@@ -342,7 +358,7 @@ export default function AdminStudentsDirectory() {
           return r === roleFilter;
         });
 
-      return matchesSearch && matchesHouse && matchesRole;
+      return matchesSearch && matchesHouse && matchesRole && matchesMajor;
     }
   );
 
@@ -415,6 +431,13 @@ export default function AdminStudentsDirectory() {
               options={roleOptions}
               onChange={setRoleFilter}
               icon={<Shield size={18} />}
+            />
+            <CustomDropdown
+              className="min-w-[220px]"
+              value={majorFilter}
+              options={majorOptions}
+              onChange={setMajorFilter}
+              icon={<BookOpen size={18} />}
             />
           </div>
         </div>
@@ -617,23 +640,27 @@ export default function AdminStudentsDirectory() {
                               <Trash2 size={16} />
                             </button>
                           )}
-                          <div style={{ width: 1, height: 24, background: "var(--border-subtle)", margin: "0 4px" }} />
-                          <button
-                            id={`view-sensitive-${s.id}-btn`}
-                            className="btn btn-sm"
-                            style={{
-                              borderRadius: 10,
-                              background: "rgba(239,68,68,0.08)",
-                              border: "1px solid rgba(239,68,68,0.15)",
-                              fontWeight: 700,
-                              color: "#ef4444",
-                              fontSize: 12,
-                              gap: 6
-                            }}
-                            onClick={() => viewSensitive(s.id)}
-                          >
-                            <ShieldAlert size={13} /> Medical Log
-                          </button>
+                          {canViewMedicalLog && (
+                            <>
+                              <div style={{ width: 1, height: 24, background: "var(--border-subtle)", margin: "0 4px" }} />
+                              <button
+                                id={`view-sensitive-${s.id}-btn`}
+                                className="btn btn-sm"
+                                style={{
+                                  borderRadius: 10,
+                                  background: "rgba(239,68,68,0.08)",
+                                  border: "1px solid rgba(239,68,68,0.15)",
+                                  fontWeight: 700,
+                                  color: "#ef4444",
+                                  fontSize: 12,
+                                  gap: 6
+                                }}
+                                onClick={() => viewSensitive(s.id)}
+                              >
+                                <ShieldAlert size={13} /> Medical Log
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

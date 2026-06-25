@@ -999,12 +999,18 @@ export default function AdminEventsPage() {
     ws["!cols"] = header.map(h => ({ wch: Math.min(45, Math.max(12, h.length + 2)) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Submissions");
-    // Keep Thai (and other Unicode) letters intact; only strip characters that
-    // are illegal in filenames, then collapse whitespace/separators to "_".
-    const safeTitle = (formEventTitle || "form")
+    // Name the file after the FORM (not just the event) so exports from an
+    // event's different forms (K_pre/K_post/A/S/F) don't collide or get
+    // confused. Prefer the form's own title; fall back to the event title plus
+    // the form-type label. Keep Thai (and other Unicode) letters intact; only
+    // strip characters that are illegal in filenames, then collapse
+    // whitespace/separators to "_".
+    const typeLabel = FORM_TYPE_LABELS[activeFormType] || activeFormType;
+    const rawName = formTitle.trim() || `${formEventTitle || "Event"} ${typeLabel}`;
+    const safeTitle = rawName
       .replace(/[\\/:*?"<>|]+/g, "")
       .replace(/\s+/g, "_")
-      .slice(0, 40)
+      .slice(0, 60)
       .replace(/^_+|_+$/g, "") || "form";
     XLSX.writeFile(wb, `submissions_${safeTitle}.xlsx`);
   };

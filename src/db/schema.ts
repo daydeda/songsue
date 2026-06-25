@@ -591,3 +591,88 @@ export const calendarFeedTokensRelations = relations(calendarFeedTokens, ({ one 
     references: [users.id],
   }),
 }));
+
+// ============================================================================
+// GAME PLATFORM & BATTLE TABLES (OX, etc.)
+// ============================================================================
+
+export const gameRooms = pgTable("game_rooms", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  roomCode: text("room_code").notNull(),
+  gameType: text("game_type").notNull(), // 'ox', etc.
+  hostId: text("host_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  guestId: text("guest_id").references(() => users.id, { onDelete: "cascade" }),
+  gameState: jsonb("game_state").notNull(), // { board: number[], history: ... }
+  currentTurn: integer("current_turn").notNull().default(1), // 1 = host, 2 = guest
+  status: text("status").notNull().default("waiting"), // 'waiting', 'connecting', 'active', 'finished', 'expired'
+  winnerId: text("winner_id").references(() => users.id, { onDelete: "set null" }),
+  finishReason: text("finish_reason"), // 'win', 'draw', 'forfeit', 'resign', 'disconnect'
+  turnDeadline: timestamp("turn_deadline", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ([
+  index("idx_game_rooms_code").on(table.roomCode),
+  index("idx_game_rooms_status").on(table.status),
+]));
+
+export const webrtcSignals = pgTable("webrtc_signals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  roomId: uuid("room_id").notNull().references(() => gameRooms.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // 'host', 'guest'
+  sdpOffer: text("sdp_offer"),
+  sdpAnswer: text("sdp_answer"),
+  iceCandidates: jsonb("ice_candidates").$type<any[]>().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ([
+  uniqueIndex("idx_webrtc_signals_room_role").on(table.roomId, table.role),
+]));
+
+export const gameStats = pgTable("game_stats", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gameType: text("game_type").notNull(), // 'ox', etc.
+  wins: integer("wins").notNull().default(0),
+  losses: integer("losses").notNull().default(0),
+  draws: integer("draws").notNull().default(0),
+  winStreak: integer("win_streak").notNull().default(0),
+  bestStreak: integer("best_streak").notNull().default(0),
+  totalGames: integer("total_games").notNull().default(0),
+  lastPlayedAt: timestamp("last_played_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ([
+  uniqueIndex("idx_game_stats_user_game").on(table.userId, table.gameType),
+]));
+
+export const gameRoomsRelations = relations(gameRooms, ({ one, many }) => ({
+  host: one(users, {
+    fields: [gameRooms.hostId],
+    references: [users.id],
+    relationName: "host",
+  }),
+  guest: one(users, {
+    fields: [gameRooms.guestId],
+    references: [users.id],
+    relationName: "guest",
+  }),
+  winner: one(users, {
+    fields: [gameRooms.winnerId],
+    references: [users.id],
+    relationName: "winner",
+  }),
+  webrtcSignals: many(webrtcSignals),
+}));
+
+export const webrtcSignalsRelations = relations(webrtcSignals, ({ one }) => ({
+  room: one(gameRooms, {
+    fields: [webrtcSignals.roomId],
+    references: [gameRooms.id],
+  }),
+}));
+
+export const gameStatsRelations = relations(gameStats, ({ one }) => ({
+  user: one(users, {
+    fields: [gameStats.userId],
+    references: [users.id],
+  }),
+}));
+

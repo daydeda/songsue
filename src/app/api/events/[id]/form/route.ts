@@ -144,11 +144,21 @@ export async function POST(
 
     // K_pre (pre-test) and S (skill — filled by assigned evaluators, not attendees)
     // skip the attendance check; all others require physical check-in.
+    //
+    // Attendance is one row PER SESSION (a 2-day event has 2 rows per student),
+    // so we check for the EXISTENCE of any session this student actually
+    // attended — not findFirst-then-status, which returns an arbitrary session
+    // (e.g. a still-"registered" day 2) and would wrongly reject someone who
+    // checked in on day 1. Checking in on any single day is enough to submit.
     if (formObj.formType !== "K_pre" && formObj.formType !== "S") {
       const attRecord = await db.query.attendance.findFirst({
-        where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
+        where: and(
+          eq(attendance.eventId, eventId),
+          eq(attendance.studentId, userId),
+          eq(attendance.status, "attended"),
+        ),
       });
-      if (attRecord?.status !== "attended") {
+      if (!attRecord) {
         return NextResponse.json({
           error: "You must have checked in and physically attended this event to submit this form.",
         }, { status: 403 });

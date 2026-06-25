@@ -5,8 +5,10 @@
  */
 import postgres from "postgres";
 
-const connectionString = process.env.DATABASE_URL!;
-if (!connectionString) {
+const isPglite = process.env.DB_TYPE === "pglite";
+const connectionString = process.env.DATABASE_URL;
+
+if (!isPglite && !connectionString) {
   console.error("❌ DATABASE_URL environment variable is not set.");
   process.exit(1);
 }
@@ -14,11 +16,37 @@ if (!connectionString) {
 // The Supabase transaction pooler (port 6543) runs in transaction mode and does
 // NOT support prepared statements — postgres-js must use the simple query
 // protocol there, or every DDL statement fails. Mirrors src/db/index.ts.
-const usingTransactionPooler = connectionString.includes(":6543");
+const usingTransactionPooler = !isPglite && connectionString && connectionString.includes(":6543");
 
 async function migrate() {
   console.log("🔄 Applying incremental migration...");
-  const sql = postgres(connectionString, { max: 1, prepare: !usingTransactionPooler });
+  let sql: any;
+  let pgliteClient: any;
+
+  if (isPglite) {
+    console.log("📦 PGlite active. Preparing WASM-based PostgreSQL...");
+    const { PGlite } = require("@electric-sql/pglite");
+    const { drizzle } = require("drizzle-orm/pglite");
+    const { migrate: runDrizzleMigrate } = require("drizzle-orm/pglite/migrator");
+
+    pgliteClient = new PGlite("./.pglite-data");
+    const db = drizzle(pgliteClient);
+
+    console.log("🏗️ Running schema migrations from ./drizzle folder...");
+    await runDrizzleMigrate(db, { migrationsFolder: "./drizzle" });
+    console.log("✅ Schema migrations complete!");
+
+    // Simple raw SQL execution wrapper for custom migrations
+    sql = async (strings: TemplateStringsArray, ...values: any[]) => {
+      const query = strings.reduce((acc, str, i) => acc + str + (values[i] !== undefined ? values[i] : ""), "");
+      return await pgliteClient.query(query);
+    };
+    sql.end = async () => {
+      await pgliteClient.close();
+    };
+  } else {
+    sql = postgres(connectionString!, { max: 1, prepare: !usingTransactionPooler });
+  }
 
   // 1. Add qr_token column to users (if not exists)
   await sql`

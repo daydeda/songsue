@@ -1,4 +1,18 @@
 import type { NextConfig } from "next";
+import os from "os";
+
+const getLocalIPs = () => {
+  const interfaces = os.networkInterfaces();
+  const ips = ["localhost", "127.0.0.1"];
+  for (const name of Object.keys(interfaces)) {
+    for (const net of interfaces[name] || []) {
+      if (net.family === "IPv4" && !net.internal) {
+        ips.push(net.address);
+      }
+    }
+  }
+  return ips;
+};
 
 // 'unsafe-eval' is required by webpack/react-refresh in dev only; never ship it.
 // 'unsafe-inline' for scripts is required by Next.js hydration without a nonce
@@ -9,7 +23,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https:",
+  `connect-src 'self' https:${process.env.NODE_ENV === "development" ? " ws: wss:" : ""}`,
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
   "object-src 'none'",
@@ -56,7 +70,8 @@ const nextConfig: NextConfig = {
   distDir: (typeof __dirname !== "undefined" && (__dirname.includes("CloudDocs") || __dirname.includes("Mobile Documents")))
     ? ".next.nosync"
     : undefined,
-  allowedDevOrigins: ["192.168.1.3"],
+  allowedDevOrigins: getLocalIPs(),
+  serverExternalPackages: ["@electric-sql/pglite"],
   turbopack: {},
   // Tree-shake large barrel-export packages so each route only ships the icons
   // it actually uses instead of the whole library.

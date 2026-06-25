@@ -144,47 +144,14 @@ function Load-EnvFile {
     }
 }
 
-# ตรวจสอบสถานะการเชื่อมต่อ Docker
-function Check-DockerStatus {
-    if (Get-Command "docker" -ErrorAction SilentlyContinue) {
-        & docker info > $null 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            return "Running"
-        }
-        return "NotRunning"
-    }
-    return "NotInstalled"
-}
-
-# เปิดพอร์ต 5432 ใน docker-compose.yml หากยังไม่ได้เปิด
-function Expose-DockerPort {
-    $composePath = Join-Path $PSScriptRoot "docker-compose.yml"
-    if (-not (Test-Path $composePath)) { return }
-    
-    $content = Get-Content $composePath -Raw
-    if ($content -match '-\s+"?5432:5432"?') {
-        return
-    }
-    
-    Write-Host "[!] ตรวจพบว่าคอนเทนเนอร์ DB ไม่ได้แมปพอร์ต 5432 ออกมาด้านนอก" -ForegroundColor Yellow
-    Write-Host "    ระบบจำเป็นต้องเปิดพอร์ต 5432 เพื่อใช้สำหรับการทดสอบรันแอปหรือรัน Drizzle Studio บนโฮสต์ตรง" -ForegroundColor Gray
-    $choice = Read-Host "ต้องการให้แก้ไขไฟล์ docker-compose.yml เพื่อเปิดพอร์ต 5432 (5432:5432) หรือไม่? (y/n)"
-    if ($choice -eq "y" -or $choice -eq "Y") {
-        $pattern = "restart:\s*always\s*\r?\n\s+environment:"
-        $replacement = "restart: always`r`n    ports:`r`n      - `"5432:5432`"`r`n    environment:"
-        
-        $newContent = $content -replace $pattern, $replacement
-        Set-Content $composePath $newContent -Encoding UTF8
-        Write-Host "✅ เปิดพอร์ต 5432 ใน docker-compose.yml สำเร็จ!" -ForegroundColor Green
-    }
-}
+# -------------------------------------------------------------------------
 
 # ทดสอบการเชื่อมต่อฐานข้อมูล
 function Test-DbConnection {
     Write-Host "[*] กำลังทดสอบการเชื่อมต่อฐานข้อมูล..." -ForegroundColor Cyan
     Load-EnvFile
     
-    if (-not $env:DATABASE_URL) {
+    if (-not $env:DATABASE_URL -and $env:DB_TYPE -ne "pglite") {
         Write-Host "❌ ไม่พบค่า DATABASE_URL ในตัวแปรระบบ กรุณาตรวจสอบไฟล์ .env" -ForegroundColor Red
         return $false
     }
@@ -195,7 +162,11 @@ function Test-DbConnection {
         Write-Host "✅ เชื่อมต่อฐานข้อมูลสำเร็จ!" -ForegroundColor Green
         return $true
     } else {
-        Write-Host "❌ ไม่สามารถเชื่อมต่อฐานข้อมูลได้! (โปรดตรวจสอบว่า DB ทำงานอยู่บนพอร์ต 5432 หรือยัง)" -ForegroundColor Red
+        if ($env:DB_TYPE -eq "pglite") {
+            Write-Host "❌ ไม่สามารถเข้าถึงหรือสร้างฐานข้อมูลจำลอง PGlite ได้!" -ForegroundColor Red
+        } else {
+            Write-Host "❌ ไม่สามารถเชื่อมต่อฐานข้อมูลได้! (โปรดตรวจสอบว่า DB ทำงานอยู่บนพอร์ต 5432 หรือยัง)" -ForegroundColor Red
+        }
         return $false
     }
 }
@@ -285,16 +256,12 @@ function Show-Diagnostics {
         Write-Host "✗ Node.js: ไม่พบโปรแกรม! กรุณาติดตั้งก่อนทำต่อ" -ForegroundColor Red
     }
     
-    # Docker
-    $docker = Check-DockerStatus
-    if ($docker -eq "Running") {
-        Write-Host "✓ Docker Compose / Desktop: พร้อมใช้งาน" -ForegroundColor Green
-        Write-Host "--- สถานะคอนเทนเนอร์ที่เปิดอยู่ ---" -ForegroundColor Gray
-        docker compose ps
-    } elseif ($docker -eq "NotRunning") {
-        Write-Host "⚠ Docker Desktop: ติดตั้งแล้วแต่ยังไม่เปิดรัน" -ForegroundColor Yellow
+    # PGlite Local Data Check
+    $pglitePath = Join-Path $PSScriptRoot ".pglite-data"
+    if (Test-Path $pglitePath) {
+        Write-Host "✓ ฐานข้อมูล PGlite Local (.pglite-data): ตรวจพบไฟล์ข้อมูลแล้ว" -ForegroundColor Green
     } else {
-        Write-Host "✗ Docker: ไม่พบโปรแกรมติดตั้งในระบบ" -ForegroundColor Gray
+        Write-Host "⚠ ฐานข้อมูล PGlite Local (.pglite-data): ยังไม่ถูกสร้าง (จะสร้างและบันทึกอัตโนมัติเมื่อรันโหมด ZeroSetup ครั้งแรก)" -ForegroundColor Yellow
     }
     
     # Environment File
@@ -309,41 +276,6 @@ function Show-Diagnostics {
     Read-Host "กด Enter เพื่อกลับเมนูหลัก..."
 }
 
-# เริ่มฐานข้อมูล PostgreSQL ใน Docker
-function Start-LocalDatabase {
-    $docker = Check-DockerStatus
-    if ($docker -ne "Running") {
-        Write-Host "❌ ข้อผิดพลาด: ไม่พบโปรแกรม Docker หรือยังไม่ได้เปิด Docker Desktop!" -ForegroundColor Red
-        Write-Host "    กรุณาติดตั้งและเปิด Docker Desktop ก่อนเริ่มเปิดฐานข้อมูล" -ForegroundColor Gray
-        Read-Host "กด Enter เพื่อทำต่อ..."
-        return $false
-    }
-    
-    Expose-DockerPort
-    Write-Host "[*] กำลังสตาร์ทคอนเทนเนอร์ฐานข้อมูล PostgreSQL ผ่าน Docker Compose..." -ForegroundColor Green
-    docker compose up -d db
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ คอนเทนเนอร์ฐานข้อมูลทำงานเบื้องหลังแล้ว!" -ForegroundColor Green
-        Write-Host "[*] กำลังรอ 3 วินาทีเพื่อให้ระบบฐานข้อมูลพร้อมรับคำสั่ง..." -ForegroundColor Gray
-        Start-Sleep -Seconds 3
-        
-        # ตรวจสอบการอัปเดตตารางข้อมูล
-        Write-Host "[?] ต้องการให้รันสคริปต์ปรับตารางฐานข้อมูลและข้อมูลตั้งต้นจำลอง (Migrate & Seed) เลยหรือไม่?" -ForegroundColor Yellow
-        $migrateChoice = Read-Host "รันระบบตั้งต้นตารางและข้อมูลจำลองเลยหรือไม่? (y/n)"
-        if ($migrateChoice -eq "y" -or $migrateChoice -eq "Y") {
-            Write-Host "[*] กำลังรัน db:push..." -ForegroundColor Cyan
-            npm run db:push
-            Write-Host "[*] กำลังรัน db:seed..." -ForegroundColor Cyan
-            npm run db:seed
-            Write-Host "✅ อัปเดตตารางและข้อมูลตั้งต้นเรียบร้อย!" -ForegroundColor Green
-        }
-        return $true
-    }
-    Write-Host "❌ เกิดข้อผิดพลาดในการเปิดคอนเทนเนอร์ฐานข้อมูล!" -ForegroundColor Red
-    return $false
-}
-
 # ฟังก์ชันหลัก (Main Menu Loop)
 function Main-Menu {
     Show-Header
@@ -354,24 +286,47 @@ function Main-Menu {
     while ($true) {
         Show-Header
         Write-Host "=== 🚀 เมนูหลักสำหรับทดสอบระบบบนเครื่อง Local ===" -ForegroundColor Yellow
-        Write-Host "[1] สตาร์ทเฉพาะระบบฐานข้อมูล (Docker PostgreSQL) และเช็คตาราง"
-        Write-Host "[2] สตาร์ทเฉพาะระบบเว็บแอปพลิเคชันเครื่อง Local (Next.js - npm run dev)"
-        Write-Host "[3] ⚡ รันระบบแบบรวดเร็ว (เปิดทั้ง DB ใน Docker และรันเว็บ Next.js ด้านนอก)"
-        Write-Host "[4] รันแอปพลิเคชันและฐานข้อมูลครบชุดใน Docker ทั้งหมด (docker compose up)"
-        Write-Host "[5] เรียกใช้งานเครื่องมือจัดการฐานข้อมูล (Database & Drizzle Studio)"
-        Write-Host "[6] แต่งตั้งสิทธิ์บัญชีให้เป็น Admin (Promote to Admin)"
-        Write-Host "[7] ตรวจสอบความพร้อมและการวิเคราะห์ระบบ (Diagnostics)"
-        Write-Host "[8] ปิดโปรแกรม (Exit)"
+        Write-Host "[1] ⚡ รันระบบแบบ ZeroSetup (ใช้ PGlite - ไม่ต้องมีฐานข้อมูลแยก)"
+        Write-Host "[2] รันเฉพาะระบบเว็บแอปพลิเคชันเครื่อง Local (Next.js - ใช้ DATABASE_URL จาก .env)"
+        Write-Host "[3] เรียกใช้งานเครื่องมือจัดการฐานข้อมูล (Database & Drizzle Utility)"
+        Write-Host "[4] แต่งตั้งสิทธิ์บัญชีให้เป็น Admin (Promote to Admin)"
+        Write-Host "[5] ตรวจสอบความพร้อมและการวิเคราะห์ระบบ (Diagnostics)"
+        Write-Host "[6] ปิดโปรแกรม (Exit)"
         Write-Host ""
         
-        $choice = Read-Host "เลือกตัวเลือกการทำงาน (1-8)"
+        $choice = Read-Host "เลือกตัวเลือกการทำงาน (1-6)"
         
         switch ($choice) {
             "1" {
-                Start-LocalDatabase | Out-Null
-                Read-Host "กด Enter เพื่อทำต่อ..."
+                Show-Header
+                Write-Host "=== ⚡ กำลังสตาร์ทระบบแบบ ZeroSetup ด้วย PGlite ===" -ForegroundColor Cyan
+                
+                # ตั้งค่าระดับ Session
+                $env:DB_TYPE = "pglite"
+                
+                # รัน migration และ seed อัตโนมัติ (เป็นของคู่กันสำหรับ ZeroSetup ครั้งแรก)
+                Write-Host "[*] กำลังเตรียมฐานข้อมูลจำลอง PGlite (Migrate & Seed)..." -ForegroundColor Gray
+                npm run db:migrate
+                npm run db:seed
+                
+                # เช็คการเชื่อมต่ออีกครั้ง
+                $dbConn = Test-DbConnection
+                if (-not $dbConn) {
+                    Write-Host "❌ เชื่อมต่อ PGlite ล้มเหลว กรุณาตรวจสอบสิทธิ์การอ่านเขียนไฟล์ในโฟลเดอร์โครงการ" -ForegroundColor Red
+                    Read-Host "กด Enter เพื่อกลับเมนู..."
+                    continue
+                }
+                
+                # เริ่ม Next.js dev server
+                Write-Host "[*] กำลังสตาร์ท Next.js Web server..." -ForegroundColor Green
+                Write-Host "👉 เปิดเข้าชมระบบได้ที่: http://localhost:3000" -ForegroundColor Green -Bold
+                Write-Host "💡 กด [CTRL + C] เพื่อหยุดการทำงานของเซิร์ฟเวอร์" -ForegroundColor Yellow
+                Write-Host ""
+                npm run dev
+                Read-Host "กด Enter เพื่อกลับเมนู..."
             }
             "2" {
+                $env:DB_TYPE = $null
                 Show-Header
                 Write-Host "=== การสตาร์ทระบบเว็บแอปพลิเคชัน Next.js (Local Node.js) ===" -ForegroundColor Cyan
                 
@@ -380,8 +335,8 @@ function Main-Menu {
                 if (-not $dbConn) {
                     Write-Host ""
                     Write-Host "[?] คำเตือน: ฐานข้อมูลยังเชื่อมต่อไม่สำเร็จ!" -ForegroundColor Yellow
-                    Write-Host "    กรุณาตรวจสอบว่าได้เลือกตัวเลือกข้อ [1] เพื่อเปิดเครื่อง PostgreSQL หรือยัง" -ForegroundColor Gray
-                    $ignore = Read-Host "ต้องการเปิดแอปพลิเคชันต่อโดยไม่ใช้ฐานข้อมูลหรือไม่? (y/n)"
+                    Write-Host "    กรุณาตรวจสอบว่ามี PostgreSQL รันอยู่และตั้งค่า DATABASE_URL ใน .env ถูกต้องแล้ว" -ForegroundColor Gray
+                    $ignore = Read-Host "ต้องการเปิดแอปพลิเคชันต่อโดยไม่เชื่อมต่อฐานข้อมูลหรือไม่? (y/n)"
                     if ($ignore -ne "y" -and $ignore -ne "Y") {
                         continue
                     }
@@ -395,71 +350,15 @@ function Main-Menu {
                 Read-Host "กด Enter เพื่อกลับเมนู..."
             }
             "3" {
-                Show-Header
-                Write-Host "=== ⚡ กำลังเริ่มรันฐานข้อมูลใน Docker และเริ่มเว็บแอปเครื่อง Local ===" -ForegroundColor Cyan
-                
-                # 1. เริ่ม DB
-                $dbStart = Start-LocalDatabase
-                if (-not $dbStart) {
-                    Write-Host "❌ ยกเลิกการรันระบบเว็บเนื่องจากเปิดฐานข้อมูลไม่สำเร็จ" -ForegroundColor Red
-                    Read-Host "กด Enter เพื่อกลับเมนู..."
-                    continue
-                }
-                
-                # 2. เช็คการเชื่อมต่ออีกครั้ง
-                $dbConn = Test-DbConnection
-                if (-not $dbConn) {
-                    Write-Host "❌ เชื่อมต่อฐานข้อมูลล้มเหลว กรุณาตรวจสอบสถานะและพอร์ต" -ForegroundColor Red
-                    Read-Host "กด Enter เพื่อกลับเมนู..."
-                    continue
-                }
-                
-                # 3. เริ่ม Next.js dev server
-                Write-Host "[*] กำลังสตาร์ท Next.js Web server..." -ForegroundColor Green
-                Write-Host "👉 เปิดเข้าชมระบบได้ที่: http://localhost:3000" -ForegroundColor Green -Bold
-                Write-Host "💡 กด [CTRL + C] เพื่อหยุดการทำงานของเซิร์ฟเวอร์" -ForegroundColor Yellow
-                Write-Host ""
-                npm run dev
-                Read-Host "กด Enter เพื่อกลับเมนู..."
-            }
-            "4" {
-                # รัน Docker Compose ทั้งหมด
-                $docker = Check-DockerStatus
-                if ($docker -ne "Running") {
-                    Write-Host "❌ Docker Desktop ยังไม่เปิดใช้งาน" -ForegroundColor Red
-                    Read-Host "กด Enter เพื่อกลับเมนู..."
-                    continue
-                }
-                
-                Write-Host "[*] กำลังรันทุกระบบใน Docker Containers (docker compose up)..." -ForegroundColor Green
-                docker compose up -d --build
-                Write-Host "[*] รอระบบสตาร์ท 5 วินาที..." -ForegroundColor Gray
-                Start-Sleep -Seconds 5
-                
-                Write-Host "[?] ต้องการอัปเดตตารางและข้อมูลจำลองใน Docker หรือไม่?" -ForegroundColor Yellow
-                $runSetup = Read-Host "อัปเดตตารางและจำลองข้อมูลหรือไม่? (y/n)"
-                if ($runSetup -eq "y" -or $runSetup -eq "Y") {
-                    docker compose exec web npm run db:migrate
-                    docker compose exec web npm run db:seed
-                }
-                
-                Write-Host ""
-                Write-Host "🏠 หน้าเว็บทำงานบนคอนเทนเนอร์แล้วที่: http://localhost:3000" -ForegroundColor Green -Bold
-                $logChoice = Read-Host "ต้องการเปิดดู Logs การทำงานของ Docker หรือไม่? (y/n)"
-                if ($logChoice -eq "y" -or $logChoice -eq "Y") {
-                    docker compose logs -f
-                }
-            }
-            "5" {
                 Manage-DatabaseMenu
             }
-            "6" {
+            "4" {
                 Promote-Admin
             }
-            "7" {
+            "5" {
                 Show-Diagnostics
             }
-            "8" {
+            "6" {
                 Write-Host "ขอให้สนุกกับการทดสอบระบบโลคอลครับ! สวัสดี" -ForegroundColor Green
                 exit
             }

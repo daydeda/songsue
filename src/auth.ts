@@ -1,5 +1,6 @@
 import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
+import Credentials from "next-auth/providers/credentials"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { headers } from "next/headers"
 import { db } from "@/db"
@@ -117,6 +118,67 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // interactive selection makes each sign-in plant a fresh, matching cookie.
       authorization: { params: { prompt: "select_account" } },
     }),
+    ...(process.env.NODE_ENV === "development"
+      ? [
+          Credentials({
+            name: "Dev Bypass Login",
+            credentials: {
+              email: { label: "Email", type: "email" },
+              name: { label: "Name", type: "text" },
+              role: { label: "Role", type: "text" },
+            },
+            async authorize(credentials) {
+              const email = (credentials?.email as string || "smocamt.official@gmail.com").toLowerCase();
+              const name = credentials?.name as string || "Dev User";
+              const role = credentials?.role as string || "super_admin";
+
+              let user = await db.query.users.findFirst({
+                where: (u, { eq }) => eq(u.email, email),
+              });
+
+              if (!user) {
+                const newUserId = crypto.randomUUID();
+                await db.insert(users).values({
+                  id: newUserId,
+                  name,
+                  email,
+                  role,
+                  roles: [role],
+                  houseId: "red",
+                  profileCompleted: true,
+                  qrToken: crypto.randomUUID(),
+                });
+                user = await db.query.users.findFirst({
+                  where: (u, { eq }) => eq(u.email, email),
+                });
+              } else {
+                // Keep the database role synced with the chosen login bypass role
+                await db.update(users)
+                  .set({ role, roles: [role], profileCompleted: true })
+                  .where(eq(users.id, user.id));
+                user.role = role;
+                user.roles = [role];
+                user.profileCompleted = true;
+              }
+
+
+              return {
+                id: user!.id,
+                name: user!.name ?? null,
+                email: user!.email,
+                role: user!.role ?? "student",
+                roles: (user!.roles as string[]) ?? ["student"],
+                profileCompleted: user!.profileCompleted ?? false,
+                houseId: user!.houseId ?? null,
+                imageTransform: (user!.imageTransform as { scale: number; x: number; y: number } | null) ?? null,
+                qrToken: user!.qrToken ?? null,
+                studentId: user!.studentId ?? null,
+                image: user!.image ?? null,
+              };
+            },
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     // FE-01: Restrict login to @cmu.ac.th email domain only

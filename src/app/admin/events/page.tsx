@@ -168,6 +168,7 @@ const FORM_TYPE_LABELS: Record<string, string> = {
   K_post: "K Post-Test",
   A: "A - Attitude",
   S: "S - Skill",
+  F: "F - Feedback",
 };
 
 // Roles an admin can assign an S (Skill) form to. Mirrors ASSIGNABLE_ROLES in
@@ -232,6 +233,7 @@ const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: strin
   K_post: { bg: "rgba(16,185,129,0.12)",  text: "#10b981", border: "rgba(16,185,129,0.3)"  },
   A:      { bg: "rgba(245,158,11,0.12)",  text: "#f59e0b", border: "rgba(245,158,11,0.3)"  },
   S:      { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", border: "rgba(239,68,68,0.3)"   },
+  F:      { bg: "rgba(6,182,212,0.12)",   text: "#06b6d4", border: "rgba(6,182,212,0.3)"   },
 };
 
 // Role priority (mirrors ROLE_PRIORITY in src/auth.ts). A person's "primary"
@@ -3385,7 +3387,7 @@ export default function AdminEventsPage() {
                   {t.fbSelectFormTypePicker || "Select the type of form to create for this event:"}
                 </p>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {(["K_pre", "K_post", "A", "S"] as const).map((type) => {
+                  {(["K_pre", "K_post", "A", "S", "F"] as const).map((type) => {
                     const c = FORM_TYPE_COLORS[type];
                     const alreadyExists = allEventForms.some((f) => f.formType === type);
                     return (

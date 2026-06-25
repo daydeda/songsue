@@ -146,7 +146,7 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const validTypes = ["K_pre", "K_post", "A", "S"];
+    const validTypes = ["K_pre", "K_post", "A", "S", "F"];
     if (formType && !validTypes.includes(formType)) {
       return NextResponse.json({ error: "Invalid form_type" }, { status: 400 });
     }

@@ -21,8 +21,8 @@ type PendingForm = {
  * complete" banner. A form is outstanding when it's currently open for submission,
  * the student hasn't submitted it, and they're actually able to submit it:
  *   - K_pre : any event they've joined (registered or attended) — no check-in needed.
- *   - K_post / A (feedback) : only events they've ATTENDED (mirrors the submit gate
- *     in /api/events/[id]/form — these require a physical check-in).
+ *   - K_post / A (attitude) / F (feedback) : only events they've ATTENDED (mirrors
+ *     the submit gate in /api/events/[id]/form — these require a physical check-in).
  *   - S (skill) : evaluator-only; included solely when assigned to this user.
  * Reads form metadata only — no medical data, no audit log required.
  */
@@ -63,7 +63,7 @@ export async function GET() {
       if (!isFormOpenForSubmission(f)) return false;
       if (f.formType === "S") return canAccessSkillForm(f, { id: userId, role });
       if (f.formType === "K_pre") return true; // no attendance required
-      return attended.has(f.eventId); // K_post / A (feedback) need a check-in
+      return attended.has(f.eventId); // K_post / A (attitude) / F (feedback) need a check-in
     });
     if (candidates.length === 0) {
       return NextResponse.json({ forms: [] }, { headers: { "Cache-Control": "no-store" } });

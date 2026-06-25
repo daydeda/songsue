@@ -131,83 +131,115 @@ export function JoinClient({ initialSession }: JoinClientProps) {
     }
   };
 
-  // WebRTC QR Scanner logic
-  const startScanner = async () => {
-    setError(null);
-    setScannerError(null);
-    setIsScanning(true);
-
-    // Clean up existing
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-      } catch {}
-      scannerRef.current = null;
-    }
-
-    const container = document.getElementById("join-qr-reader");
-    if (container) container.innerHTML = "";
-
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setScannerError("Camera not available or blocked. HTTPS/localhost is required.");
-      setIsScanning(false);
+  // Start/stop scanner when isScanning changes (avoids race condition where container element is not in DOM yet)
+  useEffect(() => {
+    if (!isScanning) {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {}).finally(() => {
+          scannerRef.current = null;
+        });
+      }
       return;
     }
 
-    const scanner = new Html5Qrcode("join-qr-reader");
-    scannerRef.current = scanner;
+    let isCurrentEffect = true;
+    let activeScanner: Html5Qrcode | null = null;
 
-    try {
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decodedText) => {
-          // Parse url
-          try {
-            const url = new URL(decodedText);
-            const roomVal = url.searchParams.get("room");
-            if (roomVal && roomVal.length === 4) {
-              stopScanner();
-              const chars = roomVal.toUpperCase().split("");
-              setCode(chars);
-              handleJoinRoom(roomVal.toUpperCase());
-            } else {
-              setScannerError("Invalid QR Code content. Make sure it's an ActiveCAMT battle QR code.");
-            }
-          } catch {
-            // Not a URL, try if it is a 4-letter code
-            const cleanText = decodedText.trim().toUpperCase().replace(/[^A-Z2-9]/g, "");
-            if (cleanText.length === 4) {
-              stopScanner();
-              const chars = cleanText.split("");
-              setCode(chars);
-              handleJoinRoom(cleanText);
-            } else {
-              setScannerError("Could not read room code from QR.");
-            }
-          }
-        },
-        () => {}
-      );
-    } catch (err: any) {
-      console.error(err);
-      let msg = "Could not initialize camera scanner.";
-      if (err.name === "NotAllowedError" || /permission/i.test(err.message)) {
-        msg = "Camera permission denied. Please allow camera access in browser settings.";
+    const initScanner = async () => {
+      // 1. Check navigator/camera API
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        if (isCurrentEffect) {
+          setScannerError("Camera not available or blocked. HTTPS/localhost is required.");
+          setIsScanning(false);
+        }
+        return;
       }
-      setScannerError(msg);
-      setIsScanning(false);
-      scannerRef.current = null;
-    }
+
+      // 2. Ensure container is present in DOM
+      const container = document.getElementById("join-qr-reader");
+      if (!container) {
+        // Retry once on next frame in case React render is still committing
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+
+      const verifiedContainer = document.getElementById("join-qr-reader");
+      if (!verifiedContainer) {
+        if (isCurrentEffect) {
+          setScannerError("Camera container element not found.");
+          setIsScanning(false);
+        }
+        return;
+      }
+
+      verifiedContainer.innerHTML = "";
+
+      // 3. Initialize Html5Qrcode
+      try {
+        const scanner = new Html5Qrcode("join-qr-reader");
+        scannerRef.current = scanner;
+        activeScanner = scanner;
+
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          async (decodedText) => {
+            if (!isCurrentEffect) return;
+            try {
+              const url = new URL(decodedText);
+              const roomVal = url.searchParams.get("room");
+              if (roomVal && roomVal.length === 4) {
+                setIsScanning(false); // triggers effect cleanup
+                const chars = roomVal.toUpperCase().split("");
+                setCode(chars);
+                handleJoinRoom(roomVal.toUpperCase());
+              } else {
+                setScannerError("Invalid QR Code content. Make sure it's an ActiveCAMT battle QR code.");
+              }
+            } catch {
+              const cleanText = decodedText.trim().toUpperCase().replace(/[^A-Z2-9]/g, "");
+              if (cleanText.length === 4) {
+                setIsScanning(false); // triggers effect cleanup
+                const chars = cleanText.split("");
+                setCode(chars);
+                handleJoinRoom(cleanText);
+              } else {
+                setScannerError("Could not read room code from QR.");
+              }
+            }
+          },
+          () => {}
+        );
+      } catch (err: any) {
+        console.error(err);
+        if (isCurrentEffect) {
+          let msg = "Could not initialize camera scanner.";
+          if (err.name === "NotAllowedError" || /permission/i.test(err.message)) {
+            msg = "Camera permission denied. Please allow camera access in browser settings.";
+          }
+          setScannerError(msg);
+          setIsScanning(false);
+          scannerRef.current = null;
+        }
+      }
+    };
+
+    initScanner();
+
+    return () => {
+      isCurrentEffect = false;
+      if (activeScanner) {
+        activeScanner.stop().catch(() => {});
+      }
+    };
+  }, [isScanning]);
+
+  const startScanner = () => {
+    setError(null);
+    setScannerError(null);
+    setIsScanning(true);
   };
 
-  const stopScanner = async () => {
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-      } catch {}
-      scannerRef.current = null;
-    }
+  const stopScanner = () => {
     setIsScanning(false);
   };
 

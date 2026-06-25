@@ -25,6 +25,16 @@ export async function POST(req: Request) {
     }
 
     const hostId = session.user.id;
+
+    // Verify host user exists in database (handles stale session cookies after database resets)
+    const hostExists = await db.query.users.findFirst({
+      where: (u, { eq }) => eq(u.id, hostId),
+      columns: { id: true }
+    });
+    if (!hostExists) {
+      return NextResponse.json({ error: "User not found in database. Please log out and sign in again." }, { status: 401 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const gameType = body.gameType || "ox";
 

@@ -24,6 +24,15 @@ export async function POST(
     const roomCode = code.toUpperCase();
     const guestId = session.user.id;
 
+    // Verify guest user exists in database (handles stale session cookies after database resets)
+    const guestExists = await db.query.users.findFirst({
+      where: (u, { eq }) => eq(u.id, guestId),
+      columns: { id: true }
+    });
+    if (!guestExists) {
+      return NextResponse.json({ error: "User not found in database. Please log out and sign in again." }, { status: 401 });
+    }
+
     const room = await db.query.gameRooms.findFirst({
       where: (r, { eq }) => eq(r.roomCode, roomCode),
     });

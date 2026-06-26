@@ -5,6 +5,7 @@ import { StudentNav } from "@/components/layout/StudentNav";
 import { useLanguage } from "@/lib/LanguageContext";
 import { parseRichText } from "@/lib/rich-text";
 import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
+import { computeProductDeliveryFee, type ShopDeliveryTier } from "@/lib/shop-delivery";
 import {
   ShoppingBag, X, ChevronLeft, ChevronRight, Upload, Loader2, CheckCircle2,
   Clock, XCircle, Package, Minus, Plus, ReceiptText,
@@ -16,6 +17,7 @@ interface Product {
   imageUrls: string[]; maxPerOrder: number | null; variants: Variant[];
   opensAt?: string | null; closesAt?: string | null; saleStatus?: "open" | "upcoming" | "closed";
   customFields?: ShopCustomField[];
+  deliveryFee?: number | null; deliveryTiers?: ShopDeliveryTier[];
 }
 interface ShopData {
   enabled: boolean; paymentInfo: string; qrImageUrl: string | null;
@@ -231,7 +233,12 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
   // Clamp at render instead of in an effect: variant changes can shrink maxQty.
   const qty = Math.min(qtyRaw, maxQty);
   const subtotal = product.price * qty;
-  const deliveryFee = fulfillment === "delivery" ? (settings.deliveryFee ?? 0) : 0;
+  // Per-product delivery fee for the current quantity (tiers can raise it as qty
+  // grows). Mirrors the server's authoritative computeProductDeliveryFee. The
+  // fee at qty=1 powers the "Delivery (+฿X)" hint on the chooser.
+  const shopWideFee = settings.deliveryFee ?? 0;
+  const deliveryFee = fulfillment === "delivery" ? computeProductDeliveryFee(product, qty, shopWideFee) : 0;
+  const deliveryFeeFrom = computeProductDeliveryFee(product, 1, shopWideFee);
   const total = subtotal + deliveryFee;
   const deliveryIncomplete = fulfillment === "delivery" && (!recipientName.trim() || !recipientPhone.trim() || !shippingAddress.trim());
   const hasImages = product.imageUrls.length > 0;
@@ -449,7 +456,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                     return (
                       <button key={opt} disabled={disabled} onClick={() => setFulfillment(opt)}
                         style={{ flex: 1, padding: "10px 12px", borderRadius: "var(--radius-md)", border: `2px solid ${sel ? "var(--accent-primary)" : "var(--border-subtle)"}`, background: sel ? "var(--accent-glow)" : "var(--bg-base)", fontWeight: 700, fontSize: 13, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
-                        {opt === "pickup" ? (th ? "รับเอง" : "Self-pickup") : (th ? `จัดส่ง${settings.deliveryFee ? ` (+${baht(settings.deliveryFee)})` : ""}` : `Delivery${settings.deliveryFee ? ` (+${baht(settings.deliveryFee)})` : ""}`)}
+                        {opt === "pickup" ? (th ? "รับเอง" : "Self-pickup") : (th ? `จัดส่ง${deliveryFeeFrom ? ` (+${baht(deliveryFeeFrom)})` : ""}` : `Delivery${deliveryFeeFrom ? ` (+${baht(deliveryFeeFrom)})` : ""}`)}
                       </button>
                     );
                   })}

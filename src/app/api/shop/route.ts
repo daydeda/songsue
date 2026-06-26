@@ -88,6 +88,9 @@ export async function GET() {
       // 'upcoming' (before opensAt) | 'closed' (after closesAt) | 'open'
       saleStatus: p.opensAt && now < p.opensAt ? "upcoming" : p.closesAt && now > p.closesAt ? "closed" : "open",
       customFields: p.customFields ?? [],
+      // Per-product delivery pricing (null fee = falls back to shop-wide deliveryFee).
+      deliveryFee: p.deliveryFee ?? null,
+      deliveryTiers: p.deliveryTiers ?? [],
       variants: variants
         .filter((v) => v.productId === p.id)
         .map((v) => ({

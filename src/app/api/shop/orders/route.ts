@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { shopOrderItems, shopOrders, shopProducts, shopSettings, shopVariants, users } from "@/db/schema";
 import { buildViewer, isEligibleFor } from "@/lib/event-access";
 import { validateCustomAnswers } from "@/lib/shop-custom-fields";
+import { computeProductDeliveryFee } from "@/lib/shop-delivery";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -271,7 +272,12 @@ export async function POST(req: Request) {
         if (!recipientName || !recipientPhone || !shippingAddress) {
           return { error: "Please fill in the recipient name, phone, and delivery address.", status: 400 as const };
         }
-        shippingFee = settings.deliveryFee;
+        // Sum each product's fee, computed from its own base/tiers by the ordered
+        // quantity (highest applicable tier wins), falling back to the shop-wide fee.
+        for (const pid of productIds) {
+          const product = productById.get(pid)!;
+          shippingFee += computeProductDeliveryFee(product, requestedByProduct.get(pid) ?? 0, settings.deliveryFee);
+        }
       }
       total += shippingFee;
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { ShopCustomField, ShopCustomValue, ShopCustomFieldType } from "@/lib/shop-custom-fields";
+import { normalizeTiers, type ShopDeliveryTier } from "@/lib/shop-delivery";
 import {
   ShoppingBag, Package, ReceiptText, Settings as SettingsIcon, Plus, Trash2, Pencil,
   Upload, Loader2, X, CheckCircle2, XCircle, Clock, GripVertical, Save, RotateCcw, Download,
@@ -31,6 +32,9 @@ interface AdminProduct {
   targetThai: boolean; targetInternational: boolean;
   // Per-product personalization fields (e.g. jersey name/number).
   customFields: ShopCustomField[];
+  // Per-product delivery pricing. deliveryFee = base ฿ (null = shop-wide fallback);
+  // deliveryTiers = quantity thresholds (highest applicable minQty wins).
+  deliveryFee: number | null; deliveryTiers: ShopDeliveryTier[];
 }
 
 // Editor row for one custom field (key is assigned at save time, by index).
@@ -38,6 +42,9 @@ interface FieldDraft {
   label: string; type: ShopCustomFieldType; required: boolean;
   maxLength: number | null; min: number | null; max: number | null; options: string[];
 }
+
+// Editor row for one delivery tier (strings keep empty inputs forgiving).
+interface TierDraft { minQty: string; fee: string }
 
 // Roles a product's visibility can be restricted to (mirrors the events targeting
 // list). Empty selection = all roles. Admins always see everything.
@@ -303,6 +310,10 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
       maxLength: f.maxLength ?? null, min: f.min ?? null, max: f.max ?? null, options: f.options ?? [],
     }))
   );
+  const [deliveryFee, setDeliveryFee] = useState<string>(product?.deliveryFee != null ? String(product.deliveryFee) : "");
+  const [deliveryTiers, setDeliveryTiers] = useState<TierDraft[]>(
+    (product?.deliveryTiers ?? []).map((t) => ({ minQty: String(t.minQty), fee: String(t.fee) }))
+  );
   const [variants, setVariants] = useState<AdminVariant[]>(product?.variants?.length ? product.variants : [{ label: "Standard", stock: null, allowCustom: false }]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -359,6 +370,14 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
           max: f.type === "number" ? f.max : null,
           options: f.type === "select" ? f.options.map((o) => o.trim()).filter(Boolean) : [],
         })),
+        // Per-product delivery. Blank base fee = null (use shop-wide fallback).
+        // Tiers: drop incomplete rows, then dedupe + sort ascending by minQty.
+        deliveryFee: deliveryFee.trim() === "" ? null : Math.max(0, Math.round(Number(deliveryFee) || 0)),
+        deliveryTiers: normalizeTiers(
+          deliveryTiers
+            .filter((t) => t.minQty.trim() !== "" && t.fee.trim() !== "")
+            .map((t) => ({ minQty: Math.round(Number(t.minQty) || 0), fee: Math.round(Number(t.fee) || 0) }))
+        ),
         sortOrder: product?.sortOrder ?? 0,
         variants: variants.map((v) => ({ id: v.id, label: v.label.trim(), stock: v.stock, allowCustom: !!v.allowCustom })),
       };
@@ -498,6 +517,43 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
               <button onClick={() => setCustomFields((fs) => [...fs, { label: "", type: "text", required: false, maxLength: null, min: null, max: null, options: [] }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <Plus size={15} />{th ? "เพิ่มช่องกรอกเอง" : "Add custom field"}
               </button>
+            </div>
+          </Field>
+
+          {/* Per-product delivery pricing. Base fee blank = use the shop-wide
+              fallback (Settings tab). Tiers raise the fee once the ordered quantity
+              of THIS product reaches minQty ("order more than N → fee goes up").
+              An order's total shipping is the sum of each product's computed fee. */}
+          <Field label={th ? "ค่าจัดส่ง (เฉพาะสินค้านี้)" : "Delivery fee (this product)"}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>{th ? "ค่าส่งพื้นฐาน (฿)" : "Base fee (฿)"}</span>
+                <input type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} placeholder={th ? "เว้นว่าง = ใช้ค่าเริ่มต้นของร้าน" : "blank = use shop default"} style={{ ...inputStyle, width: 220 }} />
+              </div>
+              {deliveryTiers.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {deliveryTiers.map((t, i) => {
+                    const setTier = (patch: Partial<TierDraft>) => setDeliveryTiers((ts) => ts.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+                    return (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
+                        <span style={{ color: "var(--text-muted)" }}>{th ? "ตั้งแต่" : "From"}</span>
+                        <input type="number" min={1} value={t.minQty} onChange={(e) => setTier({ minQty: e.target.value })} placeholder={th ? "จำนวน" : "qty"} style={{ ...inputStyle, width: 90 }} />
+                        <span style={{ color: "var(--text-muted)" }}>{th ? "ชิ้นขึ้นไป → ฿" : "+ pcs → ฿"}</span>
+                        <input type="number" min={0} value={t.fee} onChange={(e) => setTier({ fee: e.target.value })} placeholder={th ? "ค่าส่ง" : "fee"} style={{ ...inputStyle, width: 110 }} />
+                        <button onClick={() => setDeliveryTiers((ts) => ts.filter((_, idx) => idx !== i))} className="btn btn-ghost" style={{ padding: 6, color: "#ef4444" }}><Trash2 size={15} /></button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <button onClick={() => setDeliveryTiers((ts) => [...ts, { minQty: "", fee: "" }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                <Plus size={15} />{th ? "เพิ่มขั้นตามจำนวน" : "Add quantity tier"}
+              </button>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                {th
+                  ? "ค่าส่งคิดต่อสินค้าตามจำนวนที่สั่ง โดยใช้ขั้นที่จำนวนถึงสูงสุด (เช่น 1–2 ชิ้น ฿30, ตั้งแต่ 3 ชิ้น ฿50) แล้วรวมค่าส่งของทุกสินค้าในออร์เดอร์"
+                  : "Charged per product by ordered quantity, using the highest tier reached (e.g. 1–2 pcs ฿30, from 3 pcs ฿50). The order's shipping is the sum across products."}
+              </p>
             </div>
           </Field>
 
@@ -879,8 +935,11 @@ function SettingsTab({ th }: { th: boolean }) {
           <span style={{ fontWeight: 700, fontSize: 15 }}>{th ? "เปิดให้จัดส่ง (พร้อมค่าส่งแบบเหมา)" : "Offer delivery (flat fee)"}</span>
         </label>
         {deliveryEnabled && (
-          <Field label={th ? "ค่าจัดส่ง (บาท)" : "Delivery fee (฿)"} style={{ maxWidth: 200 }}>
+          <Field label={th ? "ค่าจัดส่งเริ่มต้นของร้าน (บาท)" : "Default delivery fee (฿)"} style={{ maxWidth: 280 }}>
             <input type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} style={inputStyle} />
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
+              {th ? "ใช้กับสินค้าที่ไม่ได้ตั้งค่าส่งของตัวเอง" : "Used for products that don't set their own delivery fee."}
+            </p>
           </Field>
         )}
         <Field label={th ? "คำแนะนำการรับสินค้าเอง (ที่ไหน/เมื่อไหร่)" : "Self-pickup instructions (where / when)"}>

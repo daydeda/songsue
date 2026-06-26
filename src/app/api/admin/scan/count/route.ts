@@ -4,6 +4,7 @@ import { attendance, events } from "@/db/schema";
 import { and, eq, count } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { captureException } from "@/lib/logger";
+import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
 
 // GET /api/admin/scan/count?eventId=<uuid>&sessionId=<uuid>
 //
@@ -18,16 +19,9 @@ export async function GET(req: Request) {
   try {
     const session = await auth();
     // Mirror the scan POST gate: every scanner-capable role may see the count.
-    const isAdminRole = [
-      "super_admin",
-      "admin",
-      "registration",
-      "organizer",
-      "smo",
-      "club_president",
-      "major_president",
-    ].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    // Gate on the whole role set so a president whose primary role resolves to a
+    // non-entry role (e.g. anusmo) isn't wrongly blocked.
+    if (!session?.user || !canEnterAdminAny(effectiveRoles(session.user.role, session.user.roles))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

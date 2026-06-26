@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { canEnterAdmin, isScannerOnlyRole, isScannerOnlyAllowedPath, SCANNER_HREF } from "@/lib/admin-access";
+import { canEnterAdminAny, isScannerOnlyAny, isScannerOnlyAllowedPath, effectiveRoles, SCANNER_HREF } from "@/lib/admin-access";
 
 // Next.js 16: "middleware" renamed to "proxy"
 export async function proxy(req: NextRequest) {
@@ -34,8 +34,12 @@ export async function proxy(req: NextRequest) {
   }
 
   const user = session.user;
-  // SMO is scanner-only: it may enter /admin but is confined to the QR scanner.
-  const isScannerOnly = isScannerOnlyRole(user.role);
+  // A user may hold several roles; gate on the whole set, not just the primary one
+  // (else a president whose primary resolves to a non-entry role is wrongly blocked).
+  const roles = effectiveRoles(user.role, user.roles);
+  // Scanner-only roles (smo, club/major president) may enter /admin but are confined
+  // to the QR scanner.
+  const isScannerOnly = isScannerOnlyAny(roles);
 
   // Authenticated but profile not complete → force onboarding
   // (except for the /onboarding page itself, and API routes)
@@ -54,7 +58,7 @@ export async function proxy(req: NextRequest) {
 
   // Admin routes — block anyone who can't enter the admin area at all. (SMO is
   // allowed in but is confined to the scanner by the rule below.)
-  if (pathname.startsWith("/admin") && !canEnterAdmin(user.role)) {
+  if (pathname.startsWith("/admin") && !canEnterAdminAny(roles)) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
@@ -69,8 +73,12 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL(SCANNER_HREF, req.url));
   }
 
-  // Organizer cannot access students list
-  if (pathname.startsWith("/admin/students") && user.role === "organizer") {
+  // Organizer cannot access students list. Gate on the role SET (like the rest of
+  // this proxy) so it can't desync from ROLE_PRIORITY: redirect only when the user
+  // is an organizer with no higher students-capable role. Restrictive-only; the
+  // students API remains the real gate.
+  const organizerOnly = roles.includes("organizer") && !roles.some((r) => ["super_admin", "admin", "registration"].includes(r));
+  if (pathname.startsWith("/admin/students") && organizerOnly) {
     return NextResponse.redirect(new URL("/admin/dashboard", req.url));
   }
 

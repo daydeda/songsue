@@ -339,7 +339,13 @@ export const forms = pgTable("forms", {
   title: text("title").notNull(),
   description: text("description"),
   questions: jsonb("questions").notNull(),
+  // House points: awarded to the house with the most submissions when the form
+  // closes (winner-take-all). See award-points.ts checkAndAwardClosedForms.
   pointsAwarded: integer("points_awarded").default(0),
+  // Individual points: awarded to EACH student the moment they submit the form,
+  // added to users.points. Independent of the house contest above; not clawed
+  // back if the form re-opens. See POST /api/events/[id]/form.
+  individualPointsAwarded: integer("individual_points_awarded").default(0),
   isActive: boolean("is_active").default(true),
   isAwarded: boolean("is_awarded").default(false),
   // Optional auto open/close window. NULL on either side = unbounded that side.

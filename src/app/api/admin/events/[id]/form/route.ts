@@ -89,6 +89,7 @@ export async function GET(
         description: formObj.description,
         questions: formObj.questions,
         pointsAwarded: formObj.pointsAwarded,
+        individualPointsAwarded: formObj.individualPointsAwarded,
         isActive: formObj.isActive,
         isAwarded: formObj.isAwarded,
         opensAt: formObj.opensAt,
@@ -136,7 +137,7 @@ export async function POST(
     }
 
     const { id: eventId } = await params;
-    const { title, description, questions, pointsAwarded, isActive, formType, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = await req.json();
+    const { title, description, questions, pointsAwarded, individualPointsAwarded, isActive, formType, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = await req.json();
 
     const isValidQuestions =
       Array.isArray(questions) ||
@@ -172,6 +173,7 @@ export async function POST(
         description: description || "",
         questions,
         pointsAwarded: parseInt(pointsAwarded) || 0,
+        individualPointsAwarded: parseInt(individualPointsAwarded) || 0,
         isActive: isActive !== undefined ? !!isActive : true,
         opensAt: opensAtDate,
         closesAt: closesAtDate,
@@ -182,7 +184,7 @@ export async function POST(
 
     await AuditService.logAction({
       actorId: session.user.id!,
-      action: `Created form "${result.title}" (${result.id}) for event ${eventId} with award: ${result.pointsAwarded} PTS`,
+      action: `Created form "${result.title}" (${result.id}) for event ${eventId} with award: ${result.pointsAwarded} house PTS, ${result.individualPointsAwarded} individual PTS`,
       ipAddress: getClientIp(req),
     });
 
@@ -206,7 +208,7 @@ export async function PATCH(
 
     const { id: eventId } = await params;
     const body = await req.json();
-    const { formId, title, description, questions, pointsAwarded, isActive, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
+    const { formId, title, description, questions, pointsAwarded, individualPointsAwarded, isActive, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
 
     if (!formId) {
       return NextResponse.json({ error: "formId is required" }, { status: 400 });
@@ -273,6 +275,7 @@ export async function PATCH(
           description: description ?? existing.description,
           questions: questions ?? existing.questions,
           pointsAwarded: pointsAwarded !== undefined ? parseInt(pointsAwarded) || 0 : existing.pointsAwarded,
+          individualPointsAwarded: individualPointsAwarded !== undefined ? parseInt(individualPointsAwarded) || 0 : existing.individualPointsAwarded,
           // A re-open re-arms the form; otherwise honour an explicit isActive.
           isActive: reopening ? true : (isActive !== undefined ? !!isActive : existing.isActive),
           isAwarded: reopening ? false : existing.isAwarded,

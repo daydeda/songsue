@@ -725,6 +725,17 @@ async function migrate() {
   `;
   console.log("  ✅ events.individual_points_awarded");
 
+  // 46. forms.individual_points_awarded — per-submitter individual points, the
+  // form analogue of step 45. points_awarded (the form's house contest, awarded
+  // winner-take-all at close) is unchanged; this is added to users.points the
+  // moment a student submits the form, and is NOT clawed back if the form
+  // re-opens (the submission persists). Additive, default 0, idempotent.
+  await sql`
+    ALTER TABLE forms
+    ADD COLUMN IF NOT EXISTS individual_points_awarded integer DEFAULT 0
+  `;
+  console.log("  ✅ forms.individual_points_awarded");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -17,11 +17,17 @@ interface Product {
   opensAt?: string | null; closesAt?: string | null; saleStatus?: "open" | "upcoming" | "closed";
   customFields?: ShopCustomField[];
 }
-interface ShopData { enabled: boolean; paymentInfo: string; qrImageUrl: string | null; products: Product[] }
+interface ShopData {
+  enabled: boolean; paymentInfo: string; qrImageUrl: string | null;
+  deliveryEnabled?: boolean; deliveryFee?: number; pickupInfo?: string;
+  products: Product[];
+}
 interface OrderItem { productName: string; variantLabel: string; customValues?: ShopCustomValue[] | null; unitPrice: number; quantity: number }
 interface Order {
   id: string; status: string; totalAmount: number; note: string | null;
   rejectionReason: string | null; hasSlip: boolean; createdAt: string; items: OrderItem[];
+  fulfillment?: string; shippingFee?: number;
+  recipientName?: string | null; recipientPhone?: string | null; shippingAddress?: string | null;
 }
 
 const baht = (n: number) => `฿${n.toLocaleString()}`;
@@ -203,6 +209,10 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState("");
+  const [fulfillment, setFulfillment] = useState<"pickup" | "delivery">("pickup");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -220,7 +230,10 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
 
   // Clamp at render instead of in an effect: variant changes can shrink maxQty.
   const qty = Math.min(qtyRaw, maxQty);
-  const total = product.price * qty;
+  const subtotal = product.price * qty;
+  const deliveryFee = fulfillment === "delivery" ? (settings.deliveryFee ?? 0) : 0;
+  const total = subtotal + deliveryFee;
+  const deliveryIncomplete = fulfillment === "delivery" && (!recipientName.trim() || !recipientPhone.trim() || !shippingAddress.trim());
   const hasImages = product.imageUrls.length > 0;
   const notOpen = product.saleStatus && product.saleStatus !== "open";
   const fmt = (iso: string) => new Date(iso).toLocaleString(th ? "th-TH" : "en-GB", { dateStyle: "medium", timeStyle: "short" });
@@ -244,6 +257,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
   };
 
   const submit = async () => {
+    if (deliveryIncomplete) { setError(th ? "กรุณากรอกชื่อผู้รับ เบอร์โทร และที่อยู่จัดส่ง" : "Please fill in the recipient name, phone, and delivery address."); return; }
     if (!slipPath) { setError(th ? "กรุณาแนบสลิปการโอนเงิน" : "Please upload your payment slip."); return; }
     setSubmitting(true);
     setError(null);
@@ -251,7 +265,14 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
       const res = await fetch("/api/shop/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: [{ variantId, quantity: qty, customValue: variant?.allowCustom ? customValue.trim() : undefined, custom: customFields.length ? customAnswers : undefined }], slipPath, note: note || undefined }),
+        body: JSON.stringify({
+          items: [{ variantId, quantity: qty, customValue: variant?.allowCustom ? customValue.trim() : undefined, custom: customFields.length ? customAnswers : undefined }],
+          slipPath, note: note || undefined,
+          fulfillment,
+          recipientName: fulfillment === "delivery" ? recipientName.trim() : undefined,
+          recipientPhone: fulfillment === "delivery" ? recipientPhone.trim() : undefined,
+          shippingAddress: fulfillment === "delivery" ? shippingAddress.trim() : undefined,
+        }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Order failed");
@@ -403,11 +424,46 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
               <div style={{ background: "var(--bg-base)", borderRadius: "var(--radius-md)", padding: 14, marginBottom: 16, border: "1px solid var(--border-subtle)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 14, marginBottom: 4 }}>
                   <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>{product.name}{variant && product.variants.length > 1 ? ` · ${variant.label}` : ""} × {qty}</span>
-                  <span style={{ fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{baht(total)}</span>
+                  <span style={{ fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{baht(subtotal)}</span>
                 </div>
                 {customFields.filter((f) => (customAnswers[f.key] ?? "").trim()).map((f) => (
                   <div key={f.key} style={{ fontSize: 12, color: "var(--text-muted)" }}>{f.label}: <strong style={{ color: "var(--text-secondary)" }}>{customAnswers[f.key]}</strong></div>
                 ))}
+                {deliveryFee > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+                    <span>{th ? "ค่าจัดส่ง" : "Shipping"}</span><span>{baht(deliveryFee)}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontWeight: 800, fontSize: 15, marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>
+                  <span>{th ? "รวมทั้งหมด" : "Total"}</span><span>{baht(total)}</span>
+                </div>
+              </div>
+
+              {/* Fulfillment: pickup vs delivery (delivery only if the shop enables it) */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{th ? "การรับสินค้า" : "Fulfillment"}</label>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  {(["pickup", "delivery"] as const).map((opt) => {
+                    const disabled = opt === "delivery" && !settings.deliveryEnabled;
+                    const sel = fulfillment === opt;
+                    return (
+                      <button key={opt} disabled={disabled} onClick={() => setFulfillment(opt)}
+                        style={{ flex: 1, padding: "10px 12px", borderRadius: "var(--radius-md)", border: `2px solid ${sel ? "var(--accent-primary)" : "var(--border-subtle)"}`, background: sel ? "var(--accent-glow)" : "var(--bg-base)", fontWeight: 700, fontSize: 13, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}>
+                        {opt === "pickup" ? (th ? "รับเอง" : "Self-pickup") : (th ? `จัดส่ง${settings.deliveryFee ? ` (+${baht(settings.deliveryFee)})` : ""}` : `Delivery${settings.deliveryFee ? ` (+${baht(settings.deliveryFee)})` : ""}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+                {fulfillment === "pickup" && (settings.pickupInfo ?? "").trim() !== "" && (
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)", background: "var(--bg-base)", padding: "8px 12px", borderRadius: "var(--radius-md)", lineHeight: 1.6, overflowWrap: "anywhere", wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: parseRichText(settings.pickupInfo ?? "") }} />
+                )}
+                {fulfillment === "delivery" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <input value={recipientName} onChange={(e) => setRecipientName(e.target.value)} maxLength={120} placeholder={th ? "ชื่อผู้รับ *" : "Recipient name *"} style={customInputStyle} />
+                    <input value={recipientPhone} onChange={(e) => setRecipientPhone(e.target.value)} maxLength={40} inputMode="tel" placeholder={th ? "เบอร์โทร *" : "Phone *"} style={customInputStyle} />
+                    <textarea value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} maxLength={1000} rows={3} placeholder={th ? "ที่อยู่จัดส่ง *" : "Delivery address *"} style={{ ...customInputStyle, resize: "vertical" }} />
+                  </div>
+                )}
               </div>
 
               {/* Payment instructions + QR */}
@@ -444,7 +500,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
 
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setStep("select")} className="btn btn-ghost" style={{ flex: 1 }}>{th ? "ย้อนกลับ" : "Back"}</button>
-                <button onClick={submit} disabled={submitting || uploading || !slipPath} className="btn btn-primary" style={{ flex: 2, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <button onClick={submit} disabled={submitting || uploading || !slipPath || deliveryIncomplete} className="btn btn-primary" style={{ flex: 2, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                   {submitting && <Loader2 size={16} className="animate-spin" />}
                   {th ? "ยืนยันคำสั่งซื้อ" : "Place order"}
                 </button>
@@ -499,6 +555,13 @@ function OrderRow({ order, th }: { order: Order; th: boolean }) {
           </button>
         )}
       </div>
+      {order.fulfillment === "delivery" ? (
+        <p style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+          {th ? "จัดส่ง" : "Delivery"}{order.shippingFee ? ` (+${baht(order.shippingFee)})` : ""}{order.shippingAddress ? ` · ${order.shippingAddress}` : ""}
+        </p>
+      ) : order.fulfillment === "pickup" ? (
+        <p style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>{th ? "รับสินค้าเอง" : "Self-pickup"}</p>
+      ) : null}
       {order.status === "rejected" && order.rejectionReason && (
         <p style={{ marginTop: 10, fontSize: 13, color: "#ef4444", background: "rgba(239,68,68,0.06)", padding: "8px 12px", borderRadius: 8 }}>
           {th ? "เหตุผล: " : "Reason: "}{order.rejectionReason}

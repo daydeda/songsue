@@ -26,6 +26,11 @@ const orderSchema = z.object({
   // Object key from POST /api/shop/slip — server-generated "<uuid>.<ext>".
   slipPath: z.string().regex(/^[0-9a-f-]{36}\.(webp|gif|png|jpg|jpeg)$/i),
   note: z.string().max(500).optional(),
+  // Fulfillment. Recipient fields are required (server-side) only for delivery.
+  fulfillment: z.enum(["pickup", "delivery"]).default("pickup"),
+  recipientName: z.string().max(120).optional(),
+  recipientPhone: z.string().max(40).optional(),
+  shippingAddress: z.string().max(1000).optional(),
 });
 
 // GET /api/shop/orders — the signed-in buyer's own orders, newest first.
@@ -56,6 +61,11 @@ export async function GET() {
       rejectionReason: o.rejectionReason,
       hasSlip: Boolean(o.slipPath),
       createdAt: o.createdAt,
+      fulfillment: o.fulfillment,
+      shippingFee: o.shippingFee,
+      recipientName: o.recipientName,
+      recipientPhone: o.recipientPhone,
+      shippingAddress: o.shippingAddress,
       items: items
         .filter((i) => i.orderId === o.id)
         .map((i) => ({
@@ -114,7 +124,7 @@ export async function POST(req: Request) {
 
     const created = await db.transaction(async (tx) => {
       const [settings] = await tx
-        .select({ enabled: shopSettings.enabled })
+        .select({ enabled: shopSettings.enabled, deliveryEnabled: shopSettings.deliveryEnabled, deliveryFee: shopSettings.deliveryFee })
         .from(shopSettings)
         .orderBy(desc(shopSettings.updatedAt))
         .limit(1);
@@ -245,6 +255,26 @@ export async function POST(req: Request) {
         });
       }
 
+      // Fulfillment + flat delivery fee (server-authoritative; never trust the
+      // client's fee). Delivery requires the shop to allow it + a complete address.
+      let shippingFee = 0;
+      let recipientName: string | null = null;
+      let recipientPhone: string | null = null;
+      let shippingAddress: string | null = null;
+      if (data.fulfillment === "delivery") {
+        if (!settings.deliveryEnabled) {
+          return { error: "Delivery isn't available right now.", status: 403 as const };
+        }
+        recipientName = data.recipientName?.trim() || "";
+        recipientPhone = data.recipientPhone?.trim() || "";
+        shippingAddress = data.shippingAddress?.trim() || "";
+        if (!recipientName || !recipientPhone || !shippingAddress) {
+          return { error: "Please fill in the recipient name, phone, and delivery address.", status: 400 as const };
+        }
+        shippingFee = settings.deliveryFee;
+      }
+      total += shippingFee;
+
       const [order] = await tx
         .insert(shopOrders)
         .values({
@@ -253,6 +283,11 @@ export async function POST(req: Request) {
           slipPath: data.slipPath,
           totalAmount: total,
           note: data.note ?? null,
+          fulfillment: data.fulfillment,
+          recipientName,
+          recipientPhone,
+          shippingAddress,
+          shippingFee,
         })
         .returning({ id: shopOrders.id });
 

@@ -420,6 +420,12 @@ export const shopSettings = pgTable("shop_settings", {
   paymentInfo: text("payment_info").notNull().default(""),
   // Public URL (uploads bucket) of the PromptPay/bank QR image. Not sensitive.
   qrImageUrl: text("qr_image_url"),
+  // Delivery / fulfillment (Phase 2). When deliveryEnabled, buyers may choose
+  // delivery at checkout and pay a flat deliveryFee (฿) folded into their order
+  // total; pickupInfo is the where/when-to-collect text shown for self-pickup.
+  deliveryEnabled: boolean("delivery_enabled").notNull().default(false),
+  deliveryFee: integer("delivery_fee").notNull().default(0),
+  pickupInfo: text("pickup_info").notNull().default(""),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -495,6 +501,15 @@ export const shopOrders = pgTable("shop_orders", {
   totalAmount: integer("total_amount").notNull().default(0),
   // Optional buyer note (e.g. name on the slip, pickup preference).
   note: text("note"),
+  // Fulfillment (Phase 2): 'pickup' (default) | 'delivery'. For delivery the buyer
+  // supplies recipient name/phone/address (PDPA: personal data, shop-admin only)
+  // and pays shippingFee (฿) — a snapshot of shop_settings.delivery_fee folded into
+  // totalAmount at checkout. Pickup orders carry NULL recipient fields + fee 0.
+  fulfillment: text("fulfillment").notNull().default("pickup"),
+  recipientName: text("recipient_name"),
+  recipientPhone: text("recipient_phone"),
+  shippingAddress: text("shipping_address"),
+  shippingFee: integer("shipping_fee").notNull().default(0),
   reviewedBy: text("reviewed_by"),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   rejectionReason: text("rejection_reason"),

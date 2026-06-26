@@ -27,6 +27,11 @@ export async function GET() {
         slipPath: shopOrders.slipPath,
         createdAt: shopOrders.createdAt,
         reviewedAt: shopOrders.reviewedAt,
+        fulfillment: shopOrders.fulfillment,
+        shippingFee: shopOrders.shippingFee,
+        recipientName: shopOrders.recipientName,
+        recipientPhone: shopOrders.recipientPhone,
+        shippingAddress: shopOrders.shippingAddress,
         buyerName: users.name,
         buyerStudentId: users.studentId,
         buyerNickname: users.nickname,
@@ -49,6 +54,11 @@ export async function GET() {
       hasSlip: Boolean(o.slipPath),
       createdAt: o.createdAt,
       reviewedAt: o.reviewedAt,
+      fulfillment: o.fulfillment,
+      shippingFee: o.shippingFee,
+      recipientName: o.recipientName,
+      recipientPhone: o.recipientPhone,
+      shippingAddress: o.shippingAddress,
       buyer: { name: o.buyerName, studentId: o.buyerStudentId, nickname: o.buyerNickname },
       items: items
         .filter((i) => i.orderId === o.id)

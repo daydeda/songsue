@@ -7,7 +7,7 @@ import type { ShopCustomField, ShopCustomValue, ShopCustomFieldType } from "@/li
 import {
   ShoppingBag, Package, ReceiptText, Settings as SettingsIcon, Plus, Trash2, Pencil,
   Upload, Loader2, X, CheckCircle2, XCircle, Clock, GripVertical, Save, RotateCcw, Download,
-  Check, FileText,
+  Check, FileText, Truck, Store,
 } from "lucide-react";
 
 const baht = (n: number) => `฿${n.toLocaleString()}`;
@@ -59,6 +59,8 @@ function toLocalInput(d?: string | Date | null): string {
 interface AdminOrder {
   id: string; status: string; totalAmount: number; note: string | null; rejectionReason: string | null;
   hasSlip: boolean; createdAt: string; reviewedAt: string | null;
+  fulfillment: string; shippingFee: number;
+  recipientName: string | null; recipientPhone: string | null; shippingAddress: string | null;
   buyer: { name: string | null; studentId: string | null; nickname: string | null };
   items: { productName: string; variantLabel: string; customValues: ShopCustomValue[] | null; unitPrice: number; quantity: number }[];
 }
@@ -75,6 +77,8 @@ async function uploadImage(file: File): Promise<string> {
 interface ProductOrderRow {
   orderId: string; status: string; createdAt: string; reviewedAt: string | null;
   rejectionReason: string | null; orderTotal: number; slipPath: string | null; note: string | null;
+  fulfillment: string; shippingFee: number;
+  recipientName: string | null; recipientPhone: string | null; shippingAddress: string | null;
   variantLabel: string; customValues: ShopCustomValue[] | null; quantity: number; unitPrice: number;
   buyerName: string | null; nickname: string | null; studentId: string | null;
   email: string | null; phone: string | null; major: string | null; houseId: string | null;
@@ -121,7 +125,8 @@ async function exportProductXlsx(p: AdminProduct) {
     "Name", "Nickname", "Student ID", "Major", "House", "Email", "Phone",
     "Option", ...customLabels, "Qty", "Unit price (THB)", "Subtotal (THB)",
     "Status", "Ordered (Bangkok)", "Reviewed (Bangkok)", "Rejection reason",
-    "Slip uploaded", "Order total (THB)", "Note", "Order ID",
+    "Slip uploaded", "Order total (THB)", "Fulfillment", "Shipping (THB)",
+    "Recipient", "Recipient phone", "Delivery address", "Note", "Order ID",
   ];
   const wsRows = rows.map((r) => {
     const customCols: Record<string, string> = {};
@@ -147,6 +152,11 @@ async function exportProductXlsx(p: AdminProduct) {
     "Rejection reason": r.rejectionReason ?? "",
     "Slip uploaded": r.slipPath ? "Yes" : "No",
     "Order total (THB)": r.orderTotal,
+    "Fulfillment": r.fulfillment === "delivery" ? "Delivery" : "Self-pickup",
+    "Shipping (THB)": r.shippingFee,
+    "Recipient": r.recipientName ?? "",
+    "Recipient phone": r.recipientPhone ?? "",
+    "Delivery address": r.shippingAddress ?? "",
     "Note": r.note ?? "",
     "Order ID": r.orderId,
     };
@@ -726,10 +736,26 @@ function AdminOrderRow({ order, th, busy, onReview }: { order: AdminOrder; th: b
             )}
           </div>
         ))}
+        {order.shippingFee > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--text-muted)", marginTop: 6 }}>
+            <span>{th ? "ค่าจัดส่ง" : "Shipping"}</span><span>{baht(order.shippingFee)}</span>
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>
           <span>{th ? "รวม" : "Total"}</span><span>{baht(order.totalAmount)}</span>
         </div>
       </div>
+
+      {/* Fulfillment: pickup chip, or the delivery recipient + address block. */}
+      {order.fulfillment === "delivery" ? (
+        <div style={{ fontSize: 13, background: "var(--bg-base)", padding: "8px 12px", borderRadius: 8, marginBottom: 8, border: "1px solid var(--border-subtle)" }}>
+          <p style={{ fontWeight: 700, marginBottom: 3, display: "inline-flex", alignItems: "center", gap: 6, color: "var(--accent-primary)" }}><Truck size={14} /> {th ? "จัดส่ง" : "Delivery"}</p>
+          <p style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>{order.recipientName ?? "—"}{order.recipientPhone ? ` · ${order.recipientPhone}` : ""}</p>
+          {order.shippingAddress && <p style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", marginTop: 2 }}>{order.shippingAddress}</p>}
+        </div>
+      ) : (
+        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 8, display: "inline-flex", alignItems: "center", gap: 6 }}><Store size={14} /> {th ? "รับสินค้าเอง" : "Self-pickup"}</p>
+      )}
 
       {order.note && <p style={{ fontSize: 13, color: "var(--text-secondary)", background: "var(--bg-base)", padding: "8px 12px", borderRadius: 8, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><FileText size={13} style={{ flexShrink: 0 }} /> {order.note}</p>}
       {order.status === "rejected" && order.rejectionReason && <p style={{ fontSize: 13, color: "#ef4444", marginBottom: 8 }}>{th ? "เหตุผล: " : "Reason: "}{order.rejectionReason}</p>}
@@ -775,6 +801,9 @@ function SettingsTab({ th }: { th: boolean }) {
   const [enabled, setEnabled] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState("");
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
+  const [deliveryFee, setDeliveryFee] = useState<string>("0");
+  const [pickupInfo, setPickupInfo] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -784,7 +813,10 @@ function SettingsTab({ th }: { th: boolean }) {
 
   useEffect(() => {
     fetch("/api/admin/shop/settings").then((r) => r.json()).then((d) => {
-      if (d) { setEnabled(!!d.enabled); setPaymentInfo(d.paymentInfo ?? ""); setQrImageUrl(d.qrImageUrl ?? null); }
+      if (d) {
+        setEnabled(!!d.enabled); setPaymentInfo(d.paymentInfo ?? ""); setQrImageUrl(d.qrImageUrl ?? null);
+        setDeliveryEnabled(!!d.deliveryEnabled); setDeliveryFee(String(d.deliveryFee ?? 0)); setPickupInfo(d.pickupInfo ?? "");
+      }
     }).finally(() => setLoading(false));
   }, []);
 
@@ -795,7 +827,7 @@ function SettingsTab({ th }: { th: boolean }) {
       const res = await fetch("/api/admin/shop/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, paymentInfo, qrImageUrl: qrImageUrl || null }),
+        body: JSON.stringify({ enabled, paymentInfo, qrImageUrl: qrImageUrl || null, deliveryEnabled, deliveryFee: Math.max(0, Math.round(Number(deliveryFee) || 0)), pickupInfo }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Save failed");
@@ -839,6 +871,22 @@ function SettingsTab({ th }: { th: boolean }) {
       <Field label={th ? "คำแนะนำการชำระเงิน" : "Payment instructions"}>
         <RichTextEditor value={paymentInfo} onChange={setPaymentInfo} rows={4} placeholder={th ? "เช่น พร้อมเพย์ 08x-xxx-xxxx (ชื่อ) — โอนแล้วแนบสลิป" : "e.g. PromptPay 08x-xxx-xxxx (Name) — transfer then upload slip"} />
       </Field>
+
+      {/* Delivery / fulfillment (flat fee) */}
+      <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={deliveryEnabled} onChange={(e) => setDeliveryEnabled(e.target.checked)} />
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{th ? "เปิดให้จัดส่ง (พร้อมค่าส่งแบบเหมา)" : "Offer delivery (flat fee)"}</span>
+        </label>
+        {deliveryEnabled && (
+          <Field label={th ? "ค่าจัดส่ง (บาท)" : "Delivery fee (฿)"} style={{ maxWidth: 200 }}>
+            <input type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} style={inputStyle} />
+          </Field>
+        )}
+        <Field label={th ? "คำแนะนำการรับสินค้าเอง (ที่ไหน/เมื่อไหร่)" : "Self-pickup instructions (where / when)"}>
+          <RichTextEditor value={pickupInfo} onChange={setPickupInfo} rows={3} placeholder={th ? "เช่น รับที่ห้อง SMO ชั้น 1 อาคาร CAMT จ.–ศ. 12:00–13:00" : "e.g. Collect at the SMO room, CAMT building, Mon–Fri 12:00–13:00"} />
+        </Field>
+      </div>
 
       {error && <p style={{ color: "#ef4444", fontSize: 13 }}>{error}</p>}
 

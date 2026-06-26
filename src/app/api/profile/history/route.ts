@@ -15,6 +15,7 @@ interface EventFormStatus {
   sortOrder: number;
   formStatus: FormStatus;
   formPoints: number;
+  formIndividualPoints: number;
   opensAt: Date | string | null;
   closesAt: Date | string | null;
 }
@@ -58,6 +59,7 @@ export async function GET() {
         sortOrder: formObj.sortOrder,
         formStatus,
         formPoints: formObj.pointsAwarded ?? 0,
+        formIndividualPoints: formObj.individualPointsAwarded ?? 0,
         opensAt: formObj.opensAt,
         closesAt: formObj.closesAt,
       };

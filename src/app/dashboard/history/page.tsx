@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock, Save, AlertTriangle, Paperclip } from "lucide-react";
+import { Calendar, History, Trophy, Sparkles, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock, Save, AlertTriangle, Paperclip } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
 import {
@@ -34,6 +34,7 @@ interface EventFormStatus {
   sortOrder: number;
   formStatus: "available" | "submitted" | "closed" | "upcoming";
   formPoints: number;
+  formIndividualPoints: number;
   opensAt: string | null;
   closesAt: string | null;
 }
@@ -604,7 +605,20 @@ export default function HistoryPage() {
                               {FORM_TYPE_LABELS[form.formType] || form.formType}
                             </span>
                             <span style={{ minWidth: 0, whiteSpace: "normal", overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
-                            <span style={{ opacity: 0.85, flexShrink: 0 }}>(+{form.formPoints} PTS)</span>
+                            {/* Two separate rewards: house contest points (to the
+                                winning house) vs individual points (to you on submit). */}
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                              {form.formPoints > 0 && (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, opacity: 0.9, background: "rgba(255,255,255,0.18)", padding: "1px 7px", borderRadius: 6 }}>
+                                  <Trophy size={11} style={{ flexShrink: 0 }} /> +{form.formPoints} {t.histHousePts}
+                                </span>
+                              )}
+                              {form.formIndividualPoints > 0 && (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, opacity: 0.9, background: "rgba(255,255,255,0.18)", padding: "1px 7px", borderRadius: 6 }}>
+                                  <Sparkles size={11} style={{ flexShrink: 0 }} /> +{form.formIndividualPoints} {t.histYouPts}
+                                </span>
+                              )}
+                            </span>
                           </button>
                         )}
                         {form.formStatus === "submitted" && (

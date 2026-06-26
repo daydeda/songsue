@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useLanguage } from "@/lib/LanguageContext";
 import { parseRichText } from "@/lib/rich-text";
 import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
 import { computeProductDeliveryFee, type ShopDeliveryTier } from "@/lib/shop-delivery";
 import {
-  ShoppingBag, X, ChevronLeft, ChevronRight, Upload, Loader2, CheckCircle2,
+  ShoppingBag, X, ChevronLeft, ChevronRight, ChevronDown, Check, Upload, Loader2, CheckCircle2,
   Clock, XCircle, Package, Minus, Plus, ReceiptText,
 } from "lucide-react";
 
@@ -345,18 +346,22 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
               {product.variants.length > 1 && (
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{th ? "ตัวเลือก / ไซส์" : "Option / Size"}</label>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {product.variants.map((v) => {
+                  <CustomSelect
+                    ariaLabel={th ? "ตัวเลือก / ไซส์" : "Option / Size"}
+                    value={variantId}
+                    placeholder={th ? "— เลือกตัวเลือก —" : "— Select an option —"}
+                    onChange={(id) => { setVariantId(id); setCustomValue(""); }}
+                    options={product.variants.map((v) => {
                       const out = v.remaining != null && v.remaining <= 0;
-                      const sel = v.id === variantId;
-                      return (
-                        <button key={v.id} disabled={out} onClick={() => { setVariantId(v.id); setCustomValue(""); }}
-                          style={{ padding: "8px 14px", borderRadius: "var(--radius-md)", border: `2px solid ${sel ? "var(--accent-primary)" : "var(--border-subtle)"}`, background: sel ? "var(--accent-glow)" : "var(--bg-base)", fontWeight: 700, fontSize: 13, cursor: out ? "not-allowed" : "pointer", opacity: out ? 0.4 : 1, textDecoration: out ? "line-through" : "none", maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere", wordBreak: "break-word", textAlign: "left", lineHeight: 1.35 }}>
-                          {v.label}{v.remaining != null ? ` (${Math.max(0, v.remaining)})` : ""}
-                        </button>
-                      );
+                      return {
+                        value: v.id,
+                        label: v.label,
+                        hint: v.remaining != null ? (out ? (th ? "หมด" : "Sold out") : (th ? `เหลือ ${v.remaining}` : `${v.remaining} left`)) : undefined,
+                        disabled: out,
+                        strike: out,
+                      };
                     })}
-                  </div>
+                  />
                 </div>
               )}
 
@@ -381,14 +386,13 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                     {f.label}{f.required ? " *" : ""}
                   </label>
                   {f.type === "select" ? (
-                    <select
+                    <CustomSelect
+                      ariaLabel={f.label}
                       value={customAnswers[f.key] ?? ""}
-                      onChange={(e) => setCustomAnswers((a) => ({ ...a, [f.key]: e.target.value }))}
-                      style={customInputStyle}
-                    >
-                      <option value="">{th ? "— เลือก —" : "— Select —"}</option>
-                      {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                      placeholder={th ? "— เลือก —" : "— Select —"}
+                      onChange={(val) => setCustomAnswers((a) => ({ ...a, [f.key]: val }))}
+                      options={(f.options ?? []).map((o) => ({ value: o, label: o }))}
+                    />
                   ) : (
                     <input
                       type={f.type === "number" ? "number" : "text"}
@@ -597,3 +601,114 @@ const navBtn = (side: "left" | "right"): React.CSSProperties => ({
   width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.45)",
   color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
 });
+
+interface DropOption { value: string; label: string; hint?: string; disabled?: boolean; strike?: boolean }
+
+// Themed dropdown used for the variant picker and custom select-fields. The menu
+// is portaled to <body> so it never clips inside the modal's scroll container,
+// and is anchored to its trigger with fixed positioning (flips up when there's
+// little room below). Closes on outside-click, Escape, scroll, or resize.
+function CustomSelect({ value, options, onChange, placeholder, ariaLabel }: {
+  value: string; options: DropOption[]; onChange: (v: string) => void; placeholder: string; ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<{ left: number; top: number; bottom: number; width: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const place = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ left: r.left, top: r.top, bottom: r.bottom, width: r.width });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const close = () => setOpen(false);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onDown = (e: MouseEvent) => {
+      if (triggerRef.current?.contains(e.target as Node)) return;
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    // Capture scrolls from any ancestor (the modal body scrolls) so the menu
+    // never drifts away from its trigger.
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open, place]);
+
+  const selected = options.find((o) => o.value === value);
+  const MENU_MAX = 260;
+  const spaceBelow = rect ? window.innerHeight - rect.bottom : 0;
+  const openUp = rect ? spaceBelow < 200 && rect.top > spaceBelow : false;
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        style={{ ...customInputStyle, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", textAlign: "left" }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: selected ? "inherit" : "var(--text-muted)", fontWeight: selected ? 600 : 400 }}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <ChevronDown size={18} style={{ flexShrink: 0, color: "var(--text-muted)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      {open && rect && createPortal(
+        <div
+          ref={menuRef}
+          role="listbox"
+          style={{
+            position: "fixed", left: rect.left, width: rect.width, zIndex: 3000,
+            ...(openUp ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }),
+            maxHeight: MENU_MAX, overflowY: "auto", WebkitOverflowScrolling: "touch",
+            background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-md)", boxShadow: "0 12px 32px rgba(0,0,0,0.28)", padding: 4,
+          }}
+        >
+          {options.map((o) => {
+            const sel = o.value === value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={sel}
+                disabled={o.disabled}
+                onClick={() => { if (o.disabled) return; onChange(o.value); setOpen(false); }}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                  padding: "10px 12px", borderRadius: 8, border: "none",
+                  background: sel ? "var(--accent-glow)" : "transparent",
+                  color: o.disabled ? "var(--text-muted)" : "inherit",
+                  cursor: o.disabled ? "not-allowed" : "pointer", textAlign: "left",
+                  fontSize: 14, fontWeight: sel ? 700 : 500, fontFamily: "inherit", opacity: o.disabled ? 0.55 : 1,
+                }}
+              >
+                <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word", textDecoration: o.strike ? "line-through" : "none" }}>
+                  {o.label}{o.hint ? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {o.hint}</span> : null}
+                </span>
+                {sel && <Check size={16} style={{ flexShrink: 0, color: "var(--accent-primary)" }} />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}

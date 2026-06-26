@@ -52,7 +52,7 @@ export async function GET() {
       buyer: { name: o.buyerName, studentId: o.buyerStudentId, nickname: o.buyerNickname },
       items: items
         .filter((i) => i.orderId === o.id)
-        .map((i) => ({ productName: i.productName, variantLabel: i.variantLabel, unitPrice: i.unitPrice, quantity: i.quantity })),
+        .map((i) => ({ productName: i.productName, variantLabel: i.variantLabel, customValues: i.customValues ?? null, unitPrice: i.unitPrice, quantity: i.quantity })),
     }));
 
     return NextResponse.json(result);

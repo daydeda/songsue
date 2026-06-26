@@ -87,6 +87,7 @@ export async function GET() {
       closesAt: p.closesAt,
       // 'upcoming' (before opensAt) | 'closed' (after closesAt) | 'open'
       saleStatus: p.opensAt && now < p.opensAt ? "upcoming" : p.closesAt && now > p.closesAt ? "closed" : "open",
+      customFields: p.customFields ?? [],
       variants: variants
         .filter((v) => v.productId === p.id)
         .map((v) => ({

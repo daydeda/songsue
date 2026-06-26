@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { shopOrderItems, shopOrders, shopProducts, shopSettings, shopVariants, users } from "@/db/schema";
 import { buildViewer, isEligibleFor } from "@/lib/event-access";
+import { validateCustomAnswers } from "@/lib/shop-custom-fields";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -16,6 +17,9 @@ const orderSchema = z.object({
         quantity: z.number().int().min(1).max(99),
         // Required only when the chosen variant is an "Other (specify)" option.
         customValue: z.string().max(120).optional(),
+        // Answers to the product's custom fields (key → value), validated
+        // server-side against shop_products.custom_fields. See shop-custom-fields.ts.
+        custom: z.record(z.string().max(40), z.string().max(500)).optional(),
       })
     )
     .min(1),
@@ -57,6 +61,7 @@ export async function GET() {
         .map((i) => ({
           productName: i.productName,
           variantLabel: i.variantLabel,
+          customValues: i.customValues ?? null,
           unitPrice: i.unitPrice,
           quantity: i.quantity,
         })),
@@ -85,9 +90,13 @@ export async function POST(req: Request) {
     // Consolidate duplicate lines so a variant is checked once with its full qty.
     const qtyByVariant = new Map<string, number>();
     const customByVariant = new Map<string, string>();
+    // Custom-field answers are per product but submitted per item (by variant);
+    // keep the first set seen for each variant (the UI sends one item per order).
+    const customFieldsByVariant = new Map<string, Record<string, string>>();
     for (const item of data.items) {
       qtyByVariant.set(item.variantId, (qtyByVariant.get(item.variantId) ?? 0) + item.quantity);
       if (item.customValue?.trim()) customByVariant.set(item.variantId, item.customValue.trim());
+      if (item.custom && !customFieldsByVariant.has(item.variantId)) customFieldsByVariant.set(item.variantId, item.custom);
     }
     const variantIds = [...qtyByVariant.keys()];
 
@@ -191,6 +200,13 @@ export async function POST(req: Request) {
           variantLabel = `${v.label}: ${custom}`;
         }
 
+        // Custom fields (e.g. jersey name/number) — validated against the product's
+        // config and snapshotted onto the line. Server-authoritative.
+        const customResult = validateCustomAnswers(product.customFields, customFieldsByVariant.get(v.id), product.name);
+        if (!customResult.ok) {
+          return { error: customResult.error, status: 400 as const };
+        }
+
         // Stock cap (per variant).
         if (v.stock != null) {
           const remaining = v.stock - (soldByVariant.get(v.id) ?? 0);
@@ -223,6 +239,7 @@ export async function POST(req: Request) {
           variantId: v.id,
           productName: product.name,
           variantLabel,
+          customValues: customResult.snapshot.length ? customResult.snapshot : null,
           unitPrice: product.price,
           quantity: qty,
         });

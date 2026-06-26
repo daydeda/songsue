@@ -750,6 +750,16 @@ async function migrate() {
   await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS target_international boolean DEFAULT true`;
   console.log("  ✅ shop_products.allowed_roles / allowed_majors / target_thai / target_international");
 
+  // 48. Per-product custom fields (jersey name/number, engraving, etc.).
+  // shop_products.custom_fields holds the field CONFIG (jsonb array of
+  // {key,label,type,required,…}); shop_order_items.custom_values holds the buyer's
+  // snapshotted answers ([{label,value}]) captured at checkout. Both nullable
+  // (NULL = no custom fields / none filled). Additive, non-destructive, idempotent
+  // via ADD COLUMN IF NOT EXISTS. See src/lib/shop-custom-fields.ts.
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS custom_fields jsonb`;
+  await sql`ALTER TABLE shop_order_items ADD COLUMN IF NOT EXISTS custom_values jsonb`;
+  console.log("  ✅ shop_products.custom_fields / shop_order_items.custom_values");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

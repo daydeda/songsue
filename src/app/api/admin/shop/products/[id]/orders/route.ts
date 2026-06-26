@@ -38,6 +38,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         slipPath: shopOrders.slipPath,
         note: shopOrders.note,
         variantLabel: shopOrderItems.variantLabel,
+        customValues: shopOrderItems.customValues,
         quantity: shopOrderItems.quantity,
         unitPrice: shopOrderItems.unitPrice,
         buyerName: users.name,

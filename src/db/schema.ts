@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
+import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
 
 export const houses = pgTable("houses", {
   id: text("id").primaryKey(), // e.g. 'red', 'blue', 'green', 'yellow'
@@ -454,6 +455,11 @@ export const shopProducts = pgTable("shop_products", {
   // is treated as both true by the predicate. Shop admins always see everything.
   targetThai: boolean("target_thai").default(true),
   targetInternational: boolean("target_international").default(true),
+  // Generic per-product personalization fields (e.g. jersey name/number). Array of
+  // { key, label, type: text|number|select, required, maxLength|min|max|options }.
+  // See src/lib/shop-custom-fields.ts. NULL/[] = no custom fields. Buyers' answers
+  // are snapshotted onto shop_order_items.custom_values at checkout.
+  customFields: jsonb("custom_fields").$type<ShopCustomField[]>(),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -508,6 +514,10 @@ export const shopOrderItems = pgTable("shop_order_items", {
   variantId: uuid("variant_id").references(() => shopVariants.id, { onDelete: "set null" }),
   productName: text("product_name").notNull(),
   variantLabel: text("variant_label").notNull(),
+  // Snapshot of the buyer's answers to the product's custom fields at checkout:
+  // [{ label, value }] (self-describing, immune to later config edits). NULL = the
+  // product had no custom fields / none were filled. See src/lib/shop-custom-fields.ts.
+  customValues: jsonb("custom_values").$type<ShopCustomValue[]>(),
   unitPrice: integer("unit_price").notNull(),
   quantity: integer("quantity").notNull(),
 }, (table) => ([

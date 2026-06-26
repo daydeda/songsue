@@ -7,6 +7,7 @@ import { AuditService } from "../audit/audit.service";
 import { canGiveIndividualScore } from "@/lib/admin-access";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
+type DBTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export interface ScanResult {
   status: "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "not_found" | "quota_full" | "walk_ins_disabled" | "found" | "not_registered" | "error";
@@ -81,6 +82,10 @@ export class ScannerService {
     // Human-readable day label for audit logs (e.g. "Day 1"). Sessions are ordered
     // by sortOrder; the title overrides when set.
     const sessionLabel = session.title?.trim() || "this session";
+
+    // Per-attendee points this event grants on each attended check-in (0 = none).
+    // Awarded inside every "attended" transition below, in the same transaction.
+    const individualPoints = event.individualPointsAwarded ?? 0;
 
     const hasMedicalCondition = this.evaluateMedicalCondition(student);
 
@@ -274,6 +279,15 @@ export class ScannerService {
             .returning({ id: attendance.id });
 
           if (rows.length > 0) {
+            await this.awardAttendanceIndividualPoints(tx, {
+              studentId: student.id,
+              studentName: student.name,
+              houseId: student.houseId,
+              eventId,
+              eventTitle: event.title,
+              points: individualPoints,
+              sessionLabel,
+            });
             await AuditService.logActionInternal(tx, {
               actorId,
               targetId: student.id,
@@ -325,6 +339,15 @@ export class ScannerService {
               .returning({ id: attendance.id });
 
             if (rows.length > 0) {
+              await this.awardAttendanceIndividualPoints(tx, {
+                studentId: student.id,
+                studentName: student.name,
+                houseId: student.houseId,
+                eventId,
+                eventTitle: event.title,
+                points: individualPoints,
+                sessionLabel,
+              });
               await AuditService.logActionInternal(tx, {
                 actorId,
                 targetId: student.id,
@@ -418,6 +441,15 @@ export class ScannerService {
 
           if (inserted.length === 0) throw new Error("ALREADY_CHECKED_IN");
 
+          await this.awardAttendanceIndividualPoints(tx, {
+            studentId: student.id,
+            studentName: student.name,
+            houseId: student.houseId,
+            eventId,
+            eventTitle: event.title,
+            points: individualPoints,
+            sessionLabel,
+          });
           await AuditService.logActionInternal(tx, {
             actorId,
             targetId: student.id,
@@ -444,6 +476,68 @@ export class ScannerService {
 
     // Walk-in scan only — staff sees medical alert before deciding to confirm
     return { status: "pending_confirmation", isWalkIn: true, student: studentWithMedical };
+  }
+
+  /**
+   * Awards an event's per-attendee `individualPointsAwarded` to a student the moment
+   * their check-in becomes 'attended'. Runs INSIDE the caller's check-in transaction,
+   * so the points and the attendance row commit together — and only when the row
+   * actually transitioned (the callers guard on rows.length > 0), which keeps it
+   * idempotent: a re-scan that updates 0 rows never re-awards. Per-day by design —
+   * each attended session check-in awards again. No-op when the event grants 0.
+   *
+   * Mirrors the manual 'score' action: increments users.points, fires the same 100-pt
+   * milestone house bonus, and writes a score_history row. No audit log here — the
+   * check-in itself is already audited by each caller.
+   */
+  private static async awardAttendanceIndividualPoints(
+    tx: DBTransaction,
+    params: {
+      studentId: string;
+      studentName: string;
+      houseId: string | null;
+      eventId: string;
+      eventTitle: string;
+      points: number;
+      sessionLabel: string;
+    }
+  ): Promise<void> {
+    const { studentId, studentName, houseId, eventId, eventTitle, points, sessionLabel } = params;
+    if (!points || points <= 0) return;
+
+    const [result] = await tx
+      .update(users)
+      .set({ points: sql`COALESCE(${users.points}, 0) + ${points}` })
+      .where(eq(users.id, studentId))
+      .returning({ newPoints: users.points });
+
+    const newPoints = result?.newPoints ?? points;
+    const previousPoints = newPoints - points;
+
+    if (houseId) {
+      await tx.insert(scoreHistory).values({
+        houseId,
+        eventId: eventId || null,
+        delta: 0,
+        reason: `Awarded ${points} individual points to ${studentName} for attending "${eventTitle}" (${sessionLabel})`,
+      });
+    }
+
+    // 100-pt milestone → +2 house points, identical rule to the manual score action.
+    const milestoneDiff = Math.floor(newPoints / 100) - Math.floor(previousPoints / 100);
+    if (milestoneDiff > 0 && houseId) {
+      const housePointsAdded = milestoneDiff * 2;
+      await tx
+        .update(houses)
+        .set({ points: sql`${houses.points} + ${housePointsAdded}` })
+        .where(eq(houses.id, houseId));
+      await tx.insert(scoreHistory).values({
+        houseId,
+        eventId: eventId || null,
+        delta: housePointsAdded,
+        reason: `Student ${studentName} reached 100 point milestone (+${newPoints} total points) from activity "${eventTitle}"`,
+      });
+    }
   }
 
   /**

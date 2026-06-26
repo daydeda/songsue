@@ -712,6 +712,19 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_score_history_form ON score_history (form_id)`;
   console.log("  ✅ score_history.form_id (+ FK, index)");
 
+  // 45. events.individual_points_awarded — a SECOND, independent point pool per
+  // event. points_awarded (step 4) is the house winner bonus (winner-take-all at
+  // event-end); this is per-attendee individual points added to users.points the
+  // moment a check-in becomes 'attended' (per session, so multi-day attendance
+  // compounds). Additive, nullable-with-default, non-destructive: existing events
+  // default to 0 (no individual points), unchanged from before. Idempotent via
+  // ADD COLUMN IF NOT EXISTS.
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS individual_points_awarded integer DEFAULT 0
+  `;
+  console.log("  ✅ events.individual_points_awarded");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

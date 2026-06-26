@@ -17,6 +17,7 @@ const eventUpdateSchema = z.object({
   quota: z.number().int().min(0).optional().nullable(),
   location: z.string().optional().nullable(),
   pointsAwarded: z.number().int().min(0).optional().nullable(),
+  individualPointsAwarded: z.number().int().min(0).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
@@ -85,6 +86,7 @@ export async function PUT(
             ...(data.quota !== undefined && { quota: data.quota }),
             ...(data.location !== undefined && { location: data.location }),
             ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
+            ...(data.individualPointsAwarded !== undefined && { individualPointsAwarded: data.individualPointsAwarded }),
             ...(posters !== undefined
               ? { imageUrls: posters, imageUrl: coverFromPosters }
               : (data.imageUrl !== undefined && { imageUrl: data.imageUrl })),

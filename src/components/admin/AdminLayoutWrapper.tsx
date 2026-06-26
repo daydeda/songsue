@@ -4,20 +4,23 @@ import { useState } from "react";
 import { Menu, X, User } from "lucide-react";
 import { AdminNav } from "./AdminNav";
 import { LanguageProvider } from "@/lib/LanguageContext";
+import { effectiveRoles } from "@/lib/admin-access";
 import Link from "next/link";
 
-export function AdminLayoutWrapper({ 
-  children, 
-  user 
-}: { 
-  children: React.ReactNode; 
+export function AdminLayoutWrapper({
+  children,
+  user
+}: {
+  children: React.ReactNode;
   user: {
     name?: string | null;
     image?: string | null;
     role?: string | null;
+    roles?: string[] | null;
   };
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const roles = effectiveRoles(user.role, user.roles);
 
   return (
     <LanguageProvider>
@@ -87,7 +90,7 @@ export function AdminLayoutWrapper({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <AdminNav role={user.role} />
+          <AdminNav roles={roles} />
         </div>
 
         <div className="mt-auto pt-6 border-t border-[var(--border-subtle)]">

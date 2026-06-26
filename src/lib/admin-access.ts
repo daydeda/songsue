@@ -56,3 +56,48 @@ export function canGiveIndividualScore(role?: string | null): boolean {
 export function adminLandingHref(role?: string | null): string {
   return isScannerOnlyRole(role) ? SCANNER_HREF : "/admin/dashboard";
 }
+
+/* ---------------------------------------------------------------------------
+ * Multi-role predicates. A user holds a SET of roles (users.roles[]); their
+ * singular users.role is just the highest-priority one (see auth.getPrimaryRole).
+ * Gating must consider ALL their roles, or a user whose admin-granting role isn't
+ * the primary one (e.g. a club/major president whose primary resolves to anusmo)
+ * gets locked out of the admin area even though one of their roles allows it.
+ * These wrap the single-role predicates so every layer (proxy, entry points,
+ * AdminNav, landing) stays consistent with admin/layout.tsx.
+ * ------------------------------------------------------------------------- */
+
+// Full-admin roles = admin-entry roles that are NOT scanner-only. Holding any of
+// these means a real admin (dashboard + their allowed sections), not scanner-confined.
+const FULL_ADMIN_ROLES = (ADMIN_ENTRY_ROLES as readonly string[]).filter(
+  (r) => !(SCANNER_ONLY_ROLES as readonly string[]).includes(r)
+);
+
+// Resolve a user's effective role set: roles[] when populated, else the singular
+// role, else "student". (An empty roles[] is truthy, so `roles || [role]` would
+// wrongly yield [] and lock the user out — mirror auth.getPrimaryRole's guard.)
+export function effectiveRoles(role?: string | null, roles?: string[] | null): string[] {
+  if (roles && roles.length > 0) return roles;
+  return role ? [role] : ["student"];
+}
+
+// May any of these roles enter the admin area at all?
+export function canEnterAdminAny(roles: string[]): boolean {
+  return roles.some(canEnterAdmin);
+}
+
+// Scanner-only iff the set can enter admin but holds NO full-admin role — i.e.
+// every admin-granting role they have is scanner-only.
+export function isScannerOnlyAny(roles: string[]): boolean {
+  return canEnterAdminAny(roles) && !roles.some((r) => FULL_ADMIN_ROLES.includes(r));
+}
+
+// May any of these roles award/deduct individual student points?
+export function canGiveIndividualScoreAny(roles: string[]): boolean {
+  return roles.some(canGiveIndividualScore);
+}
+
+// Landing href for a role set (scanner-only → scanner, else dashboard).
+export function adminLandingHrefForRoles(roles: string[]): string {
+  return isScannerOnlyAny(roles) ? SCANNER_HREF : "/admin/dashboard";
+}

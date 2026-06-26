@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { useSession } from "next-auth/react";
-import { canGiveIndividualScore } from "@/lib/admin-access";
+import { canGiveIndividualScoreAny, effectiveRoles } from "@/lib/admin-access";
 import { usePolling } from "@/lib/usePolling";
 import dynamic from "next/dynamic";
 
@@ -102,7 +102,7 @@ export default function QRScannerPage() {
   const { data: session } = useSession();
   // Club/Major presidents are check-in only — hide the Individual Score mode.
   // The server (scan API + ScannerService) is the real gate; this is UX only.
-  const canScore = canGiveIndividualScore(session?.user?.role);
+  const canScore = canGiveIndividualScoreAny(effectiveRoles(session?.user?.role, session?.user?.roles));
   const [events, setEvents] = useState<Event[]>([]);
   const [eventId, setEventId] = useState<string>("");
   // Which session (day) check-ins are recorded against. Defaults to "today".

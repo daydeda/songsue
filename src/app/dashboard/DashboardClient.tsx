@@ -29,6 +29,7 @@ import {
   User,
   RefreshCw,
   Trophy,
+  Sparkles,
   ArrowRight,
   Settings,
   X,
@@ -74,6 +75,7 @@ type Event = {
   imageUrl?: string;
   imageUrls?: string[] | null;
   pointsAwarded?: number;
+  individualPointsAwarded?: number;
   // Pre-test (K_pre) gate. Present when the event has a pre-test form; `status`
   // is "open" (student must complete it), "submitted" (already done), or
   // "upcoming"/"closed"/"awarded" (can't be submitted, so not forced).
@@ -931,28 +933,47 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                            </span>
                          </div>
 
-                         {/* Points Badge */}
-                         {e.pointsAwarded !== undefined && (
-                           <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
-                             <div style={{ 
-                               background: "rgba(0, 0, 0, 0.7)", 
-                               backdropFilter: "blur(8px)", 
-                               color: "#fff", 
-                               padding: "6px 12px", 
-                               borderRadius: 14, 
-                               fontSize: 11, 
-                               fontWeight: 900, 
-                               display: "inline-flex", 
-                               alignItems: "center", 
-                               gap: 6, 
+                         {/* Points Badges — house winner bonus + (when set) the individual points the student earns just by checking in */}
+                         <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                           {e.pointsAwarded !== undefined && (
+                             <div style={{
+                               background: "rgba(0, 0, 0, 0.7)",
+                               backdropFilter: "blur(8px)",
+                               color: "#fff",
+                               padding: "6px 12px",
+                               borderRadius: 14,
+                               fontSize: 11,
+                               fontWeight: 900,
+                               display: "inline-flex",
+                               alignItems: "center",
+                               gap: 6,
                                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                                border: "1px solid rgba(255, 255, 255, 0.1)"
                              }}>
                                <Trophy size={12} style={{ color: "#fbbf24" }} />
                                <span>{e.pointsAwarded} PTS</span>
                              </div>
-                           </div>
-                         )}
+                           )}
+                           {(e.individualPointsAwarded ?? 0) > 0 && (
+                             <div style={{
+                               background: "rgba(0, 0, 0, 0.7)",
+                               backdropFilter: "blur(8px)",
+                               color: "#fff",
+                               padding: "6px 12px",
+                               borderRadius: 14,
+                               fontSize: 11,
+                               fontWeight: 900,
+                               display: "inline-flex",
+                               alignItems: "center",
+                               gap: 6,
+                               boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                               border: "1px solid rgba(255, 255, 255, 0.1)"
+                             }} title={t.dashIndividualPtsHint}>
+                               <Sparkles size={12} style={{ color: "var(--accent-primary)" }} />
+                               <span>+{e.individualPointsAwarded} {t.dashIndividualPtsYou}</span>
+                             </div>
+                           )}
+                         </div>
                       </div>
 
                       {/* Content Area */}
@@ -1840,28 +1861,47 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                       </span>
                     </div>
 
-                    {/* Points Badge */}
-                    {liveEvent.pointsAwarded !== undefined && (
-                      <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
-                        <div style={{ 
-                          background: "rgba(0, 0, 0, 0.7)", 
-                          backdropFilter: "blur(8px)", 
-                          color: "#fff", 
-                          padding: "6px 12px", 
-                          borderRadius: 12, 
-                          fontSize: 11, 
-                          fontWeight: 900, 
-                          display: "inline-flex", 
-                          alignItems: "center", 
-                          gap: 6, 
+                    {/* Points Badges — house winner bonus + (when set) the individual points the student earns just by checking in */}
+                    <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {liveEvent.pointsAwarded !== undefined && (
+                        <div style={{
+                          background: "rgba(0, 0, 0, 0.7)",
+                          backdropFilter: "blur(8px)",
+                          color: "#fff",
+                          padding: "6px 12px",
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 900,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
                           boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                           border: "1px solid rgba(255, 255, 255, 0.1)"
                         }}>
                           <Trophy size={12} style={{ color: "#fbbf24" }} />
                           <span>{liveEvent.pointsAwarded} PTS</span>
                         </div>
-                      </div>
-                    )}
+                      )}
+                      {(liveEvent.individualPointsAwarded ?? 0) > 0 && (
+                        <div style={{
+                          background: "rgba(0, 0, 0, 0.7)",
+                          backdropFilter: "blur(8px)",
+                          color: "#fff",
+                          padding: "6px 12px",
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 900,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                          border: "1px solid rgba(255, 255, 255, 0.1)"
+                        }} title={t.dashIndividualPtsHint}>
+                          <Sparkles size={12} style={{ color: "var(--accent-primary)" }} />
+                          <span>+{liveEvent.individualPointsAwarded} {t.dashIndividualPtsYou}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : null}
 

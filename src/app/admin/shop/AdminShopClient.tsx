@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import type { ShopCustomField, ShopCustomValue, ShopCustomFieldType } from "@/lib/shop-custom-fields";
 import {
   ShoppingBag, Package, ReceiptText, Settings as SettingsIcon, Plus, Trash2, Pencil,
   Upload, Loader2, X, CheckCircle2, XCircle, Clock, GripVertical, Save, RotateCcw, Download,
@@ -28,6 +29,14 @@ interface AdminProduct {
   // to everyone. Admins always see every product.
   allowedRoles: string[]; allowedMajors: string[];
   targetThai: boolean; targetInternational: boolean;
+  // Per-product personalization fields (e.g. jersey name/number).
+  customFields: ShopCustomField[];
+}
+
+// Editor row for one custom field (key is assigned at save time, by index).
+interface FieldDraft {
+  label: string; type: ShopCustomFieldType; required: boolean;
+  maxLength: number | null; min: number | null; max: number | null; options: string[];
 }
 
 // Roles a product's visibility can be restricted to (mirrors the events targeting
@@ -51,7 +60,7 @@ interface AdminOrder {
   id: string; status: string; totalAmount: number; note: string | null; rejectionReason: string | null;
   hasSlip: boolean; createdAt: string; reviewedAt: string | null;
   buyer: { name: string | null; studentId: string | null; nickname: string | null };
-  items: { productName: string; variantLabel: string; unitPrice: number; quantity: number }[];
+  items: { productName: string; variantLabel: string; customValues: ShopCustomValue[] | null; unitPrice: number; quantity: number }[];
 }
 
 async function uploadImage(file: File): Promise<string> {
@@ -66,7 +75,7 @@ async function uploadImage(file: File): Promise<string> {
 interface ProductOrderRow {
   orderId: string; status: string; createdAt: string; reviewedAt: string | null;
   rejectionReason: string | null; orderTotal: number; slipPath: string | null; note: string | null;
-  variantLabel: string; quantity: number; unitPrice: number;
+  variantLabel: string; customValues: ShopCustomValue[] | null; quantity: number; unitPrice: number;
   buyerName: string | null; nickname: string | null; studentId: string | null;
   email: string | null; phone: string | null; major: string | null; houseId: string | null;
 }
@@ -102,14 +111,24 @@ async function exportProductXlsx(p: AdminProduct) {
   const wsSum = XLSX.utils.aoa_to_sheet(sumAoa);
   wsSum["!cols"] = [{ wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
 
+  // Custom-field columns (e.g. jersey Name / Number) — the union of every label
+  // seen across this product's lines, in first-seen order, inserted after "Option".
+  const customLabels: string[] = [];
+  for (const r of rows) for (const cv of r.customValues ?? []) if (!customLabels.includes(cv.label)) customLabels.push(cv.label);
+
   // Orders sheet: one row per order line with every detail, autofilter on for easy filtering.
   const header = [
     "Name", "Nickname", "Student ID", "Major", "House", "Email", "Phone",
-    "Option", "Qty", "Unit price (THB)", "Subtotal (THB)",
+    "Option", ...customLabels, "Qty", "Unit price (THB)", "Subtotal (THB)",
     "Status", "Ordered (Bangkok)", "Reviewed (Bangkok)", "Rejection reason",
     "Slip uploaded", "Order total (THB)", "Note", "Order ID",
   ];
-  const wsRows = rows.map((r) => ({
+  const wsRows = rows.map((r) => {
+    const customCols: Record<string, string> = {};
+    for (const label of customLabels) {
+      customCols[label] = (r.customValues ?? []).find((cv) => cv.label === label)?.value ?? "";
+    }
+    return {
     "Name": r.buyerName ?? "",
     "Nickname": r.nickname ?? "",
     "Student ID": r.studentId ?? "",
@@ -118,6 +137,7 @@ async function exportProductXlsx(p: AdminProduct) {
     "Email": r.email ?? "",
     "Phone": r.phone ?? "",
     "Option": r.variantLabel,
+    ...customCols,
     "Qty": r.quantity,
     "Unit price (THB)": r.unitPrice,
     "Subtotal (THB)": r.unitPrice * r.quantity,
@@ -129,7 +149,8 @@ async function exportProductXlsx(p: AdminProduct) {
     "Order total (THB)": r.orderTotal,
     "Note": r.note ?? "",
     "Order ID": r.orderId,
-  }));
+    };
+  });
   const ws = XLSX.utils.json_to_sheet(wsRows, { header });
   ws["!autofilter"] = { ref: ws["!ref"] || "A1" };
   ws["!cols"] = header.map((h) => ({ wch: Math.min(40, Math.max(10, h.length + 2)) }));
@@ -266,6 +287,12 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
   const [allowedMajors, setAllowedMajors] = useState<string[]>(product?.allowedMajors ?? []);
   const [targetThai, setTargetThai] = useState(product?.targetThai ?? true);
   const [targetInternational, setTargetInternational] = useState(product?.targetInternational ?? true);
+  const [customFields, setCustomFields] = useState<FieldDraft[]>(
+    (product?.customFields ?? []).map((f) => ({
+      label: f.label, type: f.type, required: f.required,
+      maxLength: f.maxLength ?? null, min: f.min ?? null, max: f.max ?? null, options: f.options ?? [],
+    }))
+  );
   const [variants, setVariants] = useState<AdminVariant[]>(product?.variants?.length ? product.variants : [{ label: "Standard", stock: null, allowCustom: false }]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -294,6 +321,8 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
     if (!name.trim()) { setError(th ? "กรุณากรอกชื่อสินค้า" : "Product name is required"); return; }
     if (variants.length === 0 || variants.some((v) => !v.label.trim())) { setError(th ? "ทุกตัวเลือกต้องมีชื่อ" : "Every option needs a label"); return; }
     if (opensAt && closesAt && new Date(closesAt) <= new Date(opensAt)) { setError(th ? "เวลาปิดต้องอยู่หลังเวลาเปิด" : "Close time must be after open time"); return; }
+    if (customFields.some((f) => !f.label.trim())) { setError(th ? "ช่องกรอกเองทุกช่องต้องมีชื่อ" : "Every custom field needs a label"); return; }
+    if (customFields.some((f) => f.type === "select" && f.options.filter((o) => o.trim()).length === 0)) { setError(th ? "ช่องแบบตัวเลือกต้องมีอย่างน้อย 1 ตัวเลือก" : "A select field needs at least one option"); return; }
     setSaving(true);
     try {
       const body = {
@@ -309,6 +338,17 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
         allowedMajors,
         targetThai,
         targetInternational,
+        // Assign stable keys by index; snapshots store labels, so renumbering is safe.
+        customFields: customFields.map((f, i) => ({
+          key: `cf${i + 1}`,
+          label: f.label.trim(),
+          type: f.type,
+          required: f.required,
+          maxLength: f.type === "text" ? f.maxLength : null,
+          min: f.type === "number" ? f.min : null,
+          max: f.type === "number" ? f.max : null,
+          options: f.type === "select" ? f.options.map((o) => o.trim()).filter(Boolean) : [],
+        })),
         sortOrder: product?.sortOrder ?? 0,
         variants: variants.map((v) => ({ id: v.id, label: v.label.trim(), stock: v.stock, allowCustom: !!v.allowCustom })),
       };
@@ -398,6 +438,55 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
               ))}
               <button onClick={() => setVariants((vs) => [...vs, { label: "", stock: null, allowCustom: false }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <Plus size={15} />{th ? "เพิ่มตัวเลือก" : "Add option"}
+              </button>
+            </div>
+          </Field>
+
+          {/* Custom fields — buyer-filled personalization (e.g. jersey name/number).
+              Empty = none. Each becomes an input on the storefront + a column in export. */}
+          <Field label={th ? "ช่องกรอกเอง (เช่น ชื่อ/เบอร์เสื้อ)" : "Custom fields (e.g. name / number)"}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {customFields.length === 0 && (
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                  {th ? "ไม่มี — ผู้ซื้อไม่ต้องกรอกอะไรเพิ่ม" : "None — buyers fill nothing extra."}
+                </p>
+              )}
+              {customFields.map((f, i) => {
+                const setField = (patch: Partial<FieldDraft>) => setCustomFields((fs) => fs.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+                return (
+                  <div key={i} style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: 10, display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-base)" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <input value={f.label} onChange={(e) => setField({ label: e.target.value })} placeholder={th ? "ชื่อช่อง เช่น ชื่อบนเสื้อ" : "Label e.g. Name on back"} style={{ ...inputStyle, flex: 2, minWidth: 140 }} />
+                      <select value={f.type} onChange={(e) => setField({ type: e.target.value as ShopCustomFieldType })} style={{ ...inputStyle, flex: 1, minWidth: 110 }}>
+                        <option value="text">{th ? "ข้อความ" : "Text"}</option>
+                        <option value="number">{th ? "ตัวเลข" : "Number"}</option>
+                        <option value="select">{th ? "ตัวเลือก" : "Select"}</option>
+                      </select>
+                      <button onClick={() => setCustomFields((fs) => fs.filter((_, idx) => idx !== i))} className="btn btn-ghost" style={{ padding: 6, color: "#ef4444" }}><Trash2 size={15} /></button>
+                    </div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        <input type="checkbox" checked={f.required} onChange={(e) => setField({ required: e.target.checked })} />
+                        {th ? "จำเป็น" : "Required"}
+                      </label>
+                      {f.type === "text" && (
+                        <input type="number" min={1} value={f.maxLength ?? ""} onChange={(e) => setField({ maxLength: e.target.value === "" ? null : Math.max(1, Number(e.target.value)) })} placeholder={th ? "ความยาวสูงสุด" : "Max length"} style={{ ...inputStyle, width: 140 }} />
+                      )}
+                      {f.type === "number" && (
+                        <>
+                          <input type="number" value={f.min ?? ""} onChange={(e) => setField({ min: e.target.value === "" ? null : Number(e.target.value) })} placeholder={th ? "ต่ำสุด" : "Min"} style={{ ...inputStyle, width: 100 }} />
+                          <input type="number" value={f.max ?? ""} onChange={(e) => setField({ max: e.target.value === "" ? null : Number(e.target.value) })} placeholder={th ? "สูงสุด" : "Max"} style={{ ...inputStyle, width: 100 }} />
+                        </>
+                      )}
+                      {f.type === "select" && (
+                        <input value={f.options.join(", ")} onChange={(e) => setField({ options: e.target.value.split(",").map((o) => o.replace(/^\s+|\s+$/g, "")) })} placeholder={th ? "ตัวเลือก คั่นด้วย , เช่น แดง, น้ำเงิน" : "Options, comma-separated e.g. Red, Blue"} style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <button onClick={() => setCustomFields((fs) => [...fs, { label: "", type: "text", required: false, maxLength: null, min: null, max: null, options: [] }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                <Plus size={15} />{th ? "เพิ่มช่องกรอกเอง" : "Add custom field"}
               </button>
             </div>
           </Field>
@@ -623,9 +712,18 @@ function AdminOrderRow({ order, th, busy, onReview }: { order: AdminOrder; th: b
 
       <div style={{ fontSize: 14, marginBottom: 8 }}>
         {order.items.map((i, idx) => (
-          <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-            <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>{i.productName}{i.variantLabel && i.variantLabel !== "Standard" ? ` · ${i.variantLabel}` : ""} × {i.quantity}</span>
-            <span style={{ color: "var(--text-muted)", flexShrink: 0, whiteSpace: "nowrap" }}>{baht(i.unitPrice * i.quantity)}</span>
+          <div key={idx}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>{i.productName}{i.variantLabel && i.variantLabel !== "Standard" ? ` · ${i.variantLabel}` : ""} × {i.quantity}</span>
+              <span style={{ color: "var(--text-muted)", flexShrink: 0, whiteSpace: "nowrap" }}>{baht(i.unitPrice * i.quantity)}</span>
+            </div>
+            {i.customValues && i.customValues.length > 0 && (
+              <div style={{ fontSize: 12, color: "var(--accent-primary)", paddingLeft: 2, marginTop: 2, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+                {i.customValues.map((cv, k) => (
+                  <span key={k}><span style={{ color: "var(--text-muted)" }}>{cv.label}:</span> <strong>{cv.value}</strong></span>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>

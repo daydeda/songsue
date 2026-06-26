@@ -54,6 +54,7 @@ export async function GET() {
       allowedMajors: p.allowedMajors ?? [],
       targetThai: p.targetThai ?? true,
       targetInternational: p.targetInternational ?? true,
+      customFields: p.customFields ?? [],
       sortOrder: p.sortOrder,
       variants: variants
         .filter((v) => v.productId === p.id)
@@ -93,6 +94,7 @@ export async function POST(req: Request) {
           allowedMajors: data.allowedMajors,
           targetThai: data.targetThai,
           targetInternational: data.targetInternational,
+          customFields: data.customFields,
           sortOrder: data.sortOrder,
         })
         .returning({ id: shopProducts.id });

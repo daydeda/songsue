@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { customFieldSchema } from "@/lib/shop-custom-fields";
 
 // Shared validation for creating/updating a shop product. Lives outside the route
 // files because Next.js route modules may only export handlers + config.
@@ -19,6 +20,8 @@ export const productSchema = z.object({
   allowedMajors: z.array(z.string().max(40)).max(20).default([]),
   targetThai: z.boolean().default(true),
   targetInternational: z.boolean().default(true),
+  // Per-product personalization fields (e.g. jersey name/number). Empty = none.
+  customFields: z.array(customFieldSchema).max(10).default([]),
   sortOrder: z.number().int().default(0),
   variants: z
     .array(

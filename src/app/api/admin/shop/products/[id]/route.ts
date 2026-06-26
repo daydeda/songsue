@@ -42,6 +42,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           allowedMajors: data.allowedMajors,
           targetThai: data.targetThai,
           targetInternational: data.targetInternational,
+          customFields: data.customFields,
           sortOrder: data.sortOrder,
           updatedAt: new Date(),
         })

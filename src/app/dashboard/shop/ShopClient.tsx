@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useLanguage } from "@/lib/LanguageContext";
 import { parseRichText } from "@/lib/rich-text";
+import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
 import {
   ShoppingBag, X, ChevronLeft, ChevronRight, Upload, Loader2, CheckCircle2,
   Clock, XCircle, Package, Minus, Plus, ReceiptText,
@@ -14,9 +15,10 @@ interface Product {
   id: string; name: string; description: string; price: number;
   imageUrls: string[]; maxPerOrder: number | null; variants: Variant[];
   opensAt?: string | null; closesAt?: string | null; saleStatus?: "open" | "upcoming" | "closed";
+  customFields?: ShopCustomField[];
 }
 interface ShopData { enabled: boolean; paymentInfo: string; qrImageUrl: string | null; products: Product[] }
-interface OrderItem { productName: string; variantLabel: string; unitPrice: number; quantity: number }
+interface OrderItem { productName: string; variantLabel: string; customValues?: ShopCustomValue[] | null; unitPrice: number; quantity: number }
 interface Order {
   id: string; status: string; totalAmount: number; note: string | null;
   rejectionReason: string | null; hasSlip: boolean; createdAt: string; items: OrderItem[];
@@ -195,6 +197,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
   });
   const [qtyRaw, setQty] = useState(1);
   const [customValue, setCustomValue] = useState("");
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [step, setStep] = useState<"select" | "pay">("select");
   const [slipPath, setSlipPath] = useState<string | null>(null);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
@@ -205,6 +208,8 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const variant = product.variants.find((v) => v.id === variantId);
+  const customFields = product.customFields ?? [];
+  const missingRequiredCustom = customFields.some((f) => f.required && !(customAnswers[f.key] ?? "").trim());
   const remaining = variant?.remaining ?? null;
   const maxQty = useMemo(() => {
     const caps = [99];
@@ -246,7 +251,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
       const res = await fetch("/api/shop/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: [{ variantId, quantity: qty, customValue: variant?.allowCustom ? customValue.trim() : undefined }], slipPath, note: note || undefined }),
+        body: JSON.stringify({ items: [{ variantId, quantity: qty, customValue: variant?.allowCustom ? customValue.trim() : undefined, custom: customFields.length ? customAnswers : undefined }], slipPath, note: note || undefined }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Order failed");
@@ -341,6 +346,37 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                 </div>
               )}
 
+              {/* Custom fields (e.g. jersey name/number) */}
+              {customFields.map((f) => (
+                <div key={f.key} style={{ marginBottom: 16 }}>
+                  <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
+                    {f.label}{f.required ? " *" : ""}
+                  </label>
+                  {f.type === "select" ? (
+                    <select
+                      value={customAnswers[f.key] ?? ""}
+                      onChange={(e) => setCustomAnswers((a) => ({ ...a, [f.key]: e.target.value }))}
+                      style={customInputStyle}
+                    >
+                      <option value="">{th ? "— เลือก —" : "— Select —"}</option>
+                      {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      type={f.type === "number" ? "number" : "text"}
+                      inputMode={f.type === "number" ? "numeric" : undefined}
+                      value={customAnswers[f.key] ?? ""}
+                      onChange={(e) => setCustomAnswers((a) => ({ ...a, [f.key]: e.target.value }))}
+                      maxLength={f.type === "text" ? (f.maxLength ?? undefined) : undefined}
+                      min={f.type === "number" ? (f.min ?? undefined) : undefined}
+                      max={f.type === "number" ? (f.max ?? undefined) : undefined}
+                      placeholder={f.type === "number" && (f.min != null || f.max != null) ? `${f.min ?? ""}–${f.max ?? ""}` : ""}
+                      style={customInputStyle}
+                    />
+                  )}
+                </div>
+              ))}
+
               {/* Quantity */}
               <div style={{ marginBottom: 8 }}>
                 <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{th ? "จำนวน" : "Quantity"}</label>
@@ -356,7 +392,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
 
               {error && <p style={{ color: "#ef4444", fontSize: 13, marginTop: 12 }}>{error}</p>}
 
-              <button onClick={() => setStep("pay")} disabled={!variant || (remaining != null && remaining <= 0) || (!!variant?.allowCustom && !customValue.trim()) || !!notOpen} className="btn btn-primary" style={{ width: "100%", marginTop: 20, justifyContent: "space-between", display: "flex" }}>
+              <button onClick={() => setStep("pay")} disabled={!variant || (remaining != null && remaining <= 0) || (!!variant?.allowCustom && !customValue.trim()) || missingRequiredCustom || !!notOpen} className="btn btn-primary" style={{ width: "100%", marginTop: 20, justifyContent: "space-between", display: "flex" }}>
                 <span>{notOpen ? (product.saleStatus === "upcoming" ? (th ? "ยังไม่เปิดขาย" : "Not on sale yet") : (th ? "ปิดการขาย" : "Sales closed")) : (th ? "ดำเนินการต่อ" : "Continue")}</span>
                 {!notOpen && <span>{baht(total)}</span>}
               </button>
@@ -369,6 +405,9 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                   <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>{product.name}{variant && product.variants.length > 1 ? ` · ${variant.label}` : ""} × {qty}</span>
                   <span style={{ fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{baht(total)}</span>
                 </div>
+                {customFields.filter((f) => (customAnswers[f.key] ?? "").trim()).map((f) => (
+                  <div key={f.key} style={{ fontSize: 12, color: "var(--text-muted)" }}>{f.label}: <strong style={{ color: "var(--text-secondary)" }}>{customAnswers[f.key]}</strong></div>
+                ))}
               </div>
 
               {/* Payment instructions + QR */}
@@ -437,7 +476,14 @@ function OrderRow({ order, th }: { order: Order; th: boolean }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
         <div style={{ minWidth: 0 }}>
           {order.items.map((i, idx) => (
-            <p key={idx} style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere", wordBreak: "break-word" }}>{i.productName}{i.variantLabel && i.variantLabel !== "Standard" ? ` · ${i.variantLabel}` : ""} × {i.quantity}</p>
+            <div key={idx}>
+              <p style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere", wordBreak: "break-word" }}>{i.productName}{i.variantLabel && i.variantLabel !== "Standard" ? ` · ${i.variantLabel}` : ""} × {i.quantity}</p>
+              {i.customValues && i.customValues.length > 0 && (
+                <p style={{ fontSize: 12, color: "var(--text-muted)", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                  {i.customValues.map((cv) => `${cv.label}: ${cv.value}`).join(" · ")}
+                </p>
+              )}
+            </div>
           ))}
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{new Date(order.createdAt).toLocaleString(th ? "th-TH" : "en-GB")}</p>
         </div>
@@ -469,6 +515,11 @@ const STATUS_BADGE: Record<string, { th: string; en: string; bg: string; color: 
   pending: { th: "รอตรวจสอบ", en: "Pending", bg: "rgba(245,158,11,0.12)", color: "#b45309", icon: <Clock size={13} /> },
   approved: { th: "อนุมัติแล้ว", en: "Approved", bg: "rgba(22,163,74,0.12)", color: "#15803d", icon: <CheckCircle2 size={13} /> },
   rejected: { th: "ถูกปฏิเสธ", en: "Rejected", bg: "rgba(239,68,68,0.12)", color: "#dc2626", icon: <XCircle size={13} /> },
+};
+
+const customInputStyle: React.CSSProperties = {
+  width: "100%", padding: "10px 12px", borderRadius: "var(--radius-md)",
+  border: "1px solid var(--border-subtle)", fontSize: 14, fontFamily: "inherit", background: "var(--bg-base)",
 };
 
 const navBtn = (side: "left" | "right"): React.CSSProperties => ({

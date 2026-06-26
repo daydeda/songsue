@@ -13,6 +13,12 @@ export const productSchema = z.object({
   opensAt: z.coerce.date().nullable().default(null),
   closesAt: z.coerce.date().nullable().default(null),
   isActive: z.boolean().default(true),
+  // Audience targeting (mirrors events). Empty arrays = no restriction on that
+  // axis; both targets default true. Admins always see every product regardless.
+  allowedRoles: z.array(z.string().max(40)).max(20).default([]),
+  allowedMajors: z.array(z.string().max(40)).max(20).default([]),
+  targetThai: z.boolean().default(true),
+  targetInternational: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
   variants: z
     .array(

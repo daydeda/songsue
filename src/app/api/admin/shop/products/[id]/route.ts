@@ -38,6 +38,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           opensAt: data.opensAt,
           closesAt: data.closesAt,
           isActive: data.isActive,
+          allowedRoles: data.allowedRoles,
+          allowedMajors: data.allowedMajors,
+          targetThai: data.targetThai,
+          targetInternational: data.targetInternational,
           sortOrder: data.sortOrder,
           updatedAt: new Date(),
         })

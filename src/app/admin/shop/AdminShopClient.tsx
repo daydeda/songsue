@@ -11,12 +11,34 @@ import {
 
 const baht = (n: number) => `฿${n.toLocaleString()}`;
 
+// True when a product is restricted to a subset of the audience (so the list can
+// flag it). Empty role/major lists + both student types = visible to everyone.
+const isAudienceLimited = (p: AdminProduct) =>
+  (p.allowedRoles?.length ?? 0) > 0 ||
+  (p.allowedMajors?.length ?? 0) > 0 ||
+  p.targetThai === false ||
+  p.targetInternational === false;
+
 interface AdminVariant { id?: string; label: string; stock: number | null; allowCustom?: boolean; sold?: number }
 interface AdminProduct {
   id: string; name: string; description: string; price: number; imageUrls: string[];
   maxPerOrder: number | null; opensAt: string | null; closesAt: string | null;
   isActive: boolean; sortOrder: number; variants: AdminVariant[];
+  // Audience targeting (mirrors events). Empty arrays / both targets true = visible
+  // to everyone. Admins always see every product.
+  allowedRoles: string[]; allowedMajors: string[];
+  targetThai: boolean; targetInternational: boolean;
 }
+
+// Roles a product's visibility can be restricted to (mirrors the events targeting
+// list). Empty selection = all roles. Admins always see everything.
+const ALL_ROLES = ["student", "staff", "smo", "anusmo", "club_president", "major_president"] as const;
+const ROLE_LABELS: Record<string, string> = {
+  student: "Student", staff: "Staff", smo: "SMO", anusmo: "ANUSMO",
+  club_president: "Club President", major_president: "Major President",
+};
+// Student majors (the `major` text column on users). Empty selection = all majors.
+const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE"] as const;
 
 // ISO/Date -> value for <input type="datetime-local"> (local time, no seconds).
 function toLocalInput(d?: string | Date | null): string {
@@ -198,7 +220,7 @@ function ProductsTab({ th }: { th: boolean }) {
                 {p.imageUrls[0] ? <img src={p.imageUrls[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)" }}><Package size={20} /></div>}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontWeight: 700, fontSize: 15, overflowWrap: "anywhere", wordBreak: "break-word" }}>{p.name} {!p.isActive && <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>({th ? "ซ่อน" : "hidden"})</span>}</p>
+                <p style={{ fontWeight: 700, fontSize: 15, overflowWrap: "anywhere", wordBreak: "break-word" }}>{p.name} {!p.isActive && <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>({th ? "ซ่อน" : "hidden"})</span>}{isAudienceLimited(p) && <span title={th ? "จำกัดผู้เห็น (บทบาท/สาขา/นักศึกษา)" : "Limited audience (roles/majors/students)"} style={{ fontSize: 11, color: "var(--accent-primary)", fontWeight: 700 }}> · {th ? "จำกัดผู้เห็น" : "limited"}</span>}</p>
                 <p style={{ fontSize: 13, color: "var(--text-muted)", overflowWrap: "anywhere", wordBreak: "break-word" }}>
                   {baht(p.price)} · {p.variants.map((v) => `${v.label}${v.stock != null ? ` ${Math.max(0, v.stock - (v.sold ?? 0))}/${v.stock}` : ""}`).join(", ")}
                   {p.maxPerOrder != null ? ` · ${th ? "จำกัด" : "max"} ${p.maxPerOrder}/${th ? "คน" : "person"}` : ""}
@@ -240,6 +262,10 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
   const [opensAt, setOpensAt] = useState<string>(toLocalInput(product?.opensAt));
   const [closesAt, setClosesAt] = useState<string>(toLocalInput(product?.closesAt));
   const [isActive, setIsActive] = useState(product?.isActive ?? true);
+  const [allowedRoles, setAllowedRoles] = useState<string[]>(product?.allowedRoles ?? []);
+  const [allowedMajors, setAllowedMajors] = useState<string[]>(product?.allowedMajors ?? []);
+  const [targetThai, setTargetThai] = useState(product?.targetThai ?? true);
+  const [targetInternational, setTargetInternational] = useState(product?.targetInternational ?? true);
   const [variants, setVariants] = useState<AdminVariant[]>(product?.variants?.length ? product.variants : [{ label: "Standard", stock: null, allowCustom: false }]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -279,6 +305,10 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
         opensAt: opensAt ? new Date(opensAt).toISOString() : null,
         closesAt: closesAt ? new Date(closesAt).toISOString() : null,
         isActive,
+        allowedRoles,
+        allowedMajors,
+        targetThai,
+        targetInternational,
         sortOrder: product?.sortOrder ?? 0,
         variants: variants.map((v) => ({ id: v.id, label: v.label.trim(), stock: v.stock, allowCustom: !!v.allowCustom })),
       };
@@ -369,6 +399,51 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
               <button onClick={() => setVariants((vs) => [...vs, { label: "", stock: null, allowCustom: false }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <Plus size={15} />{th ? "เพิ่มตัวเลือก" : "Add option"}
               </button>
+            </div>
+          </Field>
+
+          {/* Audience targeting — who may see (and order) this product. Empty role
+              and major selections + both student types = visible to everyone. */}
+          <Field label={th ? "ใครเห็นสินค้านี้ได้ (เว้นว่าง = ทุกคน)" : "Who can see this (empty = everyone)"}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "บทบาท" : "Roles"}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {ALL_ROLES.map((r) => (
+                    <Chip key={r} selected={allowedRoles.includes(r)} onClick={() => setAllowedRoles((cur) => cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r])}>
+                      {ROLE_LABELS[r] ?? r}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "สาขา" : "Majors"}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {ALL_MAJORS.map((m) => (
+                    <Chip key={m} selected={allowedMajors.includes(m)} onClick={() => setAllowedMajors((cur) => cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m])}>
+                      {m}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "นักศึกษา" : "Students"}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    <input type="checkbox" checked={targetThai} onChange={(e) => setTargetThai(e.target.checked)} />
+                    {th ? "ไทย" : "Thai"}
+                  </label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    <input type="checkbox" checked={targetInternational} onChange={(e) => setTargetInternational(e.target.checked)} />
+                    {th ? "นานาชาติ" : "International"}
+                  </label>
+                </div>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                {th
+                  ? "เว้นว่างทั้งหมด = ทุกคนเห็นได้ · ผู้ดูแลเห็นสินค้าทั้งหมดเสมอ"
+                  : "All empty = everyone can see it · admins always see every product."}
+              </p>
             </div>
           </Field>
 
@@ -692,6 +767,25 @@ function Field({ label, children, style }: { label: string; children: React.Reac
 
 function Spinner() {
   return <div style={{ display: "flex", justifyContent: "center", padding: 60 }}><div className="spinner" style={{ width: 28, height: 28 }} /></div>;
+}
+
+// Toggleable selection pill used for the role/major audience pickers.
+function Chip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600,
+        padding: "6px 12px", borderRadius: 999, cursor: "pointer",
+        border: `1px solid ${selected ? "var(--accent-primary)" : "var(--border-subtle)"}`,
+        background: selected ? "var(--accent-primary)" : "var(--bg-base)",
+        color: selected ? "#fff" : "var(--text-secondary)",
+      }}
+    >
+      {selected && <Check size={13} />}{children}
+    </button>
+  );
 }
 
 const inputStyle: React.CSSProperties = {

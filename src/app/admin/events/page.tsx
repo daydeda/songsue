@@ -34,6 +34,7 @@ interface AdminEvent {
   registrationCloseTime: string | null;
   quota: number | null;
   pointsAwarded: number;
+  individualPointsAwarded: number;
   imageUrl: string | null;
   imageUrls: string[] | null;
   walkInsEnabled: boolean;
@@ -285,6 +286,7 @@ const EMPTY_FORM = {
   registrationCloseTime: "",
   quota: 0,
   pointsAwarded: 0,
+  individualPointsAwarded: 0,
   imageUrl: "",
   imageUrls: [] as string[],
   walkInsEnabled: false,
@@ -1421,6 +1423,7 @@ export default function AdminEventsPage() {
       registrationCloseTime: evt.registrationCloseTime ? toLocal(evt.registrationCloseTime) : "",
       quota: evt.quota || 0,
       pointsAwarded: evt.pointsAwarded || 0,
+      individualPointsAwarded: evt.individualPointsAwarded || 0,
       imageUrl: evt.imageUrl || "",
       // Legacy events have only imageUrl — wrap it so the manager shows one poster.
       imageUrls: (evt.imageUrls && evt.imageUrls.length > 0)
@@ -1798,20 +1801,32 @@ export default function AdminEventsPage() {
                   <input className="input" required value={formData.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. IT Freshy Night 2026" style={{ fontSize: 16, padding: "16px 20px", borderRadius: 16 }} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="field">
-                    <label className="label">{t.eventLocationLabel}</label>
-                    <div style={{ position: "relative" }}>
-                      <MapPin size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-                      <input className="input" value={formData.location} onChange={(e) => set("location", e.target.value)} placeholder="CAMT Auditorium" style={{ paddingLeft: 44 }} />
-                    </div>
+                <div className="field">
+                  <label className="label">{t.eventLocationLabel}</label>
+                  <div style={{ position: "relative" }}>
+                    <MapPin size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                    <input className="input" value={formData.location} onChange={(e) => set("location", e.target.value)} placeholder="CAMT Auditorium" style={{ paddingLeft: 44 }} />
                   </div>
+                </div>
+
+                {/* Two parallel point pools: house points go to the WINNING house at
+                    event-end; individual points go to EACH attendee on every check-in. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventPointsLabel}</label>
                     <div style={{ position: "relative" }}>
-                      <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
+                      <Trophy size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#fbbf24" }} />
                       <input className="input" type="number" min={0} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventHousePointsHint}</p>
+                  </div>
+                  <div className="field">
+                    <label className="label">{t.eventIndividualPointsLabel}</label>
+                    <div style={{ position: "relative" }}>
+                      <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
+                      <input className="input" type="number" min={0} value={formData.individualPointsAwarded} onChange={(e) => set("individualPointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
+                    </div>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventIndividualPointsHint}</p>
                   </div>
                 </div>
 
@@ -3031,28 +3046,47 @@ export default function AdminEventsPage() {
                     </div>
                   </div>
 
-                  {/* Points Badge */}
-                  {evt.pointsAwarded !== undefined && (
-                    <div style={{ position: "absolute", bottom: 28, left: 28 }}>
-                      <div style={{ 
-                        background: "rgba(0, 0, 0, 0.7)", 
-                        backdropFilter: "blur(8px)", 
-                        color: "#fff", 
-                        padding: "6px 12px", 
-                        borderRadius: 14, 
-                        fontSize: 11, 
-                        fontWeight: 900, 
-                        display: "inline-flex", 
-                        alignItems: "center", 
-                        gap: 6, 
+                  {/* Points Badges — house (winner bonus) and, when set, per-attendee individual */}
+                  <div style={{ position: "absolute", bottom: 28, left: 28, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {evt.pointsAwarded !== undefined && (
+                      <div style={{
+                        background: "rgba(0, 0, 0, 0.7)",
+                        backdropFilter: "blur(8px)",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
                         boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                         border: "1px solid rgba(255, 255, 255, 0.1)"
-                      }}>
+                      }} title={t.eventHousePointsHint}>
                         <Trophy size={12} style={{ color: "#fbbf24" }} />
                         <span>{evt.pointsAwarded} PTS</span>
                       </div>
-                    </div>
-                  )}
+                    )}
+                    {evt.individualPointsAwarded > 0 && (
+                      <div style={{
+                        background: "rgba(0, 0, 0, 0.7)",
+                        backdropFilter: "blur(8px)",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)"
+                      }} title={t.eventIndividualPointsHint}>
+                        <Sparkles size={12} style={{ color: "var(--accent-primary)" }} />
+                        <span>+{evt.individualPointsAwarded} {t.eventIndividualPointsBadge}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Card Content */}

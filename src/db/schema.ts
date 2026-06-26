@@ -121,7 +121,13 @@ export const events = pgTable("events", {
   registrationCloseTime: timestamp("registration_close_time", { withTimezone: true }),
   quota: integer("quota"),
   location: text("location"),
+  // House points: awarded to the WINNING house (most distinct attendees) at
+  // event-end. See award-points.ts checkAndAwardPastEventPoints.
   pointsAwarded: integer("points_awarded").default(0),
+  // Individual points: awarded to EACH attendee, added to users.points the moment
+  // a check-in becomes 'attended'. Per-day on multi-day events (each session
+  // check-in awards again). See ScannerService.awardAttendanceIndividualPoints.
+  individualPointsAwarded: integer("individual_points_awarded").default(0),
   // Cover poster — kept as the single source for thumbnails (admin list, etc.).
   // Always mirrors imageUrls[0] so legacy single-image consumers keep working.
   imageUrl: text("image_url"),

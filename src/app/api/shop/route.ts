@@ -25,7 +25,7 @@ export async function GET() {
 
     // Shop turned off — hide everything but report the flag so the UI can explain.
     if (!settings || !settings.enabled) {
-      return NextResponse.json({ enabled: false, paymentInfo: "", qrImageUrl: null, products: [] });
+      return NextResponse.json({ enabled: false, paymentInfo: "", qrImageUrl: null, deliveryEnabled: false, deliveryFee: 0, pickupInfo: "", products: [] });
     }
 
     // Major lives on the users row (not on the session token); needed for the
@@ -88,6 +88,9 @@ export async function GET() {
       // 'upcoming' (before opensAt) | 'closed' (after closesAt) | 'open'
       saleStatus: p.opensAt && now < p.opensAt ? "upcoming" : p.closesAt && now > p.closesAt ? "closed" : "open",
       customFields: p.customFields ?? [],
+      // Per-product delivery pricing (null fee = falls back to shop-wide deliveryFee).
+      deliveryFee: p.deliveryFee ?? null,
+      deliveryTiers: p.deliveryTiers ?? [],
       variants: variants
         .filter((v) => v.productId === p.id)
         .map((v) => ({
@@ -103,6 +106,9 @@ export async function GET() {
       enabled: true,
       paymentInfo: settings.paymentInfo,
       qrImageUrl: settings.qrImageUrl,
+      deliveryEnabled: settings.deliveryEnabled,
+      deliveryFee: settings.deliveryFee,
+      pickupInfo: settings.pickupInfo,
       products: result,
     });
   } catch (error) {

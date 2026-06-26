@@ -760,6 +760,34 @@ async function migrate() {
   await sql`ALTER TABLE shop_order_items ADD COLUMN IF NOT EXISTS custom_values jsonb`;
   console.log("  ✅ shop_products.custom_fields / shop_order_items.custom_values");
 
+  // 49. Shop delivery / fulfillment (Phase 2). shop_settings gains a flat-fee
+  // delivery config (delivery_enabled / delivery_fee / pickup_info); shop_orders
+  // gains the per-order choice (fulfillment) + recipient name/phone/address (PDPA
+  // personal data, shop-admin only) + shipping_fee (snapshot folded into the
+  // total). Existing orders default to 'pickup' with fee 0 + NULL recipient fields,
+  // i.e. unchanged. Additive, non-destructive, idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS delivery_enabled boolean NOT NULL DEFAULT false`;
+  await sql`ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS delivery_fee integer NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS pickup_info text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fulfillment text NOT NULL DEFAULT 'pickup'`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS recipient_name text`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS recipient_phone text`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS shipping_address text`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS shipping_fee integer NOT NULL DEFAULT 0`;
+  console.log("  ✅ shop_settings delivery config + shop_orders fulfillment/recipient/shipping_fee");
+
+  // 50. Per-product delivery pricing. shop_products gains an optional base fee
+  // (delivery_fee; NULL = use the shop-wide shop_settings.delivery_fee fallback)
+  // and quantity tiers (delivery_tiers jsonb [{minQty,fee}] — highest applicable
+  // minQty wins, "order more than N → fee goes up"). An order's total shipping is
+  // the SUM of each product's computed fee. The shop-wide fee stays as the
+  // fallback for products with no own config, so existing products are unchanged.
+  // Additive, nullable, non-destructive, idempotent via ADD COLUMN IF NOT EXISTS.
+  // See src/lib/shop-delivery.ts.
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS delivery_fee integer`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS delivery_tiers jsonb`;
+  console.log("  ✅ shop_products.delivery_fee / delivery_tiers");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

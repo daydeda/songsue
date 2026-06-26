@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { customFieldSchema } from "@/lib/shop-custom-fields";
+import { deliveryTierSchema } from "@/lib/shop-delivery";
 
 // Shared validation for creating/updating a shop product. Lives outside the route
 // files because Next.js route modules may only export handlers + config.
@@ -22,6 +23,10 @@ export const productSchema = z.object({
   targetInternational: z.boolean().default(true),
   // Per-product personalization fields (e.g. jersey name/number). Empty = none.
   customFields: z.array(customFieldSchema).max(10).default([]),
+  // Per-product delivery pricing. deliveryFee = base ฿ (null = shop-wide fallback);
+  // deliveryTiers = quantity thresholds ([{minQty,fee}], highest applicable wins).
+  deliveryFee: z.number().int().min(0).max(1_000_000).nullable().default(null),
+  deliveryTiers: z.array(deliveryTierSchema).max(8).default([]),
   sortOrder: z.number().int().default(0),
   variants: z
     .array(

@@ -13,6 +13,10 @@ const settingsSchema = z.object({
   enabled: z.boolean(),
   paymentInfo: z.string().max(5000),
   qrImageUrl: z.string().url().nullable().or(z.literal("").transform(() => null)),
+  // Delivery config (flat fee). deliveryFee in whole ฿.
+  deliveryEnabled: z.boolean().default(false),
+  deliveryFee: z.number().int().min(0).max(100000).default(0),
+  pickupInfo: z.string().max(5000).default(""),
 });
 
 // GET /api/admin/shop/settings — current singleton for the admin settings form.
@@ -23,11 +27,18 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const [row] = await db
-      .select({ enabled: shopSettings.enabled, paymentInfo: shopSettings.paymentInfo, qrImageUrl: shopSettings.qrImageUrl })
+      .select({
+        enabled: shopSettings.enabled,
+        paymentInfo: shopSettings.paymentInfo,
+        qrImageUrl: shopSettings.qrImageUrl,
+        deliveryEnabled: shopSettings.deliveryEnabled,
+        deliveryFee: shopSettings.deliveryFee,
+        pickupInfo: shopSettings.pickupInfo,
+      })
       .from(shopSettings)
       .orderBy(desc(shopSettings.updatedAt))
       .limit(1);
-    return NextResponse.json(row ?? { enabled: false, paymentInfo: "", qrImageUrl: null });
+    return NextResponse.json(row ?? { enabled: false, paymentInfo: "", qrImageUrl: null, deliveryEnabled: false, deliveryFee: 0, pickupInfo: "" });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -57,6 +68,9 @@ export async function PUT(req: Request) {
             enabled: data.enabled,
             paymentInfo: data.paymentInfo,
             qrImageUrl: data.qrImageUrl,
+            deliveryEnabled: data.deliveryEnabled,
+            deliveryFee: data.deliveryFee,
+            pickupInfo: data.pickupInfo,
             updatedBy: session!.user!.id!,
             updatedAt: new Date(),
           })
@@ -66,6 +80,9 @@ export async function PUT(req: Request) {
           enabled: data.enabled,
           paymentInfo: data.paymentInfo,
           qrImageUrl: data.qrImageUrl,
+          deliveryEnabled: data.deliveryEnabled,
+          deliveryFee: data.deliveryFee,
+          pickupInfo: data.pickupInfo,
           updatedBy: session!.user!.id!,
         });
       }

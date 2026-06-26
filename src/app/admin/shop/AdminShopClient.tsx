@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { ShopCustomField, ShopCustomValue, ShopCustomFieldType } from "@/lib/shop-custom-fields";
+import { normalizeTiers, type ShopDeliveryTier } from "@/lib/shop-delivery";
 import {
   ShoppingBag, Package, ReceiptText, Settings as SettingsIcon, Plus, Trash2, Pencil,
   Upload, Loader2, X, CheckCircle2, XCircle, Clock, GripVertical, Save, RotateCcw, Download,
-  Check, FileText,
+  Check, FileText, Truck, Store, Users,
 } from "lucide-react";
 
 const baht = (n: number) => `฿${n.toLocaleString()}`;
@@ -31,6 +32,9 @@ interface AdminProduct {
   targetThai: boolean; targetInternational: boolean;
   // Per-product personalization fields (e.g. jersey name/number).
   customFields: ShopCustomField[];
+  // Per-product delivery pricing. deliveryFee = base ฿ (null = shop-wide fallback);
+  // deliveryTiers = quantity thresholds (highest applicable minQty wins).
+  deliveryFee: number | null; deliveryTiers: ShopDeliveryTier[];
 }
 
 // Editor row for one custom field (key is assigned at save time, by index).
@@ -38,6 +42,9 @@ interface FieldDraft {
   label: string; type: ShopCustomFieldType; required: boolean;
   maxLength: number | null; min: number | null; max: number | null; options: string[];
 }
+
+// Editor row for one delivery tier (strings keep empty inputs forgiving).
+interface TierDraft { minQty: string; fee: string }
 
 // Roles a product's visibility can be restricted to (mirrors the events targeting
 // list). Empty selection = all roles. Admins always see everything.
@@ -59,6 +66,8 @@ function toLocalInput(d?: string | Date | null): string {
 interface AdminOrder {
   id: string; status: string; totalAmount: number; note: string | null; rejectionReason: string | null;
   hasSlip: boolean; createdAt: string; reviewedAt: string | null;
+  fulfillment: string; shippingFee: number;
+  recipientName: string | null; recipientPhone: string | null; shippingAddress: string | null;
   buyer: { name: string | null; studentId: string | null; nickname: string | null };
   items: { productName: string; variantLabel: string; customValues: ShopCustomValue[] | null; unitPrice: number; quantity: number }[];
 }
@@ -75,6 +84,8 @@ async function uploadImage(file: File): Promise<string> {
 interface ProductOrderRow {
   orderId: string; status: string; createdAt: string; reviewedAt: string | null;
   rejectionReason: string | null; orderTotal: number; slipPath: string | null; note: string | null;
+  fulfillment: string; shippingFee: number;
+  recipientName: string | null; recipientPhone: string | null; shippingAddress: string | null;
   variantLabel: string; customValues: ShopCustomValue[] | null; quantity: number; unitPrice: number;
   buyerName: string | null; nickname: string | null; studentId: string | null;
   email: string | null; phone: string | null; major: string | null; houseId: string | null;
@@ -121,7 +132,8 @@ async function exportProductXlsx(p: AdminProduct) {
     "Name", "Nickname", "Student ID", "Major", "House", "Email", "Phone",
     "Option", ...customLabels, "Qty", "Unit price (THB)", "Subtotal (THB)",
     "Status", "Ordered (Bangkok)", "Reviewed (Bangkok)", "Rejection reason",
-    "Slip uploaded", "Order total (THB)", "Note", "Order ID",
+    "Slip uploaded", "Order total (THB)", "Fulfillment", "Shipping (THB)",
+    "Recipient", "Recipient phone", "Delivery address", "Note", "Order ID",
   ];
   const wsRows = rows.map((r) => {
     const customCols: Record<string, string> = {};
@@ -147,6 +159,11 @@ async function exportProductXlsx(p: AdminProduct) {
     "Rejection reason": r.rejectionReason ?? "",
     "Slip uploaded": r.slipPath ? "Yes" : "No",
     "Order total (THB)": r.orderTotal,
+    "Fulfillment": r.fulfillment === "delivery" ? "Delivery" : "Self-pickup",
+    "Shipping (THB)": r.shippingFee,
+    "Recipient": r.recipientName ?? "",
+    "Recipient phone": r.recipientPhone ?? "",
+    "Delivery address": r.shippingAddress ?? "",
     "Note": r.note ?? "",
     "Order ID": r.orderId,
     };
@@ -293,6 +310,10 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
       maxLength: f.maxLength ?? null, min: f.min ?? null, max: f.max ?? null, options: f.options ?? [],
     }))
   );
+  const [deliveryFee, setDeliveryFee] = useState<string>(product?.deliveryFee != null ? String(product.deliveryFee) : "");
+  const [deliveryTiers, setDeliveryTiers] = useState<TierDraft[]>(
+    (product?.deliveryTiers ?? []).map((t) => ({ minQty: String(t.minQty), fee: String(t.fee) }))
+  );
   const [variants, setVariants] = useState<AdminVariant[]>(product?.variants?.length ? product.variants : [{ label: "Standard", stock: null, allowCustom: false }]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -349,6 +370,14 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
           max: f.type === "number" ? f.max : null,
           options: f.type === "select" ? f.options.map((o) => o.trim()).filter(Boolean) : [],
         })),
+        // Per-product delivery. Blank base fee = null (use shop-wide fallback).
+        // Tiers: drop incomplete rows, then dedupe + sort ascending by minQty.
+        deliveryFee: deliveryFee.trim() === "" ? null : Math.max(0, Math.round(Number(deliveryFee) || 0)),
+        deliveryTiers: normalizeTiers(
+          deliveryTiers
+            .filter((t) => t.minQty.trim() !== "" && t.fee.trim() !== "")
+            .map((t) => ({ minQty: Math.round(Number(t.minQty) || 0), fee: Math.round(Number(t.fee) || 0) }))
+        ),
         sortOrder: product?.sortOrder ?? 0,
         variants: variants.map((v) => ({ id: v.id, label: v.label.trim(), stock: v.stock, allowCustom: !!v.allowCustom })),
       };
@@ -367,6 +396,17 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
     }
   };
 
+  // One-line summaries shown on each collapsed section so an admin can see what's
+  // set (and which sections need attention) without expanding everything.
+  const scheduleSet = !!(opensAt || closesAt);
+  const scheduleSummary = scheduleSet ? (th ? "มีกำหนดเวลา" : "Time-limited") : (th ? "ขายได้ตลอด" : "Always available");
+  const deliveryBase = deliveryFee.trim() === "" ? (th ? "ค่าเริ่มต้นร้าน" : "Shop default") : baht(Math.max(0, Math.round(Number(deliveryFee) || 0)));
+  const deliverySummary = deliveryTiers.length > 0 ? `${deliveryBase} · ${th ? "ตามจำนวน" : "tiered"}` : deliveryBase;
+  const filledFields = customFields.filter((f) => f.label.trim()).length;
+  const fieldsSummary = filledFields === 0 ? (th ? "ไม่มี" : "None") : `${filledFields} ${th ? "ช่อง" : filledFields === 1 ? "field" : "fields"}`;
+  const audienceLimited = allowedRoles.length > 0 || allowedMajors.length > 0 || !targetThai || !targetInternational;
+  const audienceSummary = audienceLimited ? (th ? "จำกัดผู้เห็น" : "Limited") : (th ? "ทุกคน" : "Everyone");
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 2500, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-surface)", borderRadius: "var(--radius-lg)", width: "100%", maxWidth: 640, maxHeight: "94vh", border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -376,31 +416,28 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
-          <Field label={th ? "ชื่อสินค้า" : "Name"}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+            {th
+              ? "ช่องที่มี * จำเป็นต้องกรอก · ส่วนที่เหลือกดเปิดเพื่อตั้งค่าเพิ่มได้"
+              : "Fields marked * are required. Open the sections below to configure the optional extras."}
+          </p>
+
+          {/* ---- Essentials (always visible) ---- */}
+          <Field label={th ? "ชื่อสินค้า" : "Name"} required>
             <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder={th ? "เช่น เสื้อค่าย SMO" : "e.g. SMO Camp Shirt"} />
           </Field>
 
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <Field label={th ? "ราคา (บาท)" : "Price (฿)"} style={{ flex: 1, minWidth: 140 }}>
+            <Field label={th ? "ราคา (บาท)" : "Price (฿)"} required style={{ flex: 1, minWidth: 140 }}>
               <input type="number" min={0} value={price} onChange={(e) => setPrice(Number(e.target.value))} style={inputStyle} />
             </Field>
-            <Field label={th ? "จำกัดต่อคน (เว้นว่าง=ไม่จำกัด)" : "Max per buyer (blank = unlimited)"} style={{ flex: 1, minWidth: 160 }}>
+            <Field label={th ? "จำกัดต่อคน" : "Max per buyer"} hint={th ? "เว้นว่าง = ไม่จำกัด" : "Blank = unlimited"} style={{ flex: 1, minWidth: 160 }}>
               <input type="number" min={1} value={maxPerOrder} onChange={(e) => setMaxPerOrder(e.target.value)} style={inputStyle} placeholder={th ? "ไม่จำกัด" : "Unlimited"} />
             </Field>
           </div>
 
-          {/* Sale schedule (optional) */}
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <Field label={th ? "เปิดขาย (ไม่บังคับ)" : "Opens at (optional)"} style={{ flex: 1, minWidth: 150 }}>
-              <input type="datetime-local" value={opensAt} onChange={(e) => setOpensAt(e.target.value)} style={inputStyle} />
-            </Field>
-            <Field label={th ? "ปิดขาย (ไม่บังคับ)" : "Closes at (optional)"} style={{ flex: 1, minWidth: 150 }}>
-              <input type="datetime-local" value={closesAt} onChange={(e) => setClosesAt(e.target.value)} style={inputStyle} />
-            </Field>
-          </div>
-
           {/* Images */}
-          <Field label={th ? "รูปสินค้า (รูปแรก = หน้าปก)" : "Posters (first = cover)"}>
+          <Field label={th ? "รูปสินค้า" : "Posters"} hint={th ? "รูปแรกใช้เป็นหน้าปก" : "The first image is used as the cover"}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
               {imageUrls.map((url, i) => (
                 <div key={url} style={{ position: "relative", width: 80, height: 80, borderRadius: "var(--radius-md)", overflow: "hidden", border: i === 0 ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)" }}>
@@ -422,7 +459,7 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
           </Field>
 
           {/* Variants */}
-          <Field label={th ? "ตัวเลือก / ไซส์ (สต็อกเว้นว่าง = ไม่จำกัด)" : "Options / sizes (blank stock = unlimited)"}>
+          <Field label={th ? "ตัวเลือก / ไซส์" : "Options / sizes"} required hint={th ? "สต็อกเว้นว่าง = ไม่จำกัด" : "Blank stock = unlimited"}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {variants.map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -442,103 +479,160 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
             </div>
           </Field>
 
+          {/* ---- Optional extras (each under a labeled divider; all stay visible) ---- */}
+
+          {/* Sale schedule */}
+          <SectionDivider icon={<Clock size={15} />} title={th ? "ช่วงเวลาขาย" : "Sale schedule"} summary={scheduleSummary} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <Field label={th ? "เปิดขาย" : "Opens at"} style={{ flex: 1, minWidth: 150 }}>
+                <input type="datetime-local" value={opensAt} onChange={(e) => setOpensAt(e.target.value)} style={inputStyle} />
+              </Field>
+              <Field label={th ? "ปิดขาย" : "Closes at"} style={{ flex: 1, minWidth: 150 }}>
+                <input type="datetime-local" value={closesAt} onChange={(e) => setClosesAt(e.target.value)} style={inputStyle} />
+              </Field>
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+              {th ? "เว้นว่างทั้งคู่ = ขายได้ตลอดเวลา" : "Leave both blank to keep it on sale indefinitely."}
+            </p>
+          </div>
+
+          {/* Per-product delivery pricing. Base fee blank = use the shop-wide
+              fallback (Settings tab). Tiers raise the fee once the ordered quantity
+              of THIS product reaches minQty ("order more than N → fee goes up").
+              An order's total shipping is the sum of each product's computed fee. */}
+          <SectionDivider icon={<Truck size={15} />} title={th ? "ค่าจัดส่ง (เฉพาะสินค้านี้)" : "Delivery fee (this product)"} summary={deliverySummary} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>{th ? "ค่าส่งพื้นฐาน (฿)" : "Base fee (฿)"}</span>
+              <input type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} placeholder={th ? "เว้นว่าง = ใช้ค่าเริ่มต้นของร้าน" : "blank = use shop default"} style={{ ...inputStyle, width: 220 }} />
+            </div>
+            {deliveryTiers.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {deliveryTiers.map((t, i) => {
+                  const setTier = (patch: Partial<TierDraft>) => setDeliveryTiers((ts) => ts.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+                  return (
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
+                      <span style={{ color: "var(--text-muted)" }}>{th ? "ตั้งแต่" : "From"}</span>
+                      <input type="number" min={1} value={t.minQty} onChange={(e) => setTier({ minQty: e.target.value })} placeholder={th ? "จำนวน" : "qty"} style={{ ...inputStyle, width: 90 }} />
+                      <span style={{ color: "var(--text-muted)" }}>{th ? "ชิ้นขึ้นไป → ฿" : "+ pcs → ฿"}</span>
+                      <input type="number" min={0} value={t.fee} onChange={(e) => setTier({ fee: e.target.value })} placeholder={th ? "ค่าส่ง" : "fee"} style={{ ...inputStyle, width: 110 }} />
+                      <button onClick={() => setDeliveryTiers((ts) => ts.filter((_, idx) => idx !== i))} className="btn btn-ghost" style={{ padding: 6, color: "#ef4444" }}><Trash2 size={15} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button onClick={() => setDeliveryTiers((ts) => [...ts, { minQty: "", fee: "" }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <Plus size={15} />{th ? "เพิ่มขั้นตามจำนวน" : "Add quantity tier"}
+            </button>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+              {th
+                ? "ค่าส่งคิดต่อสินค้าตามจำนวนที่สั่ง โดยใช้ขั้นที่จำนวนถึงสูงสุด (เช่น 1–2 ชิ้น ฿30, ตั้งแต่ 3 ชิ้น ฿50) แล้วรวมค่าส่งของทุกสินค้าในออร์เดอร์"
+                : "Charged per product by ordered quantity, using the highest tier reached (e.g. 1–2 pcs ฿30, from 3 pcs ฿50). The order's shipping is the sum across products."}
+            </p>
+          </div>
+
           {/* Custom fields — buyer-filled personalization (e.g. jersey name/number).
               Empty = none. Each becomes an input on the storefront + a column in export. */}
-          <Field label={th ? "ช่องกรอกเอง (เช่น ชื่อ/เบอร์เสื้อ)" : "Custom fields (e.g. name / number)"}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {customFields.length === 0 && (
-                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-                  {th ? "ไม่มี — ผู้ซื้อไม่ต้องกรอกอะไรเพิ่ม" : "None — buyers fill nothing extra."}
-                </p>
-              )}
-              {customFields.map((f, i) => {
-                const setField = (patch: Partial<FieldDraft>) => setCustomFields((fs) => fs.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
-                return (
-                  <div key={i} style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: 10, display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-base)" }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <input value={f.label} onChange={(e) => setField({ label: e.target.value })} placeholder={th ? "ชื่อช่อง เช่น ชื่อบนเสื้อ" : "Label e.g. Name on back"} style={{ ...inputStyle, flex: 2, minWidth: 140 }} />
-                      <select value={f.type} onChange={(e) => setField({ type: e.target.value as ShopCustomFieldType })} style={{ ...inputStyle, flex: 1, minWidth: 110 }}>
-                        <option value="text">{th ? "ข้อความ" : "Text"}</option>
-                        <option value="number">{th ? "ตัวเลข" : "Number"}</option>
-                        <option value="select">{th ? "ตัวเลือก" : "Select"}</option>
-                      </select>
-                      <button onClick={() => setCustomFields((fs) => fs.filter((_, idx) => idx !== i))} className="btn btn-ghost" style={{ padding: 6, color: "#ef4444" }}><Trash2 size={15} /></button>
-                    </div>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                        <input type="checkbox" checked={f.required} onChange={(e) => setField({ required: e.target.checked })} />
-                        {th ? "จำเป็น" : "Required"}
-                      </label>
-                      {f.type === "text" && (
-                        <input type="number" min={1} value={f.maxLength ?? ""} onChange={(e) => setField({ maxLength: e.target.value === "" ? null : Math.max(1, Number(e.target.value)) })} placeholder={th ? "ความยาวสูงสุด" : "Max length"} style={{ ...inputStyle, width: 140 }} />
-                      )}
-                      {f.type === "number" && (
-                        <>
-                          <input type="number" value={f.min ?? ""} onChange={(e) => setField({ min: e.target.value === "" ? null : Number(e.target.value) })} placeholder={th ? "ต่ำสุด" : "Min"} style={{ ...inputStyle, width: 100 }} />
-                          <input type="number" value={f.max ?? ""} onChange={(e) => setField({ max: e.target.value === "" ? null : Number(e.target.value) })} placeholder={th ? "สูงสุด" : "Max"} style={{ ...inputStyle, width: 100 }} />
-                        </>
-                      )}
-                      {f.type === "select" && (
-                        <input value={f.options.join(", ")} onChange={(e) => setField({ options: e.target.value.split(",").map((o) => o.replace(/^\s+|\s+$/g, "")) })} placeholder={th ? "ตัวเลือก คั่นด้วย , เช่น แดง, น้ำเงิน" : "Options, comma-separated e.g. Red, Blue"} style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
-                      )}
-                    </div>
+          <SectionDivider icon={<Pencil size={15} />} title={th ? "ช่องให้ผู้ซื้อกรอก" : "Personalization fields"} summary={fieldsSummary} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+              {th ? "เช่น ชื่อ/เบอร์บนเสื้อ — ผู้ซื้อกรอกตอนสั่ง และจะอยู่ในไฟล์ส่งออก" : "e.g. name / number on a jersey — buyers fill these at checkout and they appear in the export."}
+            </p>
+            {customFields.length === 0 && (
+              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                {th ? "ยังไม่มี — ผู้ซื้อไม่ต้องกรอกอะไรเพิ่ม" : "None yet — buyers fill nothing extra."}
+              </p>
+            )}
+            {customFields.map((f, i) => {
+              const setField = (patch: Partial<FieldDraft>) => setCustomFields((fs) => fs.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+              return (
+                <div key={i} style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: 10, display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-base)" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <input value={f.label} onChange={(e) => setField({ label: e.target.value })} placeholder={th ? "ชื่อช่อง เช่น ชื่อบนเสื้อ" : "Label e.g. Name on back"} style={{ ...inputStyle, flex: 2, minWidth: 140 }} />
+                    <select value={f.type} onChange={(e) => setField({ type: e.target.value as ShopCustomFieldType })} style={{ ...inputStyle, flex: 1, minWidth: 110 }}>
+                      <option value="text">{th ? "ข้อความ" : "Text"}</option>
+                      <option value="number">{th ? "ตัวเลข" : "Number"}</option>
+                      <option value="select">{th ? "ตัวเลือก" : "Select"}</option>
+                    </select>
+                    <button onClick={() => setCustomFields((fs) => fs.filter((_, idx) => idx !== i))} className="btn btn-ghost" style={{ padding: 6, color: "#ef4444" }}><Trash2 size={15} /></button>
                   </div>
-                );
-              })}
-              <button onClick={() => setCustomFields((fs) => [...fs, { label: "", type: "text", required: false, maxLength: null, min: null, max: null, options: [] }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                <Plus size={15} />{th ? "เพิ่มช่องกรอกเอง" : "Add custom field"}
-              </button>
-            </div>
-          </Field>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <input type="checkbox" checked={f.required} onChange={(e) => setField({ required: e.target.checked })} />
+                      {th ? "จำเป็น" : "Required"}
+                    </label>
+                    {f.type === "text" && (
+                      <input type="number" min={1} value={f.maxLength ?? ""} onChange={(e) => setField({ maxLength: e.target.value === "" ? null : Math.max(1, Number(e.target.value)) })} placeholder={th ? "ความยาวสูงสุด" : "Max length"} style={{ ...inputStyle, width: 140 }} />
+                    )}
+                    {f.type === "number" && (
+                      <>
+                        <input type="number" value={f.min ?? ""} onChange={(e) => setField({ min: e.target.value === "" ? null : Number(e.target.value) })} placeholder={th ? "ต่ำสุด" : "Min"} style={{ ...inputStyle, width: 100 }} />
+                        <input type="number" value={f.max ?? ""} onChange={(e) => setField({ max: e.target.value === "" ? null : Number(e.target.value) })} placeholder={th ? "สูงสุด" : "Max"} style={{ ...inputStyle, width: 100 }} />
+                      </>
+                    )}
+                    {f.type === "select" && (
+                      <input value={f.options.join(", ")} onChange={(e) => setField({ options: e.target.value.split(",").map((o) => o.replace(/^\s+|\s+$/g, "")) })} placeholder={th ? "ตัวเลือก คั่นด้วย , เช่น แดง, น้ำเงิน" : "Options, comma-separated e.g. Red, Blue"} style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <button onClick={() => setCustomFields((fs) => [...fs, { label: "", type: "text", required: false, maxLength: null, min: null, max: null, options: [] }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <Plus size={15} />{th ? "เพิ่มช่องกรอกเอง" : "Add custom field"}
+            </button>
+          </div>
 
           {/* Audience targeting — who may see (and order) this product. Empty role
               and major selections + both student types = visible to everyone. */}
-          <Field label={th ? "ใครเห็นสินค้านี้ได้ (เว้นว่าง = ทุกคน)" : "Who can see this (empty = everyone)"}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "บทบาท" : "Roles"}</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {ALL_ROLES.map((r) => (
-                    <Chip key={r} selected={allowedRoles.includes(r)} onClick={() => setAllowedRoles((cur) => cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r])}>
-                      {ROLE_LABELS[r] ?? r}
-                    </Chip>
-                  ))}
-                </div>
+          <SectionDivider icon={<Users size={15} />} title={th ? "ใครเห็นสินค้านี้ได้" : "Who can see this"} summary={audienceSummary} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "บทบาท" : "Roles"}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {ALL_ROLES.map((r) => (
+                  <Chip key={r} selected={allowedRoles.includes(r)} onClick={() => setAllowedRoles((cur) => cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r])}>
+                    {ROLE_LABELS[r] ?? r}
+                  </Chip>
+                ))}
               </div>
-              <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "สาขา" : "Majors"}</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {ALL_MAJORS.map((m) => (
-                    <Chip key={m} selected={allowedMajors.includes(m)} onClick={() => setAllowedMajors((cur) => cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m])}>
-                      {m}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "นักศึกษา" : "Students"}</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                    <input type="checkbox" checked={targetThai} onChange={(e) => setTargetThai(e.target.checked)} />
-                    {th ? "ไทย" : "Thai"}
-                  </label>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                    <input type="checkbox" checked={targetInternational} onChange={(e) => setTargetInternational(e.target.checked)} />
-                    {th ? "นานาชาติ" : "International"}
-                  </label>
-                </div>
-              </div>
-              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-                {th
-                  ? "เว้นว่างทั้งหมด = ทุกคนเห็นได้ · ผู้ดูแลเห็นสินค้าทั้งหมดเสมอ"
-                  : "All empty = everyone can see it · admins always see every product."}
-              </p>
             </div>
-          </Field>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "สาขา" : "Majors"}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {ALL_MAJORS.map((m) => (
+                  <Chip key={m} selected={allowedMajors.includes(m)} onClick={() => setAllowedMajors((cur) => cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m])}>
+                    {m}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{th ? "นักศึกษา" : "Students"}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <input type="checkbox" checked={targetThai} onChange={(e) => setTargetThai(e.target.checked)} />
+                  {th ? "ไทย" : "Thai"}
+                </label>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <input type="checkbox" checked={targetInternational} onChange={(e) => setTargetInternational(e.target.checked)} />
+                  {th ? "นานาชาติ" : "International"}
+                </label>
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+              {th
+                ? "เว้นว่างทั้งหมด = ทุกคนเห็นได้ · ผู้ดูแลเห็นสินค้าทั้งหมดเสมอ"
+                : "All empty = everyone can see it · admins always see every product."}
+            </p>
+          </div>
 
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          {/* Visibility — prominent toggle so the live/hidden state is obvious. */}
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "12px 14px", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", background: "var(--bg-base)" }}>
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-            <span style={{ fontWeight: 600, fontSize: 14 }}>{th ? "แสดงในร้านค้า" : "Visible in shop"}</span>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{th ? "แสดงในร้านค้า" : "Visible in shop"}</span>
+            <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: isActive ? "#15803d" : "var(--text-muted)" }}>{isActive ? (th ? "กำลังแสดง" : "Live") : (th ? "ซ่อนอยู่" : "Hidden")}</span>
           </label>
         </div>
 
@@ -726,10 +820,26 @@ function AdminOrderRow({ order, th, busy, onReview }: { order: AdminOrder; th: b
             )}
           </div>
         ))}
+        {order.shippingFee > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--text-muted)", marginTop: 6 }}>
+            <span>{th ? "ค่าจัดส่ง" : "Shipping"}</span><span>{baht(order.shippingFee)}</span>
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border-subtle)" }}>
           <span>{th ? "รวม" : "Total"}</span><span>{baht(order.totalAmount)}</span>
         </div>
       </div>
+
+      {/* Fulfillment: pickup chip, or the delivery recipient + address block. */}
+      {order.fulfillment === "delivery" ? (
+        <div style={{ fontSize: 13, background: "var(--bg-base)", padding: "8px 12px", borderRadius: 8, marginBottom: 8, border: "1px solid var(--border-subtle)" }}>
+          <p style={{ fontWeight: 700, marginBottom: 3, display: "inline-flex", alignItems: "center", gap: 6, color: "var(--accent-primary)" }}><Truck size={14} /> {th ? "จัดส่ง" : "Delivery"}</p>
+          <p style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>{order.recipientName ?? "—"}{order.recipientPhone ? ` · ${order.recipientPhone}` : ""}</p>
+          {order.shippingAddress && <p style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", marginTop: 2 }}>{order.shippingAddress}</p>}
+        </div>
+      ) : (
+        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 8, display: "inline-flex", alignItems: "center", gap: 6 }}><Store size={14} /> {th ? "รับสินค้าเอง" : "Self-pickup"}</p>
+      )}
 
       {order.note && <p style={{ fontSize: 13, color: "var(--text-secondary)", background: "var(--bg-base)", padding: "8px 12px", borderRadius: 8, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><FileText size={13} style={{ flexShrink: 0 }} /> {order.note}</p>}
       {order.status === "rejected" && order.rejectionReason && <p style={{ fontSize: 13, color: "#ef4444", marginBottom: 8 }}>{th ? "เหตุผล: " : "Reason: "}{order.rejectionReason}</p>}
@@ -775,6 +885,9 @@ function SettingsTab({ th }: { th: boolean }) {
   const [enabled, setEnabled] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState("");
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
+  const [deliveryFee, setDeliveryFee] = useState<string>("0");
+  const [pickupInfo, setPickupInfo] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -784,7 +897,10 @@ function SettingsTab({ th }: { th: boolean }) {
 
   useEffect(() => {
     fetch("/api/admin/shop/settings").then((r) => r.json()).then((d) => {
-      if (d) { setEnabled(!!d.enabled); setPaymentInfo(d.paymentInfo ?? ""); setQrImageUrl(d.qrImageUrl ?? null); }
+      if (d) {
+        setEnabled(!!d.enabled); setPaymentInfo(d.paymentInfo ?? ""); setQrImageUrl(d.qrImageUrl ?? null);
+        setDeliveryEnabled(!!d.deliveryEnabled); setDeliveryFee(String(d.deliveryFee ?? 0)); setPickupInfo(d.pickupInfo ?? "");
+      }
     }).finally(() => setLoading(false));
   }, []);
 
@@ -795,7 +911,7 @@ function SettingsTab({ th }: { th: boolean }) {
       const res = await fetch("/api/admin/shop/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, paymentInfo, qrImageUrl: qrImageUrl || null }),
+        body: JSON.stringify({ enabled, paymentInfo, qrImageUrl: qrImageUrl || null, deliveryEnabled, deliveryFee: Math.max(0, Math.round(Number(deliveryFee) || 0)), pickupInfo }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Save failed");
@@ -840,6 +956,25 @@ function SettingsTab({ th }: { th: boolean }) {
         <RichTextEditor value={paymentInfo} onChange={setPaymentInfo} rows={4} placeholder={th ? "เช่น พร้อมเพย์ 08x-xxx-xxxx (ชื่อ) — โอนแล้วแนบสลิป" : "e.g. PromptPay 08x-xxx-xxxx (Name) — transfer then upload slip"} />
       </Field>
 
+      {/* Delivery / fulfillment (flat fee) */}
+      <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={deliveryEnabled} onChange={(e) => setDeliveryEnabled(e.target.checked)} />
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{th ? "เปิดให้จัดส่ง (พร้อมค่าส่งแบบเหมา)" : "Offer delivery (flat fee)"}</span>
+        </label>
+        {deliveryEnabled && (
+          <Field label={th ? "ค่าจัดส่งเริ่มต้นของร้าน (บาท)" : "Default delivery fee (฿)"} style={{ maxWidth: 280 }}>
+            <input type="number" min={0} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} style={inputStyle} />
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
+              {th ? "ใช้กับสินค้าที่ไม่ได้ตั้งค่าส่งของตัวเอง" : "Used for products that don't set their own delivery fee."}
+            </p>
+          </Field>
+        )}
+        <Field label={th ? "คำแนะนำการรับสินค้าเอง (ที่ไหน/เมื่อไหร่)" : "Self-pickup instructions (where / when)"}>
+          <RichTextEditor value={pickupInfo} onChange={setPickupInfo} rows={3} placeholder={th ? "เช่น รับที่ห้อง SMO ชั้น 1 อาคาร CAMT จ.–ศ. 12:00–13:00" : "e.g. Collect at the SMO room, CAMT building, Mon–Fri 12:00–13:00"} />
+        </Field>
+      </div>
+
       {error && <p style={{ color: "#ef4444", fontSize: 13 }}>{error}</p>}
 
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -854,11 +989,28 @@ function SettingsTab({ th }: { th: boolean }) {
 
 /* ------------------------------- helpers -------------------------------- */
 
-function Field({ label, children, style }: { label: string; children: React.ReactNode; style?: React.CSSProperties }) {
+function Field({ label, children, style, required, hint }: { label: string; children: React.ReactNode; style?: React.CSSProperties; required?: boolean; hint?: string }) {
   return (
     <div style={style}>
-      <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{label}</label>
+      <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: hint ? 4 : 8 }}>
+        {label}{required && <span style={{ color: "#ef4444", marginLeft: 3 }}>*</span>}
+      </label>
+      {hint && <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px" }}>{hint}</p>}
       {children}
+    </div>
+  );
+}
+
+// A plain labeled divider that introduces a group of fields. It does NOT wrap the
+// fields — they render in the form's normal flat flow right below it — so there's
+// nothing to collapse and nothing can hide. The right-aligned summary chip shows
+// the group's current state at a glance (e.g. "Everyone", "Shop default fee").
+function SectionDivider({ icon, title, summary }: { icon: React.ReactNode; title: string; summary?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+      <span style={{ color: "var(--accent-primary)", display: "inline-flex", flexShrink: 0 }}>{icon}</span>
+      <span style={{ fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{title}</span>
+      {summary && <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginLeft: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{summary}</span>}
     </div>
   );
 }

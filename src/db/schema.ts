@@ -2,6 +2,7 @@ import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey, in
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
 import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
+import type { ShopDeliveryTier } from "@/lib/shop-delivery";
 
 export const houses = pgTable("houses", {
   id: text("id").primaryKey(), // e.g. 'red', 'blue', 'green', 'yellow'
@@ -420,6 +421,13 @@ export const shopSettings = pgTable("shop_settings", {
   paymentInfo: text("payment_info").notNull().default(""),
   // Public URL (uploads bucket) of the PromptPay/bank QR image. Not sensitive.
   qrImageUrl: text("qr_image_url"),
+  // Delivery / fulfillment (Phase 2). deliveryEnabled is the master on/off for
+  // offering delivery at checkout. deliveryFee is the shop-wide FALLBACK fee (฿)
+  // used only for products that don't set their own deliveryFee/deliveryTiers
+  // (see shop_products); pickupInfo is the where/when-to-collect text for pickup.
+  deliveryEnabled: boolean("delivery_enabled").notNull().default(false),
+  deliveryFee: integer("delivery_fee").notNull().default(0),
+  pickupInfo: text("pickup_info").notNull().default(""),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -460,6 +468,13 @@ export const shopProducts = pgTable("shop_products", {
   // See src/lib/shop-custom-fields.ts. NULL/[] = no custom fields. Buyers' answers
   // are snapshotted onto shop_order_items.custom_values at checkout.
   customFields: jsonb("custom_fields").$type<ShopCustomField[]>(),
+  // Per-product delivery pricing (overrides shop_settings.deliveryFee fallback).
+  // deliveryFee = base ฿ fee (NULL = use the shop-wide fallback); deliveryTiers =
+  // ascending quantity thresholds [{minQty,fee}] where the highest applicable
+  // minQty wins ("order more than N → fee goes up"). An order's total shipping is
+  // the SUM of each product's computed fee. See src/lib/shop-delivery.ts.
+  deliveryFee: integer("delivery_fee"),
+  deliveryTiers: jsonb("delivery_tiers").$type<ShopDeliveryTier[]>(),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -495,6 +510,15 @@ export const shopOrders = pgTable("shop_orders", {
   totalAmount: integer("total_amount").notNull().default(0),
   // Optional buyer note (e.g. name on the slip, pickup preference).
   note: text("note"),
+  // Fulfillment (Phase 2): 'pickup' (default) | 'delivery'. For delivery the buyer
+  // supplies recipient name/phone/address (PDPA: personal data, shop-admin only)
+  // and pays shippingFee (฿) — a snapshot of shop_settings.delivery_fee folded into
+  // totalAmount at checkout. Pickup orders carry NULL recipient fields + fee 0.
+  fulfillment: text("fulfillment").notNull().default("pickup"),
+  recipientName: text("recipient_name"),
+  recipientPhone: text("recipient_phone"),
+  shippingAddress: text("shipping_address"),
+  shippingFee: integer("shipping_fee").notNull().default(0),
   reviewedBy: text("reviewed_by"),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   rejectionReason: text("rejection_reason"),

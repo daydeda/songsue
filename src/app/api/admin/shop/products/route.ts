@@ -55,6 +55,8 @@ export async function GET() {
       targetThai: p.targetThai ?? true,
       targetInternational: p.targetInternational ?? true,
       customFields: p.customFields ?? [],
+      deliveryFee: p.deliveryFee ?? null,
+      deliveryTiers: p.deliveryTiers ?? [],
       sortOrder: p.sortOrder,
       variants: variants
         .filter((v) => v.productId === p.id)
@@ -95,6 +97,8 @@ export async function POST(req: Request) {
           targetThai: data.targetThai,
           targetInternational: data.targetInternational,
           customFields: data.customFields,
+          deliveryFee: data.deliveryFee,
+          deliveryTiers: data.deliveryTiers,
           sortOrder: data.sortOrder,
         })
         .returning({ id: shopProducts.id });

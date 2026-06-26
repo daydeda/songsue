@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { shopOrderItems, shopOrders, shopProducts, shopSettings, shopVariants } from "@/db/schema";
+import { shopOrderItems, shopOrders, shopProducts, shopSettings, shopVariants, users } from "@/db/schema";
+import { buildViewer, isEligibleFor } from "@/lib/event-access";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -90,6 +91,18 @@ export async function POST(req: Request) {
     }
     const variantIds = [...qtyByVariant.keys()];
 
+    // Buyer's audience profile, for the per-product visibility re-check below
+    // (defence-in-depth: the storefront already hides ineligible products).
+    const me = await db.query.users.findFirst({
+      where: eq(users.id, buyerId),
+      columns: { major: true },
+    });
+    const viewer = buildViewer({
+      roles: session.user.roles || [session.user.role || "student"],
+      studentId: session.user.studentId,
+      major: me?.major,
+    });
+
     const created = await db.transaction(async (tx) => {
       const [settings] = await tx
         .select({ enabled: shopSettings.enabled })
@@ -154,7 +167,7 @@ export async function POST(req: Request) {
 
       for (const v of variants) {
         const product = productById.get(v.productId);
-        if (!product || !product.isActive) {
+        if (!product || !product.isActive || !isEligibleFor(product, viewer)) {
           return { error: `"${product?.name ?? "An item"}" is no longer available.`, status: 400 as const };
         }
         // Sale window (server-authoritative — the client also hides it, but never trust that).

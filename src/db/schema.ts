@@ -444,6 +444,16 @@ export const shopProducts = pgTable("shop_products", {
   opensAt: timestamp("opens_at", { withTimezone: true }),
   closesAt: timestamp("closes_at", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),
+  // Audience targeting — mirrors events (shares src/lib/event-access.ts). Each
+  // axis is AND-combined; an empty/NULL array = no restriction on that axis.
+  // allowedRoles: only these roles see the product (empty = all roles).
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  // allowedMajors: only these majors (ANI, DG, DII, MMIT, SE) see it (empty = all).
+  allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  // Thai / international student targeting (derived from student id). Both false
+  // is treated as both true by the predicate. Shop admins always see everything.
+  targetThai: boolean("target_thai").default(true),
+  targetInternational: boolean("target_international").default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),

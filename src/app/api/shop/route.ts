@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { shopOrderItems, shopOrders, shopProducts, shopSettings, shopVariants } from "@/db/schema";
+import { shopOrderItems, shopOrders, shopProducts, shopSettings, shopVariants, users } from "@/db/schema";
+import { buildViewer, isEligibleFor } from "@/lib/event-access";
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -27,11 +28,27 @@ export async function GET() {
       return NextResponse.json({ enabled: false, paymentInfo: "", qrImageUrl: null, products: [] });
     }
 
-    const products = await db
+    // Major lives on the users row (not on the session token); needed for the
+    // major-based visibility check. Roles + studentId come from the session.
+    const me = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id!),
+      columns: { major: true },
+    });
+    const viewer = buildViewer({
+      roles: session.user.roles || [session.user.role || "student"],
+      studentId: session.user.studentId,
+      major: me?.major,
+    });
+
+    const activeProducts = await db
       .select()
       .from(shopProducts)
       .where(eq(shopProducts.isActive, true))
       .orderBy(asc(shopProducts.sortOrder), desc(shopProducts.createdAt));
+
+    // Hide products this buyer isn't in the audience for (role / major / Thai-intl).
+    // Admin-role viewers get the predicate's built-in bypass (they see everything).
+    const products = activeProducts.filter((p) => isEligibleFor(p, viewer));
 
     const productIds = products.map((p) => p.id);
     const variants = productIds.length

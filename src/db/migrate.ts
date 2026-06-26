@@ -736,6 +736,20 @@ async function migrate() {
   `;
   console.log("  ✅ forms.individual_points_awarded");
 
+  // 47. shop_products audience targeting — mirrors the events visibility model so
+  // a product can be shown only to certain roles / majors / Thai|international
+  // students (shared predicate src/lib/event-access.ts). allowedRoles and
+  // allowedMajors are jsonb string[] (NULL/[] = no restriction on that axis);
+  // target_thai / target_international default true (both false is treated as
+  // both true by the predicate). Additive, nullable / default-true,
+  // non-destructive: existing products get NULL arrays + both targets true, i.e.
+  // visible to everyone exactly as before. Idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS allowed_roles jsonb`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS allowed_majors jsonb`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS target_thai boolean DEFAULT true`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS target_international boolean DEFAULT true`;
+  console.log("  ✅ shop_products.allowed_roles / allowed_majors / target_thai / target_international");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

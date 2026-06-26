@@ -50,6 +50,10 @@ export async function GET() {
       opensAt: p.opensAt,
       closesAt: p.closesAt,
       isActive: p.isActive,
+      allowedRoles: p.allowedRoles ?? [],
+      allowedMajors: p.allowedMajors ?? [],
+      targetThai: p.targetThai ?? true,
+      targetInternational: p.targetInternational ?? true,
       sortOrder: p.sortOrder,
       variants: variants
         .filter((v) => v.productId === p.id)
@@ -85,6 +89,10 @@ export async function POST(req: Request) {
           opensAt: data.opensAt,
           closesAt: data.closesAt,
           isActive: data.isActive,
+          allowedRoles: data.allowedRoles,
+          allowedMajors: data.allowedMajors,
+          targetThai: data.targetThai,
+          targetInternational: data.targetInternational,
           sortOrder: data.sortOrder,
         })
         .returning({ id: shopProducts.id });

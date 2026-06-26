@@ -5,6 +5,7 @@ import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 import { AuditService } from "../audit/audit.service";
 import { canGiveIndividualScore } from "@/lib/admin-access";
+import { awardIndividualPoints } from "@/lib/award-individual-points";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
 type DBTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -503,41 +504,15 @@ export class ScannerService {
     }
   ): Promise<void> {
     const { studentId, studentName, houseId, eventId, eventTitle, points, sessionLabel } = params;
-    if (!points || points <= 0) return;
-
-    const [result] = await tx
-      .update(users)
-      .set({ points: sql`COALESCE(${users.points}, 0) + ${points}` })
-      .where(eq(users.id, studentId))
-      .returning({ newPoints: users.points });
-
-    const newPoints = result?.newPoints ?? points;
-    const previousPoints = newPoints - points;
-
-    if (houseId) {
-      await tx.insert(scoreHistory).values({
-        houseId,
-        eventId: eventId || null,
-        delta: 0,
-        reason: `Awarded ${points} individual points to ${studentName} for attending "${eventTitle}" (${sessionLabel})`,
-      });
-    }
-
-    // 100-pt milestone → +2 house points, identical rule to the manual score action.
-    const milestoneDiff = Math.floor(newPoints / 100) - Math.floor(previousPoints / 100);
-    if (milestoneDiff > 0 && houseId) {
-      const housePointsAdded = milestoneDiff * 2;
-      await tx
-        .update(houses)
-        .set({ points: sql`${houses.points} + ${housePointsAdded}` })
-        .where(eq(houses.id, houseId));
-      await tx.insert(scoreHistory).values({
-        houseId,
-        eventId: eventId || null,
-        delta: housePointsAdded,
-        reason: `Student ${studentName} reached 100 point milestone (+${newPoints} total points) from activity "${eventTitle}"`,
-      });
-    }
+    await awardIndividualPoints(tx, {
+      studentId,
+      studentName,
+      houseId,
+      eventId,
+      points,
+      reason: `Awarded ${points} individual points to ${studentName} for attending "${eventTitle}" (${sessionLabel})`,
+      activityLabel: eventTitle,
+    });
   }
 
   /**

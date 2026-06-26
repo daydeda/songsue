@@ -154,6 +154,7 @@ interface EventFormSummary {
   description: string;
   questions: unknown;
   pointsAwarded: number;
+  individualPointsAwarded: number;
   isActive: boolean;
   isAwarded: boolean;
   opensAt: string | null;
@@ -215,6 +216,7 @@ type BuilderState = {
   formTitle: string;
   formDescription: string;
   formPoints: number;
+  formIndividualPoints: number;
   formSections: FormSection[];
   formIsAwarded: boolean;
   formOpensAt: string;
@@ -224,7 +226,7 @@ type BuilderState = {
 };
 const builderFingerprint = (f: BuilderState): string =>
   JSON.stringify([
-    f.activeFormType, f.formTitle, f.formDescription, f.formPoints,
+    f.activeFormType, f.formTitle, f.formDescription, f.formPoints, f.formIndividualPoints,
     serializeForm(f.formSections), f.formIsAwarded, f.formOpensAt, f.formClosesAt,
     [...f.formAssignedRoles].sort(), [...f.formAssignedUserIds].sort(),
   ]);
@@ -357,6 +359,7 @@ export default function AdminEventsPage() {
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formPoints, setFormPoints] = useState(0);
+  const [formIndividualPoints, setFormIndividualPoints] = useState(0);
   const [formSections, setFormSections] = useState<FormSection[]>([]);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
   // Scheduling window + S-form assignment
@@ -421,6 +424,7 @@ export default function AdminEventsPage() {
     setFormTitle(f.title);
     setFormDescription(f.description || "");
     setFormPoints(f.pointsAwarded || 0);
+    setFormIndividualPoints(f.individualPointsAwarded || 0);
     const loadedSections = normalizeForm(f.questions).sections;
     setFormSections(loadedSections);
     setFormIsAwarded(f.isAwarded || false);
@@ -439,6 +443,7 @@ export default function AdminEventsPage() {
       formTitle: f.title,
       formDescription: f.description || "",
       formPoints: f.pointsAwarded || 0,
+      formIndividualPoints: f.individualPointsAwarded || 0,
       formSections: loadedSections,
       formIsAwarded: f.isAwarded || false,
       formOpensAt: toDatetimeLocal(f.opensAt),
@@ -494,6 +499,7 @@ export default function AdminEventsPage() {
         setFormTitle("");
         setFormDescription("");
         setFormPoints(0);
+        setFormIndividualPoints(0);
         setFormSections(defaultSections);
         setFormIsAwarded(false);
         setFormOpensAt("");
@@ -503,7 +509,7 @@ export default function AdminEventsPage() {
         setFormStats(null);
         setFormSubmissions([]);
         setPristineFingerprint(builderFingerprint({
-          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0,
+          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0, formIndividualPoints: 0,
           formSections: defaultSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
           formAssignedRoles: [], formAssignedUserIds: [],
         }));
@@ -546,6 +552,7 @@ export default function AdminEventsPage() {
     setFormTitle(newTitle);
     setFormDescription("");
     setFormPoints(0);
+    setFormIndividualPoints(0);
     setFormSections(newSections);
     setFormIsAwarded(false);
     setFormOpensAt("");
@@ -559,7 +566,7 @@ export default function AdminEventsPage() {
     setFormBuilderSuccess(null);
     // Baseline = the default template, so closing an untouched new form is silent.
     setPristineFingerprint(builderFingerprint({
-      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0,
+      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0, formIndividualPoints: 0,
       formSections: newSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
       formAssignedRoles: [], formAssignedUserIds: [],
     }));
@@ -615,6 +622,7 @@ export default function AdminEventsPage() {
           title: formTitle,
           description: formDescription,
           pointsAwarded: formPoints,
+          individualPointsAwarded: formIndividualPoints,
           questions: serializeForm(formSections),
           // Forms are always active now — the schedule window (opensAt/closesAt)
           // drives the lifecycle and auto-awards when closesAt passes.
@@ -632,7 +640,7 @@ export default function AdminEventsPage() {
         // there are no unsaved edits (also covers the new-form path, where
         // refreshAllForms can't yet match by the not-yet-set activeFormId).
         setPristineFingerprint(builderFingerprint({
-          activeFormType, formTitle, formDescription, formPoints, formSections,
+          activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
           formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
         }));
         // If this was a new form, set the activeFormId
@@ -684,7 +692,7 @@ export default function AdminEventsPage() {
   const builderDirty =
     showFormBuilder && !formLoading &&
     builderFingerprint({
-      activeFormType, formTitle, formDescription, formPoints, formSections,
+      activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
       formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
     }) !== pristineFingerprint;
 
@@ -3602,7 +3610,21 @@ export default function AdminEventsPage() {
                             onChange={e => setFormPoints(Math.max(0, parseInt(e.target.value) || 0))}
                           />
                         </div>
-                        
+
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+                            <Sparkles size={14} style={{ color: "var(--accent-primary)" }} /> {t.fbIndividualPointsReward || "Individual Points Reward"}
+                          </label>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t.fbEachSubmitterGetsPoints || "Each student gets these points when they submit."}</p>
+                          <input
+                            type="number"
+                            className="input"
+                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", fontWeight: 800 }}
+                            value={formIndividualPoints}
+                            onChange={e => setFormIndividualPoints(Math.max(0, parseInt(e.target.value) || 0))}
+                          />
+                        </div>
+
                         {(() => {
                           // Read-only lifecycle status. There is no manual open/close
                           // anymore — the schedule window below drives everything, and

@@ -1,7 +1,8 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { forms, formSubmissions, attendance } from "@/db/schema";
+import { forms, formSubmissions, attendance, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { awardIndividualPoints } from "@/lib/award-individual-points";
 import { NextResponse } from "next/server";
 import {
   normalizeForm,
@@ -74,6 +75,7 @@ export async function GET(
           description: formObj.description,
           questions: formObj.questions,
           pointsAwarded: formObj.pointsAwarded,
+          individualPointsAwarded: formObj.individualPointsAwarded,
           isActive: formObj.isActive,
           isAwarded: formObj.isAwarded,
           opensAt: formObj.opensAt,
@@ -206,10 +208,35 @@ export async function POST(
       }
     }
 
-    // 4. Record the submission. The (form_id, student_id) unique index is the
-    // authoritative guard against a double-submit race slipping past the check above.
+    // 4. Record the submission, and (if the form grants any) award the submitter
+    // their individual points — atomically in one transaction. The (form_id,
+    // student_id) unique index is the authoritative guard against a double-submit
+    // race: the second insert throws 23505, the whole transaction rolls back, and
+    // no points are awarded, so a duplicate submit can never double-award.
+    const individualPoints = formObj.individualPointsAwarded ?? 0;
     try {
-      await db.insert(formSubmissions).values({ formId: formObj.id, studentId: userId, answers });
+      await db.transaction(async (tx) => {
+        await tx.insert(formSubmissions).values({ formId: formObj.id, studentId: userId, answers });
+
+        if (individualPoints > 0) {
+          const submitter = await tx.query.users.findFirst({
+            where: eq(users.id, userId),
+            columns: { name: true, houseId: true },
+          });
+          const submitterName = submitter?.name ?? "Student";
+          await awardIndividualPoints(tx, {
+            studentId: userId,
+            studentName: submitterName,
+            houseId: submitter?.houseId ?? null,
+            // Tagged with eventId only (never formId) so a form re-open's award
+            // clawback leaves these permanent individual points untouched.
+            eventId,
+            points: individualPoints,
+            reason: `Awarded ${individualPoints} individual points to ${submitterName} for completing form "${formObj.title}"`,
+            activityLabel: formObj.title,
+          });
+        }
+      });
     } catch (e) {
       const dbError = (e as { cause?: { code?: string }; code?: string })?.cause ?? (e as { code?: string });
       if (dbError?.code === "23505") {

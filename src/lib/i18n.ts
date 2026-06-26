@@ -400,6 +400,8 @@ export const translations = {
     // Form Builder Panel
     fbHousePointsReward: "House Points Reward",
     fbWinningHouseGetsPoints: "Winning house gets these points.",
+    fbIndividualPointsReward: "Individual Points Reward",
+    fbEachSubmitterGetsPoints: "Each student gets these points when they submit.",
     fbStatusOpenForEntries: "Open for entries",
     fbStatusFinalizedAwarded: "Finalized & points awarded",
     fbStatusClosedAutoAward: "Closed — points will be awarded automatically",
@@ -852,6 +854,8 @@ export const translations = {
     // Form Builder Panel
     fbHousePointsReward: "คะแนนรางวัลประจำบ้าน",
     fbWinningHouseGetsPoints: "บ้านที่ชนะจะได้รับคะแนนเหล่านี้",
+    fbIndividualPointsReward: "คะแนนรางวัลรายบุคคล",
+    fbEachSubmitterGetsPoints: "นักศึกษาแต่ละคนจะได้รับคะแนนนี้เมื่อส่งแบบฟอร์ม",
     fbStatusOpenForEntries: "เปิดรับการส่งข้อมูล",
     fbStatusFinalizedAwarded: "สรุปผลแล้ว & มอบคะแนนแล้ว",
     fbStatusClosedAutoAward: "ปิดแล้ว — คะแนนจะถูกมอบโดยอัตโนมัติ",
@@ -1304,6 +1308,8 @@ export const translations = {
     // Form Builder Panel
     fbHousePointsReward: "အိမ်တော် ရမှတ်ဆု",
     fbWinningHouseGetsPoints: "အနိုင်ရသောအိမ်တော်သည် ဤရမှတ်များ ရရှိမည်။",
+    fbIndividualPointsReward: "တစ်ဦးချင်း ရမှတ်ဆု",
+    fbEachSubmitterGetsPoints: "ကျောင်းသားတိုင်း ပုံစံတင်သွင်းသည့်အခါ ဤရမှတ်များ ရရှိမည်။",
     fbStatusOpenForEntries: "တင်သွင်းမှုဖွင့်ထားသည်",
     fbStatusFinalizedAwarded: "အပြီးသတ်ပြီး & ရမှတ်ပေးအပ်ပြီး",
     fbStatusClosedAutoAward: "ပိတ်သွားပြီ — ရမှတ်ကို အလိုအလျောက် ပေးအပ်မည်",
@@ -1756,6 +1762,8 @@ export const translations = {
     // Form Builder Panel
     fbHousePointsReward: "学院积分奖励",
     fbWinningHouseGetsPoints: "获胜学院将获得这些积分。",
+    fbIndividualPointsReward: "个人积分奖励",
+    fbEachSubmitterGetsPoints: "每位学生提交后即可获得这些积分。",
     fbStatusOpenForEntries: "开放提交中",
     fbStatusFinalizedAwarded: "已结算并奖励积分",
     fbStatusClosedAutoAward: "已关闭 — 积分将自动颁发",

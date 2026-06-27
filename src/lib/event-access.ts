@@ -18,6 +18,8 @@ export interface EligibilityItem {
   allowedMajors?: string[] | null;
   targetThai?: boolean | null;
   targetInternational?: boolean | null;
+  /** When true, only first-year students (current intake prefix) are eligible. */
+  firstYearOnly?: boolean | null;
 }
 
 export interface Viewer {
@@ -27,6 +29,41 @@ export interface Viewer {
   userMajor: string | null;
   isThai: boolean;
   isIntl: boolean;
+  /** Whether the viewer's student id belongs to the current first-year intake. */
+  isFirstYear: boolean;
+}
+
+/**
+ * The student-id prefix that marks the CURRENT first-year intake. CMU ids begin
+ * with the Buddhist-era (BE = CE + 543) admission year mod 100 — e.g. the 2026
+ * intake (BE 2569) has ids starting with "69". This is derived from the date so
+ * it stays correct each year without a code change.
+ *
+ * The academic year rolls over mid-year: the new cohort is admitted around
+ * June/July, so before June we still treat the previous calendar year's cohort
+ * as the first-years (their successors don't exist yet). Using June as the cutoff
+ * means "today" (late June 2026) resolves to "69", the just-arrived 2026 intake.
+ */
+export function currentFirstYearPrefix(now: Date = new Date()): string {
+  // getMonth() is 0-indexed: 5 = June. Jan–May (0–4) → previous academic year.
+  const academicYearCE = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+  const be = academicYearCE + 543;
+  return String(be % 100).padStart(2, "0");
+}
+
+/**
+ * Whether a student id belongs to the current first-year intake — its first two
+ * digits match currentFirstYearPrefix(). Unknown/short ids are treated as NOT
+ * first-year (a first-year-only event excludes them), matching how the audience
+ * checks fail closed for ids they can't classify.
+ */
+export function isFirstYearStudent(
+  studentId: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  const cleanId = (studentId || "").trim();
+  if (cleanId.length < 2) return false;
+  return cleanId.slice(0, 2) === currentFirstYearPrefix(now);
 }
 
 /**
@@ -64,7 +101,8 @@ export function buildViewer(opts: {
     ["professor", "officer"].includes(r) ? "staff" : r
   );
   const { isThai, isIntl } = deriveThaiIntl(opts.studentId);
-  return { isAdminRole, effectiveRoles, userMajor: opts.major ?? null, isThai, isIntl };
+  const isFirstYear = isFirstYearStudent(opts.studentId);
+  return { isAdminRole, effectiveRoles, userMajor: opts.major ?? null, isThai, isIntl, isFirstYear };
 }
 
 /** Whether an authenticated viewer is eligible to see an item. */
@@ -94,6 +132,12 @@ export function isEligibleFor(item: EligibilityItem, viewer: Viewer): boolean {
     }
   }
 
+  // First-year-only restriction. Admin roles always bypass; everyone whose id
+  // isn't in the current first-year intake is excluded.
+  if (!viewer.isAdminRole && item.firstYearOnly && !viewer.isFirstYear) {
+    return false;
+  }
+
   return true;
 }
 
@@ -103,6 +147,8 @@ export function isEligibleFor(item: EligibilityItem, viewer: Viewer): boolean {
  * explicitly include "student".
  */
 export function isEligibleForGuest(item: EligibilityItem): boolean {
+  // A guest has no student id, so it can never be a first-year intake member.
+  if (item.firstYearOnly) return false;
   if (item.allowedMajors && item.allowedMajors.length > 0) return false;
   if (item.allowedRoles && item.allowedRoles.length > 0) {
     return item.allowedRoles.includes("student");

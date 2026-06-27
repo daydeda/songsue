@@ -164,6 +164,11 @@ export const events = pgTable("events", {
   // majors (ANI, DG, DII, MMIT, SE). Combined with allowedRoles as AND — a user
   // must satisfy both. Admin roles always bypass.
   allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  // When true, only FIRST-YEAR students may see/register for this event — derived
+  // from the student-id prefix (CMU Buddhist-era admission year, e.g. ids starting
+  // with "69" for the 2026 intake). The current first-year prefix is computed at
+  // runtime in src/lib/event-access.ts (currentFirstYearPrefix). Admin roles bypass.
+  firstYearOnly: boolean("first_year_only").notNull().default(false),
   // Set once the event-winner house bonus has been awarded. This is the single
   // source of truth for "already processed" — never infer it from score_history,
   // because mid-event individual/milestone/manual rows also carry this eventId.

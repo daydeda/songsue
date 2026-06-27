@@ -7,10 +7,11 @@ import {
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
-  Lock, FileText, AlertTriangle, MessageSquare
+  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { parseRichText } from "@/lib/rich-text";
+import { currentFirstYearPrefix } from "@/lib/event-access";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
 import {
@@ -45,6 +46,7 @@ interface AdminEvent {
   quotaInternational: number | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
+  firstYearOnly: boolean;
   managedByRoles: string[] | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
@@ -299,6 +301,7 @@ const EMPTY_FORM = {
   quotaInternational: null as number | null,
   allowedRoles: [] as string[], // empty = all roles allowed
   allowedMajors: [] as string[], // empty = all majors allowed
+  firstYearOnly: false, // true = only the current first-year intake may join
   managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
 };
 
@@ -1050,6 +1053,19 @@ export default function AdminEventsPage() {
     !!user && (user.hasMedicalInfo === true || hasActualMedicalInfo(user));
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The create/edit panel. Used to scroll it into view when it opens — the admin
+  // content scrolls inside `.admin-main` (overflow-y:auto), NOT the window, so a
+  // plain window.scrollTo does nothing. Re-runs on editingId so switching which
+  // event you're editing (panel already open) also brings it back to the top.
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showForm) return;
+    const el = formRef.current;
+    if (!el) return;
+    const scroller = el.closest(".admin-main");
+    if (scroller) scroller.scrollTo({ top: 0, behavior: "smooth" });
+    else el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showForm, editingId]);
 
   const fetchEvents = async (signal?: AbortSignal) => {
     try {
@@ -1445,6 +1461,7 @@ export default function AdminEventsPage() {
       quotaInternational: evt.quotaInternational || null,
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
+      firstYearOnly: evt.firstYearOnly || false,
       managedByRoles: evt.managedByRoles || []
     });
     // Only pre-select a mode (which reveals the Days editor) when the event is
@@ -1469,7 +1486,8 @@ export default function AdminEventsPage() {
     setSessions(evtSessions);
     setEditingId(evt.id);
     setShowForm(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Scrolling is handled by the showForm/editingId effect, which targets the
+    // real scroll container (.admin-main) rather than the window.
   };
 
   const viewAttendance = async (eventId: string) => {
@@ -1780,6 +1798,7 @@ export default function AdminEventsPage() {
       {/* Form */}
       {showForm && (
         <div
+          ref={formRef}
           className="animate-fade-in-up"
           style={{
             background: "var(--bg-surface)",
@@ -2173,6 +2192,50 @@ export default function AdminEventsPage() {
                       </div>
                     );
                   })()}
+                </div>
+
+                {/* First-year-only restriction */}
+                <div className="field" style={{ marginTop: 20 }}>
+                  <div
+                    onClick={() => set("firstYearOnly", !formData.firstYearOnly)}
+                    style={{
+                      minHeight: 48,
+                      background: "var(--bg-elevated)",
+                      borderRadius: 16,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "12px 16px",
+                      cursor: "pointer",
+                      border: formData.firstYearOnly ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <div style={{
+                      width: 24,
+                      height: 24,
+                      flexShrink: 0,
+                      borderRadius: 6,
+                      border: "2px solid var(--border-medium)",
+                      background: formData.firstYearOnly ? "var(--accent-primary)" : "transparent",
+                      borderColor: formData.firstYearOnly ? "var(--accent-primary)" : "var(--border-medium)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.1s"
+                    }}>
+                      {formData.firstYearOnly && <CheckCircle2 size={16} color="white" />}
+                    </div>
+                    <GraduationCap size={18} style={{ flexShrink: 0, color: formData.firstYearOnly ? "var(--accent-primary)" : "var(--text-muted)" }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: formData.firstYearOnly ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                        {t.firstYearOnly}
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                        {(t.firstYearOnlyHint || "").replace("{prefix}", currentFirstYearPrefix())}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Registration mode + Sessions / Days editor */}
@@ -2987,6 +3050,30 @@ export default function AdminEventsPage() {
                           <Users size={10} style={{ flexShrink: 0 }} />
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {evt.allowedMajors.join(" • ")}
+                          </span>
+                        </div>
+                      )}
+                      {evt.firstYearOnly && (
+                        <div className="event-card-tag" style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: "rgba(16,185,129,0.85)",
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          boxShadow: "0 2px 8px rgba(16,185,129,0.3)",
+                          textTransform: "uppercase",
+                        }}>
+                          <GraduationCap size={10} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {t.firstYearBadge}
                           </span>
                         </div>
                       )}

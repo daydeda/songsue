@@ -9,6 +9,7 @@ import {
   Maximize, Move, AlertTriangle, Check
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { compressImageFile } from "@/lib/compress-image";
 import { useRouter } from "next/navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
  
@@ -208,23 +209,29 @@ export default function ProfilePage() {
     setPreviewUrl(localUrl);
     setUploading(true);
     setError(null);
- 
-    const fd = new FormData();
-    fd.append("file", file);
- 
+
+    const isTh = t.back === "กลับ";
     try {
+      // Avatars display small, so downscale hard in the browser (512px → ~10–20KB).
+      // This also keeps the upload under the reverse proxy's body cap, which would
+      // otherwise reject a raw multi-MB phone photo with a 413 before it reaches the app.
+      const upload = await compressImageFile(file, { maxDim: 512 });
+      const fd = new FormData();
+      fd.append("file", upload);
       const res = await fetch("/api/upload", {
         method: "POST",
         body: fd
       });
-      const data = await res.json();
-      if (data.url) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.url) {
         set("image", data.url);
+      } else if (res.status === 413) {
+        setError(isTh ? "ไฟล์รูปใหญ่เกินไป กรุณาเลือกรูปที่เล็กลง" : "Image is too large. Please choose a smaller photo.");
       } else {
-        setError(data.error || "Upload failed");
+        setError(data?.error || (isTh ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again."));
       }
     } catch (err) {
-      setError("Upload failed");
+      setError(isTh ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again.");
     } finally {
       setUploading(false);
     }

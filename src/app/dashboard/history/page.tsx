@@ -175,6 +175,26 @@ export default function HistoryPage() {
         return;
       }
 
+      // Already-submitted gate (server truth). The GET returns hasSubmitted for
+      // this (form, student) pair; the modal can't re-fill a submitted form
+      // (the POST hard-rejects with a 23505), so don't present a blank one.
+      // This guards both a stale-cached "available" button and a deep-link that
+      // arrives after the form was completed.
+      if (formObj.hasSubmitted) {
+        setShowStudentForm(false);
+        setWarningMessage(
+          lang === "th"
+            ? "คุณได้ส่งแบบฟอร์มนี้ไปแล้ว ไม่สามารถส่งซ้ำได้"
+            : lang === "cn"
+            ? "您已提交此表单，无法重复提交。"
+            : lang === "mm"
+            ? "ဤဖောင်ကို သင်တင်သွင်းပြီးဖြစ်သည်။ ထပ်မံတင်သွင်း၍ မရပါ။"
+            : "You've already submitted this form — it can't be submitted again."
+        );
+        setShowWarningModal(true);
+        return;
+      }
+
       // Attendance gate: K_pre (pre-test) and S (skill — filled by assigned
       // evaluators, not attendees) don't require check-in; all others do.
       if (formType !== "K_pre" && formType !== "S" && !data.hasAttended) {
@@ -243,6 +263,13 @@ export default function HistoryPage() {
     if (!formId || !eventId) return;
     const form = history.find((h) => h.eventId === eventId)?.forms.find((f) => f.id === formId);
     if (!form) return;
+    // Only auto-open a form that's actually fillable. A deep-link can outlive the
+    // submission (e.g. a stale FormsDueBanner/pre-test link), and we must not
+    // present an already-submitted/closed form as a fresh, blank one.
+    if (form.formStatus !== "available") {
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
     autoOpenedRef.current = true;
     // Defer out of the effect body (mirrors fetchHistory) so opening the form —
     // which sets state — doesn't run synchronously inside the effect.

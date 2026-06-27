@@ -210,7 +210,11 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json([...history.filter(Boolean), ...assignedEntries]);
+    // no-store: a form just submitted must not be served as still "available"
+    // from a stale cache (which would re-show the fillable button / deep-link).
+    return NextResponse.json([...history.filter(Boolean), ...assignedEntries], {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     console.error("Failed to fetch student history:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

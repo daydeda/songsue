@@ -383,6 +383,13 @@ export default function AdminEventsPage() {
   const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
   const [submissionsPage, setSubmissionsPage] = useState(1);
   const SUBMISSIONS_PER_PAGE = 10;
+  const submissionsListRef = useRef<HTMLDivElement | null>(null);
+  // Change page and scroll the list back to the top so the first card on the
+  // new page is in view (instead of staying at the bottom where Next was clicked).
+  const goToSubmissionsPage = (updater: (p: number) => number) => {
+    setSubmissionsPage(updater);
+    submissionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   
   // Multi-form state: list of all forms for the current event + which one is being edited
   const [allEventForms, setAllEventForms] = useState<EventFormSummary[]>([]);
@@ -4367,7 +4374,7 @@ export default function AdminEventsPage() {
                     </div>
 
                     {/* List of Submissions */}
-                    <div>
+                    <div ref={submissionsListRef} style={{ scrollMarginTop: 80 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
                         <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> {t.fbStudentSubmissions || "Student Submissions"} ({formSubmissions.length})</h4>
                         <button
@@ -4494,7 +4501,7 @@ export default function AdminEventsPage() {
                                 type="button"
                                 className="btn"
                                 disabled={currentPage <= 1}
-                                onClick={() => setSubmissionsPage((p) => Math.max(1, p - 1))}
+                                onClick={() => goToSubmissionsPage((p) => Math.max(1, p - 1))}
                                 style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage <= 1 ? "not-allowed" : "pointer", opacity: currentPage <= 1 ? 0.5 : 1 }}
                               >
                                 {lang === "th" ? "ก่อนหน้า" : lang === "cn" ? "上一页" : lang === "mm" ? "ယခင်" : "Previous"}
@@ -4506,7 +4513,7 @@ export default function AdminEventsPage() {
                                 type="button"
                                 className="btn"
                                 disabled={currentPage >= totalPages}
-                                onClick={() => setSubmissionsPage((p) => Math.min(totalPages, p + 1))}
+                                onClick={() => goToSubmissionsPage((p) => Math.min(totalPages, p + 1))}
                                 style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage >= totalPages ? "not-allowed" : "pointer", opacity: currentPage >= totalPages ? 0.5 : 1 }}
                               >
                                 {lang === "th" ? "ถัดไป" : lang === "cn" ? "下一页" : lang === "mm" ? "နောက်တစ်ခု" : "Next"}

@@ -382,7 +382,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
               {/* Custom fields (e.g. jersey name/number) */}
               {customFields.map((f) => (
                 <div key={f.key} style={{ marginBottom: 16 }}>
-                  <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
+                  <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                     {f.label}{f.required ? " *" : ""}
                   </label>
                   {f.type === "select" ? (
@@ -438,7 +438,7 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                   <span style={{ fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{baht(subtotal)}</span>
                 </div>
                 {customFields.filter((f) => (customAnswers[f.key] ?? "").trim()).map((f) => (
-                  <div key={f.key} style={{ fontSize: 12, color: "var(--text-muted)" }}>{f.label}: <strong style={{ color: "var(--text-secondary)" }}>{customAnswers[f.key]}</strong></div>
+                  <div key={f.key} style={{ fontSize: 12, color: "var(--text-muted)", overflowWrap: "anywhere", wordBreak: "break-word" }}>{f.label}: <strong style={{ color: "var(--text-secondary)" }}>{customAnswers[f.key]}</strong></div>
                 ))}
                 {deliveryFee > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
@@ -634,13 +634,18 @@ function CustomSelect({ value, options, onChange, placeholder, ariaLabel }: {
       setOpen(false);
     };
     // Capture scrolls from any ancestor (the modal body scrolls) so the menu
-    // never drifts away from its trigger.
-    window.addEventListener("scroll", close, true);
+    // never drifts away from its trigger — but DON'T close when the scroll comes
+    // from inside the menu itself (a long option list scrolls internally).
+    const onScroll = (e: Event) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close);
     window.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
     return () => {
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close);
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onDown);

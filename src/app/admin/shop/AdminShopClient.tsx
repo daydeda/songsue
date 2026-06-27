@@ -361,6 +361,7 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
     if (opensAt && closesAt && new Date(closesAt) <= new Date(opensAt)) { setError(th ? "เวลาปิดต้องอยู่หลังเวลาเปิด" : "Close time must be after open time"); return; }
     if (customFields.some((f) => !f.label.trim())) { setError(th ? "ช่องกรอกเองทุกช่องต้องมีชื่อ" : "Every custom field needs a label"); return; }
     if (customFields.some((f) => f.type === "select" && f.options.filter((o) => o.trim()).length === 0)) { setError(th ? "ช่องแบบตัวเลือกต้องมีอย่างน้อย 1 ตัวเลือก" : "A select field needs at least one option"); return; }
+    if (customFields.some((f) => f.type === "select" && f.options.some((o) => o.trim().length > 1000))) { setError(th ? "แต่ละตัวเลือกต้องไม่เกิน 1000 ตัวอักษร" : "Each option must be 1000 characters or fewer"); return; }
     setSaving(true);
     try {
       const body = {
@@ -567,7 +568,7 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
               return (
                 <div key={i} style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: 10, display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-base)" }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <input value={f.label} onChange={(e) => setField({ label: e.target.value })} placeholder={th ? "ชื่อช่อง เช่น ชื่อบนเสื้อ" : "Label e.g. Name on back"} style={{ ...inputStyle, flex: 2, minWidth: 140 }} />
+                    <input value={f.label} maxLength={1000} onChange={(e) => setField({ label: e.target.value })} placeholder={th ? "ชื่อช่อง เช่น ชื่อบนเสื้อ" : "Label e.g. Name on back"} style={{ ...inputStyle, flex: 2, minWidth: 140 }} />
                     <select value={f.type} onChange={(e) => setField({ type: e.target.value as ShopCustomFieldType })} style={{ ...inputStyle, flex: 1, minWidth: 110 }}>
                       <option value="text">{th ? "ข้อความ" : "Text"}</option>
                       <option value="number">{th ? "ตัวเลข" : "Number"}</option>
@@ -581,7 +582,7 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
                       {th ? "จำเป็น" : "Required"}
                     </label>
                     {f.type === "text" && (
-                      <input type="number" min={1} value={f.maxLength ?? ""} onChange={(e) => setField({ maxLength: e.target.value === "" ? null : Math.max(1, Number(e.target.value)) })} placeholder={th ? "ความยาวสูงสุด" : "Max length"} style={{ ...inputStyle, width: 140 }} />
+                      <input type="number" min={1} max={1000} value={f.maxLength ?? ""} onChange={(e) => setField({ maxLength: e.target.value === "" ? null : Math.min(1000, Math.max(1, Number(e.target.value))) })} placeholder={th ? "ความยาวสูงสุด" : "Max length"} style={{ ...inputStyle, width: 140 }} />
                     )}
                     {f.type === "number" && (
                       <>
@@ -863,7 +864,7 @@ function AdminOrderRow({ order, th, busy, onReview }: { order: AdminOrder; th: b
             {i.customValues && i.customValues.length > 0 && (
               <div style={{ fontSize: 12, color: "var(--accent-primary)", paddingLeft: 2, marginTop: 2, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
                 {i.customValues.map((cv, k) => (
-                  <span key={k}><span style={{ color: "var(--text-muted)" }}>{cv.label}:</span> <strong>{cv.value}</strong></span>
+                  <span key={k} style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}><span style={{ color: "var(--text-muted)" }}>{cv.label}:</span> <strong>{cv.value}</strong></span>
                 ))}
               </div>
             )}

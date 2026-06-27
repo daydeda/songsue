@@ -8,7 +8,9 @@ export const productSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(5000).default(""),
   price: z.number().int().min(0).max(1_000_000),
-  imageUrls: z.array(z.string().url()).max(8).default([]),
+  // Bare string (not .url()): the self-hosted /api/upload returns relative paths
+  // like "/uploads/x.jpg", which are valid here (events stores them the same way).
+  imageUrls: z.array(z.string()).max(8).default([]),
   // null = unlimited per buyer.
   maxPerOrder: z.number().int().min(1).max(999).nullable().default(null),
   // Sale window — ISO strings (or null). null = unbounded that side.

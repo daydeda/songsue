@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attendance, events, users, forms, formSubmissions } from "@/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getFormAvailability } from "@/lib/form-access";
 import { buildViewer, isEligibleFor, isEligibleForGuest } from "@/lib/event-access";
@@ -20,6 +20,20 @@ export async function GET() {
       orderBy: (events, { asc }) => [asc(events.startTime)],
     });
 
+    // Registered seat counts per event — DISTINCT students holding a seat, which
+    // is exactly the headcount the register route enforces quota against (a
+    // multi-day 'once' event creates extra attended rows per day for the same
+    // person, so count(*) would inflate it). One grouped query, reused by both
+    // the guest and authenticated branches so the dashboard can show "X / quota".
+    const seatCounts = await db
+      .select({
+        eventId: attendance.eventId,
+        value: sql<number>`count(distinct ${attendance.studentId})`,
+      })
+      .from(attendance)
+      .groupBy(attendance.eventId);
+    const seatCountMap = new Map(seatCounts.map((c) => [c.eventId, Number(c.value)]));
+
     if (!session?.user) {
       // For guest, filter events by allowedRoles: only show if no role limits, or if "student" is allowed
       const eligibleEvents = allEvents.filter((event) => isEligibleForGuest(event));
@@ -28,6 +42,7 @@ export async function GET() {
         ...event,
         isRegistered: false,
         attendanceStatus: null,
+        registeredCount: seatCountMap.get(event.id) ?? 0,
       }));
       return NextResponse.json(enrichedEvents);
     }
@@ -111,6 +126,7 @@ export async function GET() {
         ...event,
         isRegistered: attendanceMap.has(event.id),
         attendanceStatus: attendanceMap.get(event.id) || null,
+        registeredCount: seatCountMap.get(event.id) ?? 0,
         preTest,
       };
     });

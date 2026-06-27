@@ -72,6 +72,9 @@ type Event = {
   registrationOpenTime?: string | null;
   registrationCloseTime?: string | null;
   quota?: number | null;
+  // Live headcount: distinct students currently holding a seat for this event.
+  // Shown as "registeredCount / quota" so students see how full an event is.
+  registeredCount?: number;
   // Whether the event accepts walk-ins (unregistered students scanned in at the
   // door), and the optional extra walk-in seat sub-cap on top of `quota`.
   walkInsEnabled?: boolean;
@@ -640,18 +643,23 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // shows so a student can tell at a glance whether the door accepts walk-ins.
   const quotaWalkInRows = (ev: Event) => {
     const allowed = !!ev.walkInsEnabled;
+    const registered = ev.registeredCount ?? 0;
+    // "Full" only means something when a quota is set. When full, colour the count
+    // red so a student can see at a glance the seats are gone.
+    const isFull = ev.quota != null && registered >= ev.quota;
     return (
       <>
-        {ev.quota != null && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
-              <Users size={16} />
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-              {t.thQuota}: {ev.quota}
-            </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
+            <Users size={16} />
           </div>
-        )}
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            <span style={{ fontWeight: 800, color: isFull ? "#ef4444" : "var(--text-primary)" }}>
+              {ev.quota != null ? `${registered} / ${ev.quota}` : registered}
+            </span>
+            <span style={{ color: "var(--text-muted)", fontWeight: 600 }}> {t.registered}</span>
+          </div>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}>
           <div style={{ width: 32, height: 32, borderRadius: 10, background: allowed ? "rgba(16,185,129,0.08)" : "rgba(0,0,0,0.04)", display: "flex", alignItems: "center", justifyContent: "center", color: allowed ? "#10b981" : "var(--text-muted)", flexShrink: 0 }}>
             <DoorOpen size={16} />

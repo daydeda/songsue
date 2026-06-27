@@ -2,10 +2,19 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { canEnterAdminAny, isScannerOnlyAny, isScannerOnlyAllowedPath, effectiveRoles, SCANNER_HREF } from "@/lib/admin-access";
+import { isSiteMoved } from "@/lib/site-moved";
 
 // Next.js 16: "middleware" renamed to "proxy"
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Retired "we've moved" deploy: the real app is gone and this deployment has no
+  // auth/DB env. Pass every request straight through so the root layout can render
+  // the self-contained MovedNotice instead of us calling auth() (which would hit the
+  // missing DB and 500). The notice screen replaces the whole app regardless of path.
+  if (isSiteMoved()) {
+    return NextResponse.next();
+  }
 
   // Allow public paths and Next.js internals to pass through
   const isPublicPath =

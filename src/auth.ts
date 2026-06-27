@@ -6,14 +6,21 @@ import { db } from "@/db"
 import { accounts, sessions, users, verificationTokens } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { AuditService } from "@/modules/audit/audit.service"
+import { isSiteMoved } from "@/lib/site-moved"
 
 // Fail fast at runtime if AUTH_URL is missing in production: with trustHost:true an
 // unset AUTH_URL lets Auth.js derive the OAuth callback host from the request Host
 // header (host-header injection / callback redirection). Skipped during `next build`
 // (NEXT_PHASE), where runtime env vars aren't provided yet.
+//
+// Also skipped on the retired "we've moved" deploy: that deployment intentionally has
+// no AUTH_URL/DB env, and the edge proxy imports this module on EVERY request — so a
+// throw here at module-load crashed the whole site with a bare 500 (no Content-Type),
+// which browsers download instead of render, and the moved notice never got to run.
 if (
   process.env.NODE_ENV === "production" &&
   process.env.NEXT_PHASE !== "phase-production-build" &&
+  !isSiteMoved() &&
   !process.env.AUTH_URL
 ) {
   throw new Error(

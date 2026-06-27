@@ -31,13 +31,14 @@ export interface ShopCustomValue {
 // match between GET /api/shop and the order POST.
 export const customFieldSchema = z.object({
   key: z.string().min(1).max(40),
-  label: z.string().min(1).max(60),
+  // Labels/options hold bilingual (Thai + English) text, so allow generous room.
+  label: z.string().min(1).max(1000),
   type: z.enum(["text", "number", "select"]),
   required: z.boolean().default(false),
-  maxLength: z.number().int().min(1).max(500).nullable().default(null),
+  maxLength: z.number().int().min(1).max(1000).nullable().default(null),
   min: z.number().int().nullable().default(null),
   max: z.number().int().nullable().default(null),
-  options: z.array(z.string().min(1).max(60)).max(30).default([]),
+  options: z.array(z.string().min(1).max(1000)).max(30).default([]),
 });
 
 /**

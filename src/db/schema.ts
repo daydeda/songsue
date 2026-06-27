@@ -571,6 +571,7 @@ export const shopOrderItems = pgTable("shop_order_items", {
   quantity: integer("quantity").notNull(),
 }, (table) => ([
   index("idx_shop_order_items_order").on(table.orderId),
+  index("idx_shop_order_items_product").on(table.productId),
   index("idx_shop_order_items_variant").on(table.variantId),
 ]));
 

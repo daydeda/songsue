@@ -20,7 +20,14 @@ const entryUpdateSchema = z.object({
   allowedMajors: z.array(z.string()).optional().nullable(),
   targetThai: z.boolean().optional(),
   targetInternational: z.boolean().optional(),
-});
+}).refine(
+  // Only enforce when BOTH ends are supplied — this is a partial update.
+  (d) => {
+    if (!d.startTime || !d.endTime) return true;
+    return new Date(d.endTime) > new Date(d.startTime);
+  },
+  { message: "endTime must be after startTime", path: ["endTime"] },
+);
 
 // PUT /api/admin/calendar/[id] — update a calendar entry
 export async function PUT(
@@ -35,7 +42,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const data = entryUpdateSchema.parse(await req.json());
+    const data = entryUpdateSchema.parse(await req.json().catch(() => null));
     const ip = getClientIp(req);
 
     let updated: typeof calendarEntries.$inferSelect;

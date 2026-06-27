@@ -1,11 +1,11 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { HousesService } from "@/modules/houses/houses.service";
+import { HousesService, HOUSE_BALANCE_LOCK_KEY } from "@/modules/houses/houses.service";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 // Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
@@ -45,11 +45,6 @@ const SENSITIVE_FIELDS = [
   "chronicDiseases", "medicalHistory", "drugAllergies", "foodAllergies",
   "dietaryRestrictions", "emergencyMedication", "faintingHistory", "emergencyContacts",
 ] as const;
-
-// Transaction-scoped advisory lock key serializing concurrent onboardings so two
-// new students can't both pick the same least-full house (distinct from the audit
-// and award lock keys).
-const HOUSE_BALANCE_LOCK_KEY = 824517;
 
 // Normalize a sensitive value for presence/change comparison: null/undefined and a
 // bare "-" both count as empty; arrays (emergency contacts) compare by JSON.
@@ -128,8 +123,14 @@ export async function POST(req: Request) {
           profileCompleted: true,
           updatedAt: new Date(),
         })
-        .where(eq(users.id, session.user!.id!))
+        // Guard on profileCompleted=false (mirrors provisionStaffBypass) so a
+        // concurrent same-user POST that slipped past the pre-tx check updates 0
+        // rows here — preventing a duplicate house assignment AND a duplicate
+        // onboarding/PDPA audit row. 0 rows ⇒ already completed (handled below).
+        .where(and(eq(users.id, session.user!.id!), eq(users.profileCompleted, false)))
         .returning();
+
+      if (!row) return null; // already completed by a concurrent request — skip the audit write
 
       // PDPA change-trail (field NAMES only): the data subject provided medical/
       // emergency info at onboarding. Same tx, so it commits atomically with the row.
@@ -144,6 +145,12 @@ export async function POST(req: Request) {
       }
       return row;
     });
+
+    // 0-row update ⇒ a concurrent POST already completed onboarding. Return the same
+    // "already completed" response as the pre-transaction check above.
+    if (!updated) {
+      return NextResponse.json({ error: "Profile already completed" }, { status: 400 });
+    }
 
     revalidatePath("/");
     revalidatePath("/dashboard");

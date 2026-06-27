@@ -57,11 +57,11 @@ export default function DigitalIdPage() {
 
   const { qrValue, countdownMM, countdownSS, countdownColor } = useQrToken(session?.user?.id);
 
-  // Live check-in / score modal. Polls fast (4s) because the student is on this
-  // page holding up their QR to be scanned, so the confirmation must feel
+  // Live check-in / score modal. Polls fairly fast (8s) because the student is on
+  // this page holding up their QR to be scanned, so the confirmation must feel
   // immediate. The page is open only transiently (while being scanned) and the
   // poll pauses on a hidden tab, so the added load stays bounded.
-  const { items: notifItems, dismiss: dismissNotif } = useNotifications(session?.user?.id, 4000);
+  const { items: notifItems, dismiss: dismissNotif } = useNotifications(session?.user?.id, 8000);
 
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red

@@ -79,6 +79,9 @@ export default function HistoryPage() {
   const dateLocale = lang === "th" ? "th-TH" : lang === "cn" ? "zh-CN" : lang === "mm" ? "my-MM" : "en-GB";
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // Set when the history fetch fails, so we show an error instead of the
+  // misleading "No history yet" empty state.
+  const [historyError, setHistoryError] = useState(false);
 
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [activeForm, setActiveForm] = useState<ActiveForm | null>(null);
@@ -131,8 +134,12 @@ export default function HistoryPage() {
 
   const fetchHistory = () => {
     setLoading(true);
+    setHistoryError(false);
     fetch("/api/profile/history")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("failed");
+        return r.json();
+      })
       .then((d) => {
         if (Array.isArray(d)) {
           const sorted = [...d].sort((a, b) => {
@@ -143,6 +150,7 @@ export default function HistoryPage() {
           setHistory(sorted);
         }
       })
+      .catch(() => setHistoryError(true))
       .finally(() => setLoading(false));
   };
 
@@ -463,6 +471,19 @@ export default function HistoryPage() {
         {loading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: 80 }}>
             <div className="spinner" style={{ width: 32, height: 32 }} />
+          </div>
+        ) : historyError ? (
+          <div style={{ padding: "100px 40px", textAlign: "center", background: "var(--bg-surface)", borderRadius: 40, border: "2px dashed var(--border-subtle)" }}>
+            <AlertTriangle size={48} style={{ color: "#ef4444", display: "block", margin: "0 auto 20px auto", opacity: 0.5 }} />
+            <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>
+              {lang === "th" ? "โหลดประวัติไม่สำเร็จ" : lang === "cn" ? "无法加载历史记录" : lang === "mm" ? "မှတ်တမ်း ဖွင့်၍မရပါ" : "Couldn't load your history"}
+            </h3>
+            <p style={{ color: "var(--text-muted)", marginBottom: 24 }}>
+              {lang === "th" ? "กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง" : lang === "cn" ? "请检查您的网络连接并重试。" : lang === "mm" ? "အင်တာနက်ချိတ်ဆက်မှုကို စစ်ဆေးပြီး ထပ်စမ်းကြည့်ပါ။" : "Please check your connection and try again."}
+            </p>
+            <button onClick={() => fetchHistory()} className="btn btn-primary">
+              {lang === "th" ? "ลองอีกครั้ง" : lang === "cn" ? "重试" : lang === "mm" ? "ထပ်စမ်းကြည့်ပါ" : "Try again"}
+            </button>
           </div>
         ) : history.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">

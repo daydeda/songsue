@@ -212,6 +212,7 @@ export default function AdminStudentsDirectory() {
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [sensitiveData, setSensitiveData] = useState<Student | null>(null);
   const [loadingSensitive, setLoadingSensitive] = useState(false);
+  const [sensitiveError, setSensitiveError] = useState<string | null>(null);
 
   const [houses, setHouses] = useState<{ id: string; name: string }[]>([]);
   const [houseFilter, setHouseFilter] = useState<string>("all");
@@ -373,11 +374,18 @@ export default function AdminStudentsDirectory() {
     setViewingId(id);
     setLoadingSensitive(true);
     setSensitiveData(null);
+    setSensitiveError(null);
     try {
       const res = await fetch(`/api/admin/students/${id}`);
-      if (res.ok) setSensitiveData(await res.json());
+      if (res.ok) {
+        setSensitiveData(await res.json());
+      } else {
+        const data = await res.json().catch(() => null);
+        setSensitiveError((data && data.error) || "Failed to load health records.");
+      }
     } catch (err) {
       console.error(err);
+      setSensitiveError("Failed to load health records.");
     } finally {
       setLoadingSensitive(false);
     }
@@ -742,7 +750,7 @@ export default function AdminStudentsDirectory() {
             zIndex: 9999,
             padding: 24
           }}
-          onClick={() => { setViewingId(null); setSensitiveData(null); }}
+          onClick={() => { setViewingId(null); setSensitiveData(null); setSensitiveError(null); }}
         >
           <div
             className="animate-fade-in-up"
@@ -773,7 +781,7 @@ export default function AdminStudentsDirectory() {
                 <button
                   className="btn btn-ghost"
                   style={{ borderRadius: "50%", width: 44, height: 44, padding: 0, background: "var(--bg-elevated)" }}
-                  onClick={() => { setViewingId(null); setSensitiveData(null); }}
+                  onClick={() => { setViewingId(null); setSensitiveData(null); setSensitiveError(null); }}
                 >
                   <X size={20} />
                 </button>
@@ -802,6 +810,20 @@ export default function AdminStudentsDirectory() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, padding: "40px 0" }}>
                   <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
                   <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>Decrypting health records...</p>
+                </div>
+              ) : sensitiveError ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "40px 0", textAlign: "center" }}>
+                  <div style={{ width: 80, height: 80, borderRadius: "50%", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ef4444" }}>
+                    <ShieldAlert size={36} />
+                  </div>
+                  <h3 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-primary)" }}>Couldn&apos;t load health records</h3>
+                  <p style={{ color: "var(--text-muted)", fontWeight: 600, maxWidth: 360 }}>{sensitiveError}</p>
+                  <p style={{ color: "var(--text-muted)", fontSize: 12, fontWeight: 600, maxWidth: 360 }}>
+                    This does <strong>not</strong> mean the member has no medical conditions — the records simply failed to load. Please retry.
+                  </p>
+                  <button className="btn btn-primary" style={{ borderRadius: 12, padding: "10px 24px", marginTop: 4 }} onClick={() => { if (viewingId) viewSensitive(viewingId); }}>
+                    Retry
+                  </button>
                 </div>
               ) : sensitiveData && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
@@ -872,7 +894,7 @@ export default function AdminStudentsDirectory() {
 
             {/* Modal Footer */}
             <div style={{ padding: "24px 40px", background: "var(--bg-elevated)", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn btn-primary" style={{ borderRadius: 12, padding: "12px 32px" }} onClick={() => { setViewingId(null); setSensitiveData(null); }}>Close Records</button>
+              <button className="btn btn-primary" style={{ borderRadius: 12, padding: "12px 32px" }} onClick={() => { setViewingId(null); setSensitiveData(null); setSensitiveError(null); }}>Close Records</button>
             </div>
           </div>
         </div>

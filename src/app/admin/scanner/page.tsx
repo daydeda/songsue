@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
+// Type-only: the runtime module is imported dynamically inside startScanner so the
+// (heavy) scanner lib stays out of the initial page bundle.
+import type { Html5Qrcode } from "html5-qrcode";
 import { 
   Search, 
   CheckCircle2, 
@@ -140,6 +142,13 @@ export default function QRScannerPage() {
   const scanModeRef = useRef<"checkin" | "score">("checkin");
   const isMountedRef = useRef(true);
   const scanSessionIdRef = useRef(0);
+  // The decode callback is registered once; mirror showModal into a ref so a
+  // different student's QR drifting into frame mid-confirmation can't overwrite
+  // the open result modal (every other value the callback reads is already a ref).
+  const showModalRef = useRef(false);
+  // Manual-search debounce timer + a sequence counter to drop stale responses.
+  const manualSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualSearchSeqRef = useRef(0);
 
   // Manage component mounted lifecycle state
   useEffect(() => {
@@ -179,6 +188,16 @@ export default function QRScannerPage() {
   useEffect(() => {
     scanModeRef.current = scanMode;
   }, [scanMode]);
+
+  // Keep showModal in a ref for the once-registered decode callback (see above).
+  useEffect(() => {
+    showModalRef.current = showModal;
+  }, [showModal]);
+
+  // Drop any pending manual-search debounce on unmount.
+  useEffect(() => () => {
+    if (manualSearchTimerRef.current) clearTimeout(manualSearchTimerRef.current);
+  }, []);
 
   // Fetch events for the selector
   useEffect(() => {
@@ -294,7 +313,9 @@ export default function QRScannerPage() {
       return;
     }
 
-    // 3. Initialize new instance
+    // 3. Initialize new instance (load the scanner lib on demand)
+    const { Html5Qrcode } = await import("html5-qrcode");
+    if (!isMountedRef.current || currentSessionId !== scanSessionIdRef.current) return;
     const scanner = new Html5Qrcode("qr-reader");
     scannerRef.current = scanner;
     if (isMountedRef.current) {
@@ -306,7 +327,7 @@ export default function QRScannerPage() {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 280, height: 280 } },
         async (decodedText) => {
-          if (lastTokenRef.current === decodedText || showModal) return;
+          if (lastTokenRef.current === decodedText || showModalRef.current) return;
           lastTokenRef.current = decodedText;
           
           try {
@@ -427,7 +448,6 @@ export default function QRScannerPage() {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("orientationchange", handleResize);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isScanning]);
 
   const closeModal = () => {
@@ -529,20 +549,26 @@ export default function QRScannerPage() {
     }
   };
 
-  const handleManualSearch = async (q: string) => {
+  const handleManualSearch = (q: string) => {
     setManualSearch(q);
+    if (manualSearchTimerRef.current) clearTimeout(manualSearchTimerRef.current);
+    // Bump the sequence on every keystroke so a slower, older response can never
+    // overwrite the results of a newer query.
+    const seq = ++manualSearchSeqRef.current;
     if (q.length < 2) { setManualResults([]); return; }
-    try {
-      const res = await fetch(`/api/admin/scan?q=${encodeURIComponent(q)}`);
-      if (res.ok) {
+    // Debounce so we fire one request after typing settles, not per keystroke.
+    manualSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/scan?q=${encodeURIComponent(q)}`);
+        if (!res.ok) return;
         const data = await res.json();
-        if (isMountedRef.current) {
-          setManualResults(data);
+        if (isMountedRef.current && seq === manualSearchSeqRef.current) {
+          setManualResults(Array.isArray(data) ? data : []);
         }
+      } catch (err) {
+        console.error("Manual search error:", err);
       }
-    } catch (err) {
-      console.error("Manual search error:", err);
-    }
+    }, 250);
   };
 
   const manualCheckIn = async (qrToken: string) => {

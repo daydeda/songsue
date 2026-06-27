@@ -20,6 +20,9 @@ export default function ProfilePage() {
   const router = useRouter();
  
   const [loading, setLoading] = useState(true);
+  // Set when the initial profile fetch fails — we then show an error instead of a
+  // blank form, since saving a blank form would overwrite the real profile.
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +65,10 @@ export default function ProfilePage() {
  
   useEffect(() => {
     fetch("/api/profile")
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error("failed");
+        return r.json();
+      })
       .then(user => {
         if (user) {
           setFormData({
@@ -102,6 +108,7 @@ export default function ProfilePage() {
       })
       .catch(err => {
         console.error(err);
+        setLoadError(true);
         setLoading(false);
       });
   }, []);
@@ -311,6 +318,27 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
         <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  // Load failed — never render the (blank) form, because saving it would
+  // overwrite the student's real profile with empty values.
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 360 }}>
+          <AlertTriangle size={40} style={{ color: "#ef4444", margin: "0 auto 16px", display: "block" }} />
+          <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
+            {t.back === "กลับ" ? "โหลดโปรไฟล์ไม่สำเร็จ" : "Couldn't load your profile"}
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 20 }}>
+            {t.back === "กลับ" ? "กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง" : "Please check your connection and try again."}
+          </p>
+          <button onClick={() => window.location.reload()} className="btn btn-primary">
+            {t.back === "กลับ" ? "ลองอีกครั้ง" : "Try again"}
+          </button>
+        </div>
       </div>
     );
   }

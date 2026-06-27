@@ -14,7 +14,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { houseId, delta, reason } = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const { houseId, delta, reason } = body;
 
     if (!houseId || delta === undefined || !reason) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });

@@ -16,6 +16,10 @@ const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 // that happens to live at this question id, not a file — reject it.
 const KEY_PATTERN = /^[0-9a-f-]{36}\.[a-z0-9]+$/i;
 
+// A submission id is always a UUID; reject a malformed path before the DB query
+// (a non-UUID can't match and would just waste a round-trip).
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // GET /api/forms/file/[submissionId]?q=<questionId> — stream a form file-answer.
 // PDPA-gated: only the student who submitted it or an admin may view it. The file
 // lives in a private bucket and is proxied here, so access is checked per request
@@ -28,6 +32,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ submissi
     }
 
     const { submissionId } = await params;
+    if (!UUID_PATTERN.test(submissionId)) {
+      return NextResponse.json({ error: "Invalid submission id" }, { status: 400 });
+    }
     const questionId = new URL(req.url).searchParams.get("q");
     if (!questionId) {
       return NextResponse.json({ error: "Missing question id" }, { status: 400 });
@@ -75,6 +82,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ submissi
       headers: {
         "Content-Type": contentType,
         "Content-Disposition": `inline; filename="${submissionId}-${questionId}${ext}"`,
+        // Never let a browser MIME-sniff a stored file into something executable.
+        "X-Content-Type-Options": "nosniff",
         // Private: caches must revalidate auth, never store shared copies.
         "Cache-Control": "private, no-store",
       },

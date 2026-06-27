@@ -22,6 +22,9 @@ const entrySchema = z.object({
   allowedMajors: z.array(z.string()).optional().nullable(),
   targetThai: z.boolean().optional(),
   targetInternational: z.boolean().optional(),
+}).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
+  message: "endTime must be after startTime",
+  path: ["endTime"],
 });
 
 // POST /api/admin/calendar — create a calendar entry
@@ -33,7 +36,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const data = entrySchema.parse(await req.json());
+    const data = entrySchema.parse(await req.json().catch(() => null));
     const ip = getClientIp(req);
 
     const entry = await db.transaction(async (tx) => {

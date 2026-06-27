@@ -17,8 +17,8 @@ const eventSchema = z.object({
   registrationCloseTime: z.string().datetime().optional().nullable(),
   quota: z.number().int().min(0).optional().nullable(),
   location: z.string().optional().nullable(),
-  pointsAwarded: z.number().int().min(0).optional().nullable(),
-  individualPointsAwarded: z.number().int().min(0).optional().nullable(),
+  pointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
+  individualPointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
@@ -38,6 +38,9 @@ const eventSchema = z.object({
   // Which president role(s) MANAGE this event (club_president / major_president).
   // Separate from allowedRoles (participant visibility) — see GET scoping above.
   managedByRoles: z.array(z.string()).optional().nullable(),
+}).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
+  message: "endTime must be after startTime",
+  path: ["endTime"],
 });
 
 // Per-event distinct-attendee counts. This GROUP BY over the whole (event-time-
@@ -136,7 +139,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const data = eventSchema.parse(body);
 
     // Normalize posters: drop blanks, dedupe-free order preserved. The cover

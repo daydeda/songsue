@@ -9,6 +9,9 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+// An order id is always a UUID; reject a malformed path before the DB query.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // GET /api/shop/orders/[id]/slip — stream the payment slip bytes. PDPA-gated: only
 // the buyer who placed the order or a shop admin may view it. The slip is proxied
 // through here (never a public URL), so access is checked on every request.
@@ -20,6 +23,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     const { id } = await params;
+    if (!UUID_PATTERN.test(id)) {
+      return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
+    }
     const [order] = await db
       .select({ buyerId: shopOrders.buyerId, slipPath: shopOrders.slipPath })
       .from(shopOrders)
@@ -55,6 +61,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": contentType,
+        // Never let a browser MIME-sniff a stored slip into something executable.
+        "X-Content-Type-Options": "nosniff",
         // Private: caches must revalidate auth, never store shared copies.
         "Cache-Control": "private, no-store",
       },

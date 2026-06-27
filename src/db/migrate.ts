@@ -877,6 +877,15 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_rate_limit_expires_at ON rate_limit (expires_at)`;
   console.log("  ✅ rate_limit table + idx_rate_limit_expires_at");
 
+  // 55. Index shop_order_items.product_id. The per-product order export
+  // (/api/admin/shop/products/[id]/orders) filters WHERE product_id = ? to list
+  // every line item bought for one product; product_id had an FK but no index,
+  // so that query full-scanned shop_order_items, which grows with every purchased
+  // line item. Mirrors the index now declared in schema.ts. CREATE INDEX IF NOT
+  // EXISTS ⇒ additive, idempotent, non-destructive.
+  await sql`CREATE INDEX IF NOT EXISTS idx_shop_order_items_product ON shop_order_items (product_id)`;
+  console.log("  ✅ idx_shop_order_items_product index");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

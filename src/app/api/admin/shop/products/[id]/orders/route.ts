@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { shopOrderItems, shopOrders, shopProducts, users } from "@/db/schema";
 import { isShopAdmin } from "@/lib/shop-auth";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 // GET /api/admin/shop/products/[id]/orders — every order line for one product,
 // joined to buyer + order, newest first. Powers the per-product .xlsx export so
 // admins can see who ordered which option and total quantities to fulfil.
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!isShopAdmin(session)) {
@@ -59,6 +60,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .leftJoin(users, eq(shopOrders.buyerId, users.id))
       .where(eq(shopOrderItems.productId, id))
       .orderBy(desc(shopOrders.createdAt));
+
+    // Bulk PII export — this pulls every buyer's email, phone, recipient phone and
+    // shipping address for one product. Keep a tamper-evident record of who pulled
+    // it (PDPA), mirroring the attendee-XLSX export log.
+    await AuditService.logAction({
+      actorId: session!.user!.id!,
+      action: `Exported orders for shop product "${product.name}" (${id}) (${rows.length} order lines, included buyer email/phone + shipping address)`,
+      ipAddress: getClientIp(req),
+    });
 
     return NextResponse.json({ productName: product.name, rows });
   } catch (error) {

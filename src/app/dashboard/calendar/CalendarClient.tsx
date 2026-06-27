@@ -86,6 +86,27 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+// Day-bucketing key for the calendar grid. Times are formatted in Asia/Bangkok
+// (see formatTime), so events must be bucketed by their Bangkok calendar day too
+// — otherwise an event near midnight lands in the wrong day cell for a viewer
+// whose device clock is in another timezone. Returns the *device-local* midnight
+// of the Bangkok calendar date, so it compares cleanly (===) against the grid
+// cells, which are built as local `new Date(y, m, d)` midnights.
+// One reused formatter — itemsOnDay calls startOfBangkokDay per item across all
+// 42 cells, so constructing a formatter each call would be needlessly hot.
+const BANGKOK_DAY_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Bangkok",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+function startOfBangkokDay(d: Date): Date {
+  if (isNaN(d.getTime())) return d;
+  const parts = BANGKOK_DAY_FMT.formatToParts(d);
+  const val = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return new Date(val("year"), val("month") - 1, val("day"));
+}
+
 function addDays(d: Date, n: number): Date {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
@@ -191,18 +212,23 @@ export default function CalendarClient({
   // ── Calendar grid (month) ────────────────────────────────────────────────
   const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = addDays(monthStart, -monthStart.getDay());
+  // Depend on the timestamp, not the Date object: gridStart is a fresh Date every
+  // render, so a `[gridStart]` dep would defeat the memo entirely.
+  const gridStartMs = gridStart.getTime();
   const gridDays = useMemo(
-    () => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)),
-    [gridStart]
+    () => Array.from({ length: 42 }, (_, i) => addDays(new Date(gridStartMs), i)),
+    [gridStartMs]
   );
 
   const itemsOnDay = useCallback(
     (day: Date): CalendarItem[] => {
+      // `day` is a local-built grid cell, so its local midnight is its calendar
+      // date; events are bucketed by their Bangkok calendar day to match.
       const dd = startOfDay(day).getTime();
       return items
         .filter((it) => {
-          const s = startOfDay(new Date(it.startTime)).getTime();
-          const e = startOfDay(new Date(it.endTime)).getTime();
+          const s = startOfBangkokDay(new Date(it.startTime)).getTime();
+          const e = startOfBangkokDay(new Date(it.endTime)).getTime();
           return dd >= s && dd <= e;
         })
         .sort(
@@ -225,7 +251,9 @@ export default function CalendarClient({
     year: "numeric",
   });
 
-  const todayKey = startOfDay(new Date()).getTime();
+  // "Today" follows Asia/Bangkok too, so the highlight lands on the right cell
+  // for a viewer abroad (consistent with itemsOnDay above).
+  const todayKey = startOfBangkokDay(new Date()).getTime();
 
   // ── Export helpers ────────────────────────────────────────────────────────
   const toCalItem = useCallback((it: CalendarItem): CalItem => {
@@ -1086,17 +1114,24 @@ export default function CalendarClient({
 
 // ── Subscribe panel ─────────────────────────────────────────────────────────
 function SubscribePanel({ onClose }: { onClose: () => void }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const res = await fetch("/api/calendar/feed/token");
+      if (!res.ok) throw new Error("failed");
       const data = await res.json();
       setToken(data.token ?? null);
+    } catch {
+      // Don't fall through to the create-feed UI on a failed load — that would let
+      // the user "create" a feed on top of one that may already exist.
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -1115,9 +1150,15 @@ function SubscribePanel({ onClose }: { onClose: () => void }) {
 
   const copy = async () => {
     if (!feedUrl) return;
-    await navigator.clipboard.writeText(feedUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    try {
+      await navigator.clipboard.writeText(feedUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard.writeText throws on an insecure origin / denied permission —
+      // fall back to selecting the URL field so the user can copy it manually.
+      document.querySelector<HTMLInputElement>(".sub-url input")?.select();
+    }
   };
 
   const regenerate = async () => {
@@ -1154,6 +1195,15 @@ function SubscribePanel({ onClose }: { onClose: () => void }) {
 
         {loading ? (
           <div className="cal-state">…</div>
+        ) : loadError ? (
+          <div className="sub-foot" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "#b45309" }}>
+              {lang === "th" ? "โหลดลิงก์ไม่สำเร็จ" : lang === "cn" ? "加载失败" : lang === "mm" ? "လင့်ခ် ဖွင့်၍မရပါ" : "Couldn't load the feed link."}
+            </span>
+            <button className="btn-ghost" onClick={load}>
+              <RefreshCw size={14} /> {lang === "th" ? "ลองใหม่" : lang === "cn" ? "重试" : lang === "mm" ? "ထပ်စမ်းပါ" : "Retry"}
+            </button>
+          </div>
         ) : token ? (
           <>
             <div className="sub-url">

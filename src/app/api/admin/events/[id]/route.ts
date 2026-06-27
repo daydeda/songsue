@@ -16,8 +16,8 @@ const eventUpdateSchema = z.object({
   registrationCloseTime: z.string().datetime().optional().nullable(),
   quota: z.number().int().min(0).optional().nullable(),
   location: z.string().optional().nullable(),
-  pointsAwarded: z.number().int().min(0).optional().nullable(),
-  individualPointsAwarded: z.number().int().min(0).optional().nullable(),
+  pointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
+  individualPointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
@@ -37,7 +37,14 @@ const eventUpdateSchema = z.object({
   firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event — separate from allowedRoles.
   managedByRoles: z.array(z.string()).optional().nullable(),
-});
+}).refine(
+  // Only enforce when BOTH ends are supplied — this is a partial update.
+  (d) => {
+    if (!d.startTime || !d.endTime) return true;
+    return new Date(d.endTime) > new Date(d.startTime);
+  },
+  { message: "endTime must be after startTime", path: ["endTime"] },
+);
 
 // PUT /api/admin/events/[id] — Update event
 export async function PUT(
@@ -52,7 +59,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const data = eventUpdateSchema.parse(body);
 
     // When posters are provided, normalize them and keep the imageUrl cover in

@@ -788,6 +788,17 @@ async function migrate() {
   await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS delivery_tiers jsonb`;
   console.log("  ✅ shop_products.delivery_fee / delivery_tiers");
 
+  // 51. events.first_year_only — audience restriction limiting an event to the
+  // CURRENT first-year intake, derived from the student-id prefix (CMU
+  // Buddhist-era admission year, e.g. ids starting with "69" for 2026; computed
+  // at runtime in src/lib/event-access.ts so it tracks the year automatically).
+  // Enforced alongside the existing role/major/Thai|international predicates;
+  // admin roles bypass. Additive, NOT NULL DEFAULT false: existing events
+  // backfill to false (no restriction = unchanged behaviour). Idempotent via
+  // ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS first_year_only boolean NOT NULL DEFAULT false`;
+  console.log("  ✅ events.first_year_only");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -32,6 +32,8 @@ const eventSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Restrict the event to the current first-year intake (id-prefix derived).
+  firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event (club_president / major_president).
   // Separate from allowedRoles (participant visibility) — see GET scoping above.
   managedByRoles: z.array(z.string()).optional().nullable(),
@@ -167,6 +169,7 @@ export async function POST(req: Request) {
           quotaInternational: data.quotaInternational,
           allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
           allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
+          firstYearOnly: data.firstYearOnly ?? false,
           managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null,
         })
         .returning();

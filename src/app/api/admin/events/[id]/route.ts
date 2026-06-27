@@ -33,6 +33,8 @@ const eventUpdateSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Restrict the event to the current first-year intake (id-prefix derived).
+  firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event — separate from allowedRoles.
   managedByRoles: z.array(z.string()).optional().nullable(),
 });
@@ -103,6 +105,7 @@ export async function PUT(
             ...(data.allowedMajors !== undefined && {
               allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null
             }),
+            ...(data.firstYearOnly !== undefined && { firstYearOnly: data.firstYearOnly }),
             ...(data.managedByRoles !== undefined && {
               managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null
             }),

@@ -4,6 +4,7 @@ import { attendance, events, users, forms, formSubmissions, eventSessions } from
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getFormAvailability } from "@/lib/form-access";
+import { isFirstYearStudent } from "@/lib/event-access";
 
 // POST /api/events/[id]/register — One-click registration (FE-05)
 export async function POST(
@@ -104,6 +105,17 @@ export async function POST(
     }
     if (isIntl && !effectiveIntl) {
       return NextResponse.json({ error: "This event is for Thai students only" }, { status: 403 });
+    }
+
+    // First-year-only restriction (mirrors the event-list filter). Admin-type
+    // roles bypass; everyone else must belong to the current first-year intake
+    // (student-id prefix, derived from the date in event-access.ts).
+    if (
+      event.firstYearOnly &&
+      !adminRoles.includes(userRole) &&
+      !isFirstYearStudent(studentId)
+    ) {
+      return NextResponse.json({ error: "This event is for first-year students only" }, { status: 403 });
     }
 
     // (Removed strict end time check to allow late registration if event is still visible)

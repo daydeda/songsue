@@ -33,10 +33,20 @@ export async function GET(
     const userId = session.user.id!;
     const userRole = session.user.role || "";
 
+    // Attendance is one row PER SESSION (a 2-day event has 2 rows per student),
+    // so check for the EXISTENCE of any session this student actually attended —
+    // not findFirst-then-status, which returns an arbitrary session (e.g. a still-
+    // "registered" day 1) and would wrongly report hasAttended=false for someone
+    // who checked in on day 2. Mirrors the POST submit gate below. Checking in on
+    // any single day is enough to open and submit the form.
     const attRecord = await db.query.attendance.findFirst({
-      where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
+      where: and(
+        eq(attendance.eventId, eventId),
+        eq(attendance.studentId, userId),
+        eq(attendance.status, "attended"),
+      ),
     });
-    const hasAttended = attRecord?.status === "attended";
+    const hasAttended = !!attRecord;
 
     const allForms = await db.query.forms.findMany({
       where: eq(forms.eventId, eventId),

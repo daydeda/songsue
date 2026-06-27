@@ -4,7 +4,7 @@ import { houses, scoreHistory } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { captureException, logger } from "@/lib/logger";
 
 export async function POST(req: Request) {
@@ -53,10 +53,7 @@ export async function POST(req: Request) {
       await AuditService.logActionInternal(tx, {
         actorId: session.user!.id!,
         action: `Adjusted house ${houseId} points by ${parsedDelta}. Reason: ${reason}`,
-        ipAddress:
-          req.headers.get("x-forwarded-for")?.split(",")[0] ||
-          req.headers.get("x-real-ip") ||
-          "127.0.0.1",
+        ipAddress: getClientIp(req),
       });
     });
 

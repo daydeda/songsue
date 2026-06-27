@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { formSubmissions } from "@/db/schema";
 import { downloadFormFile } from "@/lib/form-file-storage";
 import { eq } from "drizzle-orm";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ submissi
     }
 
     const { buffer, contentType } = await downloadFormFile(key);
+
+    // PDPA: a third-party admin viewing a student's private form file leaves a trail
+    // (the owner viewing their own file is not logged). Best-effort — never block the
+    // view on an audit hiccup.
+    if (isAdmin && !isOwner) {
+      try {
+        await AuditService.logAction({
+          actorId: session.user.id!,
+          targetId: submission.studentId ?? undefined,
+          action: `Viewed private form file (submission ${submissionId}, question ${questionId})`,
+          ipAddress: getClientIp(req),
+        });
+      } catch (e) {
+        console.error("Failed to audit form-file view:", e);
+      }
+    }
+
     const ext = key.slice(key.lastIndexOf("."));
     return new NextResponse(new Uint8Array(buffer), {
       headers: {

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { attendance, events } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 export async function GET(
   req: Request,
@@ -158,16 +158,23 @@ export async function GET(
       return { ...row, medsCheckOption: null, user: safeUser };
     });
 
-    // FE-12: Log the sensitive data access (Immutable Audit Trail)
-    // Since attendance list now contains medical info, we must log this access if they have permission to view it.
+    // FE-12 / PDPA: log every access that returns sensitive data. Admins receive
+    // full medical detail; registration/organizer receive emergency contacts + the
+    // medical-category signal — BOTH are auditable PDPA reads, so log them too. This
+    // used to fire ONLY for canViewMedical, leaving registration/organizer reads of
+    // emergency-contact PII untracked. Thin-roster scanner roles get no sensitive
+    // data (identity + check-in only), so they are not logged.
     if (canViewMedical) {
       await AuditService.logAction({
         actorId: session.user.id!,
-        action: `Viewed Attendance List for Event ${eventId} (included health info)`,
-        ipAddress:
-          req.headers.get("x-forwarded-for")?.split(",")[0] ||
-          req.headers.get("x-real-ip") ||
-          "127.0.0.1",
+        action: `Viewed Attendance List for Event ${eventId} (included health detail + emergency contacts)`,
+        ipAddress: getClientIp(req),
+      });
+    } else if (!isThinRoster) {
+      await AuditService.logAction({
+        actorId: session.user.id!,
+        action: `Viewed Attendance List for Event ${eventId} (emergency contacts + medical-category signal)`,
+        ipAddress: getClientIp(req),
       });
     }
 

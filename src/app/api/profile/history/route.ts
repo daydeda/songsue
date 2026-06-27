@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { attendance, forms, formSubmissions } from "@/db/schema";
-import { and, count, eq, lt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { canAccessSkillForm, getFormAvailability } from "@/lib/form-access";
 
@@ -65,30 +65,64 @@ export async function GET() {
       };
     };
 
-    const hasSubmitted = async (formId: string) => {
-      const sub = await db.query.formSubmissions.findFirst({
-        where: and(eq(formSubmissions.formId, formId), eq(formSubmissions.studentId, userId)),
-      });
-      return !!sub;
-    };
-
     const userAttendances = await db.query.attendance.findMany({
       where: eq(attendance.studentId, userId),
       with: { event: true, session: true },
       orderBy: (a, { desc }) => [desc(a.checkInTime)],
     });
 
-    // Check-in order within a single session: how many attendees checked into
-    // this exact session before the given time. Scoped per-session so a
-    // multi-session event reports each session's own arrival order.
-    const sessionRank = async (sessionId: string, checkInTime: Date) => {
-      const [{ value: earlier }] = await db
-        .select({ value: count() })
-        .from(attendance)
-        .where(and(eq(attendance.sessionId, sessionId), lt(attendance.checkInTime, checkInTime)));
-      return (earlier || 0) + 1;
-    };
     const attendedEventIds = new Set(userAttendances.map((a) => a.eventId));
+
+    // ── Batched lookups: these three replace what used to be on the order of
+    // E·(1 + S + F) per-request round-trips (a forms.findMany per event, a count()
+    // per session, and a findFirst per form) with three queries total. ────────────
+
+    // 1. All of THIS student's form submissions, as a Set of formIds (was a findFirst
+    //    per form). hasSubmission is now an in-memory lookup.
+    const submittedRows = await db
+      .select({ formId: formSubmissions.formId })
+      .from(formSubmissions)
+      .where(eq(formSubmissions.studentId, userId));
+    const submittedFormIds = new Set(submittedRows.map((s) => s.formId));
+
+    // 2. Every form for every attended event, grouped by eventId (was a forms.findMany
+    //    per event inside the loop).
+    const allEventForms = attendedEventIds.size
+      ? await db.query.forms.findMany({
+          where: inArray(forms.eventId, [...attendedEventIds]),
+          orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
+        })
+      : [];
+    const formsByEvent = new Map<string, typeof allEventForms>();
+    for (const f of allEventForms) {
+      const arr = formsByEvent.get(f.eventId) ?? [];
+      arr.push(f);
+      formsByEvent.set(f.eventId, arr);
+    }
+
+    // 3. Each checked-in session's arrival rank for THIS student, in ONE windowed
+    //    query (was a count() per session). rank() over each session's check-in
+    //    order; we then keep only this student's rows.
+    const checkedInSessionIds = [
+      ...new Set(userAttendances.filter((a) => a.checkInTime).map((a) => a.sessionId)),
+    ];
+    const rankBySession = new Map<string, number>();
+    if (checkedInSessionIds.length > 0) {
+      const ranked = db
+        .select({
+          sessionId: attendance.sessionId,
+          studentId: attendance.studentId,
+          rnk: sql<number>`rank() over (partition by ${attendance.sessionId} order by ${attendance.checkInTime})`.as("rnk"),
+        })
+        .from(attendance)
+        .where(and(inArray(attendance.sessionId, checkedInSessionIds), isNotNull(attendance.checkInTime)))
+        .as("ranked");
+      const rankRows = await db
+        .select({ sessionId: ranked.sessionId, rnk: ranked.rnk })
+        .from(ranked)
+        .where(eq(ranked.studentId, userId));
+      for (const r of rankRows) rankBySession.set(r.sessionId, Number(r.rnk));
+    }
 
     // A multi-session event has ONE attendance row per session (uniqueness is
     // per-session, not per-event), but history shows one card per EVENT. Group
@@ -101,72 +135,64 @@ export async function GET() {
       attByEvent.set(a.eventId, list);
     }
 
-    // History entries for events the student registered for / attended.
-    const history = await Promise.all(
-      [...attByEvent.values()].map(async (group) => {
-        const event = group[0].event;
-        if (!event) return null;
+    // History entries for events the student registered for / attended. All the
+    // per-entry data now comes from the in-memory maps above, so this is synchronous.
+    const history = [...attByEvent.values()].map((group) => {
+      const event = group[0].event;
+      if (!event) return null;
 
-        // The student's sessions for this event, in the session's own order
-        // (sortOrder, then start time), each with its own check-in rank.
-        const ordered = [...group].sort((a, b) => {
-          const oa = a.session?.sortOrder ?? 0;
-          const ob = b.session?.sortOrder ?? 0;
-          if (oa !== ob) return oa - ob;
-          const ta = a.session?.startTime ? new Date(a.session.startTime).getTime() : 0;
-          const tb = b.session?.startTime ? new Date(b.session.startTime).getTime() : 0;
-          return ta - tb;
-        });
-        const sessions = await Promise.all(
-          ordered.map(async (a) => ({
-            sessionId: a.sessionId,
-            title: a.session?.title ?? null,
-            startTime: a.session?.startTime ?? null,
-            checkInTime: a.checkInTime,
-            method: a.method,
-            rank: a.checkInTime ? await sessionRank(a.sessionId, a.checkInTime) : null,
-          }))
-        );
+      // The student's sessions for this event, in the session's own order
+      // (sortOrder, then start time), each with its own check-in rank.
+      const ordered = [...group].sort((a, b) => {
+        const oa = a.session?.sortOrder ?? 0;
+        const ob = b.session?.sortOrder ?? 0;
+        if (oa !== ob) return oa - ob;
+        const ta = a.session?.startTime ? new Date(a.session.startTime).getTime() : 0;
+        const tb = b.session?.startTime ? new Date(b.session.startTime).getTime() : 0;
+        return ta - tb;
+      });
+      const sessions = ordered.map((a) => ({
+        sessionId: a.sessionId,
+        title: a.session?.title ?? null,
+        startTime: a.session?.startTime ?? null,
+        checkInTime: a.checkInTime,
+        method: a.method,
+        rank: a.checkInTime ? rankBySession.get(a.sessionId) ?? null : null,
+      }));
 
-        // Representative row for the top-level/single-session display + sort:
-        // the earliest session the student actually checked into, else the
-        // first row if no session has a check-in yet.
-        const checkedIn = group.filter((a) => a.checkInTime);
-        const rep =
-          checkedIn.length > 0
-            ? checkedIn.reduce((a, b) => (a.checkInTime! <= b.checkInTime! ? a : b))
-            : group[0];
-        const repSession = sessions.find((s) => s.sessionId === rep.sessionId);
+      // Representative row for the top-level/single-session display + sort:
+      // the earliest session the student actually checked into, else the
+      // first row if no session has a check-in yet.
+      const checkedIn = group.filter((a) => a.checkInTime);
+      const rep =
+        checkedIn.length > 0
+          ? checkedIn.reduce((a, b) => (a.checkInTime! <= b.checkInTime! ? a : b))
+          : group[0];
+      const repSession = sessions.find((s) => s.sessionId === rep.sessionId);
 
-        const eventForms = await db.query.forms.findMany({
-          where: eq(forms.eventId, event.id),
-          orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
-        });
+      const eventForms = formsByEvent.get(event.id) ?? [];
 
-        // Non-S forms are shown to everyone; an S form only if the viewer may
-        // access it (assigned by role/person, or a manager).
-        const studentForms = await Promise.all(
-          eventForms
-            .filter((f) => f.formType !== "S" || canAccessSkillForm(f, me))
-            .map(async (formObj) => buildFormStatus(formObj, await hasSubmitted(formObj.id)))
-        );
+      // Non-S forms are shown to everyone; an S form only if the viewer may
+      // access it (assigned by role/person, or a manager).
+      const studentForms = eventForms
+        .filter((f) => f.formType !== "S" || canAccessSkillForm(f, me))
+        .map((formObj) => buildFormStatus(formObj, submittedFormIds.has(formObj.id)));
 
-        return {
-          id: rep.id,
-          eventId: event.id,
-          eventTitle: event.title,
-          eventImageUrl: event.imageUrl,
-          eventQuota: event.quota,
-          eventStartTime: event.startTime,
-          eventEndTime: event.endTime,
-          checkInTime: rep.checkInTime,
-          method: rep.method,
-          rank: repSession?.rank ?? null,
-          sessions,
-          forms: studentForms,
-        };
-      })
-    );
+      return {
+        id: rep.id,
+        eventId: event.id,
+        eventTitle: event.title,
+        eventImageUrl: event.imageUrl,
+        eventQuota: event.quota,
+        eventStartTime: event.startTime,
+        eventEndTime: event.endTime,
+        checkInTime: rep.checkInTime,
+        method: rep.method,
+        rank: repSession?.rank ?? null,
+        sessions,
+        forms: studentForms,
+      };
+    });
 
     // S forms the viewer is assigned to on events they did NOT attend — surfaced
     // so assigned evaluators can fill them without being a participant.
@@ -186,29 +212,27 @@ export async function GET() {
       assignedByEvent.set(f.eventId, list);
     }
 
-    const assignedEntries = await Promise.all(
-      [...assignedByEvent.values()].map(async (eventForms) => {
-        const ev = eventForms[0].event!;
-        const formsList = await Promise.all(
-          eventForms.map(async (formObj) => buildFormStatus(formObj, await hasSubmitted(formObj.id)))
-        );
-        return {
-          id: `assigned-${ev.id}`,
-          eventId: ev.id,
-          eventTitle: ev.title,
-          eventImageUrl: ev.imageUrl,
-          eventQuota: ev.quota,
-          eventStartTime: ev.startTime,
-          eventEndTime: ev.endTime,
-          checkInTime: null,
-          method: null,
-          rank: null,
-          sessions: [],
-          assignedOnly: true, // attended=false; viewer is here only to evaluate
-          forms: formsList,
-        };
-      })
-    );
+    const assignedEntries = [...assignedByEvent.values()].map((eventForms) => {
+      const ev = eventForms[0].event!;
+      const formsList = eventForms.map((formObj) =>
+        buildFormStatus(formObj, submittedFormIds.has(formObj.id))
+      );
+      return {
+        id: `assigned-${ev.id}`,
+        eventId: ev.id,
+        eventTitle: ev.title,
+        eventImageUrl: ev.imageUrl,
+        eventQuota: ev.quota,
+        eventStartTime: ev.startTime,
+        eventEndTime: ev.endTime,
+        checkInTime: null,
+        method: null,
+        rank: null,
+        sessions: [],
+        assignedOnly: true, // attended=false; viewer is here only to evaluate
+        forms: formsList,
+      };
+    });
 
     // no-store: a form just submitted must not be served as still "available"
     // from a stale cache (which would re-show the fillable button / deep-link).

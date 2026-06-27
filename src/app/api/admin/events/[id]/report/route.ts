@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { attendance, eventSessions, events } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -53,14 +53,22 @@ export async function GET(
       },
     });
 
+    // Defensive cap: the whole roster + the xlsx buffer are built in memory (xlsx
+    // can't stream). Per-event this is bounded, but refuse a pathologically large
+    // report rather than risk OOM.
+    const MAX_EXPORT_ROWS = 50000;
+    if (allAttendance.length > MAX_EXPORT_ROWS) {
+      return NextResponse.json(
+        { error: `This report is too large (${allAttendance.length} rows).` },
+        { status: 413 }
+      );
+    }
+
     // Bulk PII export: keep a tamper-evident record of who pulled it (PDPA).
     await AuditService.logAction({
       actorId: session.user.id!,
       action: `Exported attendance report XLSX for event ${eventId} (${allAttendance.length} rows)`,
-      ipAddress:
-        req.headers.get("x-forwarded-for")?.split(",")[0] ||
-        req.headers.get("x-real-ip") ||
-        "127.0.0.1",
+      ipAddress: getClientIp(req),
     });
 
     const fmtTime = (d: Date | null) =>

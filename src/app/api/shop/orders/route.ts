@@ -10,6 +10,11 @@ import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 
+// Advisory-lock namespace (int4) for serializing a single buyer's concurrent shop
+// orders; paired with hashtext(buyerId). Distinct lock space from the audit chain's
+// single-key advisory lock, so the two never collide.
+const SHOP_BUYER_LOCK_NS = 53201;
+
 const orderSchema = z.object({
   items: z
     .array(
@@ -124,6 +129,14 @@ export async function POST(req: Request) {
     });
 
     const created = await db.transaction(async (tx) => {
+      // Serialize this buyer's concurrent orders so the per-product maxPerOrder cap
+      // can't be bypassed by firing two orders for DIFFERENT variants of the same
+      // product at once: the per-variant FOR UPDATE locks below don't overlap across
+      // variants, so the two transactions wouldn't see each other's pending qty in
+      // ownedByProduct. A per-buyer lock makes the owned/requested check consistent.
+      // Keyed on the buyer only — never blocks different buyers. Released at tx end.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${SHOP_BUYER_LOCK_NS}, hashtext(${buyerId}))`);
+
       const [settings] = await tx
         .select({ enabled: shopSettings.enabled, deliveryEnabled: shopSettings.deliveryEnabled, deliveryFee: shopSettings.deliveryFee })
         .from(shopSettings)

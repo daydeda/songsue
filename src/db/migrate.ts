@@ -799,6 +799,84 @@ async function migrate() {
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS first_year_only boolean NOT NULL DEFAULT false`;
   console.log("  ✅ events.first_year_only");
 
+  // 52. audit_logs.seq — a monotonic, gap-tolerant insertion-order column that
+  // breaks ties when two appends share the same millisecond `timestamp`. The hash
+  // chain is appended under an advisory lock, but tip selection
+  // (ORDER BY timestamp DESC LIMIT 1) and verification (ORDER BY timestamp ASC)
+  // still can't deterministically order equal-ms rows — they fork the chain and
+  // raise false tamper alarms. seq is a bigint backed by its own sequence
+  // (bigserial-style), assigned via nextval on insert.
+  //
+  // Built up in the safe, re-runnable order used for the session_id rollout
+  // (steps 36-40): add NULLABLE → backfill in chain order → attach the sequence →
+  // SET DEFAULT + NOT NULL LAST. All existing rows are preserved exactly.
+  //
+  // (a) Add nullable first so ADD COLUMN on a populated table is an instant
+  //     metadata change (no default ⇒ no table rewrite).
+  await sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS seq bigint`;
+
+  // (b) Backfill every not-yet-numbered row in CURRENT CHAIN ORDER (timestamp
+  //     ASC, id ASC as the deterministic tiebreaker), only WHERE seq IS NULL.
+  //     The COALESCE(max(seq),0) offset makes a partial re-run continue past
+  //     whatever is already numbered instead of restarting at 1 and colliding.
+  //     First run: max is NULL → 0 → existing rows get 1..N in chain order.
+  await sql`
+    WITH ordered AS (
+      SELECT id,
+             row_number() OVER (ORDER BY "timestamp" ASC, id ASC)
+               + COALESCE((SELECT max(seq) FROM audit_logs), 0) AS rn
+      FROM audit_logs
+      WHERE seq IS NULL
+    )
+    UPDATE audit_logs a
+    SET seq = ordered.rn
+    FROM ordered
+    WHERE a.id = ordered.id
+  `;
+
+  // (c) Create the sequence, make it OWNED BY the column (dropped with the column,
+  //     never orphaned), and point it just past the current max so new inserts
+  //     continue monotonically with no collision. setval(..., false) ⇒ the NEXT
+  //     nextval returns exactly that value (max+1, or 1 on an empty table).
+  await sql`CREATE SEQUENCE IF NOT EXISTS audit_logs_seq_seq`;
+  await sql`ALTER SEQUENCE audit_logs_seq_seq OWNED BY audit_logs.seq`;
+  await sql`SELECT setval('audit_logs_seq_seq', COALESCE((SELECT max(seq) FROM audit_logs), 0) + 1, false)`;
+
+  // (d) Attach the sequence as the column default and enforce NOT NULL LAST, only
+  //     after every existing row has a value. Both are no-ops on re-run.
+  await sql`ALTER TABLE audit_logs ALTER COLUMN seq SET DEFAULT nextval('audit_logs_seq_seq')`;
+  await sql`ALTER TABLE audit_logs ALTER COLUMN seq SET NOT NULL`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_logs_seq ON audit_logs (seq)`;
+  console.log("  ✅ audit_logs.seq (bigint sequence, backfilled in chain order, NOT NULL + indexed)");
+
+  // 53. Performance indexes — all CREATE INDEX IF NOT EXISTS, so idempotent,
+  // additive, and non-destructive. Mirror the indexes now declared in schema.ts.
+  //   - forms(event_id): the forms table had NO single-column index; every
+  //     "forms for this event" lookup full-scanned it.
+  //   - users(role): role-filtered admin/leaderboard queries.
+  //   - users(created_at): signup-time ordering / reporting.
+  //   - attendance(event_id, status): attendee/head-count roll-ups by event+status.
+  await sql`CREATE INDEX IF NOT EXISTS idx_forms_event_id ON forms (event_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_attendance_event_status ON attendance (event_id, status)`;
+  console.log("  ✅ perf indexes: forms(event_id), users(role), users(created_at), attendance(event_id,status)");
+
+  // 54. rate_limit — durable Postgres-backed rate limiter (replaces an in-memory
+  // Map that reset every deploy and wasn't shared across instances). One row per
+  // limiter key; `count` is the hit count in the current window and expires_at is
+  // when the window resets. The expires_at index lets a sweeper delete expired
+  // rows cheaply. New table ⇒ inherently additive; IF NOT EXISTS keeps it idempotent.
+  await sql`
+    CREATE TABLE IF NOT EXISTS rate_limit (
+      key text PRIMARY KEY,
+      count integer NOT NULL DEFAULT 0,
+      expires_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_rate_limit_expires_at ON rate_limit (expires_at)`;
+  console.log("  ✅ rate_limit table + idx_rate_limit_expires_at");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

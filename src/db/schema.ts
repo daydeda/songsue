@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, bigserial, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
 import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
@@ -48,6 +48,9 @@ export const users = pgTable("users", {
 }, (table) => ([
   index("idx_users_profile_completed").on(table.profileCompleted),
   index("idx_users_house_id").on(table.houseId),
+  // Role-filtered admin/leaderboard queries and signup-time ordering/reporting.
+  index("idx_users_role").on(table.role),
+  index("idx_users_created_at").on(table.createdAt),
 ]));
 
 export const authenticators = pgTable(
@@ -217,6 +220,8 @@ export const attendance = pgTable("attendance", {
   index("idx_attendance_event_student").on(table.eventId, table.studentId),
   index("idx_attendance_student").on(table.studentId),
   index("idx_attendance_checkin_time").on(table.checkInTime),
+  // Attendee/head-count roll-ups filter by event AND status (registered/attended).
+  index("idx_attendance_event_status").on(table.eventId, table.status),
 ]));
 
 // Score history log per house per activity (FE-08)
@@ -247,6 +252,14 @@ export const scoreHistory = pgTable("score_history", {
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
+  // Monotonic insertion-order tiebreaker for the hash chain. Appends are
+  // serialized by an advisory lock, but two can still land in the same
+  // millisecond — `timestamp` then can't deterministically order them, which
+  // forks the chain on tip selection (ORDER BY ... DESC LIMIT 1) and raises false
+  // tamper alarms during verification (ORDER BY ... ASC). `seq` is a strictly
+  // increasing bigint backed by its own sequence (bigserial), DB-assigned via
+  // nextval on insert — the app never sets it. Order the chain by `seq` instead.
+  seq: bigserial("seq", { mode: "number" }).notNull(),
   // Deliberately NO foreign keys to users.id: actor_id/target_id are baked into
   // the tamper-evident row hashes, so they must survive user deletion unchanged
   // (ON DELETE SET NULL would rewrite rows and break the chain).
@@ -261,6 +274,9 @@ export const auditLogs = pgTable("audit_logs", {
   // (inside the advisory lock), and the admin page sorts by timestamp —
   // without this index both degrade to full-table sorts as the log grows.
   index("idx_audit_logs_timestamp").on(table.timestamp),
+  // Deterministic chain ordering tiebreaker (see seq above): tip selection and
+  // verification ORDER BY seq instead of the millisecond-granular timestamp.
+  index("idx_audit_logs_seq").on(table.seq),
 ]));
 
 // ─── Relations ────────────────────────────────────────────────────────────────
@@ -366,7 +382,11 @@ export const forms = pgTable("forms", {
   assignedUserIds: jsonb("assigned_user_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+}, (table) => ([
+  // Every "forms for this event" lookup filters by event_id; without this the
+  // forms table (previously index-less) was full-scanned per event load.
+  index("idx_forms_event_id").on(table.eventId),
+]));
 
 export const formSubmissions = pgTable("form_submissions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -652,3 +672,19 @@ export const calendarFeedTokensRelations = relations(calendarFeedTokens, ({ one 
     references: [users.id],
   }),
 }));
+
+// ============================================================================
+// RATE LIMIT
+// Durable, Postgres-backed rate limiter — replaces an in-memory Map that reset
+// on every deploy and didn't share state across instances. One row per limiter
+// key: `count` is the number of hits in the current window, `expiresAt` is when
+// that window resets. A sweeper deletes expired rows using the expires_at index.
+// No FKs / relations — it's cross-cutting infrastructure.
+// ============================================================================
+export const rateLimit = pgTable("rate_limit", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (table) => ([
+  index("idx_rate_limit_expires_at").on(table.expiresAt),
+]));

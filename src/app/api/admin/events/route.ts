@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { events, attendance, eventSessions } from "@/db/schema";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { sql } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sessionInputSchema } from "@/lib/event-schema";
@@ -39,6 +40,24 @@ const eventSchema = z.object({
   managedByRoles: z.array(z.string()).optional().nullable(),
 });
 
+// Per-event distinct-attendee counts. This GROUP BY over the whole (event-time-
+// growing) attendance table is the costly part of this endpoint, which is polled
+// every 8–15s by every admin/scanner client — so cache it at the app layer for 15s.
+// The counts are global; the per-president scoping is applied in-memory after. Up to
+// 15s of count staleness during a live event is an accepted tradeoff.
+const getAttendeeCounts = unstable_cache(
+  async () =>
+    db
+      .select({
+        eventId: attendance.eventId,
+        count: sql<number>`count(distinct ${attendance.studentId})`,
+      })
+      .from(attendance)
+      .groupBy(attendance.eventId),
+  ["admin-events-attendee-counts"],
+  { revalidate: 15, tags: ["admin-events-attendee-counts"] },
+);
+
 // GET /api/admin/events — List all events with registration counts
 export async function GET() {
   try {
@@ -70,17 +89,10 @@ export async function GET() {
       orderBy: (events, { desc }) => [desc(events.startTime)],
     });
 
-    // Attendee counts via a single grouped aggregate — returns O(events) rows
-    // instead of loading the whole, event-time-growing attendance table into memory.
-    // Count DISTINCT students: a multi-day 'once' event has one attended row per day
-    // for the same person, so count(*) would show the same student more than once.
-    const counts = await db
-      .select({
-        eventId: attendance.eventId,
-        count: sql<number>`count(distinct ${attendance.studentId})`,
-      })
-      .from(attendance)
-      .groupBy(attendance.eventId);
+    // Attendee counts via a single grouped aggregate (DISTINCT students — a multi-day
+    // 'once' event has one attended row per day for the same person). Cached for 15s
+    // (see getAttendeeCounts) so this whole-table GROUP BY isn't re-run on every poll.
+    const counts = await getAttendeeCounts();
 
     const countByEvent = new Map(counts.map((c) => [c.eventId, Number(c.count)]));
 
@@ -139,10 +151,7 @@ export async function POST(req: Request) {
       ? data.sessions
       : [{ title: null, startTime: data.startTime, endTime: data.endTime, quotaWalkIn: data.quotaWalkIn ?? null }];
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0] ||
-      req.headers.get("x-real-ip") ||
-      "127.0.0.1";
+    const ip = getClientIp(req);
 
     const event = await db.transaction(async (tx) => {
       const [created] = await tx

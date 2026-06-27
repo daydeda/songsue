@@ -1,11 +1,12 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { HousesService } from "@/modules/houses/houses.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 // Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
 // Validate the shape instead of accepting z.any() — the onboarding form always
@@ -37,6 +38,30 @@ const profileSchema = z.object({
   image: z.string().optional().nullable(),
   studentId: z.string().optional().nullable(), // Allow empty or null for admins
 });
+
+// Sensitive medical/emergency fields. Self-edits to these are recorded (field NAMES
+// only, never values) as a PDPA change-trail — the actor here is the data subject.
+const SENSITIVE_FIELDS = [
+  "chronicDiseases", "medicalHistory", "drugAllergies", "foodAllergies",
+  "dietaryRestrictions", "emergencyMedication", "faintingHistory", "emergencyContacts",
+] as const;
+
+// Transaction-scoped advisory lock key serializing concurrent onboardings so two
+// new students can't both pick the same least-full house (distinct from the audit
+// and award lock keys).
+const HOUSE_BALANCE_LOCK_KEY = 824517;
+
+// Normalize a sensitive value for presence/change comparison: null/undefined and a
+// bare "-" both count as empty; arrays (emergency contacts) compare by JSON.
+function normSensitive(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (Array.isArray(v)) return JSON.stringify(v);
+  const s = String(v).trim();
+  return s === "-" ? "" : s;
+}
+const isSensitiveProvided = (v: unknown) => normSensitive(v) !== "";
+const sensitiveChanged = (a: unknown, b: unknown) => normSensitive(a) !== normSensitive(b);
 
 export async function GET() {
   try {
@@ -88,22 +113,37 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: "Profile already completed" }, { status: 400 });
     }
 
-    // 2. BALANCED HOUSE ASSIGNMENT (FE-03)
-    // Assign to the house with the fewest members (shared helper, also used by
-    // the staff onboarding bypass so both stay balanced together).
-    const targetHouseId = await HousesService.pickBalancedHouseId();
+    // 2 + 3. Balanced house assignment + user update, ATOMICALLY under an advisory
+    // lock: pickBalancedHouseId runs inside the SAME tx, so two concurrent
+    // onboardings can't both read the same "fewest members" house and pile into it.
+    const updated = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${HOUSE_BALANCE_LOCK_KEY})`);
+      const targetHouseId = await HousesService.pickBalancedHouseId(tx);
 
-    // 3. Update User
-    const [updated] = await db
-      .update(users)
-      .set({
-        ...data,
-        houseId: targetHouseId,
-        profileCompleted: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, session.user.id))
-      .returning();
+      const [row] = await tx
+        .update(users)
+        .set({
+          ...data,
+          houseId: targetHouseId,
+          profileCompleted: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, session.user!.id!))
+        .returning();
+
+      // PDPA change-trail (field NAMES only): the data subject provided medical/
+      // emergency info at onboarding. Same tx, so it commits atomically with the row.
+      const provided = SENSITIVE_FIELDS.filter((f) => isSensitiveProvided((data as Record<string, unknown>)[f]));
+      if (provided.length > 0) {
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user!.id!,
+          targetId: session.user!.id!,
+          action: `Self: provided medical/emergency info at onboarding (${provided.join(", ")})`,
+          ipAddress: getClientIp(req),
+        });
+      }
+      return row;
+    });
 
     revalidatePath("/");
     revalidatePath("/dashboard");
@@ -149,14 +189,43 @@ export async function PATCH(req: Request) {
       delete data.studentId;
     }
 
-    const [updated] = await db
-      .update(users)
-      .set({
-        ...data,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, session.user.id))
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      // Read current sensitive fields first so we can record which the data subject
+      // actually CHANGED (names only). The audit write shares this tx — atomic with
+      // the update, no read-without-log window.
+      const before = await tx.query.users.findFirst({
+        where: eq(users.id, session.user!.id!),
+        columns: {
+          chronicDiseases: true, medicalHistory: true, drugAllergies: true,
+          foodAllergies: true, dietaryRestrictions: true, emergencyMedication: true,
+          faintingHistory: true, emergencyContacts: true,
+        },
+      });
+
+      const [row] = await tx
+        .update(users)
+        .set({
+          ...data,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, session.user!.id!))
+        .returning();
+
+      const beforeRec = (before ?? {}) as Record<string, unknown>;
+      const dataRec = data as Record<string, unknown>;
+      const changed = SENSITIVE_FIELDS.filter(
+        (f) => dataRec[f] !== undefined && sensitiveChanged(beforeRec[f], dataRec[f])
+      );
+      if (changed.length > 0) {
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user!.id!,
+          targetId: session.user!.id!,
+          action: `Self: updated own medical/emergency fields (${changed.join(", ")})`,
+          ipAddress: getClientIp(req),
+        });
+      }
+      return row;
+    });
 
     revalidatePath("/");
     revalidatePath("/dashboard");

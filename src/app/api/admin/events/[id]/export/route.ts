@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { attendance, events, eventSessions } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -116,16 +116,24 @@ export async function GET(
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
+    // Defensive cap: the whole roster + the xlsx buffer are built in memory (xlsx
+    // can't stream). Per-event this is bounded, but refuse a pathologically large
+    // export rather than risk OOM — the admin can export one day at a time instead.
+    const MAX_EXPORT_ROWS = 50000;
+    if (list.length > MAX_EXPORT_ROWS) {
+      return NextResponse.json(
+        { error: `This export is too large (${list.length} rows). Please use the day filter to export one session at a time.` },
+        { status: 413 }
+      );
+    }
+
     // Bulk PII export — keep a tamper-evident record of who pulled it (PDPA),
     // and note when health info was part of the export. Mirrors the CSV report
     // and the attendance-list access log.
     await AuditService.logAction({
       actorId: session.user.id!,
       action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${canViewMedical ? ", included health info" : ""})`,
-      ipAddress:
-        req.headers.get("x-forwarded-for")?.split(",")[0] ||
-        req.headers.get("x-real-ip") ||
-        "127.0.0.1",
+      ipAddress: getClientIp(req),
     });
 
     // Same nationality heuristic as the admin events UI: the first of the last

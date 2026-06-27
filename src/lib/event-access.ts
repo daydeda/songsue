@@ -45,8 +45,13 @@ export interface Viewer {
  * means "today" (late June 2026) resolves to "69", the just-arrived 2026 intake.
  */
 export function currentFirstYearPrefix(now: Date = new Date()): string {
-  // getMonth() is 0-indexed: 5 = June. Jan–May (0–4) → previous academic year.
-  const academicYearCE = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+  // Resolve the month/year in Asia/Bangkok (UTC+7, no DST), NOT the server's TZ —
+  // the container runs UTC. Shift to Bangkok wall-clock first, then read the UTC
+  // fields: otherwise the academic-year rollover fires at June 1 00:00 UTC = 07:00
+  // Bangkok, mis-classifying first-years for that ~7h window each June.
+  const bkk = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  // getUTCMonth() is 0-indexed: 5 = June. Jan–May (0–4) → previous academic year.
+  const academicYearCE = bkk.getUTCMonth() >= 5 ? bkk.getUTCFullYear() : bkk.getUTCFullYear() - 1;
   const be = academicYearCE + 543;
   return String(be % 100).padStart(2, "0");
 }

@@ -4,7 +4,7 @@ import { events, eventSessions, attendance } from "@/db/schema";
 import { count, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { sessionInputSchema } from "@/lib/event-schema";
 
 const eventUpdateSchema = z.object({
@@ -64,10 +64,7 @@ export async function PUT(
     }
     const coverFromPosters = posters !== undefined ? (posters[0] ?? null) : undefined;
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0] ||
-      req.headers.get("x-real-ip") ||
-      "127.0.0.1";
+    const ip = getClientIp(req);
 
     let updated: typeof events.$inferSelect;
     try {
@@ -233,10 +230,7 @@ export async function DELETE(
       await AuditService.logActionInternal(tx, {
         actorId: session.user!.id!,
         action: `Deleted Event: ${deleted.title} (${deleted.id})`,
-        ipAddress:
-          req.headers.get("x-forwarded-for")?.split(",")[0] ||
-          req.headers.get("x-real-ip") ||
-          "127.0.0.1",
+        ipAddress: getClientIp(req),
       });
     });
 

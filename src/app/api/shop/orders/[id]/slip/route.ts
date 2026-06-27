@@ -4,6 +4,7 @@ import { shopOrders } from "@/db/schema";
 import { downloadSlip } from "@/lib/shop-storage";
 import { isShopAdmin } from "@/lib/shop-auth";
 import { eq } from "drizzle-orm";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 // GET /api/shop/orders/[id]/slip — stream the payment slip bytes. PDPA-gated: only
 // the buyer who placed the order or a shop admin may view it. The slip is proxied
 // through here (never a public URL), so access is checked on every request.
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user) {
@@ -35,6 +36,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
 
     const { buffer, contentType } = await downloadSlip(order.slipPath);
+
+    // PDPA: a shop admin viewing a buyer's payment slip (not the buyer themselves)
+    // leaves a trail. Best-effort — never block the view on an audit hiccup.
+    if (!isOwner) {
+      try {
+        await AuditService.logAction({
+          actorId: session.user.id!,
+          targetId: order.buyerId ?? undefined,
+          action: `Viewed payment slip for shop order ${id}`,
+          ipAddress: getClientIp(req),
+        });
+      } catch (e) {
+        console.error("Failed to audit slip view:", e);
+      }
+    }
+
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": contentType,

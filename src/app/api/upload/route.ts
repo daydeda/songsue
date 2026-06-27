@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import path from "path";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 // MIME type and extension are both client-controlled, so the only trustworthy
 // signal is the file's own magic bytes. A spoofed "image" that slips through
@@ -24,6 +25,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Throttle: image re-encoding (sharp) is CPU-heavy and this runs on the single
+    // self-hosted instance, so an authenticated user looping uploads could DoS it.
+    const limiter = await rateLimit(getClientIp(req), 20, 60_000); // 20 uploads/min/IP
+    if (!limiter.success) {
+      return NextResponse.json(
+        { error: "Too many uploads. Please slow down and try again shortly." },
+        { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil((limiter.resetTime - Date.now()) / 1000))) } }
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
@@ -31,10 +42,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // Validate file size (max 10MB)
-    const MAX_SIZE = 10 * 1024 * 1024;
+    // Validate file size. CLAUDE.md documents a 5MB image cap (client + server).
+    const MAX_SIZE = 5 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: "File size exceeds the 10MB limit." }, { status: 400 });
+      return NextResponse.json({ error: "File size exceeds the 5MB limit." }, { status: 400 });
     }
 
     // Check if it's an image

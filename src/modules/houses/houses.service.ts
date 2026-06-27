@@ -3,6 +3,11 @@ import { houses, scoreHistory, users } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { AuditService } from "../audit/audit.service";
 
+// Either the base db handle or a transaction — both expose the .query API that
+// pickBalancedHouseId needs, so the caller can run the count + the new student's
+// house assignment under a single advisory lock.
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export class HousesService {
   /**
    * Picks the house a new STUDENT should join for balanced distribution (FE-03):
@@ -15,8 +20,8 @@ export class HousesService {
    * Returns the house id, or null if no houses exist yet (caller leaves houseId
    * unset rather than crashing).
    */
-  static async pickBalancedHouseId(): Promise<string | null> {
-    const housesList = await db.query.houses.findMany({
+  static async pickBalancedHouseId(executor: DbOrTx = db): Promise<string | null> {
+    const housesList = await executor.query.houses.findMany({
       with: { users: { columns: { id: true } } },
     });
     if (housesList.length === 0) return null;

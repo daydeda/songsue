@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { attendance, events } from "@/db/schema";
 import { and, eq, count } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { captureException } from "@/lib/logger";
 import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
 
@@ -28,8 +29,14 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const eventId = url.searchParams.get("eventId");
     const sessionId = url.searchParams.get("sessionId");
-    if (!eventId) {
-      return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+    // Validate the ids are UUIDs before they reach the eq() filters — an invalid
+    // value would otherwise make Postgres throw 22P02 and surface as a 500.
+    const uuid = z.string().uuid();
+    if (!eventId || !uuid.safeParse(eventId).success) {
+      return NextResponse.json({ error: "Valid eventId is required" }, { status: 400 });
+    }
+    if (sessionId && !uuid.safeParse(sessionId).success) {
+      return NextResponse.json({ error: "Invalid sessionId" }, { status: 400 });
     }
 
     // President roles may only read events they manage (managedByRoles), mirroring

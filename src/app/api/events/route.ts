@@ -3,12 +3,32 @@ import { db } from "@/db";
 import { attendance, events, users, forms, formSubmissions } from "@/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { getFormAvailability } from "@/lib/form-access";
 import { buildViewer, isEligibleFor, isEligibleForGuest } from "@/lib/event-access";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 export const maxDuration = 20;
 
+// Registered seat counts per event — DISTINCT students holding a seat, which is
+// exactly the headcount the register route enforces quota against (a multi-day
+// 'once' event creates extra attended rows per day for the same person, so
+// count(*) would inflate it). This whole-table GROUP BY would otherwise re-run on
+// every student dashboard poll, so cache it at the app layer for 15s (mirrors
+// getAttendeeCounts in /api/admin/events). The per-user attendance/preForm reads
+// below stay live — only this global aggregate is cached.
+const getSeatCounts = unstable_cache(
+  async () =>
+    db
+      .select({
+        eventId: attendance.eventId,
+        value: sql<number>`count(distinct ${attendance.studentId})`,
+      })
+      .from(attendance)
+      .groupBy(attendance.eventId),
+  ["events-seat-counts"],
+  { revalidate: 15, tags: ["events-seat-counts"] },
+);
 
 // GET /api/events — List all upcoming & past events (student-facing, FE-04)
 export async function GET() {
@@ -20,18 +40,10 @@ export async function GET() {
       orderBy: (events, { asc }) => [asc(events.startTime)],
     });
 
-    // Registered seat counts per event — DISTINCT students holding a seat, which
-    // is exactly the headcount the register route enforces quota against (a
-    // multi-day 'once' event creates extra attended rows per day for the same
-    // person, so count(*) would inflate it). One grouped query, reused by both
-    // the guest and authenticated branches so the dashboard can show "X / quota".
-    const seatCounts = await db
-      .select({
-        eventId: attendance.eventId,
-        value: sql<number>`count(distinct ${attendance.studentId})`,
-      })
-      .from(attendance)
-      .groupBy(attendance.eventId);
+    // Registered seat counts per event (see getSeatCounts) — one cached grouped
+    // query, reused by both the guest and authenticated branches so the dashboard
+    // can show "X / quota".
+    const seatCounts = await getSeatCounts();
     const seatCountMap = new Map(seatCounts.map((c) => [c.eventId, Number(c.value)]));
 
     if (!session?.user) {

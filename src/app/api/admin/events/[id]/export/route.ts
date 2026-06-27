@@ -127,12 +127,22 @@ export async function GET(
       );
     }
 
-    // Bulk PII export — keep a tamper-evident record of who pulled it (PDPA),
-    // and note when health info was part of the export. Mirrors the CSV report
-    // and the attendance-list access log.
+    // Bulk PII export — keep a tamper-evident record of who pulled it (PDPA), and
+    // note the health info in the export. Mirrors the CSV report and the
+    // attendance-list access log.
+    //
+    // The "Meds Check" (medsCheckOption) column is in EVERY export, so every export
+    // carries health info regardless of role — the descriptor must say so, or a
+    // plain admin's medical-data export looks clean in the log. super_admin
+    // additionally receives full medical detail + emergency-contact columns; a plain
+    // admin gets only the meds-check signal. Record which, so the log never
+    // understates the exposure.
+    const healthNote = canViewMedical
+      ? ", included health detail + emergency contacts"
+      : ", included meds-check status";
     await AuditService.logAction({
       actorId: session.user.id!,
-      action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${canViewMedical ? ", included health info" : ""})`,
+      action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${healthNote})`,
       ipAddress: getClientIp(req),
     });
 

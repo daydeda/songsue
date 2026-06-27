@@ -5,6 +5,42 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
+// Columns read for a normal/staff roster. Medical free-text + emergency contacts
+// are fetched so super_admin/admin get full detail and registration/organizer can
+// have the medical-CATEGORY signal derived below; they are stripped per-role in
+// the sanitize step.
+const FULL_USER_COLUMNS = {
+  id: true,
+  name: true,
+  nickname: true,
+  studentId: true,
+  major: true,
+  phone: true,
+  role: true,
+  roles: true,
+  chronicDiseases: true,
+  medicalHistory: true,
+  drugAllergies: true,
+  foodAllergies: true,
+  dietaryRestrictions: true,
+  faintingHistory: true,
+  emergencyMedication: true,
+  emergencyContacts: true,
+} as const;
+
+// Thin-roster roles (smo / club_president / major_president) only ever receive
+// identity + check-in (see sanitize step), so don't even fetch phone, emergency
+// contacts, or medical detail. A strict subset of FULL_USER_COLUMNS.
+const THIN_USER_COLUMNS = {
+  id: true,
+  name: true,
+  nickname: true,
+  studentId: true,
+  major: true,
+  role: true,
+  roles: true,
+} as const;
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -59,29 +95,16 @@ export async function GET(
           columns: { id: true, title: true, sortOrder: true, startTime: true, endTime: true },
         },
         user: {
-          columns: {
-            id: true,
-            name: true,
-            nickname: true,
-            studentId: true,
-            major: true,
-            phone: true,
-            role: true,
-            roles: true,
-            // Medical detail is always read here so we can derive the
-            // "has a condition" signal, but it is only forwarded to
-            // super_admin/admin below (see sanitize step).
-            chronicDiseases: true,
-            medicalHistory: true,
-            drugAllergies: true,
-            foodAllergies: true,
-            dietaryRestrictions: true,
-            faintingHistory: true,
-            emergencyMedication: true,
-            // Emergency contacts are available to all admin-area roles
-            // (super_admin/admin/registration/organizer), unlike medical detail.
-            emergencyContacts: true,
-          },
+          // Staff get the full SELECT (medical detail is read here so the
+          // "has a condition" signal can be derived, then forwarded only to
+          // super_admin/admin). Thin-roster roles get a reduced SELECT — phone /
+          // emergency contacts / medical are stripped from their response anyway,
+          // so they aren't fetched. The cast keeps the inferred row type stable;
+          // the omitted columns are simply absent at runtime and never read on the
+          // thin-roster path.
+          columns: (isThinRoster
+            ? THIN_USER_COLUMNS
+            : FULL_USER_COLUMNS) as typeof FULL_USER_COLUMNS,
           with: {
             house: {
               columns: {

@@ -99,7 +99,10 @@ export class AuditService {
       id,
       timestamp: timestamp.toISOString(),
       actorId: actorId ?? null,
-      targetId: targetId ?? null,
+      // Coerce ""→null to MATCH the stored `targetId || null` below. If these
+      // disagreed (hashed as "", stored NULL), verifyChainIntegrity would later
+      // recompute the hash from the NULL it reads back and raise a false tamper alarm.
+      targetId: targetId || null,
       action,
       ipAddress: ipAddress ?? null,
       prevHash,

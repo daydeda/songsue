@@ -4,6 +4,7 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { effectiveRoles } from "@/lib/admin-access";
 
 // Next.js 15+: params is a Promise and must be awaited
 export async function GET(
@@ -12,7 +13,7 @@ export async function GET(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "super_admin") {
+    if (!session?.user || !effectiveRoles(session.user.role, session.user.roles).includes("super_admin")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

@@ -216,6 +216,9 @@ export default function AdminShopClient() {
 function ProductsTab({ th }: { th: boolean }) {
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  // Set when the product list fails to load — shown instead of swallowing the
+  // failure as an empty "No products yet" list.
+  const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState<AdminProduct | "new" | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
 
@@ -225,9 +228,17 @@ function ProductsTab({ th }: { th: boolean }) {
   };
 
   const load = useCallback(async () => {
-    const d = await fetch("/api/admin/shop/products").then((r) => r.json()).catch(() => []);
-    if (Array.isArray(d)) setProducts(d);
-    setLoading(false);
+    setLoadError(false);
+    try {
+      const res = await fetch("/api/admin/shop/products");
+      if (!res.ok) throw new Error("failed");
+      const d = await res.json();
+      if (Array.isArray(d)) setProducts(d);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => {
     const t = setTimeout(() => { load(); }, 0);
@@ -241,6 +252,12 @@ function ProductsTab({ th }: { th: boolean }) {
   };
 
   if (loading) return <Spinner />;
+  if (loadError) return (
+    <p style={{ color: "#ef4444", fontSize: 14, display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {th ? "โหลดสินค้าไม่สำเร็จ" : "Couldn't load products."}
+      <button onClick={() => { setLoading(true); load(); }} className="btn btn-ghost" style={{ fontSize: 13, padding: "4px 10px" }}>{th ? "ลองอีกครั้ง" : "Retry"}</button>
+    </p>
+  );
 
   return (
     <div>
@@ -658,13 +675,25 @@ function OrdersTab({ th }: { th: boolean }) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [busy, setBusy] = useState<string | null>(null);
+  // Set when the order list fails to load (instead of swallowing it as an empty
+  // "No orders" list); actionError holds a failed approve/reject/revert message.
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Reject/revert open a custom modal instead of the browser prompt/confirm.
   const [pending, setPending] = useState<{ order: AdminOrder; action: "reject" | "revert" } | null>(null);
 
   const load = useCallback(async () => {
-    const d = await fetch("/api/admin/shop/orders").then((r) => r.json()).catch(() => []);
-    if (Array.isArray(d)) setOrders(d);
-    setLoading(false);
+    setLoadError(false);
+    try {
+      const res = await fetch("/api/admin/shop/orders");
+      if (!res.ok) throw new Error("failed");
+      const d = await res.json();
+      if (Array.isArray(d)) setOrders(d);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => {
     const t = setTimeout(() => { load(); }, 0);
@@ -679,17 +708,35 @@ function OrdersTab({ th }: { th: boolean }) {
 
   const submit = async (o: AdminOrder, action: "approve" | "reject" | "revert", rejectionReason?: string) => {
     setBusy(o.id);
-    await fetch(`/api/admin/shop/orders/${o.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, rejectionReason }),
-    });
-    setBusy(null);
-    setPending(null);
-    load();
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/admin/shop/orders/${o.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, rejectionReason }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || (th ? "ดำเนินการไม่สำเร็จ" : "Action failed"));
+      }
+      load();
+    } catch (e) {
+      // A 4xx/5xx or network error must not read as success — surface it.
+      setActionError(e instanceof Error ? e.message : (th ? "ดำเนินการไม่สำเร็จ" : "Action failed"));
+    } finally {
+      // ALWAYS clear busy + close the modal so the button can't stick spinning.
+      setBusy(null);
+      setPending(null);
+    }
   };
 
   if (loading) return <Spinner />;
+  if (loadError) return (
+    <p style={{ color: "#ef4444", fontSize: 14, display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {th ? "โหลดคำสั่งซื้อไม่สำเร็จ" : "Couldn't load orders."}
+      <button onClick={() => { setLoading(true); load(); }} className="btn btn-ghost" style={{ fontSize: 13, padding: "4px 10px" }}>{th ? "ลองอีกครั้ง" : "Retry"}</button>
+    </p>
+  );
 
   const shown = orders.filter((o) => filter === "all" || o.status === filter);
 
@@ -703,6 +750,8 @@ function OrdersTab({ th }: { th: boolean }) {
           </button>
         ))}
       </div>
+
+      {actionError && <p style={{ color: "#ef4444", fontSize: 13, margin: "0 0 12px" }}>{actionError}</p>}
 
       {shown.length === 0 ? (
         <p style={{ color: "var(--text-muted)" }}>{th ? "ไม่มีคำสั่งซื้อ" : "No orders."}</p>

@@ -486,66 +486,84 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       return;
     }
     setRegisteringId(eventId);
-    const method = registered ? "DELETE" : "POST";
-    const res = await fetch(`/api/events/${eventId}/register`, { method });
-    if (res.ok) {
-      // POST returns the event's fresh pre-test state (DELETE does not). Using the
-      // server value avoids the stale cached status on an un-register → re-register,
-      // where the events list would still read "submitted" until the next poll.
-      const data = await res.json().catch(() => ({}));
-      const freshPreTest = data?.preTest as { formId: string; title: string; status: string } | null | undefined;
-      const targetEvent = events.find(e => e.id === eventId);
-      setEvents((evts) =>
-        evts.map((e) => (e.id === eventId
-          ? { ...e, isRegistered: !registered, ...(freshPreTest !== undefined ? { preTest: freshPreTest } : {}) }
-          : e))
-      );
-      const eventTitle = targetEvent ? targetEvent.title : "";
-      if (!registered) {
-        // If this event has an open pre-test the student hasn't completed, push
-        // them straight into it instead of the generic success modal.
-        const pre = freshPreTest ?? targetEvent?.preTest;
-        if (pre && pre.status === "open") {
-          setPreTestModal({ show: true, eventId, formId: pre.formId, eventTitle });
-          setRegisteringId(null);
-          return;
+    try {
+      const method = registered ? "DELETE" : "POST";
+      const res = await fetch(`/api/events/${eventId}/register`, { method });
+      if (res.ok) {
+        // POST returns the event's fresh pre-test state (DELETE does not). Using the
+        // server value avoids the stale cached status on an un-register → re-register,
+        // where the events list would still read "submitted" until the next poll.
+        const data = await res.json().catch(() => ({}));
+        const freshPreTest = data?.preTest as { formId: string; title: string; status: string } | null | undefined;
+        const targetEvent = events.find(e => e.id === eventId);
+        setEvents((evts) =>
+          evts.map((e) => (e.id === eventId
+            ? { ...e, isRegistered: !registered, ...(freshPreTest !== undefined ? { preTest: freshPreTest } : {}) }
+            : e))
+        );
+        const eventTitle = targetEvent ? targetEvent.title : "";
+        if (!registered) {
+          // If this event has an open pre-test the student hasn't completed, push
+          // them straight into it instead of the generic success modal.
+          const pre = freshPreTest ?? targetEvent?.preTest;
+          if (pre && pre.status === "open") {
+            // finally still clears registeringId on this early return.
+            setPreTestModal({ show: true, eventId, formId: pre.formId, eventTitle });
+            return;
+          }
+          setSuccessModal({
+            show: true,
+            title: lang === "th" ? "ลงทะเบียนสำเร็จ!" : lang === "cn" ? "注册成功！" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း အောင်မြင်သည်!" : "Registration Complete!",
+            message: lang === "th"
+              ? `คุณได้ลงทะเบียนเข้าร่วมกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
+              : lang === "cn"
+              ? `您已成功注册活动 "${eventTitle}"`
+              : lang === "mm"
+              ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် အောင်မြင်စွာ မှတ်ပုံတင်ပြီးပါပြီ`
+              : `You have successfully registered for the event "${eventTitle}".`,
+            type: "success"
+          });
+        } else {
+          setSuccessModal({
+            show: true,
+            title: lang === "th" ? "ยกเลิกการลงทะเบียนสำเร็จ" : lang === "cn" ? "取消注册成功" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း ပယ်ဖျက်ပြီးပါပြီ" : "Registration Cancelled",
+            message: lang === "th"
+              ? `คุณได้ยกเลิกการลงทะเบียนสำหรับกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
+              : lang === "cn"
+              ? `您已成功取消活动 "${eventTitle}" 的注册`
+              : lang === "mm"
+              ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် မှတ်ပုံတင်ခြင်းကို အောင်မြင်စွာ ပယ်ဖျက်ပြီးပါပြီ`
+              : `You have successfully cancelled your registration for the event "${eventTitle}".`,
+            type: "info"
+          });
         }
-        setSuccessModal({
-          show: true,
-          title: lang === "th" ? "ลงทะเบียนสำเร็จ!" : lang === "cn" ? "注册成功！" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း အောင်မြင်သည်!" : "Registration Complete!",
-          message: lang === "th"
-            ? `คุณได้ลงทะเบียนเข้าร่วมกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
-            : lang === "cn"
-            ? `您已成功注册活动 "${eventTitle}"`
-            : lang === "mm"
-            ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် အောင်မြင်စွာ မှတ်ပုံတင်ပြီးပါပြီ`
-            : `You have successfully registered for the event "${eventTitle}".`,
-          type: "success"
-        });
       } else {
-        setSuccessModal({
+        const errorData = await res.json().catch(() => ({}));
+        const errorMsg = errorData.error || t.registrationFailed;
+        setErrorModal({
           show: true,
-          title: lang === "th" ? "ยกเลิกการลงทะเบียนสำเร็จ" : lang === "cn" ? "取消注册成功" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း ပယ်ဖျက်ပြီးပါပြီ" : "Registration Cancelled",
-          message: lang === "th"
-            ? `คุณได้ยกเลิกการลงทะเบียนสำหรับกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
-            : lang === "cn"
-            ? `您已成功取消活动 "${eventTitle}" 的注册`
-            : lang === "mm"
-            ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် မှတ်ပုံတင်ခြင်းကို အောင်မြင်စွာ ပယ်ဖျက်ပြီးပါပြီ`
-            : `You have successfully cancelled your registration for the event "${eventTitle}".`,
-          type: "info"
+          title: t.registrationFailed,
+          message: errorMsg
         });
       }
-    } else {
-      const errorData = await res.json();
-      const errorMsg = errorData.error || t.registrationFailed;
+    } catch {
+      // Network/parse failure — surface an error instead of leaving the button
+      // spinning forever on an unhandled rejection.
       setErrorModal({
         show: true,
         title: t.registrationFailed,
-        message: errorMsg
+        message: lang === "th"
+          ? "เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง"
+          : lang === "cn"
+          ? "网络连接出错，请重试。"
+          : lang === "mm"
+          ? "ချိတ်ဆက်မှု အမှားအယွင်း ဖြစ်ပွားသည်။ ထပ်စမ်းကြည့်ပါ။"
+          : "A network error occurred. Please try again."
       });
+    } finally {
+      // ALWAYS clear the spinner, whether we succeeded, failed, or threw.
+      setRegisteringId(null);
     }
-    setRegisteringId(null);
   };
 
   // Entry point for the register/cancel button. A cancel (registered === true)

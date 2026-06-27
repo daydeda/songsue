@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { events, attendance, eventSessions } from "@/db/schema";
-import { eq, count } from "drizzle-orm";
+import { events, eventSessions } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export class EventsService {
   /**
@@ -39,17 +39,6 @@ export class EventsService {
     const upcoming = sessions.find((s) => s.startTime.getTime() > now);
     if (upcoming) return upcoming.id;
     return sessions[sessions.length - 1].id; // all in the past → most recent
-  }
-
-  /**
-   * Retrieves the current checked-in attendee count for an event
-   */
-  static async getAttendeeCount(eventId: string): Promise<number> {
-    const [result] = await db
-      .select({ value: count() })
-      .from(attendance)
-      .where(eq(attendance.eventId, eventId));
-    return result?.value ?? 0;
   }
 
   /**

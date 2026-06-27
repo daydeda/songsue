@@ -48,7 +48,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ name: s
     // Next stomps a route handler's own Cache-Control to max-age=0, but the
     // headers() layer (which matches the original request path) survives.
     return new NextResponse(new Uint8Array(buffer), {
-      headers: { "Content-Type": contentType },
+      headers: {
+        "Content-Type": contentType,
+        // Never let a browser MIME-sniff a stored upload into something executable.
+        "X-Content-Type-Options": "nosniff",
+      },
     });
   } catch {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

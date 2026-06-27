@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import {
   Plus, Edit2, Trash2, Calendar, MapPin, Clock,
   ArrowRight, User, Users, CheckCircle2, Search,
@@ -343,6 +343,10 @@ export default function AdminEventsPage() {
   const [showAttendance, setShowAttendance] = useState(false);
   const [attendance, setAttendance] = useState<AdminAttendance[]>([]);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  // Guards against an earlier in-flight roster fetch resolving after a newer one
+  // (opening event A then B must never render A's roster under B).
+  const attendanceReqRef = useRef(0);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
@@ -519,6 +523,7 @@ export default function AdminEventsPage() {
       }
     } catch (e) {
       console.error(e);
+      setFormBuilderError(lang === "th" ? "ไม่สามารถโหลดเครื่องมือสร้างฟอร์มได้ กรุณาลองใหม่อีกครั้ง" : "Couldn't load the form builder. Please try again.");
     } finally {
       setFormLoading(false);
     }
@@ -1491,22 +1496,38 @@ export default function AdminEventsPage() {
   };
 
   const viewAttendance = async (eventId: string) => {
+    // Token this request so a stale, slower response from a previously-opened
+    // event can't overwrite the roster of the one now in view.
+    const reqId = ++attendanceReqRef.current;
     setActiveEventId(eventId);
     setShowAttendance(true);
     setLoadingAttendance(true);
+    setAttendanceError(null);
+    setAttendance([]);
     setFilterMedical(false);
+    setFilterNotCheckedIn(false);
     setFilterStudentsOnly(false);
     setFilterThai(true);
     setFilterInternational(true);
     setSelectedSessionId(null);
     try {
       const res = await fetch(`/api/admin/events/${eventId}/attendance`);
-      const data = await res.json();
-      setAttendance(data);
+      const data = await res.json().catch(() => null);
+      // Ignore if a newer viewAttendance() superseded this one.
+      if (attendanceReqRef.current !== reqId) return;
+      if (!res.ok) {
+        setAttendance([]);
+        setAttendanceError((data && data.error) || "Failed to load attendance.");
+        return;
+      }
+      setAttendance(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (attendanceReqRef.current !== reqId) return;
       console.error(err);
+      setAttendance([]);
+      setAttendanceError("Failed to load attendance.");
     } finally {
-      setLoadingAttendance(false);
+      if (attendanceReqRef.current === reqId) setLoadingAttendance(false);
     }
   };
 
@@ -1516,7 +1537,7 @@ export default function AdminEventsPage() {
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const isMultiDayEvent = activeEventSessions.length > 1;
 
-  const filteredAttendance = attendance.filter((m) => {
+  const filteredAttendance = useMemo(() => attendance.filter((m) => {
     if (selectedSessionId && m.session?.id !== selectedSessionId) {
       return false;
     }
@@ -1555,20 +1576,21 @@ export default function AdminEventsPage() {
     }
     
     return true;
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasMedicalSignal is pure over its `user` arg (no state/props); listing it would recreate each render and defeat the memo
+  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterThai, filterInternational]);
 
   // Header tallies honor the selected day (but not the other roster filters) so
   // "X / Y checked in" matches whichever day is being viewed.
-  const sessionScoped = selectedSessionId
+  const sessionScoped = useMemo(() => selectedSessionId
     ? attendance.filter((m) => m.session?.id === selectedSessionId)
-    : attendance;
+    : attendance, [attendance, selectedSessionId]);
   // In the "All days" view a person who took part in several sessions has one
   // row per day. Counting the raw rows would SUM the days (e.g. Day1 271 +
   // Day2 246 = 517), which double-counts anyone present on both days. Collapse
   // to one unit per student — keyed exactly like the roster cards — so the
   // tallies count distinct people. With a day selected there's ≤1 row per
   // person already, so each row is its own unit (no behavior change).
-  const tallyUnits: AdminAttendance[][] = selectedSessionId
+  const tallyUnits = useMemo<AdminAttendance[][]>(() => selectedSessionId
     ? sessionScoped.map((m) => [m])
     : (() => {
         const byStudent = new Map<string, AdminAttendance[]>();
@@ -1579,17 +1601,20 @@ export default function AdminEventsPage() {
           else byStudent.set(k, [m]);
         }
         return [...byStudent.values()];
-      })();
-  const checkInCount = tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length;
-  const registeredCount = tallyUnits.length;
-
+      })(), [sessionScoped, selectedSessionId]);
   // Attendance summary for the day in view (mirrors the exported report's stats).
   // Based on the day-scoped set, not the browsing filters (medical/nationality).
   // A person is classified once across all their day rows: pre-registered if any
   // session was a pre-registration (else walk-in), attended if present on any day.
-  const summaryPreRegistered = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length;
-  const summaryAttendedPre = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length;
-  const summaryWalkIns = tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length;
+  // All five tallies derive purely from tallyUnits, so compute them together once
+  // per roster change instead of five full passes on every render / 15s poll.
+  const { checkInCount, registeredCount, summaryPreRegistered, summaryAttendedPre, summaryWalkIns } = useMemo(() => ({
+    checkInCount: tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length,
+    registeredCount: tallyUnits.length,
+    summaryPreRegistered: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length,
+    summaryAttendedPre: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length,
+    summaryWalkIns: tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length,
+  }), [tallyUnits]);
   const summaryNoShows = Math.max(0, summaryPreRegistered - summaryAttendedPre);
   const summaryNoShowPct = summaryPreRegistered > 0 ? Math.round((summaryNoShows / summaryPreRegistered) * 100) : 0;
   const attendanceSummaryTiles = [
@@ -1626,7 +1651,7 @@ export default function AdminEventsPage() {
   // duplicates. When a specific day is selected there's already ≤1 row per
   // person, so each row is its own unit and the card renders exactly as before.
   type AttendanceUnit = { key: string; primary: AdminAttendance; rows: AdminAttendance[] };
-  const attendanceUnits: AttendanceUnit[] = (() => {
+  const attendanceUnits = useMemo<AttendanceUnit[]>(() => {
     if (selectedSessionId) {
       return filteredAttendance.map((m) => ({ key: m.id, primary: m, rows: [m] }));
     }
@@ -1648,14 +1673,14 @@ export default function AdminEventsPage() {
       u.primary = u.rows[0];
     }
     return order.map((k) => byStudent.get(k)!);
-  })();
+  }, [filteredAttendance, selectedSessionId]);
 
-  const groupedAttendance = attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
+  const groupedAttendance = useMemo(() => attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
     const houseId = curr.primary.user?.house?.id || "Unassigned";
     if (!acc[houseId]) acc[houseId] = [];
     acc[houseId].push(curr);
     return acc;
-  }, {} as Record<string, AttendanceUnit[]>);
+  }, {} as Record<string, AttendanceUnit[]>), [attendanceUnits]);
 
   // Export the event's attendees as .xlsx. The file is built server-side at
   // /api/admin/events/[id]/export, which re-checks the super_admin/admin role
@@ -1699,7 +1724,7 @@ export default function AdminEventsPage() {
     );
   };
 
-  const filteredEvents = Array.isArray(events) ? events.filter(evt => {
+  const filteredEvents = useMemo(() => Array.isArray(events) ? events.filter(evt => {
     const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (evt.location && evt.location.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -1712,7 +1737,7 @@ export default function AdminEventsPage() {
     if (filterStatus === "past") return matchesSearch && isPast;
     if (filterStatus === "upcoming") return matchesSearch && isUpcoming;
     return matchesSearch;
-  }) : [];
+  }) : [], [events, searchQuery, filterStatus]);
 
   const getEventStatus = (evt: AdminEvent) => {
     const now = new Date();
@@ -2928,7 +2953,7 @@ export default function AdminEventsPage() {
                 {error && <div style={{ color: "#ef4444", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} /> {error}</div>}
               </div>
               <div className="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => setShowForm(false)}>{t.discardBtn}</button>
+                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => { setShowForm(false); setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([]); }}>{t.discardBtn}</button>
                 <button type="submit" className="btn btn-primary btn-lg w-full sm:w-auto" style={{ borderRadius: 16, minWidth: 200 }} disabled={submitting}>
                   {submitting ? <>{lang === "th" ? "กำลังบันทึก..." : "Saving..."}</> : editingId ? t.updateSystemBtn : t.activateEventBtn}
                 </button>
@@ -2964,7 +2989,7 @@ export default function AdminEventsPage() {
             <p style={{ color: "var(--text-muted)", marginTop: 8 }}>{lang === "th" ? "ลองปรับตัวกรองหรือสร้างกิจกรรมใหม่เพื่อเริ่มต้น" : lang === "cn" ? "尝试调整您的筛选条件或创建一个新活动以开始。" : lang === "mm" ? "စတင်ရန် စစ်ထုတ်မှုများကို ချိန်ညှိပါ သို့မဟုတ် ပွဲအသစ်တစ်ခု ဖန်တီးပါ။" : "Try adjusting your filters or create a new event to get started."}</p>
           </div>
           {!isAttendanceOnly && (
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
+            <button className="btn btn-primary" onClick={() => { setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]); setShowForm(true); }}>+ {t.addEventBtn}</button>
           )}
         </div>
       ) : (
@@ -4865,6 +4890,19 @@ export default function AdminEventsPage() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
                   <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
                   <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 16 }}>Synchronizing records...</p>
+                </div>
+              </div>
+            ) : attendanceError ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center", maxWidth: 420 }}>
+                  <div style={{ width: 80, height: 80, borderRadius: "50%", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ef4444" }}>
+                    <AlertTriangle size={36} />
+                  </div>
+                  <h3 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)" }}>Couldn&apos;t load the roster</h3>
+                  <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>{attendanceError}</p>
+                  <button className="btn btn-primary" style={{ borderRadius: 14, marginTop: 8, gap: 8 }} onClick={() => { if (activeEventId) viewAttendance(activeEventId); }}>
+                    <RefreshCw size={16} /> Retry
+                  </button>
                 </div>
               </div>
             ) : (

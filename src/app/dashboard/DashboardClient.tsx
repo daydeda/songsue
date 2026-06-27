@@ -39,7 +39,9 @@ import {
   ChevronRight,
   ClipboardCheck,
   LayoutGrid,
-  List
+  List,
+  Users,
+  DoorOpen
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -69,7 +71,11 @@ type Event = {
   endTime: string;
   registrationOpenTime?: string | null;
   registrationCloseTime?: string | null;
-  quota?: number;
+  quota?: number | null;
+  // Whether the event accepts walk-ins (unregistered students scanned in at the
+  // door), and the optional extra walk-in seat sub-cap on top of `quota`.
+  walkInsEnabled?: boolean;
+  quotaWalkIn?: number | null;
   isRegistered?: boolean;
   attendanceStatus?: string | null;
   imageUrl?: string;
@@ -629,6 +635,36 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     { key: "points", label: t.statPoints, value: pointsEarned, icon: Trophy },
   ];
 
+  // Quota + walk-in availability rows, shared by the event card and the preview
+  // modal. Quota is hidden when unset (null = unlimited); the walk-in line always
+  // shows so a student can tell at a glance whether the door accepts walk-ins.
+  const quotaWalkInRows = (ev: Event) => {
+    const allowed = !!ev.walkInsEnabled;
+    return (
+      <>
+        {ev.quota != null && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
+              <Users size={16} />
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
+              {t.thQuota}: {ev.quota}
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: allowed ? "rgba(16,185,129,0.08)" : "rgba(0,0,0,0.04)", display: "flex", alignItems: "center", justifyContent: "center", color: allowed ? "#10b981" : "var(--text-muted)", flexShrink: 0 }}>
+            <DoorOpen size={16} />
+          </div>
+          <div style={{ fontSize: 13, color: allowed ? "#10b981" : "var(--text-muted)", fontWeight: 700 }}>
+            {allowed ? t.walkInsAllowedLabel : t.walkInsDisabledLabel}
+            {allowed && ev.quotaWalkIn != null ? ` (${ev.quotaWalkIn})` : ""}
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
       {/* Decorative Orbs */}
@@ -1005,6 +1041,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             </div>
                             {e.location || "CAMT Building"}
                           </div>
+                          {quotaWalkInRows(e)}
                         </div>
 
                         <div 
@@ -1947,6 +1984,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                         {liveEvent.location || "CAMT Building"}
                       </div>
                     </div>
+
+                    {quotaWalkInRows(liveEvent)}
                   </div>
 
                   {/* Description Divider */}

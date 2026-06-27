@@ -381,6 +381,8 @@ export default function AdminEventsPage() {
   const [formSubmissions, setFormSubmissions] = useState<FormBuilderSubmission[]>([]);
   const [formSaving, setFormSaving] = useState(false);
   const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
+  const [submissionsPage, setSubmissionsPage] = useState(1);
+  const SUBMISSIONS_PER_PAGE = 10;
   
   // Multi-form state: list of all forms for the current event + which one is being edited
   const [allEventForms, setAllEventForms] = useState<EventFormSummary[]>([]);
@@ -441,6 +443,7 @@ export default function AdminEventsPage() {
     setFormAssignedUserIds(f.assignedUserIds || []);
     setFormStats(f.stats);
     setFormSubmissions(f.submissions || []);
+    setSubmissionsPage(1);
     setFormTab(f.submissions && f.submissions.length > 0 ? "stats" : "edit");
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
@@ -4382,11 +4385,16 @@ export default function AdminEventsPage() {
                           <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbNoSubmissionsYet || "No feedback submissions yet."}</p>
                           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{t.fbNoSubmissionsDesc || "Once students complete the form, their answers will appear here live!"}</p>
                         </div>
-                      ) : (
+                      ) : (() => {
+                        const totalPages = Math.max(1, Math.ceil(formSubmissions.length / SUBMISSIONS_PER_PAGE));
+                        const currentPage = Math.min(submissionsPage, totalPages);
+                        const start = (currentPage - 1) * SUBMISSIONS_PER_PAGE;
+                        const pageSubs = formSubmissions.slice(start, start + SUBMISSIONS_PER_PAGE);
+                        return (
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                          {formSubmissions.map((sub, sIdx) => (
-                            <div 
-                              key={sub.id || sIdx} 
+                          {pageSubs.map((sub, sIdx) => (
+                            <div
+                              key={sub.id || (start + sIdx)}
                               style={{ 
                                 background: "var(--bg-elevated)", 
                                 border: "1px solid var(--border-subtle)", 
@@ -4480,8 +4488,34 @@ export default function AdminEventsPage() {
                               </div>
                             </div>
                           ))}
+                          {totalPages > 1 && (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={currentPage <= 1}
+                                onClick={() => setSubmissionsPage((p) => Math.max(1, p - 1))}
+                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage <= 1 ? "not-allowed" : "pointer", opacity: currentPage <= 1 ? 0.5 : 1 }}
+                              >
+                                {lang === "th" ? "ก่อนหน้า" : lang === "cn" ? "上一页" : lang === "mm" ? "ယခင်" : "Previous"}
+                              </button>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>
+                                {(lang === "th" ? "หน้า" : lang === "cn" ? "第" : lang === "mm" ? "စာမျက်နှာ" : "Page")} {currentPage} / {totalPages}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={currentPage >= totalPages}
+                                onClick={() => setSubmissionsPage((p) => Math.min(totalPages, p + 1))}
+                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage >= totalPages ? "not-allowed" : "pointer", opacity: currentPage >= totalPages ? 0.5 : 1 }}
+                              >
+                                {lang === "th" ? "ถัดไป" : lang === "cn" ? "下一页" : lang === "mm" ? "နောက်တစ်ခု" : "Next"}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

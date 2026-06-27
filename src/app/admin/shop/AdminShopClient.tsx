@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { compressImageFile } from "@/lib/compress-image";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { ShopCustomField, ShopCustomValue, ShopCustomFieldType } from "@/lib/shop-custom-fields";
 import { normalizeTiers, type ShopDeliveryTier } from "@/lib/shop-delivery";
@@ -73,11 +74,16 @@ interface AdminOrder {
 }
 
 async function uploadImage(file: File): Promise<string> {
+  // Downscale in the browser first. Kept at 1600px so a payment-QR image stays
+  // scannable; this also keeps the upload under the reverse proxy's body cap,
+  // which would otherwise reject a raw multi-MB photo with a 413 before the app.
+  const upload = await compressImageFile(file, { maxDim: 1600 });
   const fd = new FormData();
-  fd.append("file", file);
+  fd.append("file", upload);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
-  const d = await res.json();
-  if (!res.ok || !d.url) throw new Error(d.error || "Upload failed");
+  const d = await res.json().catch(() => null);
+  if (res.status === 413) throw new Error("Image is too large. Please choose a smaller photo.");
+  if (!res.ok || !d?.url) throw new Error(d?.error || "Upload failed");
   return d.url as string;
 }
 

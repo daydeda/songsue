@@ -5,6 +5,7 @@ import type { Session } from "next-auth";
 import { useState } from "react";
 import { Camera, Check, Loader2, LogOut, User, Menu, X, AlertTriangle, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { compressImageFile } from "@/lib/compress-image";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 
 type EmergencyContact = { name: string; relationship: string; phone: string };
@@ -129,14 +130,20 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
     setPreviewUrl(URL.createObjectURL(file));
     setUploading(true);
     setError(null);
-    const fd = new FormData();
-    fd.append("file", file);
+    const th = lang === "th";
     try {
+      // Avatars display small, so downscale hard (512px → ~10–20KB). This also
+      // keeps the upload under the reverse proxy's body cap (a raw multi-MB photo
+      // would otherwise 413 before reaching the app).
+      const upload = await compressImageFile(file, { maxDim: 512 });
+      const fd = new FormData();
+      fd.append("file", upload);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (data.url) set("image", data.url);
-      else setError(data.error || "Upload failed");
-    } catch { setError("Upload failed"); }
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.url) set("image", data.url);
+      else if (res.status === 413) setError(th ? "ไฟล์รูปใหญ่เกินไป กรุณาเลือกรูปที่เล็กลง" : "Image is too large. Please choose a smaller photo.");
+      else setError(data?.error || (th ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again."));
+    } catch { setError(lang === "th" ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again."); }
     finally { setUploading(false); }
   };
 

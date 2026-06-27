@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useLanguage } from "@/lib/LanguageContext";
+import { compressImageFile } from "@/lib/compress-image";
 import { parseRichText } from "@/lib/rich-text";
 import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
 import { computeProductDeliveryFee, type ShopDeliveryTier } from "@/lib/shop-delivery";
@@ -250,11 +251,23 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
     setUploading(true);
     setError(null);
     try {
+      // Shrink the photo in the browser first. Raw phone slips (2–5MB) get
+      // rejected by the reverse proxy's body-size cap with a 413 before reaching
+      // the app; a downscaled WebP is a few hundred KB and sails through.
+      const upload = await compressImageFile(file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", upload);
       const res = await fetch("/api/shop/slip", { method: "POST", body: fd });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || "Upload failed");
+      // A proxy-level rejection (e.g. 413) returns an HTML body, not JSON, so
+      // guard the parse and surface a useful, size-aware message instead of a
+      // cryptic JSON error.
+      const d = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (res.status === 413) {
+          throw new Error(th ? "ไฟล์รูปใหญ่เกินไป กรุณาเลือกรูปที่เล็กลง" : "Image is too large. Please choose a smaller photo.");
+        }
+        throw new Error(d?.error || (th ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again."));
+      }
       setSlipPath(d.path);
       setSlipPreview(URL.createObjectURL(file));
     } catch (e) {

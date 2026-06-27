@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { compressImageFile } from "@/lib/compress-image";
 import { Calendar, History, Trophy, Sparkles, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock, Save, AlertTriangle, Paperclip } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
@@ -295,14 +296,19 @@ export default function HistoryPage() {
     setFileErrors((e) => { const u = { ...e }; delete u[qId]; return u; });
     setFileUploading((s) => ({ ...s, [qId]: true }));
     try {
+      // Downscale images in the browser so a raw multi-MB phone photo doesn't hit
+      // the reverse proxy's body cap (a 413 before the app). PDFs pass through
+      // untouched — they can't be canvas-compressed, so a large PDF may still 413.
+      const upload = await compressImageFile(file, { maxDim: 1600 });
       const body = new FormData();
-      body.append("file", file);
+      body.append("file", upload);
       const res = await fetch("/api/forms/upload", { method: "POST", body });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
+        const tooBig = res.status === 413;
         setFileErrors((e) => ({
           ...e,
-          [qId]: data.error || (lang === "th" ? "อัปโหลดไฟล์ไม่สำเร็จ" : lang === "cn" ? "文件上传失败" : lang === "mm" ? "ဖိုင်တင်ခြင်း မအောင်မြင်ပါ" : "File upload failed."),
+          [qId]: (tooBig ? null : data?.error) || (lang === "th" ? (tooBig ? "ไฟล์ใหญ่เกินไป" : "อัปโหลดไฟล์ไม่สำเร็จ") : lang === "cn" ? (tooBig ? "文件太大" : "文件上传失败") : lang === "mm" ? (tooBig ? "ဖိုင်အရွယ်အစား ကြီးလွန်းသည်" : "ဖိုင်တင်ခြင်း မအောင်မြင်ပါ") : (tooBig ? "File is too large." : "File upload failed.")),
         }));
         return;
       }

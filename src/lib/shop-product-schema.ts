@@ -37,6 +37,9 @@ export const productSchema = z.object({
         label: z.string().min(1).max(200),
         stock: z.number().int().min(0).max(100_000).nullable().default(null), // null = unlimited
         allowCustom: z.boolean().default(false), // "Other (specify)" — buyer types a value
+        // Surcharge in whole ฿ added on top of the product price for this variant
+        // (e.g. a special/larger size). 0 = no surcharge. Surcharge only (never < 0).
+        priceDelta: z.number().int().min(0).max(1_000_000).default(0),
       })
     )
     .min(1)

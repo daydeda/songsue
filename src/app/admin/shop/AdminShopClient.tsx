@@ -22,7 +22,7 @@ const isAudienceLimited = (p: AdminProduct) =>
   p.targetThai === false ||
   p.targetInternational === false;
 
-interface AdminVariant { id?: string; label: string; stock: number | null; allowCustom?: boolean; sold?: number }
+interface AdminVariant { id?: string; label: string; stock: number | null; allowCustom?: boolean; priceDelta?: number; sold?: number }
 interface AdminProduct {
   id: string; name: string; description: string; price: number; imageUrls: string[];
   maxPerOrder: number | null; opensAt: string | null; closesAt: string | null;
@@ -337,7 +337,7 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
   const [deliveryTiers, setDeliveryTiers] = useState<TierDraft[]>(
     (product?.deliveryTiers ?? []).map((t) => ({ minQty: String(t.minQty), fee: String(t.fee) }))
   );
-  const [variants, setVariants] = useState<AdminVariant[]>(product?.variants?.length ? product.variants : [{ label: "Standard", stock: null, allowCustom: false }]);
+  const [variants, setVariants] = useState<AdminVariant[]>(product?.variants?.length ? product.variants : [{ label: "Standard", stock: null, allowCustom: false, priceDelta: 0 }]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -403,7 +403,7 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
             .map((t) => ({ minQty: Math.round(Number(t.minQty) || 0), fee: Math.round(Number(t.fee) || 0) }))
         ),
         sortOrder: product?.sortOrder ?? 0,
-        variants: variants.map((v) => ({ id: v.id, label: v.label.trim(), stock: v.stock, allowCustom: !!v.allowCustom })),
+        variants: variants.map((v) => ({ id: v.id, label: v.label.trim(), stock: v.stock, allowCustom: !!v.allowCustom, priceDelta: Math.max(0, Math.round(Number(v.priceDelta) || 0)) })),
       };
       const res = await fetch(product ? `/api/admin/shop/products/${product.id}` : "/api/admin/shop/products", {
         method: product ? "PUT" : "POST",
@@ -483,13 +483,17 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
           </Field>
 
           {/* Variants */}
-          <Field label={th ? "ตัวเลือก / ไซส์" : "Options / sizes"} required hint={th ? "สต็อกเว้นว่าง = ไม่จำกัด" : "Blank stock = unlimited"}>
+          <Field label={th ? "ตัวเลือก / ไซส์" : "Options / sizes"} required hint={th ? "สต็อกเว้นว่าง = ไม่จำกัด · +฿ = บวกเพิ่มจากราคา (เช่น ไซส์พิเศษ)" : "Blank stock = unlimited · +฿ = surcharge on top of price (e.g. special size)"}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {variants.map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <GripVertical size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
                   <input value={v.label} onChange={(e) => setVariant(i, { label: e.target.value })} placeholder={v.allowCustom ? (th ? "ชื่อ เช่น อื่นๆ" : "Label e.g. Other") : (th ? "ชื่อ เช่น S, M, L" : "Label e.g. S, M, L")} style={{ ...inputStyle, flex: 2, minWidth: 120 }} />
                   <input type="number" min={0} value={v.stock ?? ""} onChange={(e) => setVariant(i, { stock: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) })} placeholder={th ? "สต็อก" : "Stock"} style={{ ...inputStyle, flex: 1, minWidth: 80 }} />
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 4, flex: 1, minWidth: 110 }} title={th ? "บวกเพิ่มจากราคาสินค้า เช่น ไซส์พิเศษ (0 = ไม่บวกเพิ่ม)" : "Added on top of the base price, e.g. a special size (0 = no surcharge)"}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>+฿</span>
+                    <input type="number" min={0} value={v.priceDelta ?? ""} onChange={(e) => setVariant(i, { priceDelta: e.target.value === "" ? 0 : Math.max(0, Math.round(Number(e.target.value))) })} placeholder={th ? "เพิ่มราคา" : "Surcharge"} style={{ ...inputStyle, width: "100%" }} />
+                  </div>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }} title={th ? "ให้ผู้ซื้อพิมพ์รายละเอียดเอง" : "Buyer types their own value"}>
                     <input type="checkbox" checked={!!v.allowCustom} onChange={(e) => setVariant(i, { allowCustom: e.target.checked })} />
                     {th ? "ระบุเอง" : "Other"}
@@ -497,7 +501,7 @@ function ProductForm({ th, product, onClose, onSaved }: { th: boolean; product: 
                   {variants.length > 1 && <button onClick={() => setVariants((vs) => vs.filter((_, idx) => idx !== i))} className="btn btn-ghost" style={{ padding: 6, color: "#ef4444" }}><Trash2 size={15} /></button>}
                 </div>
               ))}
-              <button onClick={() => setVariants((vs) => [...vs, { label: "", stock: null, allowCustom: false }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <button onClick={() => setVariants((vs) => [...vs, { label: "", stock: null, allowCustom: false, priceDelta: 0 }])} className="btn btn-ghost" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                 <Plus size={15} />{th ? "เพิ่มตัวเลือก" : "Add option"}
               </button>
             </div>

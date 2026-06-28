@@ -97,6 +97,9 @@ export async function GET() {
           id: v.id,
           label: v.label,
           allowCustom: v.allowCustom,
+          // Surcharge (฿) added on top of the product price for this variant. The
+          // buyer UI must add it to the unit price; the server recomputes anyway.
+          priceDelta: v.priceDelta ?? 0,
           // null stock = unlimited; otherwise remaining after committed units.
           remaining: v.stock == null ? null : Math.max(0, v.stock - (soldByVariant.get(v.id) ?? 0)),
         })),

@@ -514,6 +514,11 @@ export const shopVariants = pgTable("shop_variants", {
   label: text("label").notNull(), // e.g. "S", "M", "L", "Standard", "Other"
   // Total units available for this variant. NULL = unlimited stock.
   stock: integer("stock"),
+  // Price surcharge in whole ฿ added on top of the product's base price for this
+  // variant — e.g. a special/oversized size (XXL, 3XL) that costs more. 0 = no
+  // surcharge (the common case). The order line snapshots the resolved unit price
+  // (product.price + priceDelta) at checkout, so later edits don't move old orders.
+  priceDelta: integer("price_delta").notNull().default(0),
   // When true this is an "Other (specify)" option: the buyer must type a value,
   // which is appended to the snapshot label on their order line.
   allowCustom: boolean("allow_custom").notNull().default(false),

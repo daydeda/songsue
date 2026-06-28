@@ -86,6 +86,7 @@ export async function GET(
               },
             },
           },
+          orderBy: (s, { desc }) => [desc(s.submittedAt)],
         },
       },
       orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],

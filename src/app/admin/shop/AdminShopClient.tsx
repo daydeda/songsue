@@ -9,10 +9,13 @@ import { normalizeTiers, type ShopDeliveryTier } from "@/lib/shop-delivery";
 import {
   ShoppingBag, Package, ReceiptText, Settings as SettingsIcon, Plus, Trash2, Pencil,
   Upload, Loader2, X, CheckCircle2, XCircle, Clock, GripVertical, Save, RotateCcw, Download,
-  Check, FileText, Truck, Store, Users,
+  Check, FileText, Truck, Store, Users, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 const baht = (n: number) => `฿${n.toLocaleString()}`;
+
+// Shared page size for the admin Products and Orders lists.
+const PAGE_SIZE = 10;
 
 // True when a product is restricted to a subset of the audience (so the list can
 // flag it). Empty role/major lists + both student types = visible to everyone.
@@ -227,6 +230,7 @@ function ProductsTab({ th }: { th: boolean }) {
   const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState<AdminProduct | "new" | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const exportProduct = async (p: AdminProduct) => {
     setExportingId(p.id);
@@ -257,6 +261,12 @@ function ProductsTab({ th }: { th: boolean }) {
     load();
   };
 
+  // Page the list (10/page). Clamp to a derived page so deleting the last row on the
+  // final page falls back to a valid page instead of showing an empty one.
+  const totalPages = Math.max(1, Math.ceil(products.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageProducts = products.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   if (loading) return <Spinner />;
   if (loadError) return (
     <p style={{ color: "#ef4444", fontSize: 14, display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -275,7 +285,7 @@ function ProductsTab({ th }: { th: boolean }) {
         <p style={{ color: "var(--text-muted)" }}>{th ? "ยังไม่มีสินค้า" : "No products yet."}</p>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
-          {products.map((p) => (
+          {pageProducts.map((p) => (
             <div key={p.id} style={{ display: "flex", gap: 14, alignItems: "center", background: "var(--bg-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", padding: 14 }}>
               <div style={{ width: 60, height: 60, borderRadius: "var(--radius-md)", background: "var(--bg-elevated)", overflow: "hidden", flexShrink: 0 }}>
                 {p.imageUrls[0] ? <img src={p.imageUrls[0]} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)" }}><Package size={20} /></div>}
@@ -301,6 +311,8 @@ function ProductsTab({ th }: { th: boolean }) {
           ))}
         </div>
       )}
+
+      <Pagination th={th} page={safePage} total={products.length} onPage={setPage} />
 
       {editing && (
         <ProductForm
@@ -685,6 +697,15 @@ function OrdersTab({ th }: { th: boolean }) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  // Extra filters layered on top of status: by product (an order matches if any of
+  // its lines is that product) and by an inclusive created-at date/time range.
+  const [productFilter, setProductFilter] = useState<string>("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState(1);
+  // Tracks the active filter combination so we can reset to page 1 during render
+  // when it changes (the effect-free pattern — avoids set-state-in-effect).
+  const [filterKey, setFilterKey] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   // Set when the order list fails to load (instead of swallowing it as an empty
   // "No orders" list); actionError holds a failed approve/reject/revert message.
@@ -741,6 +762,36 @@ function OrdersTab({ th }: { th: boolean }) {
     }
   };
 
+  // Product dropdown options: every distinct product name across all orders.
+  const productNames = Array.from(new Set(orders.flatMap((o) => o.items.map((i) => i.productName)))).sort((a, b) => a.localeCompare(b));
+
+  // Product + date filters apply before status, so the status tab counts reflect
+  // the active product/date filter. Date bounds are inclusive (datetime-local).
+  const fromMs = fromDate ? new Date(fromDate).getTime() : null;
+  const toMs = toDate ? new Date(toDate).getTime() : null;
+  const base = orders.filter((o) => {
+    if (productFilter !== "all" && !o.items.some((i) => i.productName === productFilter)) return false;
+    const created = new Date(o.createdAt).getTime();
+    if (fromMs != null && created < fromMs) return false;
+    if (toMs != null && created > toMs) return false;
+    return true;
+  });
+  const shown = base.filter((o) => filter === "all" || o.status === filter);
+  const hasExtraFilter = productFilter !== "all" || !!fromDate || !!toDate;
+
+  // Reset to page 1 whenever the filter combination changes (adjust-state-during-render
+  // pattern), then clamp to a derived page so an emptied last page falls back.
+  const curKey = `${filter}|${productFilter}|${fromDate}|${toDate}`;
+  let effectivePage = page;
+  if (curKey !== filterKey) {
+    setFilterKey(curKey);
+    setPage(1);
+    effectivePage = 1;
+  }
+  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const safePage = Math.min(effectivePage, totalPages);
+  const pageOrders = shown.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   if (loading) return <Spinner />;
   if (loadError) return (
     <p style={{ color: "#ef4444", fontSize: 14, display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -749,17 +800,36 @@ function OrdersTab({ th }: { th: boolean }) {
     </p>
   );
 
-  const shown = orders.filter((o) => filter === "all" || o.status === filter);
-
   return (
     <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
         {(["pending", "approved", "rejected", "all"] as const).map((f) => (
           <button key={f} onClick={() => setFilter(f)} className={filter === f ? "btn btn-primary" : "btn btn-ghost"} style={{ fontSize: 13, padding: "6px 14px" }}>
             {f === "all" ? (th ? "ทั้งหมด" : "All") : f === "pending" ? (th ? "รอตรวจสอบ" : "Pending") : f === "approved" ? (th ? "อนุมัติ" : "Approved") : (th ? "ปฏิเสธ" : "Rejected")}
-            {" "}({orders.filter((o) => f === "all" || o.status === f).length})
+            {" "}({base.filter((o) => f === "all" || o.status === f).length})
           </button>
         ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{th ? "สินค้า" : "Product"}</label>
+          <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} style={{ ...inputStyle, width: "auto", minWidth: 160, maxWidth: 260 }}>
+            <option value="all">{th ? "ทุกสินค้า" : "All products"}</option>
+            {productNames.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{th ? "ตั้งแต่" : "From"}</label>
+          <input type="datetime-local" value={fromDate} max={toDate || undefined} onChange={(e) => setFromDate(e.target.value)} style={{ ...inputStyle, width: "auto" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{th ? "ถึง" : "To"}</label>
+          <input type="datetime-local" value={toDate} min={fromDate || undefined} onChange={(e) => setToDate(e.target.value)} style={{ ...inputStyle, width: "auto" }} />
+        </div>
+        {hasExtraFilter && (
+          <button onClick={() => { setProductFilter("all"); setFromDate(""); setToDate(""); }} className="btn btn-ghost" style={{ fontSize: 13, padding: "9px 12px", display: "inline-flex", alignItems: "center", gap: 4 }}><X size={14} />{th ? "ล้างตัวกรอง" : "Clear"}</button>
+        )}
       </div>
 
       {actionError && <p style={{ color: "#ef4444", fontSize: 13, margin: "0 0 12px" }}>{actionError}</p>}
@@ -767,9 +837,12 @@ function OrdersTab({ th }: { th: boolean }) {
       {shown.length === 0 ? (
         <p style={{ color: "var(--text-muted)" }}>{th ? "ไม่มีคำสั่งซื้อ" : "No orders."}</p>
       ) : (
-        <div style={{ display: "grid", gap: 14 }}>
-          {shown.map((o) => <AdminOrderRow key={o.id} order={o} th={th} busy={busy === o.id} onReview={review} />)}
-        </div>
+        <>
+          <div style={{ display: "grid", gap: 14 }}>
+            {pageOrders.map((o) => <AdminOrderRow key={o.id} order={o} th={th} busy={busy === o.id} onReview={review} />)}
+          </div>
+          <Pagination th={th} page={safePage} total={shown.length} onPage={setPage} />
+        </>
       )}
 
       {pending && (
@@ -1077,6 +1150,26 @@ function SectionDivider({ icon, title, summary }: { icon: React.ReactNode; title
 
 function Spinner() {
   return <div style={{ display: "flex", justifyContent: "center", padding: 60 }}><div className="spinner" style={{ width: 28, height: 28 }} /></div>;
+}
+
+// Prev/next pager shared by the Products and Orders lists. Hidden when everything
+// fits on one page. `total` is the count across all pages (post-filter).
+function Pagination({ th, page, total, onPage }: { th: boolean; page: number; total: number; onPage: (p: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (pages <= 1) return null;
+  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(total, page * PAGE_SIZE);
+  const btn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, padding: "6px 12px" };
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 20, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{th ? `${from}–${to} จาก ${total}` : `${from}–${to} of ${total}`}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button onClick={() => onPage(page - 1)} disabled={page <= 1} className="btn btn-ghost" style={btn}><ChevronLeft size={15} />{th ? "ก่อนหน้า" : "Prev"}</button>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{th ? `หน้า ${page}/${pages}` : `Page ${page}/${pages}`}</span>
+        <button onClick={() => onPage(page + 1)} disabled={page >= pages} className="btn btn-ghost" style={btn}>{th ? "ถัดไป" : "Next"}<ChevronRight size={15} /></button>
+      </div>
+    </div>
+  );
 }
 
 // Toggleable selection pill used for the role/major audience pickers.

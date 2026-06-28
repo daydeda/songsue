@@ -64,10 +64,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (v.id) {
           await tx
             .update(shopVariants)
-            .set({ label: v.label, stock: v.stock, allowCustom: v.allowCustom, sortOrder: i })
+            .set({ label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta, sortOrder: i })
             .where(and(eq(shopVariants.id, v.id), eq(shopVariants.productId, id)));
         } else {
-          await tx.insert(shopVariants).values({ productId: id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, sortOrder: i });
+          await tx.insert(shopVariants).values({ productId: id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta, sortOrder: i });
         }
       }
 

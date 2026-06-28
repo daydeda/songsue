@@ -886,6 +886,13 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_shop_order_items_product ON shop_order_items (product_id)`;
   console.log("  ✅ idx_shop_order_items_product index");
 
+  // 56. shop_variants.price_delta — per-variant price surcharge in whole ฿ added on
+  // top of the product's base price (e.g. a special/oversized size that costs more).
+  // Defaults to 0 so every existing variant keeps the product price unchanged.
+  // ADD COLUMN IF NOT EXISTS + DEFAULT 0 ⇒ additive, idempotent, non-destructive.
+  await sql`ALTER TABLE shop_variants ADD COLUMN IF NOT EXISTS price_delta integer NOT NULL DEFAULT 0`;
+  console.log("  ✅ shop_variants.price_delta (฿ surcharge, default 0)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -256,7 +256,11 @@ export async function POST(req: Request) {
           }
         }
 
-        total += product.price * qty;
+        // Resolved unit price = base product price + this variant's surcharge
+        // (e.g. a special/larger size). Server-authoritative; never trust a client
+        // price. Snapshotted onto the line so later edits don't move this order.
+        const unitPrice = product.price + (v.priceDelta ?? 0);
+        total += unitPrice * qty;
         lines.push({
           orderId: "", // filled after the order row is created
           productId: product.id,
@@ -264,7 +268,7 @@ export async function POST(req: Request) {
           productName: product.name,
           variantLabel,
           customValues: customResult.snapshot.length ? customResult.snapshot : null,
-          unitPrice: product.price,
+          unitPrice,
           quantity: qty,
         });
       }

@@ -60,7 +60,7 @@ export async function GET() {
       sortOrder: p.sortOrder,
       variants: variants
         .filter((v) => v.productId === p.id)
-        .map((v) => ({ id: v.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, sold: soldByVariant.get(v.id) ?? 0 })),
+        .map((v) => ({ id: v.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta ?? 0, sold: soldByVariant.get(v.id) ?? 0 })),
     }));
 
     return NextResponse.json(result);
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
         .returning({ id: shopProducts.id });
 
       await tx.insert(shopVariants).values(
-        data.variants.map((v, i) => ({ productId: product.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, sortOrder: i }))
+        data.variants.map((v, i) => ({ productId: product.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta, sortOrder: i }))
       );
 
       await AuditService.logActionInternal(tx, {

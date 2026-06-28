@@ -13,7 +13,7 @@ import {
   Clock, XCircle, Package, Minus, Plus, ReceiptText,
 } from "lucide-react";
 
-interface Variant { id: string; label: string; remaining: number | null; allowCustom?: boolean }
+interface Variant { id: string; label: string; remaining: number | null; allowCustom?: boolean; priceDelta?: number }
 interface Product {
   id: string; name: string; description: string; price: number;
   imageUrls: string[]; maxPerOrder: number | null; variants: Variant[];
@@ -234,7 +234,10 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
 
   // Clamp at render instead of in an effect: variant changes can shrink maxQty.
   const qty = Math.min(qtyRaw, maxQty);
-  const subtotal = product.price * qty;
+  // Unit price = base price + the selected variant's surcharge (e.g. a special
+  // size). Mirrors the server's authoritative computation in /api/shop/orders.
+  const unitPrice = product.price + (variant?.priceDelta ?? 0);
+  const subtotal = unitPrice * qty;
   // Per-product delivery fee for the current quantity (tiers can raise it as qty
   // grows). Mirrors the server's authoritative computeProductDeliveryFee. The
   // fee at qty=1 powers the "Delivery (+฿X)" hint on the chooser.
@@ -336,7 +339,10 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                 )}
               </div>
 
-              <p style={{ fontWeight: 800, fontSize: 22, color: "var(--accent-primary)", marginBottom: 12 }}>{baht(product.price)}</p>
+              <p style={{ fontWeight: 800, fontSize: 22, color: "var(--accent-primary)", marginBottom: 12 }}>
+                {baht(unitPrice)}
+                {variant?.priceDelta ? <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", marginLeft: 6 }}>{baht(product.price)} +{baht(variant.priceDelta)}</span> : null}
+              </p>
 
               {/* Sale schedule notice */}
               {(product.saleStatus === "upcoming" || product.saleStatus === "closed" || product.closesAt) && (
@@ -366,9 +372,11 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
                     onChange={(id) => { setVariantId(id); setCustomValue(""); }}
                     options={product.variants.map((v) => {
                       const out = v.remaining != null && v.remaining <= 0;
+                      // Surcharge shown inline on the option (e.g. "XXL  +฿50") so the
+                      // buyer sees the price difference before selecting.
                       return {
                         value: v.id,
-                        label: v.label,
+                        label: v.priceDelta ? `${v.label}  +${baht(v.priceDelta)}` : v.label,
                         hint: v.remaining != null ? (out ? (th ? "หมด" : "Sold out") : (th ? `เหลือ ${v.remaining}` : `${v.remaining} left`)) : undefined,
                         disabled: out,
                         strike: out,

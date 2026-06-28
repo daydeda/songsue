@@ -9,7 +9,7 @@ import { normalizeTiers, type ShopDeliveryTier } from "@/lib/shop-delivery";
 import {
   ShoppingBag, Package, ReceiptText, Settings as SettingsIcon, Plus, Trash2, Pencil,
   Upload, Loader2, X, CheckCircle2, XCircle, Clock, GripVertical, Save, RotateCcw, Download,
-  Check, FileText, Truck, Store, Users, ChevronLeft, ChevronRight,
+  Check, FileText, Truck, Store, Users, ChevronLeft, ChevronRight, ChevronDown,
 } from "lucide-react";
 
 const baht = (n: number) => `฿${n.toLocaleString()}`;
@@ -814,10 +814,11 @@ function OrdersTab({ th }: { th: boolean }) {
       <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{th ? "สินค้า" : "Product"}</label>
-          <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} style={{ ...inputStyle, width: "auto", minWidth: 160, maxWidth: 260 }}>
-            <option value="all">{th ? "ทุกสินค้า" : "All products"}</option>
-            {productNames.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
+          <FilterDropdown
+            value={productFilter}
+            onChange={setProductFilter}
+            options={[{ value: "all", label: th ? "ทุกสินค้า" : "All products" }, ...productNames.map((n) => ({ value: n, label: n }))]}
+          />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{th ? "ตั้งแต่" : "From"}</label>
@@ -1168,6 +1169,79 @@ function Pagination({ th, page, total, onPage }: { th: boolean; page: number; to
         <span style={{ fontSize: 13, fontWeight: 600 }}>{th ? `หน้า ${page}/${pages}` : `Page ${page}/${pages}`}</span>
         <button onClick={() => onPage(page + 1)} disabled={page >= pages} className="btn btn-ghost" style={btn}>{th ? "ถัดไป" : "Next"}<ChevronRight size={15} /></button>
       </div>
+    </div>
+  );
+}
+
+// Inline-styled custom dropdown matching this page's inputs (the native <select>
+// looked out of place next to the filter chips). Closes on outside-click or Escape;
+// shows a check on the active option. Used for the Orders product filter.
+function FilterDropdown({ value, options, onChange, minWidth = 160, maxWidth = 260 }: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+  minWidth?: number;
+  maxWidth?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", minWidth, maxWidth }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          ...inputStyle, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+          cursor: "pointer", textAlign: "left",
+          borderColor: open ? "var(--accent-primary)" : "var(--border-subtle)",
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{current?.label ?? ""}</span>
+        <ChevronDown size={16} style={{ flexShrink: 0, color: "var(--text-muted)", transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "none" }} />
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", left: 0, right: 0, top: "calc(100% + 4px)", zIndex: 50,
+          background: "var(--bg-surface)", border: "1px solid var(--border-subtle)",
+          borderRadius: "var(--radius-md)", boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+          maxHeight: 280, overflowY: "auto", padding: 4,
+        }}>
+          {options.map((opt) => {
+            const sel = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = "var(--bg-elevated)"; }}
+                onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = "transparent"; }}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 14,
+                  border: "none", borderRadius: 8, cursor: "pointer",
+                  background: sel ? "var(--bg-elevated)" : "transparent",
+                  color: sel ? "var(--accent-primary)" : "var(--text-secondary)",
+                  fontWeight: sel ? 700 : 500,
+                }}
+              >
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
+                {sel && <Check size={15} style={{ flexShrink: 0 }} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

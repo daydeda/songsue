@@ -41,7 +41,9 @@ import {
   LayoutGrid,
   List,
   Users,
-  DoorOpen
+  DoorOpen,
+  Share2,
+  Check
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -420,23 +422,58 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // Fullscreen poster viewer — carries the whole poster list + which one was tapped
   // so the user can keep swiping at full size.
   const [previewImage, setPreviewImage] = useState<{ posters: string[]; index: number } | null>(null);
-  const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
+  // The open event-preview modal, tracked by id rather than the event object so the
+  // URL stays the single source of truth (and a /dashboard?event=<id> deep-link can
+  // seed it before the events list has loaded). previewEvent is derived from this id
+  // below. Seeded once from the address bar via a lazy initializer — SSR-guarded, and
+  // safe against hydration mismatch because the events list is empty on first render,
+  // so the modal renders closed on both server and client regardless of the id.
+  const [previewEventId, setPreviewEventId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("event")
+  );
 
-  // Deep-link from the calendar: /dashboard?event=<id> opens that event's preview.
-  // Read once events have loaded so the matching row exists, then strip the param
-  // (replaceState, not router.replace — avoids a refetch) so back/refresh is clean.
-  const deepLinkedEvent = useRef(false);
-  useEffect(() => {
-    if (deepLinkedEvent.current || events.length === 0) return;
-    const id = new URLSearchParams(window.location.search).get("event");
-    if (!id) return;
-    const match = events.find((e) => e.id === id);
-    if (match) {
-      setPreviewEvent(match);
-      deepLinkedEvent.current = true;
-      window.history.replaceState(null, "", window.location.pathname);
+  // Whether the in-modal "Copy link" button just copied, so we can flash a
+  // "Copied!" confirmation for a moment.
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // The event preview modal is shareable: its open/closed state is mirrored in the
+  // URL as /dashboard?event=<id>, so a student (or an organizer) can copy the
+  // address bar — or hit the in-modal "Copy link" — and send a direct link to one
+  // event. openPreview pushes a history entry so the phone/browser Back button
+  // closes the modal instead of leaving the dashboard; closePreview unwinds it.
+  const openPreview = (e: Event) => {
+    setLinkCopied(false);
+    setPreviewEventId(e.id);
+    const current = new URLSearchParams(window.location.search).get("event");
+    if (current !== e.id) {
+      window.history.pushState({ event: e.id }, "", `${window.location.pathname}?event=${encodeURIComponent(e.id)}`);
     }
-  }, [events]);
+  };
+  const closePreview = () => {
+    setLinkCopied(false);
+    if (window.history.state?.event) {
+      // We pushed this entry when opening — pop it so Back history stays clean.
+      // The popstate handler below clears previewEventId once the param is gone.
+      window.history.back();
+    } else {
+      // Landed straight on a shared ?event= link (no pushed entry of our own) —
+      // strip the param in place instead of navigating off the site.
+      window.history.replaceState(null, "", window.location.pathname);
+      setPreviewEventId(null);
+    }
+  };
+
+  // Drive the modal from Back/Forward: when the URL's ?event= changes or clears via
+  // history navigation, mirror it into previewEventId. setState here is fine — it
+  // runs inside an event-listener callback, not synchronously in the effect body.
+  useEffect(() => {
+    const onPop = () => {
+      setLinkCopied(false);
+      setPreviewEventId(new URLSearchParams(window.location.search).get("event"));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red
@@ -600,8 +637,13 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const houseId = user?.houseId ?? null;
   const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
 
+  // The event whose preview modal is open, derived from the URL-backed id. Resolves
+  // once the events list has loaded; if the id isn't found (bad/stale link) the modal
+  // simply stays closed.
+  const previewEvent = previewEventId ? (events.find((e) => e.id === previewEventId) ?? null) : null;
+
   const now = new Date();
-  
+
   // Events that are either happening now or in the future
   const upcoming = events.filter((e) => new Date(e.endTime) >= now);
   const past = events.filter((e) => new Date(e.endTime) < now);
@@ -875,7 +917,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                               <button
                                 key={e.id}
                                 type="button"
-                                onClick={() => setPreviewEvent(e)}
+                                onClick={() => openPreview(e)}
                                 className="timeline-row"
                                 style={{
                                   display: "flex", alignItems: "center", gap: 16, width: "100%", textAlign: "left",
@@ -1039,8 +1081,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                       </div>
 
                       {/* Content Area */}
-                      <div 
-                        onClick={() => setPreviewEvent(e)}
+                      <div
+                        onClick={() => openPreview(e)}
                         style={{ padding: 24, flex: 1, display: "flex", flexDirection: "column", cursor: "pointer" }}
                       >
                         <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.03em", marginBottom: 16, overflowWrap: "break-word", wordBreak: "break-word" }}>{e.title}</h3>
@@ -1088,7 +1130,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setPreviewEvent(e);
+                              openPreview(e);
                             }}
                             style={{
                               border: "none",
@@ -1793,6 +1835,32 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
         const previewPosters = getPosters(liveEvent);
 
+        // Copy a direct, shareable link to this event to the clipboard. Falls back
+        // to a hidden-textarea copy for in-app webviews where navigator.clipboard
+        // is unavailable (insecure context / restricted permissions).
+        const copyShareLink = async () => {
+          const url = `${window.location.origin}${window.location.pathname}?event=${encodeURIComponent(liveEvent.id)}`;
+          try {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(url);
+            } else {
+              throw new Error("clipboard unavailable");
+            }
+          } catch {
+            const ta = document.createElement("textarea");
+            ta.value = url;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try { document.execCommand("copy"); } catch {}
+            document.body.removeChild(ta);
+          }
+          setLinkCopied(true);
+          setTimeout(() => setLinkCopied(false), 2000);
+        };
+
         return (
           <div 
             style={{
@@ -1806,7 +1874,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               justifyContent: "center",
               padding: "16px",
             }}
-            onClick={() => setPreviewEvent(null)}
+            onClick={closePreview}
           >
             <div 
               style={{
@@ -1827,7 +1895,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               {/* Close Button */}
               <button 
                 type="button"
-                onClick={() => setPreviewEvent(null)}
+                onClick={closePreview}
                 style={{
                   position: "absolute",
                   top: "16px",
@@ -2032,18 +2100,47 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               </div>
 
               {/* Action Button Footer */}
-              <div style={{ 
-                padding: "20px 24px", 
-                borderTop: "1px solid var(--border-subtle)", 
+              <div style={{
+                padding: "20px 24px",
+                borderTop: "1px solid var(--border-subtle)",
                 background: "var(--bg-surface)",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
-                alignItems: "center"
+                alignItems: "center",
+                flexWrap: "wrap"
               }}>
+                {/* Copy a direct link to this event so it can be shared. Pushed to
+                    the left (marginRight:auto) away from Close/Register. */}
                 <button
                   type="button"
-                  onClick={() => setPreviewEvent(null)}
+                  onClick={copyShareLink}
+                  style={{
+                    marginRight: "auto",
+                    padding: "0 18px",
+                    height: 48,
+                    borderRadius: 16,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: linkCopied ? "#10b981" : "var(--text-primary)",
+                    background: "var(--bg-elevated)",
+                    border: `1px solid ${linkCopied ? "#10b981" : "var(--border-subtle)"}`,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    transition: "all 0.2s"
+                  }}
+                >
+                  {linkCopied ? <Check size={16} /> : <Share2 size={16} />}
+                  {linkCopied
+                    ? (lang === "th" ? "คัดลอกแล้ว!" : lang === "cn" ? "已复制！" : lang === "mm" ? "ကူးယူပြီး!" : "Copied!")
+                    : (lang === "th" ? "คัดลอกลิงก์" : lang === "cn" ? "复制链接" : lang === "mm" ? "လင့်ခ်ကူးယူ" : "Copy link")}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={closePreview}
                   style={{
                     padding: "0 20px",
                     height: 48,

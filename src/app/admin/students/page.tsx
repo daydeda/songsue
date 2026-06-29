@@ -442,54 +442,59 @@ export default function AdminStudentsDirectory() {
           </div>
         </div>
 
-        {/* Toolbar & Filters */}
+        {/* Search Bar */}
         <div
-          className="flex flex-col lg:flex-row gap-5 bg-[var(--bg-surface)] p-4 rounded-[32px] border border-[var(--border-subtle)] shadow-2xl shadow-black/5 overflow-visible"
+          className="relative group bg-[var(--bg-surface)] p-4 rounded-[32px] border border-[var(--border-subtle)] shadow-2xl shadow-black/5"
+          style={{ marginBottom: 16 }}
+        >
+          <Search size={20} className="absolute left-9 top-1/2 -translate-y-1/2 text-muted transition-colors group-focus-within:text-[var(--accent-primary)]" />
+          <input
+            id="student-search-input"
+            className="input w-full h-14 bg-[var(--bg-elevated)] border-none rounded-2xl text-base font-medium transition-all focus:ring-2 focus:ring-[var(--accent-primary)]/20"
+            style={{ paddingLeft: 56 }}
+            type="text"
+            placeholder={t.searchPlaceholder}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Filters */}
+        <div
+          className="bg-[var(--bg-surface)] p-4 rounded-[32px] border border-[var(--border-subtle)] shadow-2xl shadow-black/5 overflow-visible"
           style={{ marginBottom: 48 }}
         >
-          <div className="relative flex-1 group">
-            <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted transition-colors group-focus-within:text-[var(--accent-primary)]" />
-            <input
-              id="student-search-input"
-              className="input w-full h-14 bg-[var(--bg-elevated)] border-none rounded-2xl text-base font-medium transition-all focus:ring-2 focus:ring-[var(--accent-primary)]/20"
-              style={{ paddingLeft: 60 }}
-              type="text"
-              placeholder={t.searchPlaceholder}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
+          <div className="flex flex-wrap gap-4">
             <CustomDropdown
-              className="min-w-[220px]"
+              className="min-w-[200px] flex-1"
               value={houseFilter}
               options={houseOptions}
               onChange={setHouseFilter}
               icon={<Home size={18} />}
             />
             <CustomDropdown
-              className="min-w-[220px]"
+              className="min-w-[200px] flex-1"
               value={roleFilter}
               options={roleOptions}
               onChange={setRoleFilter}
               icon={<Shield size={18} />}
             />
             <CustomDropdown
-              className="min-w-[220px]"
+              className="min-w-[200px] flex-1"
               value={majorFilter}
               options={majorOptions}
               onChange={setMajorFilter}
               icon={<BookOpen size={18} />}
             />
             <CustomDropdown
-              className="min-w-[200px]"
+              className="min-w-[180px] flex-1"
               value={educationFilter}
               options={educationOptions}
               onChange={setEducationFilter}
               icon={<GraduationCap size={18} />}
             />
             <CustomDropdown
-              className="min-w-[180px]"
+              className="min-w-[160px] flex-1"
               value={yearFilter}
               options={yearOptions}
               onChange={setYearFilter}

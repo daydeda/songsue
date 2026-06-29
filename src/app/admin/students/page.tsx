@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { useSession } from "next-auth/react";
+import { yearOfStudy } from "@/lib/event-access";
 import {
   Search, Users, ShieldAlert, Heart, Phone,
   X, ShieldCheck, User as UserIcon,
@@ -218,6 +219,8 @@ export default function AdminStudentsDirectory() {
   const [houseFilter, setHouseFilter] = useState<string>("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [majorFilter, setMajorFilter] = useState<string>("all");
+  const [educationFilter, setEducationFilter] = useState<string>("all");
+  const [yearFilter, setYearFilter] = useState<string>("all");
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [updating, setUpdating] = useState(false);
 
@@ -230,7 +233,7 @@ export default function AdminStudentsDirectory() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, houseFilter, roleFilter, majorFilter]);
+  }, [debouncedSearch, houseFilter, roleFilter, majorFilter, educationFilter, yearFilter]);
 
   const refreshData = () => {
     setLoading(true);
@@ -312,6 +315,27 @@ export default function AdminStudentsDirectory() {
       .map(m => ({ value: m, label: m, icon: <BookOpen size={16} className="text-[var(--accent-primary)]" /> }))
   ];
 
+  const deriveEducationLevel = (studentId: string | undefined): "undergrad" | "masters" | "phd" | null => {
+    if (!studentId || studentId.length < 5) return null;
+    const d = studentId.trim()[4];
+    if (d === "3") return "masters";
+    if (d === "5") return "phd";
+    return "undergrad";
+  };
+
+  const educationOptions = [
+    { value: "all", label: t.allEducationLevels },
+    { value: "undergrad", label: t.educationUndergrad },
+    { value: "masters", label: t.educationMasters },
+    { value: "phd", label: t.educationPhD },
+  ];
+
+  const yearOptions = [
+    { value: "all", label: t.allYears },
+    ...[1, 2, 3, 4].map(n => ({ value: String(n), label: t.yearN.replace("{n}", String(n)) })),
+    { value: "5plus", label: t.yearNPlus.replace("{n}", "5") },
+  ];
+
   const editRoleOptions = [
     { value: "student", label: t.roleStudent, icon: <GraduationCap size={16} className="text-muted" /> },
     { value: "staff", label: t.roleStaff, icon: <Briefcase size={16} className="text-[#14b8a6]" /> },
@@ -359,7 +383,17 @@ export default function AdminStudentsDirectory() {
           return r === roleFilter;
         });
 
-      return matchesSearch && matchesHouse && matchesRole && matchesMajor;
+      const matchesEducation = educationFilter === "all" ||
+        deriveEducationLevel(s.studentId) === educationFilter;
+
+      const matchesYear = (() => {
+        if (yearFilter === "all") return true;
+        const yr = yearOfStudy(s.studentId);
+        if (yearFilter === "5plus") return yr != null && yr >= 5;
+        return yr === parseInt(yearFilter, 10);
+      })();
+
+      return matchesSearch && matchesHouse && matchesRole && matchesMajor && matchesEducation && matchesYear;
     }
   );
 
@@ -446,6 +480,20 @@ export default function AdminStudentsDirectory() {
               options={majorOptions}
               onChange={setMajorFilter}
               icon={<BookOpen size={18} />}
+            />
+            <CustomDropdown
+              className="min-w-[200px]"
+              value={educationFilter}
+              options={educationOptions}
+              onChange={setEducationFilter}
+              icon={<GraduationCap size={18} />}
+            />
+            <CustomDropdown
+              className="min-w-[180px]"
+              value={yearFilter}
+              options={yearOptions}
+              onChange={setYearFilter}
+              icon={<Activity size={18} />}
             />
           </div>
         </div>

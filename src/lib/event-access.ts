@@ -72,6 +72,25 @@ export function isFirstYearStudent(
 }
 
 /**
+ * Year of study (1 = first year) derived from a student id's first two digits
+ * vs the current academic-year prefix. Follows the same June/Bangkok rollover as
+ * currentFirstYearPrefix. Returns null for ids we can't classify (too short or
+ * the result is outside the plausible 1–8 range).
+ */
+export function yearOfStudy(
+  studentId: string | null | undefined,
+  now: Date = new Date()
+): number | null {
+  const cleanId = (studentId || "").trim();
+  if (!/^\d{2}/.test(cleanId)) return null;
+  const entry = parseInt(cleanId.slice(0, 2), 10);
+  const current = parseInt(currentFirstYearPrefix(now), 10);
+  const diff = ((current - entry + 100) % 100) + 1;
+  if (diff < 1 || diff > 8) return null;
+  return diff;
+}
+
+/**
  * Thai vs international is derived from the student id: the first of the last
  * three digits being "5" marks an international student. Unknown/short ids
  * default to Thai (matches the historic /api/events behaviour).

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { parseRichText } from "@/lib/rich-text";
-import { currentFirstYearPrefix } from "@/lib/event-access";
+import { currentFirstYearPrefix, yearOfStudy } from "@/lib/event-access";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
 import {
@@ -268,16 +268,17 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
   major_president: "Major President",
 };
 
-// Student majors that an event's registration can be restricted to. Mirrors the
-// hardcoded list in the profile form (src/app/dashboard/profile/page.tsx) and the
-// `major` text column on users (ANI, DG, DII, MMIT, SE). Empty selection = all majors.
-const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE"] as const;
+// Student majors that an event's registration can be restricted to. Includes
+// postgraduate majors (KIM, DTM) added for Master's/Ph.D. targeting.
+const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 const MAJOR_LABELS: Record<string, string> = {
   ANI: "ANI - Animation & Visual Effects",
   DG: "DG - Digital Game",
   DII: "DII - Digital Industry Integration",
   MMIT: "MMIT - Modern Management & IT",
   SE: "SE - Software Engineering",
+  KIM: "KIM",
+  DTM: "DTM",
 };
 
 const EMPTY_FORM = {
@@ -354,6 +355,7 @@ export default function AdminEventsPage() {
   const [filterStudentsOnly, setFilterStudentsOnly] = useState(false);
   const [filterThai, setFilterThai] = useState(true);
   const [filterInternational, setFilterInternational] = useState(true);
+  const [yearFilter, setYearFilter] = useState<Set<number>>(new Set()); // empty = all years
   // Per-day (session) filter for multi-day events. null = all days. Only shown
   // when the active event has more than one session.
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -1584,10 +1586,16 @@ export default function AdminEventsPage() {
     if (!filterInternational && isIntl) {
       return false;
     }
-    
+
+    if (yearFilter.size > 0) {
+      const y = yearOfStudy(m.user?.studentId);
+      const bucket = y == null ? null : (y >= 5 ? 5 : y);
+      if (bucket == null || !yearFilter.has(bucket)) return false;
+    }
+
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hasMedicalSignal is pure over its `user` arg (no state/props); listing it would recreate each render and defeat the memo
-  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterThai, filterInternational]);
+  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterThai, filterInternational, yearFilter]);
 
   // Header tallies honor the selected day (but not the other roster filters) so
   // "X / Y checked in" matches whichever day is being viewed.
@@ -4871,6 +4879,38 @@ export default function AdminEventsPage() {
                     {filterStudentsOnly ? "Showing: Students Only" : "Filter: Students Only"}
                   </button>
 
+                  {([1, 2, 3, 4, 5] as const).map((yr) => {
+                    const active = yearFilter.has(yr);
+                    return (
+                      <button
+                        key={yr}
+                        onClick={() => {
+                          setYearFilter((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(yr)) next.delete(yr); else next.add(yr);
+                            return next;
+                          });
+                        }}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 99,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          transition: "all 0.2s",
+                          border: active ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                          background: active ? "var(--accent-glow)" : "var(--bg-surface)",
+                          color: active ? "var(--accent-primary)" : "var(--text-secondary)",
+                        }}
+                      >
+                        {yr === 5 ? "Yr 5+" : `Yr ${yr}`}
+                      </button>
+                    );
+                  })}
+
                   <label style={{
                     display: "flex",
                     alignItems: "center",
@@ -4917,7 +4957,7 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId) && (
+                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId || yearFilter.size > 0) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
                     Filtered: Showing {attendanceUnits.length} of {tallyUnits.length} records

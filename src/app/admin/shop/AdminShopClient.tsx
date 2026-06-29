@@ -58,7 +58,7 @@ const ROLE_LABELS: Record<string, string> = {
   club_president: "Club President", major_president: "Major President",
 };
 // Student majors (the `major` text column on users). Empty selection = all majors.
-const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE"] as const;
+const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 
 // ISO/Date -> value for <input type="datetime-local"> (local time, no seconds).
 function toLocalInput(d?: string | Date | null): string {
@@ -1227,7 +1227,7 @@ function FilterDropdown({ value, options, onChange, minWidth = 160, maxWidth = 2
                 onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = "var(--bg-elevated)"; }}
                 onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = "transparent"; }}
                 style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8,
                   width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 14,
                   border: "none", borderRadius: 8, cursor: "pointer",
                   background: sel ? "var(--bg-elevated)" : "transparent",
@@ -1235,8 +1235,8 @@ function FilterDropdown({ value, options, onChange, minWidth = 160, maxWidth = 2
                   fontWeight: sel ? 700 : 500,
                 }}
               >
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
-                {sel && <Check size={15} style={{ flexShrink: 0 }} />}
+                <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>{opt.label}</span>
+                {sel && <Check size={15} style={{ flexShrink: 0, marginTop: 3 }} />}
               </button>
             );
           })}

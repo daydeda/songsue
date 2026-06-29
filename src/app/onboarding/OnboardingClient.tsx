@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import type { Session } from "next-auth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Camera, Check, Loader2, LogOut, User, Menu, X, AlertTriangle, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { compressImageFile } from "@/lib/compress-image";
@@ -122,6 +122,26 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
     contacts[idx] = { ...contacts[idx], [key]: value };
     set("emergencyContacts", contacts);
   };
+
+  const degreeDigit = formData.studentId.trim()[4];
+  const majorOptions: string[] =
+    degreeDigit === "3" ? ["SE", "KIM", "DTM"]
+    : degreeDigit === "5" ? ["KIM", "DTM"]
+    : ["ANI", "DG", "DII", "MMIT", "SE"];
+
+  const UNDERGRAD_MAJOR_LABELS: Record<string, string> = {
+    ANI: "ANI – Animation and Visual Effect",
+    DG: "DG – Digital Game",
+    DII: "DII – Digital Industry Integration",
+    MMIT: "MMIT – Modern Management and Information Technology",
+    SE: "SE – Software Engineering",
+  };
+
+  // Reset major to a valid option when the degree level changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!majorOptions.includes(formData.major)) set("major", majorOptions[0]);
+  }, [degreeDigit]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -422,11 +442,11 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
           <div className="field">
             <label className={lbl}>{t.major}</label>
             <select className={inp} value={formData.major} onChange={(e) => set("major", e.target.value)} style={{ minHeight: 48 }}>
-              <option value="ANI">ANI – Animation and Visual Effect</option>
-              <option value="DG">DG – Digital Game</option>
-              <option value="DII">DII – Digital Industry Integration</option>
-              <option value="MMIT">MMIT – Modern Management and Information Technology</option>
-              <option value="SE">SE – Software Engineering</option>
+              {majorOptions.map((code) => (
+                <option key={code} value={code}>
+                  {UNDERGRAD_MAJOR_LABELS[code] ?? code}
+                </option>
+              ))}
             </select>
           </div>
 

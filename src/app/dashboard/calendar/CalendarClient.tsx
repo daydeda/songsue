@@ -63,7 +63,7 @@ const ALL_ROLES = [
   "club_president",
   "major_president",
 ];
-const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE"];
+const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"];
 
 const LOCALE: Record<string, string> = {
   en: "en-US",

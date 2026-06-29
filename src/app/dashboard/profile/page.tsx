@@ -115,6 +115,29 @@ export default function ProfilePage() {
   }, []);
   const set = <K extends keyof typeof formData>(key: K, value: typeof formData[K]) => setFormData((p) => ({ ...p, [key]: value }));
 
+  const degreeDigit = formData.studentId.trim()[4];
+  const majorOptions: string[] =
+    degreeDigit === "3" ? ["SE", "KIM", "DTM"]
+    : degreeDigit === "5" ? ["KIM", "DTM"]
+    : ["ANI", "DG", "DII", "MMIT", "SE"];
+
+  const UNDERGRAD_MAJOR_LABELS: Record<string, string> = {
+    ANI: "ANI - Animation and Visual Effect",
+    DG: "DG - Digital Game",
+    DII: "DII - Digital Industry Integration",
+    MMIT: "MMIT - Modern Management and Information Technology",
+    SE: "SE - Software Engineering",
+  };
+
+  // Reset major when degree level changes (only relevant while the field is editable)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!isProfileCompleted && !majorOptions.includes(formData.major)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      set("major", majorOptions[0]);
+    }
+  }, [degreeDigit]);
+
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
     contacts[idx] = { ...contacts[idx], [key]: value };
@@ -561,11 +584,11 @@ export default function ProfilePage() {
                       opacity: isProfileCompleted ? 0.7 : undefined,
                     }}
                   >
-                    <option value="ANI">ANI - Animation and Visual Effect</option>
-                    <option value="DG">DG - Digital Game</option>
-                    <option value="DII">DII - Digital Industry Integration</option>
-                    <option value="MMIT">MMIT - Modern Management and Information Technology</option>
-                    <option value="SE">SE - Software Engineering</option>
+                    {majorOptions.map((code) => (
+                      <option key={code} value={code}>
+                        {UNDERGRAD_MAJOR_LABELS[code] ?? code}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="field col-span-6">

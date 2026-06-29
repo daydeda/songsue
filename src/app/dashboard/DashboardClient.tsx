@@ -422,7 +422,15 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // Fullscreen poster viewer — carries the whole poster list + which one was tapped
   // so the user can keep swiping at full size.
   const [previewImage, setPreviewImage] = useState<{ posters: string[]; index: number } | null>(null);
-  const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
+  // The open event-preview modal, tracked by id rather than the event object so the
+  // URL stays the single source of truth (and a /dashboard?event=<id> deep-link can
+  // seed it before the events list has loaded). previewEvent is derived from this id
+  // below. Seeded once from the address bar via a lazy initializer — SSR-guarded, and
+  // safe against hydration mismatch because the events list is empty on first render,
+  // so the modal renders closed on both server and client regardless of the id.
+  const [previewEventId, setPreviewEventId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("event")
+  );
 
   // Whether the in-modal "Copy link" button just copied, so we can flash a
   // "Copied!" confirmation for a moment.
@@ -435,7 +443,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // closes the modal instead of leaving the dashboard; closePreview unwinds it.
   const openPreview = (e: Event) => {
     setLinkCopied(false);
-    setPreviewEvent(e);
+    setPreviewEventId(e.id);
     const current = new URLSearchParams(window.location.search).get("event");
     if (current !== e.id) {
       window.history.pushState({ event: e.id }, "", `${window.location.pathname}?event=${encodeURIComponent(e.id)}`);
@@ -445,44 +453,27 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     setLinkCopied(false);
     if (window.history.state?.event) {
       // We pushed this entry when opening — pop it so Back history stays clean.
-      // The popstate handler below clears previewEvent once the param is gone.
+      // The popstate handler below clears previewEventId once the param is gone.
       window.history.back();
     } else {
       // Landed straight on a shared ?event= link (no pushed entry of our own) —
       // strip the param in place instead of navigating off the site.
       window.history.replaceState(null, "", window.location.pathname);
-      setPreviewEvent(null);
+      setPreviewEventId(null);
     }
   };
 
   // Drive the modal from Back/Forward: when the URL's ?event= changes or clears via
-  // history navigation, open the matching event or close the modal to match it.
+  // history navigation, mirror it into previewEventId. setState here is fine — it
+  // runs inside an event-listener callback, not synchronously in the effect body.
   useEffect(() => {
     const onPop = () => {
       setLinkCopied(false);
-      const id = new URLSearchParams(window.location.search).get("event");
-      if (!id) { setPreviewEvent(null); return; }
-      const match = events.find((e) => e.id === id);
-      if (match) setPreviewEvent(match);
+      setPreviewEventId(new URLSearchParams(window.location.search).get("event"));
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [events]);
-
-  // Initial deep-link: open the preview for /dashboard?event=<id> once events have
-  // loaded so the matching row exists. Runs once; the param is left in place so the
-  // address bar keeps reflecting the open event (closePreview strips it).
-  const deepLinkedEvent = useRef(false);
-  useEffect(() => {
-    if (deepLinkedEvent.current || events.length === 0) return;
-    const id = new URLSearchParams(window.location.search).get("event");
-    if (!id) return;
-    const match = events.find((e) => e.id === id);
-    if (match) {
-      setPreviewEvent(match);
-      deepLinkedEvent.current = true;
-    }
-  }, [events]);
+  }, []);
 
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red
@@ -646,8 +637,13 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const houseId = user?.houseId ?? null;
   const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
 
+  // The event whose preview modal is open, derived from the URL-backed id. Resolves
+  // once the events list has loaded; if the id isn't found (bad/stale link) the modal
+  // simply stays closed.
+  const previewEvent = previewEventId ? (events.find((e) => e.id === previewEventId) ?? null) : null;
+
   const now = new Date();
-  
+
   // Events that are either happening now or in the future
   const upcoming = events.filter((e) => new Date(e.endTime) >= now);
   const past = events.filter((e) => new Date(e.endTime) < now);

@@ -698,6 +698,43 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     { key: "points", label: t.statPoints, value: pointsEarned, icon: Trophy },
   ];
 
+  // Registration window row — shown when either open or close time is set.
+  // Colour shifts to muted once the window has closed so it doesn't distract.
+  const regWindowRow = (ev: Event) => {
+    const openAt = ev.registrationOpenTime ? new Date(ev.registrationOpenTime) : null;
+    const closeAt = ev.registrationCloseTime ? new Date(ev.registrationCloseTime) : null;
+    if (!openAt && !closeAt) return null;
+
+    const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' };
+    const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
+    const fmtDT = (d: Date) => `${d.toLocaleDateString('en-GB', dateOpts)} ${d.toLocaleTimeString('en-GB', timeOpts)}`;
+
+    const closed = !!closeAt && new Date() > closeAt;
+    const iconBg = closed ? "rgba(0,0,0,0.04)" : "rgba(245,158,11,0.08)";
+    const iconColor = closed ? "var(--text-muted)" : "#f59e0b";
+
+    let text: string;
+    if (openAt && closeAt) {
+      text = `${fmtDT(openAt)} – ${fmtDT(closeAt)}`;
+    } else if (openAt) {
+      text = `${t.regOpens}: ${fmtDT(openAt)}`;
+    } else {
+      text = `${t.regCloses}: ${fmtDT(closeAt!)}`;
+    }
+
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 10, background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", color: iconColor, flexShrink: 0 }}>
+          <CalendarClock size={16} />
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>
+          <span style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.regWindowLabel}: </span>
+          <span style={{ color: closed ? "var(--text-muted)" : "var(--text-secondary)" }}>{text}</span>
+        </div>
+      </div>
+    );
+  };
+
   // Quota + walk-in availability rows, shared by the event card and the preview
   // modal. Quota is hidden when unset (null = unlimited); the walk-in line always
   // shows so a student can tell at a glance whether the door accepts walk-ins.
@@ -1110,18 +1147,19 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             {e.location || "CAMT Building"}
                           </div>
                           {quotaWalkInRows(e)}
+                          {regWindowRow(e)}
                         </div>
 
-                        <div 
-                          style={{ 
-                            fontSize: 14, 
-                            color: "var(--text-secondary)", 
-                            lineHeight: 1.6, 
-                            marginBottom: 24, 
-                            display: "-webkit-box", 
-                            WebkitLineClamp: 3, 
-                            WebkitBoxOrient: "vertical", 
-                            overflow: "hidden" 
+                        <div
+                          style={{
+                            fontSize: 14,
+                            color: "var(--text-secondary)",
+                            lineHeight: 1.6,
+                            marginBottom: 24,
+                            display: "-webkit-box",
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden"
                           }}
                           dangerouslySetInnerHTML={{ __html: parseRichText(e.description || "") }}
                         />
@@ -2080,6 +2118,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     </div>
 
                     {quotaWalkInRows(liveEvent)}
+                    {regWindowRow(liveEvent)}
                   </div>
 
                   {/* Description Divider */}

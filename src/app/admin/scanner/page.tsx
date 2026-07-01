@@ -404,17 +404,22 @@ export default function QRScannerPage() {
         () => {}
       );
 
-      // We request the rear ("environment") camera, which browsers deliver
-      // unmirrored. But on devices with no rear camera (e.g. a laptop used
-      // for testing), the browser silently falls back to the front camera —
-      // and front-facing streams are conventionally delivered pre-mirrored
-      // (so a live selfie preview looks like a real mirror). Detect that
-      // fallback and flip it back so admins never see a mirrored feed.
+      // We request the rear ("environment") camera. Looking through a rear
+      // camera is like looking through a viewfinder facing the same way you
+      // are, so tilting the device/subject right shows right on screen —
+      // no flip needed. But on devices with no rear camera (e.g. a laptop
+      // used for testing), the browser falls back to a camera that faces
+      // the admin — a face-to-face view, like a photo someone took of you,
+      // where tilting your head right appears to tilt left on screen unless
+      // mirrored. Desktop webcams frequently don't report facingMode as
+      // "environment" at all (often "user", sometimes omitted entirely), so
+      // treat anything that isn't a confirmed rear camera as needing the
+      // mirror, rather than only matching the exact "user" value.
       try {
         const settings = scanner.getRunningTrackSettings();
-        if (settings.facingMode === "user") {
-          const video = document.querySelector<HTMLVideoElement>("#qr-reader video");
-          if (video) video.style.transform = "scaleX(-1)";
+        const video = document.querySelector<HTMLVideoElement>("#qr-reader video");
+        if (video) {
+          video.style.transform = settings.facingMode === "environment" ? "none" : "scaleX(-1)";
         }
       } catch (settingsErr) {
         console.error("Failed to read camera track settings:", settingsErr);

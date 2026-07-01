@@ -22,10 +22,22 @@ const entrySchema = z.object({
   allowedMajors: z.array(z.string()).optional().nullable(),
   targetThai: z.boolean().optional(),
   targetInternational: z.boolean().optional(),
-}).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
-  message: "endTime must be after startTime",
-  path: ["endTime"],
-});
+  recurrence: z.enum(["none", "daily", "weekly", "monthly"]).optional(),
+  recurrenceUntil: z.string().datetime().optional().nullable(),
+})
+  .refine((d) => new Date(d.endTime) > new Date(d.startTime), {
+    message: "endTime must be after startTime",
+    path: ["endTime"],
+  })
+  .refine(
+    (d) => {
+      if (d.recurrence && d.recurrence !== "none") {
+        return !!d.recurrenceUntil && new Date(d.recurrenceUntil) > new Date(d.startTime);
+      }
+      return true;
+    },
+    { message: "recurrenceUntil is required and must be after startTime for recurring entries", path: ["recurrenceUntil"] }
+  );
 
 // POST /api/admin/calendar — create a calendar entry
 export async function POST(req: Request) {
@@ -54,6 +66,8 @@ export async function POST(req: Request) {
           allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
           targetThai: data.targetThai ?? true,
           targetInternational: data.targetInternational ?? true,
+          recurrence: data.recurrence ?? "none",
+          recurrenceUntil: data.recurrenceUntil ? new Date(data.recurrenceUntil) : null,
           createdBy: session.user!.id!,
         })
         .returning();

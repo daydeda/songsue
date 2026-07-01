@@ -24,6 +24,8 @@ export interface CalItem {
   /** Absolute link back to the item on the site. */
   url?: string | null;
   updatedAt?: Date | null;
+  recurrence?: "none" | "daily" | "weekly" | "monthly" | null;
+  recurrenceUntil?: Date | null;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -127,6 +129,13 @@ export function buildVCalendar(items: CalItem[]): string {
     if (item.description) lines.push(`DESCRIPTION:${escapeText(item.description)}`);
     if (item.url) lines.push(`URL:${escapeText(item.url)}`);
     if (item.updatedAt) lines.push(`LAST-MODIFIED:${formatUtc(item.updatedAt)}`);
+    if (item.recurrence && item.recurrence !== "none" && item.recurrenceUntil) {
+      const freq = item.recurrence.toUpperCase(); // DAILY | WEEKLY | MONTHLY
+      const until = item.allDay
+        ? formatDate(item.recurrenceUntil)
+        : formatUtc(item.recurrenceUntil);
+      lines.push(`RRULE:FREQ=${freq};UNTIL=${until}`);
+    }
     lines.push("END:VEVENT");
   }
 

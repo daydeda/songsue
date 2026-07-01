@@ -643,6 +643,10 @@ export const calendarEntries = pgTable("calendar_entries", {
   allowedMajors: jsonb("allowed_majors").$type<string[]>(),
   targetThai: boolean("target_thai").default(true),
   targetInternational: boolean("target_international").default(true),
+  // Recurrence rule: "none" | "daily" | "weekly" | "monthly". Until date caps the
+  // series; null means the rule applies indefinitely (grid bounded by window anyway).
+  recurrence: text("recurrence").notNull().default("none"),
+  recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
   // Creator user id, no FK (like audit_logs.actorId historically / announcements)
   // so creator deletion never blocks or cascades.
   createdBy: text("created_by"),

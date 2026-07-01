@@ -57,8 +57,14 @@ export async function GET(
 
     const calItems: CalItem[] = items
       .filter((it) => {
-        const t = new Date(it.startTime).getTime();
-        return t >= lower && t <= upper;
+        const baseStart = new Date(it.startTime).getTime();
+        const until = it.recurrenceUntil ? new Date(it.recurrenceUntil).getTime() : null;
+        // A recurring series is in-window if it starts before the window closes AND
+        // its until-date (if set) hasn't already passed before the window opened.
+        if (it.recurrence !== "none") {
+          return baseStart <= upper && (until === null || until >= lower);
+        }
+        return baseStart >= lower && baseStart <= upper;
       })
       .map((it) => ({
         uid: `${it.kind}-${it.id}`,
@@ -73,6 +79,8 @@ export async function GET(
             ? `${origin}/dashboard`
             : `${origin}/dashboard/calendar`,
         updatedAt: it.updatedAt ? new Date(it.updatedAt) : null,
+        recurrence: it.recurrence,
+        recurrenceUntil: it.recurrenceUntil ? new Date(it.recurrenceUntil) : null,
       }));
 
     const ics = buildVCalendar(calItems);

@@ -28,6 +28,7 @@ import {
   outlookCalendarUrl,
   type CalItem,
 } from "@/lib/ical";
+import { occurrencesInWindow, type RecurrenceRule } from "@/lib/recurrence";
 
 // Unified item shape returned by GET /api/calendar (kept local so this client
 // component never imports the server-only calendar service).
@@ -47,6 +48,8 @@ interface CalendarItem {
   allowedMajors: string[] | null;
   targetThai: boolean;
   targetInternational: boolean;
+  recurrence: RecurrenceRule;
+  recurrenceUntil: string | null;
 }
 
 interface EventOption {
@@ -126,6 +129,8 @@ type EntryForm = {
   allowedMajors: string[];
   targetThai: boolean;
   targetInternational: boolean;
+  recurrence: RecurrenceRule;
+  recurrenceUntil: string; // YYYY-MM-DD for the date input, empty when none
 };
 
 function emptyForm(date?: Date): EntryForm {
@@ -146,6 +151,8 @@ function emptyForm(date?: Date): EntryForm {
     allowedMajors: [],
     targetThai: true,
     targetInternational: true,
+    recurrence: "none",
+    recurrenceUntil: "",
   };
 }
 
@@ -220,23 +227,35 @@ export default function CalendarClient({
     [gridStartMs]
   );
 
+  // Expand each item (including recurring series) into the 42-cell grid window.
+  // Events are always recurrence:"none" and pass through as single occurrences.
+  const expandedItems = useMemo(() => {
+    const windowStart = new Date(gridStartMs);
+    const windowEnd = addDays(new Date(gridStartMs), 42);
+    return items.flatMap((it) =>
+      occurrencesInWindow(
+        new Date(it.startTime),
+        new Date(it.endTime),
+        it.recurrence ?? "none",
+        it.recurrenceUntil ? new Date(it.recurrenceUntil) : null,
+        windowStart,
+        windowEnd
+      ).map((occ) => ({ item: it, start: occ.start, end: occ.end }))
+    );
+  }, [items, gridStartMs]);
+
   const itemsOnDay = useCallback(
-    (day: Date): CalendarItem[] => {
-      // `day` is a local-built grid cell, so its local midnight is its calendar
-      // date; events are bucketed by their Bangkok calendar day to match.
+    (day: Date) => {
       const dd = startOfDay(day).getTime();
-      return items
-        .filter((it) => {
-          const s = startOfBangkokDay(new Date(it.startTime)).getTime();
-          const e = startOfBangkokDay(new Date(it.endTime)).getTime();
+      return expandedItems
+        .filter(({ start, end }) => {
+          const s = startOfBangkokDay(start).getTime();
+          const e = startOfBangkokDay(end).getTime();
           return dd >= s && dd <= e;
         })
-        .sort(
-          (a, b) =>
-            new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-        );
+        .sort((a, b) => a.start.getTime() - b.start.getTime());
     },
-    [items]
+    [expandedItems]
   );
 
   const weekdayNames = useMemo(() => {
@@ -270,6 +289,8 @@ export default function CalendarClient({
         ? `${origin}/dashboard${it.kind === "entry" ? "/calendar" : ""}`
         : null,
       updatedAt: it.updatedAt ? new Date(it.updatedAt) : null,
+      recurrence: it.recurrence,
+      recurrenceUntil: it.recurrenceUntil ? new Date(it.recurrenceUntil) : null,
     };
   }, []);
 
@@ -317,12 +338,17 @@ export default function CalendarClient({
       allowedMajors: it.allowedMajors ?? [],
       targetThai: it.targetThai,
       targetInternational: it.targetInternational,
+      recurrence: it.recurrence ?? "none",
+      recurrenceUntil: it.recurrenceUntil
+        ? it.recurrenceUntil.slice(0, 10)
+        : "",
     });
     setDetail(null);
   };
 
   const saveForm = async () => {
     if (!form || !form.title.trim() || !form.startTime || !form.endTime) return;
+    if (form.recurrence !== "none" && !form.recurrenceUntil) return;
     setSaving(true);
     try {
       const payload = {
@@ -337,6 +363,11 @@ export default function CalendarClient({
         allowedMajors: form.allowedMajors,
         targetThai: form.targetThai,
         targetInternational: form.targetInternational,
+        recurrence: form.recurrence,
+        recurrenceUntil:
+          form.recurrence !== "none" && form.recurrenceUntil
+            ? new Date(form.recurrenceUntil + "T23:59:59").toISOString()
+            : null,
       };
       const res = await fetch(
         form.id ? `/api/admin/calendar/${form.id}` : "/api/admin/calendar",
@@ -450,16 +481,16 @@ export default function CalendarClient({
               >
                 <div className="cal-daynum">{day.getDate()}</div>
                 <div className="cal-chips">
-                  {dayItems.map((it) => (
+                  {dayItems.map(({ item: it, start }) => (
                     <button
-                      key={`${it.kind}-${it.id}`}
+                      key={`${it.kind}-${it.id}-${start.getTime()}`}
                       className={`cal-chip ${it.kind}`}
                       onClick={() => setDetail(it)}
                       title={it.title}
                     >
                       {!it.allDay && (
                         <span className="cal-chip-time">
-                          {formatTime(it.startTime)}
+                          {formatTime(start.toISOString())}
                         </span>
                       )}
                       <span className="cal-chip-title">{it.title}</span>
@@ -512,6 +543,19 @@ export default function CalendarClient({
                 <div>
                   <MapPin size={14} />
                   {detail.location}
+                </div>
+              )}
+              {detail.recurrence && detail.recurrence !== "none" && (
+                <div>
+                  <RefreshCw size={14} />
+                  {t.calendarRepeatsSummary}{" "}
+                  {detail.recurrence === "daily"
+                    ? t.calendarRecurDaily
+                    : detail.recurrence === "weekly"
+                    ? t.calendarRecurWeekly
+                    : t.calendarRecurMonthly}
+                  {detail.recurrenceUntil &&
+                    ` · ${new Date(detail.recurrenceUntil).toLocaleDateString(locale)}`}
                 </div>
               )}
             </div>
@@ -648,6 +692,38 @@ export default function CalendarClient({
             </label>
 
             <label className="fld">
+              <span>{t.calendarRecurrence}</span>
+              <select
+                value={form.recurrence}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    recurrence: e.target.value as RecurrenceRule,
+                    recurrenceUntil: e.target.value === "none" ? "" : form.recurrenceUntil,
+                  })
+                }
+              >
+                <option value="none">{t.calendarRecurNone}</option>
+                <option value="daily">{t.calendarRecurDaily}</option>
+                <option value="weekly">{t.calendarRecurWeekly}</option>
+                <option value="monthly">{t.calendarRecurMonthly}</option>
+              </select>
+            </label>
+
+            {form.recurrence !== "none" && (
+              <label className="fld">
+                <span>{t.calendarRepeatUntil}</span>
+                <input
+                  type="date"
+                  value={form.recurrenceUntil}
+                  onChange={(e) =>
+                    setForm({ ...form, recurrenceUntil: e.target.value })
+                  }
+                />
+              </label>
+            )}
+
+            <label className="fld">
               <span>
                 <Link2 size={13} /> {t.calendarLinkedEvent}
               </span>
@@ -742,7 +818,11 @@ export default function CalendarClient({
               <button
                 className="btn-primary"
                 onClick={saveForm}
-                disabled={saving || !form.title.trim()}
+                disabled={
+                  saving ||
+                  !form.title.trim() ||
+                  (form.recurrence !== "none" && !form.recurrenceUntil)
+                }
               >
                 {t.calendarSaveEntry}
               </button>

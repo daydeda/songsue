@@ -893,6 +893,14 @@ async function migrate() {
   await sql`ALTER TABLE shop_variants ADD COLUMN IF NOT EXISTS price_delta integer NOT NULL DEFAULT 0`;
   console.log("  ✅ shop_variants.price_delta (฿ surcharge, default 0)");
 
+  // 57. calendar_entries: recurrence support. Two additive, idempotent columns:
+  //   recurrence       — rule preset (none|daily|weekly|monthly), default 'none'
+  //   recurrence_until — series end timestamp, nullable; when null the rule runs
+  //                      indefinitely (the grid bounds expansions by window anyway).
+  await sql`ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS recurrence text NOT NULL DEFAULT 'none'`;
+  await sql`ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS recurrence_until timestamptz`;
+  console.log("  ✅ calendar_entries.recurrence + recurrence_until");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -404,6 +404,22 @@ export default function QRScannerPage() {
         () => {}
       );
 
+      // We request the rear ("environment") camera, which browsers deliver
+      // unmirrored. But on devices with no rear camera (e.g. a laptop used
+      // for testing), the browser silently falls back to the front camera —
+      // and front-facing streams are conventionally delivered pre-mirrored
+      // (so a live selfie preview looks like a real mirror). Detect that
+      // fallback and flip it back so admins never see a mirrored feed.
+      try {
+        const settings = scanner.getRunningTrackSettings();
+        if (settings.facingMode === "user") {
+          const video = document.querySelector<HTMLVideoElement>("#qr-reader video");
+          if (video) video.style.transform = "scaleX(-1)";
+        }
+      } catch (settingsErr) {
+        console.error("Failed to read camera track settings:", settingsErr);
+      }
+
       // If component unmounted or another session started while starting, stop the scanner immediately!
       if (!isMountedRef.current || currentSessionId !== scanSessionIdRef.current) {
         try {

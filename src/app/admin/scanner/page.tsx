@@ -74,7 +74,7 @@ type EventSession = {
   endTime: string;
   sortOrder: number;
 };
-type Event = { id: string; title: string; sessions?: EventSession[] };
+type Event = { id: string; title: string; startTime: string; endTime: string; sessions?: EventSession[] };
 
 // Sessions sorted into display order ("Day 1", "Day 2", …).
 function sortedSessions(sessions?: EventSession[]): EventSession[] {
@@ -97,6 +97,45 @@ function pickCurrentSessionId(sessions?: EventSession[]): string {
   const upcoming = sorted.find((s) => new Date(s.startTime).getTime() > now);
   if (upcoming) return upcoming.id;
   return sorted[sorted.length - 1].id;
+}
+
+// Mirrors the "live" check used on the admin events page (src/app/admin/events/page.tsx):
+// now falls within the event's own start/end window.
+function isEventLive(e: Pick<Event, "startTime" | "endTime">): boolean {
+  const now = Date.now();
+  return now >= new Date(e.startTime).getTime() && now <= new Date(e.endTime).getTime();
+}
+
+// Events sorted for the scanner's picker: whichever event is live right now floats
+// to the top (ties broken by the server's own desc-startTime order) so the staff
+// sees the correct event first instead of having to hunt for it in the dropdown.
+function sortedForScanner(events: Event[]): Event[] {
+  return [...events].sort((a, b) => Number(isEventLive(b)) - Number(isEventLive(a)));
+}
+
+// Small pulsing "LIVE" pill — reused on the event selector, its dropdown list, and
+// the camera overlay so a live event is unmistakable everywhere its name appears.
+function LiveBadge({ label, small }: { label: string; small?: boolean }) {
+  return (
+    <span style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 4,
+      padding: small ? "2px 6px" : "3px 8px",
+      borderRadius: 999,
+      background: "rgba(16, 185, 129, 0.15)",
+      color: "#10b981",
+      fontSize: small ? 10 : 11,
+      fontWeight: 800,
+      textTransform: "uppercase",
+      letterSpacing: "0.04em",
+      flexShrink: 0,
+      whiteSpace: "nowrap",
+    }}>
+      <span className="animate-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+      {label}
+    </span>
+  );
 }
 
 export default function QRScannerPage() {
@@ -199,10 +238,9 @@ export default function QRScannerPage() {
     if (manualSearchTimerRef.current) clearTimeout(manualSearchTimerRef.current);
   }, []);
 
-  // Fetch events for the selector
+  // Fetch events for the selector. Runs once on mount, so loadingEvents/eventsError
+  // are intentionally left at their initial values (true/null) rather than reset here.
   useEffect(() => {
-    setLoadingEvents(true);
-    setEventsError(null);
     fetch("/api/admin/events")
       .then(async (r) => {
         if (!r.ok) {
@@ -216,9 +254,11 @@ export default function QRScannerPage() {
           if (Array.isArray(d)) {
             setEvents(d);
             if (d.length > 0) {
-              setEventId(d[0].id);
-              // Default to today's session for the first event.
-              setSessionId(pickCurrentSessionId(d[0].sessions));
+              // Default to whichever event is live right now, if any — falls back to
+              // the newest event (server's default order) when nothing is live.
+              const defaultEvent = d.find(isEventLive) ?? d[0];
+              setEventId(defaultEvent.id);
+              setSessionId(pickCurrentSessionId(defaultEvent.sessions));
             }
           } else {
             throw new Error("Invalid events list format received");
@@ -677,6 +717,13 @@ export default function QRScannerPage() {
     },
   };
 
+  const selectedEvent = events.find((e) => e.id === eventId);
+  const selectedEventIsLive = selectedEvent ? isEventLive(selectedEvent) : false;
+  // If the staff is scanning against a non-live event while a different event IS
+  // live right now, that's exactly the "forgot to switch the dropdown" mistake —
+  // surface it explicitly with a one-tap fix instead of hoping they notice.
+  const otherLiveEvent = selectedEventIsLive ? undefined : events.find((e) => e.id !== eventId && isEventLive(e));
+
   let cfg = scanResult ? (STATUS_CONFIG[scanResult.status] || STATUS_CONFIG.error) : null;
 
   if (cfg && scanMode === "score") {
@@ -806,13 +853,18 @@ export default function QRScannerPage() {
                     color: "var(--text-primary)",
                   }}
                 >
-                  <span style={{ 
-                    flex: 1, 
-                    overflowWrap: "break-word", 
-                    wordBreak: "break-word", 
-                    whiteSpace: "normal" 
+                  <span style={{
+                    flex: 1,
+                    overflowWrap: "break-word",
+                    wordBreak: "break-word",
+                    whiteSpace: "normal",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
                   }}>
-                    {events.find(e => e.id === eventId)?.title || t.noEvents || "No events available"}
+                    {selectedEvent?.title || t.noEvents || "No events available"}
+                    {selectedEventIsLive && <LiveBadge label={t.statusLive} />}
                   </span>
                   {events.length > 0 && (
                     <ChevronDown 
@@ -843,7 +895,7 @@ export default function QRScannerPage() {
                     overflowY: "auto",
                     padding: 4
                   }}>
-                    {events.map((e) => {
+                    {sortedForScanner(events).map((e) => {
                       const isSelected = e.id === eventId;
                       return (
                         <button
@@ -885,7 +937,10 @@ export default function QRScannerPage() {
                             }
                           }}
                         >
-                          <span style={{ flex: 1 }}>{e.title}</span>
+                          <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            {e.title}
+                            {isEventLive(e) && <LiveBadge label={t.statusLive} small />}
+                          </span>
                           {isSelected && <CheckCircle2 size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />}
                         </button>
                       );
@@ -908,6 +963,46 @@ export default function QRScannerPage() {
               </a>
             )}
           </div>
+
+          {/* Wrong-event nudge — the selected event isn't live but a different one
+              is, right now. This is the exact "forgot to switch the dropdown"
+              mistake staff have hit before, so call it out with a one-tap fix. */}
+          {otherLiveEvent && (
+            <div
+              className="stat-card"
+              style={{
+                padding: "16px 20px",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+                background: "rgba(245, 158, 11, 0.08)",
+                border: "1.5px solid rgba(245, 158, 11, 0.35)",
+              }}
+            >
+              <AlertCircle size={20} color="#f59e0b" style={{ flexShrink: 0 }} />
+              <p style={{ flex: 1, minWidth: 200, fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+                {lang === "th"
+                  ? `กิจกรรมที่เลือกอยู่ไม่ได้กำลังจัดอยู่ตอนนี้ ในขณะที่ "${otherLiveEvent.title}" กำลังดำเนินการอยู่ — ต้องการเปลี่ยนไหม?`
+                  : lang === "cn"
+                  ? `当前选中的活动现在并未进行，而「${otherLiveEvent.title}」正在进行中 — 要切换吗？`
+                  : lang === "mm"
+                  ? `ရွေးထားသော ပွဲသည် အခုလက်ရှိ ကျင်းပနေခြင်း မဟုတ်ပါ၊ "${otherLiveEvent.title}" မှာ ကျင်းပနေဆဲဖြစ်သည် — ပြောင်းလိုပါသလား?`
+                  : `The selected event isn't live right now — "${otherLiveEvent.title}" is. Did you mean to pick that one?`}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setEventId(otherLiveEvent.id);
+                  setSessionId(pickCurrentSessionId(otherLiveEvent.sessions));
+                }}
+                className="btn btn-primary"
+                style={{ padding: "8px 16px", fontSize: 12, flexShrink: 0, background: "#f59e0b", border: "none" }}
+              >
+                {lang === "th" ? "เปลี่ยนไปกิจกรรมที่กำลังจัดอยู่" : lang === "cn" ? "切换到进行中的活动" : lang === "mm" ? "ကျင်းပနေသော ပွဲသို့ ပြောင်းရန်" : "Switch to live event"}
+              </button>
+            </div>
+          )}
 
           {/* Session (Day) Selector — only shown for multi-session events */}
           {(() => {
@@ -1117,14 +1212,53 @@ export default function QRScannerPage() {
               </div>
             )}
 
-            {isScanning && (
-                <div style={{ position: "absolute", top: 20, left: 20, pointerEvents: "none" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.5)", padding: "6px 12px", borderRadius: 10, backdropFilter: "blur(4px)" }}>
-                        <div className="animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} />
-                        <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.scanningActive}</span>
-                    </div>
+            {/* Always-visible "scanning for" reminder — the actual bug being fixed here
+                is staff watching the camera and never noticing the event dropdown
+                above was left on the wrong event. Amber when the selected event isn't
+                currently live, so a stale selection is visually obvious mid-scan too. */}
+            {isScanning && selectedEvent && (() => {
+              const sessions = sortedSessions(selectedEvent.sessions);
+              const selectedSessionIdx = sessions.findIndex((s) => s.id === sessionId);
+              const dayLabel = sessions.length > 1
+                ? (sessions[selectedSessionIdx]?.title?.trim() || `${t.scanDayLabel || "Day"} ${selectedSessionIdx + 1}`)
+                : null;
+              return (
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, pointerEvents: "none" }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    background: selectedEventIsLive ? "rgba(0,0,0,0.55)" : "rgba(180, 83, 9, 0.75)",
+                    padding: "8px 14px",
+                    backdropFilter: "blur(4px)",
+                  }}>
+                    <span style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      minWidth: 0,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#fff",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}>
+                      <Calendar size={13} style={{ flexShrink: 0, opacity: 0.85 }} />
+                      {selectedEvent.title}
+                      {dayLabel && <span style={{ opacity: 0.75, fontWeight: 600 }}>· {dayLabel}</span>}
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div className="animate-pulse" style={{ width: 7, height: 7, borderRadius: "50%", background: "#10b981" }} />
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.scanningActive}</span>
+                      </div>
+                    </span>
+                  </div>
                 </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 

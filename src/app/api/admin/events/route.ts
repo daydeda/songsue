@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { events, attendance, eventSessions } from "@/db/schema";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { sql } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sessionInputSchema } from "@/lib/event-schema";
@@ -16,7 +17,8 @@ const eventSchema = z.object({
   registrationCloseTime: z.string().datetime().optional().nullable(),
   quota: z.number().int().min(0).optional().nullable(),
   location: z.string().optional().nullable(),
-  pointsAwarded: z.number().int().min(0).optional().nullable(),
+  pointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
+  individualPointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
@@ -31,10 +33,33 @@ const eventSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Restrict the event to the current first-year intake (id-prefix derived).
+  firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event (club_president / major_president).
   // Separate from allowedRoles (participant visibility) — see GET scoping above.
   managedByRoles: z.array(z.string()).optional().nullable(),
+}).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
+  message: "endTime must be after startTime",
+  path: ["endTime"],
 });
+
+// Per-event distinct-attendee counts. This GROUP BY over the whole (event-time-
+// growing) attendance table is the costly part of this endpoint, which is polled
+// every 8–15s by every admin/scanner client — so cache it at the app layer for 15s.
+// The counts are global; the per-president scoping is applied in-memory after. Up to
+// 15s of count staleness during a live event is an accepted tradeoff.
+const getAttendeeCounts = unstable_cache(
+  async () =>
+    db
+      .select({
+        eventId: attendance.eventId,
+        count: sql<number>`count(distinct ${attendance.studentId})`,
+      })
+      .from(attendance)
+      .groupBy(attendance.eventId),
+  ["admin-events-attendee-counts"],
+  { revalidate: 15, tags: ["admin-events-attendee-counts"] },
+);
 
 // GET /api/admin/events — List all events with registration counts
 export async function GET() {
@@ -67,17 +92,10 @@ export async function GET() {
       orderBy: (events, { desc }) => [desc(events.startTime)],
     });
 
-    // Attendee counts via a single grouped aggregate — returns O(events) rows
-    // instead of loading the whole, event-time-growing attendance table into memory.
-    // Count DISTINCT students: a multi-day 'once' event has one attended row per day
-    // for the same person, so count(*) would show the same student more than once.
-    const counts = await db
-      .select({
-        eventId: attendance.eventId,
-        count: sql<number>`count(distinct ${attendance.studentId})`,
-      })
-      .from(attendance)
-      .groupBy(attendance.eventId);
+    // Attendee counts via a single grouped aggregate (DISTINCT students — a multi-day
+    // 'once' event has one attended row per day for the same person). Cached for 15s
+    // (see getAttendeeCounts) so this whole-table GROUP BY isn't re-run on every poll.
+    const counts = await getAttendeeCounts();
 
     const countByEvent = new Map(counts.map((c) => [c.eventId, Number(c.count)]));
 
@@ -121,7 +139,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const data = eventSchema.parse(body);
 
     // Normalize posters: drop blanks, dedupe-free order preserved. The cover
@@ -136,10 +154,7 @@ export async function POST(req: Request) {
       ? data.sessions
       : [{ title: null, startTime: data.startTime, endTime: data.endTime, quotaWalkIn: data.quotaWalkIn ?? null }];
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0] ||
-      req.headers.get("x-real-ip") ||
-      "127.0.0.1";
+    const ip = getClientIp(req);
 
     const event = await db.transaction(async (tx) => {
       const [created] = await tx
@@ -154,6 +169,7 @@ export async function POST(req: Request) {
           quota: data.quota,
           location: data.location,
           pointsAwarded: data.pointsAwarded ?? 0,
+          individualPointsAwarded: data.individualPointsAwarded ?? 0,
           imageUrl: cover,
           imageUrls: posters,
           walkInsEnabled: data.walkInsEnabled ?? false,
@@ -165,6 +181,7 @@ export async function POST(req: Request) {
           quotaInternational: data.quotaInternational,
           allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
           allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
+          firstYearOnly: data.firstYearOnly ?? false,
           managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null,
         })
         .returning();

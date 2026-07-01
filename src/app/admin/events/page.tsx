@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import {
   Plus, Edit2, Trash2, Calendar, MapPin, Clock,
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
-  Lock, FileText, AlertTriangle, MessageSquare
+  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { parseRichText } from "@/lib/rich-text";
+import { currentFirstYearPrefix, yearOfStudy } from "@/lib/event-access";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
 import {
@@ -34,6 +35,7 @@ interface AdminEvent {
   registrationCloseTime: string | null;
   quota: number | null;
   pointsAwarded: number;
+  individualPointsAwarded: number;
   imageUrl: string | null;
   imageUrls: string[] | null;
   walkInsEnabled: boolean;
@@ -44,6 +46,7 @@ interface AdminEvent {
   quotaInternational: number | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
+  firstYearOnly: boolean;
   managedByRoles: string[] | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
@@ -153,6 +156,7 @@ interface EventFormSummary {
   description: string;
   questions: unknown;
   pointsAwarded: number;
+  individualPointsAwarded: number;
   isActive: boolean;
   isAwarded: boolean;
   opensAt: string | null;
@@ -168,6 +172,7 @@ const FORM_TYPE_LABELS: Record<string, string> = {
   K_post: "K Post-Test",
   A: "A - Attitude",
   S: "S - Skill",
+  F: "F - Feedback",
 };
 
 // Roles an admin can assign an S (Skill) form to. Mirrors ASSIGNABLE_ROLES in
@@ -213,6 +218,7 @@ type BuilderState = {
   formTitle: string;
   formDescription: string;
   formPoints: number;
+  formIndividualPoints: number;
   formSections: FormSection[];
   formIsAwarded: boolean;
   formOpensAt: string;
@@ -222,7 +228,7 @@ type BuilderState = {
 };
 const builderFingerprint = (f: BuilderState): string =>
   JSON.stringify([
-    f.activeFormType, f.formTitle, f.formDescription, f.formPoints,
+    f.activeFormType, f.formTitle, f.formDescription, f.formPoints, f.formIndividualPoints,
     serializeForm(f.formSections), f.formIsAwarded, f.formOpensAt, f.formClosesAt,
     [...f.formAssignedRoles].sort(), [...f.formAssignedUserIds].sort(),
   ]);
@@ -232,6 +238,7 @@ const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: strin
   K_post: { bg: "rgba(16,185,129,0.12)",  text: "#10b981", border: "rgba(16,185,129,0.3)"  },
   A:      { bg: "rgba(245,158,11,0.12)",  text: "#f59e0b", border: "rgba(245,158,11,0.3)"  },
   S:      { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", border: "rgba(239,68,68,0.3)"   },
+  F:      { bg: "rgba(6,182,212,0.12)",   text: "#06b6d4", border: "rgba(6,182,212,0.3)"   },
 };
 
 // Role priority (mirrors ROLE_PRIORITY in src/auth.ts). A person's "primary"
@@ -261,16 +268,17 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
   major_president: "Major President",
 };
 
-// Student majors that an event's registration can be restricted to. Mirrors the
-// hardcoded list in the profile form (src/app/dashboard/profile/page.tsx) and the
-// `major` text column on users (ANI, DG, DII, MMIT, SE). Empty selection = all majors.
-const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE"] as const;
+// Student majors that an event's registration can be restricted to. Includes
+// postgraduate majors (KIM, DTM) added for Master's/Ph.D. targeting.
+const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 const MAJOR_LABELS: Record<string, string> = {
   ANI: "ANI - Animation & Visual Effects",
   DG: "DG - Digital Game",
   DII: "DII - Digital Industry Integration",
   MMIT: "MMIT - Modern Management & IT",
   SE: "SE - Software Engineering",
+  KIM: "KIM",
+  DTM: "DTM",
 };
 
 const EMPTY_FORM = {
@@ -283,6 +291,7 @@ const EMPTY_FORM = {
   registrationCloseTime: "",
   quota: 0,
   pointsAwarded: 0,
+  individualPointsAwarded: 0,
   imageUrl: "",
   imageUrls: [] as string[],
   walkInsEnabled: false,
@@ -293,6 +302,7 @@ const EMPTY_FORM = {
   quotaInternational: null as number | null,
   allowedRoles: [] as string[], // empty = all roles allowed
   allowedMajors: [] as string[], // empty = all majors allowed
+  firstYearOnly: false, // true = only the current first-year intake may join
   managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
 };
 
@@ -334,6 +344,10 @@ export default function AdminEventsPage() {
   const [showAttendance, setShowAttendance] = useState(false);
   const [attendance, setAttendance] = useState<AdminAttendance[]>([]);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  // Guards against an earlier in-flight roster fetch resolving after a newer one
+  // (opening event A then B must never render A's roster under B).
+  const attendanceReqRef = useRef(0);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
@@ -341,6 +355,7 @@ export default function AdminEventsPage() {
   const [filterStudentsOnly, setFilterStudentsOnly] = useState(false);
   const [filterThai, setFilterThai] = useState(true);
   const [filterInternational, setFilterInternational] = useState(true);
+  const [yearFilter, setYearFilter] = useState<Set<number>>(new Set()); // empty = all years
   // Per-day (session) filter for multi-day events. null = all days. Only shown
   // when the active event has more than one session.
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -353,6 +368,7 @@ export default function AdminEventsPage() {
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formPoints, setFormPoints] = useState(0);
+  const [formIndividualPoints, setFormIndividualPoints] = useState(0);
   const [formSections, setFormSections] = useState<FormSection[]>([]);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
   // Scheduling window + S-form assignment
@@ -367,6 +383,15 @@ export default function AdminEventsPage() {
   const [formSubmissions, setFormSubmissions] = useState<FormBuilderSubmission[]>([]);
   const [formSaving, setFormSaving] = useState(false);
   const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
+  const [submissionsPage, setSubmissionsPage] = useState(1);
+  const SUBMISSIONS_PER_PAGE = 10;
+  const submissionsListRef = useRef<HTMLDivElement | null>(null);
+  // Change page and scroll the list back to the top so the first card on the
+  // new page is in view (instead of staying at the bottom where Next was clicked).
+  const goToSubmissionsPage = (updater: (p: number) => number) => {
+    setSubmissionsPage(updater);
+    submissionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   
   // Multi-form state: list of all forms for the current event + which one is being edited
   const [allEventForms, setAllEventForms] = useState<EventFormSummary[]>([]);
@@ -417,6 +442,7 @@ export default function AdminEventsPage() {
     setFormTitle(f.title);
     setFormDescription(f.description || "");
     setFormPoints(f.pointsAwarded || 0);
+    setFormIndividualPoints(f.individualPointsAwarded || 0);
     const loadedSections = normalizeForm(f.questions).sections;
     setFormSections(loadedSections);
     setFormIsAwarded(f.isAwarded || false);
@@ -426,6 +452,7 @@ export default function AdminEventsPage() {
     setFormAssignedUserIds(f.assignedUserIds || []);
     setFormStats(f.stats);
     setFormSubmissions(f.submissions || []);
+    setSubmissionsPage(1);
     setFormTab(f.submissions && f.submissions.length > 0 ? "stats" : "edit");
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
@@ -435,6 +462,7 @@ export default function AdminEventsPage() {
       formTitle: f.title,
       formDescription: f.description || "",
       formPoints: f.pointsAwarded || 0,
+      formIndividualPoints: f.individualPointsAwarded || 0,
       formSections: loadedSections,
       formIsAwarded: f.isAwarded || false,
       formOpensAt: toDatetimeLocal(f.opensAt),
@@ -490,6 +518,7 @@ export default function AdminEventsPage() {
         setFormTitle("");
         setFormDescription("");
         setFormPoints(0);
+        setFormIndividualPoints(0);
         setFormSections(defaultSections);
         setFormIsAwarded(false);
         setFormOpensAt("");
@@ -499,13 +528,14 @@ export default function AdminEventsPage() {
         setFormStats(null);
         setFormSubmissions([]);
         setPristineFingerprint(builderFingerprint({
-          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0,
+          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0, formIndividualPoints: 0,
           formSections: defaultSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
           formAssignedRoles: [], formAssignedUserIds: [],
         }));
       }
     } catch (e) {
       console.error(e);
+      setFormBuilderError(lang === "th" ? "ไม่สามารถโหลดเครื่องมือสร้างฟอร์มได้ กรุณาลองใหม่อีกครั้ง" : "Couldn't load the form builder. Please try again.");
     } finally {
       setFormLoading(false);
     }
@@ -542,6 +572,7 @@ export default function AdminEventsPage() {
     setFormTitle(newTitle);
     setFormDescription("");
     setFormPoints(0);
+    setFormIndividualPoints(0);
     setFormSections(newSections);
     setFormIsAwarded(false);
     setFormOpensAt("");
@@ -555,7 +586,7 @@ export default function AdminEventsPage() {
     setFormBuilderSuccess(null);
     // Baseline = the default template, so closing an untouched new form is silent.
     setPristineFingerprint(builderFingerprint({
-      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0,
+      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0, formIndividualPoints: 0,
       formSections: newSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
       formAssignedRoles: [], formAssignedUserIds: [],
     }));
@@ -611,6 +642,7 @@ export default function AdminEventsPage() {
           title: formTitle,
           description: formDescription,
           pointsAwarded: formPoints,
+          individualPointsAwarded: formIndividualPoints,
           questions: serializeForm(formSections),
           // Forms are always active now — the schedule window (opensAt/closesAt)
           // drives the lifecycle and auto-awards when closesAt passes.
@@ -628,7 +660,7 @@ export default function AdminEventsPage() {
         // there are no unsaved edits (also covers the new-form path, where
         // refreshAllForms can't yet match by the not-yet-set activeFormId).
         setPristineFingerprint(builderFingerprint({
-          activeFormType, formTitle, formDescription, formPoints, formSections,
+          activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
           formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
         }));
         // If this was a new form, set the activeFormId
@@ -680,7 +712,7 @@ export default function AdminEventsPage() {
   const builderDirty =
     showFormBuilder && !formLoading &&
     builderFingerprint({
-      activeFormType, formTitle, formDescription, formPoints, formSections,
+      activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
       formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
     }) !== pristineFingerprint;
 
@@ -997,12 +1029,18 @@ export default function AdminEventsPage() {
     ws["!cols"] = header.map(h => ({ wch: Math.min(45, Math.max(12, h.length + 2)) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Submissions");
-    // Keep Thai (and other Unicode) letters intact; only strip characters that
-    // are illegal in filenames, then collapse whitespace/separators to "_".
-    const safeTitle = (formEventTitle || "form")
+    // Name the file after the FORM (not just the event) so exports from an
+    // event's different forms (K_pre/K_post/A/S/F) don't collide or get
+    // confused. Prefer the form's own title; fall back to the event title plus
+    // the form-type label. Keep Thai (and other Unicode) letters intact; only
+    // strip characters that are illegal in filenames, then collapse
+    // whitespace/separators to "_".
+    const typeLabel = FORM_TYPE_LABELS[activeFormType] || activeFormType;
+    const rawName = formTitle.trim() || `${formEventTitle || "Event"} ${typeLabel}`;
+    const safeTitle = rawName
       .replace(/[\\/:*?"<>|]+/g, "")
       .replace(/\s+/g, "_")
-      .slice(0, 40)
+      .slice(0, 60)
       .replace(/^_+|_+$/g, "") || "form";
     XLSX.writeFile(wb, `submissions_${safeTitle}.xlsx`);
   };
@@ -1032,6 +1070,19 @@ export default function AdminEventsPage() {
     !!user && (user.hasMedicalInfo === true || hasActualMedicalInfo(user));
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The create/edit panel. Used to scroll it into view when it opens — the admin
+  // content scrolls inside `.admin-main` (overflow-y:auto), NOT the window, so a
+  // plain window.scrollTo does nothing. Re-runs on editingId so switching which
+  // event you're editing (panel already open) also brings it back to the top.
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showForm) return;
+    const el = formRef.current;
+    if (!el) return;
+    const scroller = el.closest(".admin-main");
+    if (scroller) scroller.scrollTo({ top: 0, behavior: "smooth" });
+    else el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showForm, editingId]);
 
   const fetchEvents = async (signal?: AbortSignal) => {
     try {
@@ -1413,6 +1464,7 @@ export default function AdminEventsPage() {
       registrationCloseTime: evt.registrationCloseTime ? toLocal(evt.registrationCloseTime) : "",
       quota: evt.quota || 0,
       pointsAwarded: evt.pointsAwarded || 0,
+      individualPointsAwarded: evt.individualPointsAwarded || 0,
       imageUrl: evt.imageUrl || "",
       // Legacy events have only imageUrl — wrap it so the manager shows one poster.
       imageUrls: (evt.imageUrls && evt.imageUrls.length > 0)
@@ -1426,6 +1478,7 @@ export default function AdminEventsPage() {
       quotaInternational: evt.quotaInternational || null,
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
+      firstYearOnly: evt.firstYearOnly || false,
       managedByRoles: evt.managedByRoles || []
     });
     // Only pre-select a mode (which reveals the Days editor) when the event is
@@ -1450,26 +1503,43 @@ export default function AdminEventsPage() {
     setSessions(evtSessions);
     setEditingId(evt.id);
     setShowForm(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Scrolling is handled by the showForm/editingId effect, which targets the
+    // real scroll container (.admin-main) rather than the window.
   };
 
   const viewAttendance = async (eventId: string) => {
+    // Token this request so a stale, slower response from a previously-opened
+    // event can't overwrite the roster of the one now in view.
+    const reqId = ++attendanceReqRef.current;
     setActiveEventId(eventId);
     setShowAttendance(true);
     setLoadingAttendance(true);
+    setAttendanceError(null);
+    setAttendance([]);
     setFilterMedical(false);
+    setFilterNotCheckedIn(false);
     setFilterStudentsOnly(false);
     setFilterThai(true);
     setFilterInternational(true);
     setSelectedSessionId(null);
     try {
       const res = await fetch(`/api/admin/events/${eventId}/attendance`);
-      const data = await res.json();
-      setAttendance(data);
+      const data = await res.json().catch(() => null);
+      // Ignore if a newer viewAttendance() superseded this one.
+      if (attendanceReqRef.current !== reqId) return;
+      if (!res.ok) {
+        setAttendance([]);
+        setAttendanceError((data && data.error) || "Failed to load attendance.");
+        return;
+      }
+      setAttendance(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (attendanceReqRef.current !== reqId) return;
       console.error(err);
+      setAttendance([]);
+      setAttendanceError("Failed to load attendance.");
     } finally {
-      setLoadingAttendance(false);
+      if (attendanceReqRef.current === reqId) setLoadingAttendance(false);
     }
   };
 
@@ -1479,7 +1549,7 @@ export default function AdminEventsPage() {
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const isMultiDayEvent = activeEventSessions.length > 1;
 
-  const filteredAttendance = attendance.filter((m) => {
+  const filteredAttendance = useMemo(() => attendance.filter((m) => {
     if (selectedSessionId && m.session?.id !== selectedSessionId) {
       return false;
     }
@@ -1516,22 +1586,29 @@ export default function AdminEventsPage() {
     if (!filterInternational && isIntl) {
       return false;
     }
-    
+
+    if (yearFilter.size > 0) {
+      const y = yearOfStudy(m.user?.studentId);
+      const bucket = y == null ? null : (y >= 5 ? 5 : y);
+      if (bucket == null || !yearFilter.has(bucket)) return false;
+    }
+
     return true;
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasMedicalSignal is pure over its `user` arg (no state/props); listing it would recreate each render and defeat the memo
+  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterThai, filterInternational, yearFilter]);
 
   // Header tallies honor the selected day (but not the other roster filters) so
   // "X / Y checked in" matches whichever day is being viewed.
-  const sessionScoped = selectedSessionId
+  const sessionScoped = useMemo(() => selectedSessionId
     ? attendance.filter((m) => m.session?.id === selectedSessionId)
-    : attendance;
+    : attendance, [attendance, selectedSessionId]);
   // In the "All days" view a person who took part in several sessions has one
   // row per day. Counting the raw rows would SUM the days (e.g. Day1 271 +
   // Day2 246 = 517), which double-counts anyone present on both days. Collapse
   // to one unit per student — keyed exactly like the roster cards — so the
   // tallies count distinct people. With a day selected there's ≤1 row per
   // person already, so each row is its own unit (no behavior change).
-  const tallyUnits: AdminAttendance[][] = selectedSessionId
+  const tallyUnits = useMemo<AdminAttendance[][]>(() => selectedSessionId
     ? sessionScoped.map((m) => [m])
     : (() => {
         const byStudent = new Map<string, AdminAttendance[]>();
@@ -1542,17 +1619,20 @@ export default function AdminEventsPage() {
           else byStudent.set(k, [m]);
         }
         return [...byStudent.values()];
-      })();
-  const checkInCount = tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length;
-  const registeredCount = tallyUnits.length;
-
+      })(), [sessionScoped, selectedSessionId]);
   // Attendance summary for the day in view (mirrors the exported report's stats).
   // Based on the day-scoped set, not the browsing filters (medical/nationality).
   // A person is classified once across all their day rows: pre-registered if any
   // session was a pre-registration (else walk-in), attended if present on any day.
-  const summaryPreRegistered = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length;
-  const summaryAttendedPre = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length;
-  const summaryWalkIns = tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length;
+  // All five tallies derive purely from tallyUnits, so compute them together once
+  // per roster change instead of five full passes on every render / 15s poll.
+  const { checkInCount, registeredCount, summaryPreRegistered, summaryAttendedPre, summaryWalkIns } = useMemo(() => ({
+    checkInCount: tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length,
+    registeredCount: tallyUnits.length,
+    summaryPreRegistered: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length,
+    summaryAttendedPre: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length,
+    summaryWalkIns: tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length,
+  }), [tallyUnits]);
   const summaryNoShows = Math.max(0, summaryPreRegistered - summaryAttendedPre);
   const summaryNoShowPct = summaryPreRegistered > 0 ? Math.round((summaryNoShows / summaryPreRegistered) * 100) : 0;
   const attendanceSummaryTiles = [
@@ -1589,7 +1669,7 @@ export default function AdminEventsPage() {
   // duplicates. When a specific day is selected there's already ≤1 row per
   // person, so each row is its own unit and the card renders exactly as before.
   type AttendanceUnit = { key: string; primary: AdminAttendance; rows: AdminAttendance[] };
-  const attendanceUnits: AttendanceUnit[] = (() => {
+  const attendanceUnits = useMemo<AttendanceUnit[]>(() => {
     if (selectedSessionId) {
       return filteredAttendance.map((m) => ({ key: m.id, primary: m, rows: [m] }));
     }
@@ -1611,14 +1691,14 @@ export default function AdminEventsPage() {
       u.primary = u.rows[0];
     }
     return order.map((k) => byStudent.get(k)!);
-  })();
+  }, [filteredAttendance, selectedSessionId]);
 
-  const groupedAttendance = attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
+  const groupedAttendance = useMemo(() => attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
     const houseId = curr.primary.user?.house?.id || "Unassigned";
     if (!acc[houseId]) acc[houseId] = [];
     acc[houseId].push(curr);
     return acc;
-  }, {} as Record<string, AttendanceUnit[]>);
+  }, {} as Record<string, AttendanceUnit[]>), [attendanceUnits]);
 
   // Export the event's attendees as .xlsx. The file is built server-side at
   // /api/admin/events/[id]/export, which re-checks the super_admin/admin role
@@ -1662,7 +1742,7 @@ export default function AdminEventsPage() {
     );
   };
 
-  const filteredEvents = Array.isArray(events) ? events.filter(evt => {
+  const filteredEvents = useMemo(() => Array.isArray(events) ? events.filter(evt => {
     const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (evt.location && evt.location.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -1675,7 +1755,7 @@ export default function AdminEventsPage() {
     if (filterStatus === "past") return matchesSearch && isPast;
     if (filterStatus === "upcoming") return matchesSearch && isUpcoming;
     return matchesSearch;
-  }) : [];
+  }) : [], [events, searchQuery, filterStatus]);
 
   const getEventStatus = (evt: AdminEvent) => {
     const now = new Date();
@@ -1761,6 +1841,7 @@ export default function AdminEventsPage() {
       {/* Form */}
       {showForm && (
         <div
+          ref={formRef}
           className="animate-fade-in-up"
           style={{
             background: "var(--bg-surface)",
@@ -1790,20 +1871,32 @@ export default function AdminEventsPage() {
                   <input className="input" required value={formData.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. IT Freshy Night 2026" style={{ fontSize: 16, padding: "16px 20px", borderRadius: 16 }} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="field">
-                    <label className="label">{t.eventLocationLabel}</label>
-                    <div style={{ position: "relative" }}>
-                      <MapPin size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-                      <input className="input" value={formData.location} onChange={(e) => set("location", e.target.value)} placeholder="CAMT Auditorium" style={{ paddingLeft: 44 }} />
-                    </div>
+                <div className="field">
+                  <label className="label">{t.eventLocationLabel}</label>
+                  <div style={{ position: "relative" }}>
+                    <MapPin size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                    <input className="input" value={formData.location} onChange={(e) => set("location", e.target.value)} placeholder="CAMT Auditorium" style={{ paddingLeft: 44 }} />
                   </div>
+                </div>
+
+                {/* Two parallel point pools: house points go to the WINNING house at
+                    event-end; individual points go to EACH attendee on every check-in. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventPointsLabel}</label>
                     <div style={{ position: "relative" }}>
-                      <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
+                      <Trophy size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#fbbf24" }} />
                       <input className="input" type="number" min={0} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventHousePointsHint}</p>
+                  </div>
+                  <div className="field">
+                    <label className="label">{t.eventIndividualPointsLabel}</label>
+                    <div style={{ position: "relative" }}>
+                      <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
+                      <input className="input" type="number" min={0} value={formData.individualPointsAwarded} onChange={(e) => set("individualPointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
+                    </div>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventIndividualPointsHint}</p>
                   </div>
                 </div>
 
@@ -2142,6 +2235,50 @@ export default function AdminEventsPage() {
                       </div>
                     );
                   })()}
+                </div>
+
+                {/* First-year-only restriction */}
+                <div className="field" style={{ marginTop: 20 }}>
+                  <div
+                    onClick={() => set("firstYearOnly", !formData.firstYearOnly)}
+                    style={{
+                      minHeight: 48,
+                      background: "var(--bg-elevated)",
+                      borderRadius: 16,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "12px 16px",
+                      cursor: "pointer",
+                      border: formData.firstYearOnly ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <div style={{
+                      width: 24,
+                      height: 24,
+                      flexShrink: 0,
+                      borderRadius: 6,
+                      border: "2px solid var(--border-medium)",
+                      background: formData.firstYearOnly ? "var(--accent-primary)" : "transparent",
+                      borderColor: formData.firstYearOnly ? "var(--accent-primary)" : "var(--border-medium)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.1s"
+                    }}>
+                      {formData.firstYearOnly && <CheckCircle2 size={16} color="white" />}
+                    </div>
+                    <GraduationCap size={18} style={{ flexShrink: 0, color: formData.firstYearOnly ? "var(--accent-primary)" : "var(--text-muted)" }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: formData.firstYearOnly ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                        {t.firstYearOnly}
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                        {(t.firstYearOnlyHint || "").replace("{prefix}", currentFirstYearPrefix())}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Registration mode + Sessions / Days editor */}
@@ -2834,7 +2971,7 @@ export default function AdminEventsPage() {
                 {error && <div style={{ color: "#ef4444", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} /> {error}</div>}
               </div>
               <div className="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => setShowForm(false)}>{t.discardBtn}</button>
+                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => { setShowForm(false); setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([]); }}>{t.discardBtn}</button>
                 <button type="submit" className="btn btn-primary btn-lg w-full sm:w-auto" style={{ borderRadius: 16, minWidth: 200 }} disabled={submitting}>
                   {submitting ? <>{lang === "th" ? "กำลังบันทึก..." : "Saving..."}</> : editingId ? t.updateSystemBtn : t.activateEventBtn}
                 </button>
@@ -2870,7 +3007,7 @@ export default function AdminEventsPage() {
             <p style={{ color: "var(--text-muted)", marginTop: 8 }}>{lang === "th" ? "ลองปรับตัวกรองหรือสร้างกิจกรรมใหม่เพื่อเริ่มต้น" : lang === "cn" ? "尝试调整您的筛选条件或创建一个新活动以开始。" : lang === "mm" ? "စတင်ရန် စစ်ထုတ်မှုများကို ချိန်ညှိပါ သို့မဟုတ် ပွဲအသစ်တစ်ခု ဖန်တီးပါ။" : "Try adjusting your filters or create a new event to get started."}</p>
           </div>
           {!isAttendanceOnly && (
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
+            <button className="btn btn-primary" onClick={() => { setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]); setShowForm(true); }}>+ {t.addEventBtn}</button>
           )}
         </div>
       ) : (
@@ -2959,6 +3096,30 @@ export default function AdminEventsPage() {
                           </span>
                         </div>
                       )}
+                      {evt.firstYearOnly && (
+                        <div className="event-card-tag" style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: "rgba(16,185,129,0.85)",
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          boxShadow: "0 2px 8px rgba(16,185,129,0.3)",
+                          textTransform: "uppercase",
+                        }}>
+                          <GraduationCap size={10} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {t.firstYearBadge}
+                          </span>
+                        </div>
+                      )}
                       {/* Managed-by badge — which president manages this event
                           (admin context only; independent of participant access). */}
                       {evt.managedByRoles && evt.managedByRoles.length > 0 && (
@@ -3023,28 +3184,47 @@ export default function AdminEventsPage() {
                     </div>
                   </div>
 
-                  {/* Points Badge */}
-                  {evt.pointsAwarded !== undefined && (
-                    <div style={{ position: "absolute", bottom: 28, left: 28 }}>
-                      <div style={{ 
-                        background: "rgba(0, 0, 0, 0.7)", 
-                        backdropFilter: "blur(8px)", 
-                        color: "#fff", 
-                        padding: "6px 12px", 
-                        borderRadius: 14, 
-                        fontSize: 11, 
-                        fontWeight: 900, 
-                        display: "inline-flex", 
-                        alignItems: "center", 
-                        gap: 6, 
+                  {/* Points Badges — house (winner bonus) and, when set, per-attendee individual */}
+                  <div style={{ position: "absolute", bottom: 28, left: 28, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {evt.pointsAwarded !== undefined && (
+                      <div style={{
+                        background: "rgba(0, 0, 0, 0.7)",
+                        backdropFilter: "blur(8px)",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
                         boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                         border: "1px solid rgba(255, 255, 255, 0.1)"
-                      }}>
+                      }} title={t.eventHousePointsHint}>
                         <Trophy size={12} style={{ color: "#fbbf24" }} />
                         <span>{evt.pointsAwarded} PTS</span>
                       </div>
-                    </div>
-                  )}
+                    )}
+                    {evt.individualPointsAwarded > 0 && (
+                      <div style={{
+                        background: "rgba(0, 0, 0, 0.7)",
+                        backdropFilter: "blur(8px)",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)"
+                      }} title={t.eventIndividualPointsHint}>
+                        <Sparkles size={12} style={{ color: "var(--accent-primary)" }} />
+                        <span>+{evt.individualPointsAwarded} {t.eventIndividualPointsBadge}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Card Content */}
@@ -3385,7 +3565,7 @@ export default function AdminEventsPage() {
                   {t.fbSelectFormTypePicker || "Select the type of form to create for this event:"}
                 </p>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {(["K_pre", "K_post", "A", "S"] as const).map((type) => {
+                  {(["K_pre", "K_post", "A", "S", "F"] as const).map((type) => {
                     const c = FORM_TYPE_COLORS[type];
                     const alreadyExists = allEventForms.some((f) => f.formType === type);
                     return (
@@ -3560,7 +3740,21 @@ export default function AdminEventsPage() {
                             onChange={e => setFormPoints(Math.max(0, parseInt(e.target.value) || 0))}
                           />
                         </div>
-                        
+
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+                            <Sparkles size={14} style={{ color: "var(--accent-primary)" }} /> {t.fbIndividualPointsReward || "Individual Points Reward"}
+                          </label>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t.fbEachSubmitterGetsPoints || "Each student gets these points when they submit."}</p>
+                          <input
+                            type="number"
+                            className="input"
+                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", fontWeight: 800 }}
+                            value={formIndividualPoints}
+                            onChange={e => setFormIndividualPoints(Math.max(0, parseInt(e.target.value) || 0))}
+                          />
+                        </div>
+
                         {(() => {
                           // Read-only lifecycle status. There is no manual open/close
                           // anymore — the schedule window below drives everything, and
@@ -4188,7 +4382,7 @@ export default function AdminEventsPage() {
                     </div>
 
                     {/* List of Submissions */}
-                    <div>
+                    <div ref={submissionsListRef} style={{ scrollMarginTop: 80 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
                         <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> {t.fbStudentSubmissions || "Student Submissions"} ({formSubmissions.length})</h4>
                         <button
@@ -4206,11 +4400,16 @@ export default function AdminEventsPage() {
                           <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbNoSubmissionsYet || "No feedback submissions yet."}</p>
                           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{t.fbNoSubmissionsDesc || "Once students complete the form, their answers will appear here live!"}</p>
                         </div>
-                      ) : (
+                      ) : (() => {
+                        const totalPages = Math.max(1, Math.ceil(formSubmissions.length / SUBMISSIONS_PER_PAGE));
+                        const currentPage = Math.min(submissionsPage, totalPages);
+                        const start = (currentPage - 1) * SUBMISSIONS_PER_PAGE;
+                        const pageSubs = formSubmissions.slice(start, start + SUBMISSIONS_PER_PAGE);
+                        return (
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                          {formSubmissions.map((sub, sIdx) => (
-                            <div 
-                              key={sub.id || sIdx} 
+                          {pageSubs.map((sub, sIdx) => (
+                            <div
+                              key={sub.id || (start + sIdx)}
                               style={{ 
                                 background: "var(--bg-elevated)", 
                                 border: "1px solid var(--border-subtle)", 
@@ -4304,8 +4503,34 @@ export default function AdminEventsPage() {
                               </div>
                             </div>
                           ))}
+                          {totalPages > 1 && (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={currentPage <= 1}
+                                onClick={() => goToSubmissionsPage((p) => Math.max(1, p - 1))}
+                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage <= 1 ? "not-allowed" : "pointer", opacity: currentPage <= 1 ? 0.5 : 1 }}
+                              >
+                                {lang === "th" ? "ก่อนหน้า" : lang === "cn" ? "上一页" : lang === "mm" ? "ယခင်" : "Previous"}
+                              </button>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>
+                                {(lang === "th" ? "หน้า" : lang === "cn" ? "第" : lang === "mm" ? "စာမျက်နှာ" : "Page")} {currentPage} / {totalPages}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={currentPage >= totalPages}
+                                onClick={() => goToSubmissionsPage((p) => Math.min(totalPages, p + 1))}
+                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage >= totalPages ? "not-allowed" : "pointer", opacity: currentPage >= totalPages ? 0.5 : 1 }}
+                              >
+                                {lang === "th" ? "ถัดไป" : lang === "cn" ? "下一页" : lang === "mm" ? "နောက်တစ်ခု" : "Next"}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -4654,6 +4879,38 @@ export default function AdminEventsPage() {
                     {filterStudentsOnly ? "Showing: Students Only" : "Filter: Students Only"}
                   </button>
 
+                  {([1, 2, 3, 4, 5] as const).map((yr) => {
+                    const active = yearFilter.has(yr);
+                    return (
+                      <button
+                        key={yr}
+                        onClick={() => {
+                          setYearFilter((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(yr)) next.delete(yr); else next.add(yr);
+                            return next;
+                          });
+                        }}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 99,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          transition: "all 0.2s",
+                          border: active ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                          background: active ? "var(--accent-glow)" : "var(--bg-surface)",
+                          color: active ? "var(--accent-primary)" : "var(--text-secondary)",
+                        }}
+                      >
+                        {yr === 5 ? "Yr 5+" : `Yr ${yr}`}
+                      </button>
+                    );
+                  })}
+
                   <label style={{
                     display: "flex",
                     alignItems: "center",
@@ -4700,7 +4957,7 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId) && (
+                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId || yearFilter.size > 0) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
                     Filtered: Showing {attendanceUnits.length} of {tallyUnits.length} records
@@ -4714,6 +4971,19 @@ export default function AdminEventsPage() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
                   <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
                   <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 16 }}>Synchronizing records...</p>
+                </div>
+              </div>
+            ) : attendanceError ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center", maxWidth: 420 }}>
+                  <div style={{ width: 80, height: 80, borderRadius: "50%", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ef4444" }}>
+                    <AlertTriangle size={36} />
+                  </div>
+                  <h3 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)" }}>Couldn&apos;t load the roster</h3>
+                  <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>{attendanceError}</p>
+                  <button className="btn btn-primary" style={{ borderRadius: 14, marginTop: 8, gap: 8 }} onClick={() => { if (activeEventId) viewAttendance(activeEventId); }}>
+                    <RefreshCw size={16} /> Retry
+                  </button>
                 </div>
               </div>
             ) : (

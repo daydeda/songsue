@@ -4,7 +4,7 @@ import { events, eventSessions, attendance } from "@/db/schema";
 import { count, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { sessionInputSchema } from "@/lib/event-schema";
 
 const eventUpdateSchema = z.object({
@@ -16,7 +16,8 @@ const eventUpdateSchema = z.object({
   registrationCloseTime: z.string().datetime().optional().nullable(),
   quota: z.number().int().min(0).optional().nullable(),
   location: z.string().optional().nullable(),
-  pointsAwarded: z.number().int().min(0).optional().nullable(),
+  pointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
+  individualPointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
@@ -32,9 +33,18 @@ const eventUpdateSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Restrict the event to the current first-year intake (id-prefix derived).
+  firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event — separate from allowedRoles.
   managedByRoles: z.array(z.string()).optional().nullable(),
-});
+}).refine(
+  // Only enforce when BOTH ends are supplied — this is a partial update.
+  (d) => {
+    if (!d.startTime || !d.endTime) return true;
+    return new Date(d.endTime) > new Date(d.startTime);
+  },
+  { message: "endTime must be after startTime", path: ["endTime"] },
+);
 
 // PUT /api/admin/events/[id] — Update event
 export async function PUT(
@@ -49,7 +59,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const data = eventUpdateSchema.parse(body);
 
     // When posters are provided, normalize them and keep the imageUrl cover in
@@ -61,10 +71,7 @@ export async function PUT(
     }
     const coverFromPosters = posters !== undefined ? (posters[0] ?? null) : undefined;
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0] ||
-      req.headers.get("x-real-ip") ||
-      "127.0.0.1";
+    const ip = getClientIp(req);
 
     let updated: typeof events.$inferSelect;
     try {
@@ -85,6 +92,7 @@ export async function PUT(
             ...(data.quota !== undefined && { quota: data.quota }),
             ...(data.location !== undefined && { location: data.location }),
             ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
+            ...(data.individualPointsAwarded !== undefined && { individualPointsAwarded: data.individualPointsAwarded }),
             ...(posters !== undefined
               ? { imageUrls: posters, imageUrl: coverFromPosters }
               : (data.imageUrl !== undefined && { imageUrl: data.imageUrl })),
@@ -101,6 +109,7 @@ export async function PUT(
             ...(data.allowedMajors !== undefined && {
               allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null
             }),
+            ...(data.firstYearOnly !== undefined && { firstYearOnly: data.firstYearOnly }),
             ...(data.managedByRoles !== undefined && {
               managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null
             }),
@@ -228,10 +237,7 @@ export async function DELETE(
       await AuditService.logActionInternal(tx, {
         actorId: session.user!.id!,
         action: `Deleted Event: ${deleted.title} (${deleted.id})`,
-        ipAddress:
-          req.headers.get("x-forwarded-for")?.split(",")[0] ||
-          req.headers.get("x-real-ip") ||
-          "127.0.0.1",
+        ipAddress: getClientIp(req),
       });
     });
 

@@ -1,6 +1,8 @@
-import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, bigserial, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
+import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
+import type { ShopDeliveryTier } from "@/lib/shop-delivery";
 
 export const houses = pgTable("houses", {
   id: text("id").primaryKey(), // e.g. 'red', 'blue', 'green', 'yellow'
@@ -46,6 +48,9 @@ export const users = pgTable("users", {
 }, (table) => ([
   index("idx_users_profile_completed").on(table.profileCompleted),
   index("idx_users_house_id").on(table.houseId),
+  // Role-filtered admin/leaderboard queries and signup-time ordering/reporting.
+  index("idx_users_role").on(table.role),
+  index("idx_users_created_at").on(table.createdAt),
 ]));
 
 export const authenticators = pgTable(
@@ -121,7 +126,13 @@ export const events = pgTable("events", {
   registrationCloseTime: timestamp("registration_close_time", { withTimezone: true }),
   quota: integer("quota"),
   location: text("location"),
+  // House points: awarded to the WINNING house (most distinct attendees) at
+  // event-end. See award-points.ts checkAndAwardPastEventPoints.
   pointsAwarded: integer("points_awarded").default(0),
+  // Individual points: awarded to EACH attendee, added to users.points the moment
+  // a check-in becomes 'attended'. Per-day on multi-day events (each session
+  // check-in awards again). See ScannerService.awardAttendanceIndividualPoints.
+  individualPointsAwarded: integer("individual_points_awarded").default(0),
   // Cover poster — kept as the single source for thumbnails (admin list, etc.).
   // Always mirrors imageUrls[0] so legacy single-image consumers keep working.
   imageUrl: text("image_url"),
@@ -156,6 +167,11 @@ export const events = pgTable("events", {
   // majors (ANI, DG, DII, MMIT, SE). Combined with allowedRoles as AND — a user
   // must satisfy both. Admin roles always bypass.
   allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  // When true, only FIRST-YEAR students may see/register for this event — derived
+  // from the student-id prefix (CMU Buddhist-era admission year, e.g. ids starting
+  // with "69" for the 2026 intake). The current first-year prefix is computed at
+  // runtime in src/lib/event-access.ts (currentFirstYearPrefix). Admin roles bypass.
+  firstYearOnly: boolean("first_year_only").notNull().default(false),
   // Set once the event-winner house bonus has been awarded. This is the single
   // source of truth for "already processed" — never infer it from score_history,
   // because mid-event individual/milestone/manual rows also carry this eventId.
@@ -204,6 +220,8 @@ export const attendance = pgTable("attendance", {
   index("idx_attendance_event_student").on(table.eventId, table.studentId),
   index("idx_attendance_student").on(table.studentId),
   index("idx_attendance_checkin_time").on(table.checkInTime),
+  // Attendee/head-count roll-ups filter by event AND status (registered/attended).
+  index("idx_attendance_event_status").on(table.eventId, table.status),
 ]));
 
 // Score history log per house per activity (FE-08)
@@ -234,6 +252,14 @@ export const scoreHistory = pgTable("score_history", {
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow(),
+  // Monotonic insertion-order tiebreaker for the hash chain. Appends are
+  // serialized by an advisory lock, but two can still land in the same
+  // millisecond — `timestamp` then can't deterministically order them, which
+  // forks the chain on tip selection (ORDER BY ... DESC LIMIT 1) and raises false
+  // tamper alarms during verification (ORDER BY ... ASC). `seq` is a strictly
+  // increasing bigint backed by its own sequence (bigserial), DB-assigned via
+  // nextval on insert — the app never sets it. Order the chain by `seq` instead.
+  seq: bigserial("seq", { mode: "number" }).notNull(),
   // Deliberately NO foreign keys to users.id: actor_id/target_id are baked into
   // the tamper-evident row hashes, so they must survive user deletion unchanged
   // (ON DELETE SET NULL would rewrite rows and break the chain).
@@ -248,6 +274,9 @@ export const auditLogs = pgTable("audit_logs", {
   // (inside the advisory lock), and the admin page sorts by timestamp —
   // without this index both degrade to full-table sorts as the log grows.
   index("idx_audit_logs_timestamp").on(table.timestamp),
+  // Deterministic chain ordering tiebreaker (see seq above): tip selection and
+  // verification ORDER BY seq instead of the millisecond-granular timestamp.
+  index("idx_audit_logs_seq").on(table.seq),
 ]));
 
 // ─── Relations ────────────────────────────────────────────────────────────────
@@ -333,7 +362,13 @@ export const forms = pgTable("forms", {
   title: text("title").notNull(),
   description: text("description"),
   questions: jsonb("questions").notNull(),
+  // House points: awarded to the house with the most submissions when the form
+  // closes (winner-take-all). See award-points.ts checkAndAwardClosedForms.
   pointsAwarded: integer("points_awarded").default(0),
+  // Individual points: awarded to EACH student the moment they submit the form,
+  // added to users.points. Independent of the house contest above; not clawed
+  // back if the form re-opens. See POST /api/events/[id]/form.
+  individualPointsAwarded: integer("individual_points_awarded").default(0),
   isActive: boolean("is_active").default(true),
   isAwarded: boolean("is_awarded").default(false),
   // Optional auto open/close window. NULL on either side = unbounded that side.
@@ -347,7 +382,11 @@ export const forms = pgTable("forms", {
   assignedUserIds: jsonb("assigned_user_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+}, (table) => ([
+  // Every "forms for this event" lookup filters by event_id; without this the
+  // forms table (previously index-less) was full-scanned per event load.
+  index("idx_forms_event_id").on(table.eventId),
+]));
 
 export const formSubmissions = pgTable("form_submissions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -407,6 +446,13 @@ export const shopSettings = pgTable("shop_settings", {
   paymentInfo: text("payment_info").notNull().default(""),
   // Public URL (uploads bucket) of the PromptPay/bank QR image. Not sensitive.
   qrImageUrl: text("qr_image_url"),
+  // Delivery / fulfillment (Phase 2). deliveryEnabled is the master on/off for
+  // offering delivery at checkout. deliveryFee is the shop-wide FALLBACK fee (฿)
+  // used only for products that don't set their own deliveryFee/deliveryTiers
+  // (see shop_products); pickupInfo is the where/when-to-collect text for pickup.
+  deliveryEnabled: boolean("delivery_enabled").notNull().default(false),
+  deliveryFee: integer("delivery_fee").notNull().default(0),
+  pickupInfo: text("pickup_info").notNull().default(""),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -432,6 +478,28 @@ export const shopProducts = pgTable("shop_products", {
   opensAt: timestamp("opens_at", { withTimezone: true }),
   closesAt: timestamp("closes_at", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),
+  // Audience targeting — mirrors events (shares src/lib/event-access.ts). Each
+  // axis is AND-combined; an empty/NULL array = no restriction on that axis.
+  // allowedRoles: only these roles see the product (empty = all roles).
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  // allowedMajors: only these majors (ANI, DG, DII, MMIT, SE) see it (empty = all).
+  allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  // Thai / international student targeting (derived from student id). Both false
+  // is treated as both true by the predicate. Shop admins always see everything.
+  targetThai: boolean("target_thai").default(true),
+  targetInternational: boolean("target_international").default(true),
+  // Generic per-product personalization fields (e.g. jersey name/number). Array of
+  // { key, label, type: text|number|select, required, maxLength|min|max|options }.
+  // See src/lib/shop-custom-fields.ts. NULL/[] = no custom fields. Buyers' answers
+  // are snapshotted onto shop_order_items.custom_values at checkout.
+  customFields: jsonb("custom_fields").$type<ShopCustomField[]>(),
+  // Per-product delivery pricing (overrides shop_settings.deliveryFee fallback).
+  // deliveryFee = base ฿ fee (NULL = use the shop-wide fallback); deliveryTiers =
+  // ascending quantity thresholds [{minQty,fee}] where the highest applicable
+  // minQty wins ("order more than N → fee goes up"). An order's total shipping is
+  // the SUM of each product's computed fee. See src/lib/shop-delivery.ts.
+  deliveryFee: integer("delivery_fee"),
+  deliveryTiers: jsonb("delivery_tiers").$type<ShopDeliveryTier[]>(),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -446,6 +514,11 @@ export const shopVariants = pgTable("shop_variants", {
   label: text("label").notNull(), // e.g. "S", "M", "L", "Standard", "Other"
   // Total units available for this variant. NULL = unlimited stock.
   stock: integer("stock"),
+  // Price surcharge in whole ฿ added on top of the product's base price for this
+  // variant — e.g. a special/oversized size (XXL, 3XL) that costs more. 0 = no
+  // surcharge (the common case). The order line snapshots the resolved unit price
+  // (product.price + priceDelta) at checkout, so later edits don't move old orders.
+  priceDelta: integer("price_delta").notNull().default(0),
   // When true this is an "Other (specify)" option: the buyer must type a value,
   // which is appended to the snapshot label on their order line.
   allowCustom: boolean("allow_custom").notNull().default(false),
@@ -467,6 +540,15 @@ export const shopOrders = pgTable("shop_orders", {
   totalAmount: integer("total_amount").notNull().default(0),
   // Optional buyer note (e.g. name on the slip, pickup preference).
   note: text("note"),
+  // Fulfillment (Phase 2): 'pickup' (default) | 'delivery'. For delivery the buyer
+  // supplies recipient name/phone/address (PDPA: personal data, shop-admin only)
+  // and pays shippingFee (฿) — a snapshot of shop_settings.delivery_fee folded into
+  // totalAmount at checkout. Pickup orders carry NULL recipient fields + fee 0.
+  fulfillment: text("fulfillment").notNull().default("pickup"),
+  recipientName: text("recipient_name"),
+  recipientPhone: text("recipient_phone"),
+  shippingAddress: text("shipping_address"),
+  shippingFee: integer("shipping_fee").notNull().default(0),
   reviewedBy: text("reviewed_by"),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   rejectionReason: text("rejection_reason"),
@@ -486,10 +568,15 @@ export const shopOrderItems = pgTable("shop_order_items", {
   variantId: uuid("variant_id").references(() => shopVariants.id, { onDelete: "set null" }),
   productName: text("product_name").notNull(),
   variantLabel: text("variant_label").notNull(),
+  // Snapshot of the buyer's answers to the product's custom fields at checkout:
+  // [{ label, value }] (self-describing, immune to later config edits). NULL = the
+  // product had no custom fields / none were filled. See src/lib/shop-custom-fields.ts.
+  customValues: jsonb("custom_values").$type<ShopCustomValue[]>(),
   unitPrice: integer("unit_price").notNull(),
   quantity: integer("quantity").notNull(),
 }, (table) => ([
   index("idx_shop_order_items_order").on(table.orderId),
+  index("idx_shop_order_items_product").on(table.productId),
   index("idx_shop_order_items_variant").on(table.variantId),
 ]));
 
@@ -556,6 +643,10 @@ export const calendarEntries = pgTable("calendar_entries", {
   allowedMajors: jsonb("allowed_majors").$type<string[]>(),
   targetThai: boolean("target_thai").default(true),
   targetInternational: boolean("target_international").default(true),
+  // Recurrence rule: "none" | "daily" | "weekly" | "monthly". Until date caps the
+  // series; null means the rule applies indefinitely (grid bounded by window anyway).
+  recurrence: text("recurrence").notNull().default("none"),
+  recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
   // Creator user id, no FK (like audit_logs.actorId historically / announcements)
   // so creator deletion never blocks or cascades.
   createdBy: text("created_by"),
@@ -593,86 +684,17 @@ export const calendarFeedTokensRelations = relations(calendarFeedTokens, ({ one 
 }));
 
 // ============================================================================
-// GAME PLATFORM & BATTLE TABLES (OX, etc.)
+// RATE LIMIT
+// Durable, Postgres-backed rate limiter — replaces an in-memory Map that reset
+// on every deploy and didn't share state across instances. One row per limiter
+// key: `count` is the number of hits in the current window, `expiresAt` is when
+// that window resets. A sweeper deletes expired rows using the expires_at index.
+// No FKs / relations — it's cross-cutting infrastructure.
 // ============================================================================
-
-export const gameRooms = pgTable("game_rooms", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  roomCode: text("room_code").notNull(),
-  gameType: text("game_type").notNull(), // 'ox', etc.
-  hostId: text("host_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  guestId: text("guest_id").references(() => users.id, { onDelete: "cascade" }),
-  gameState: jsonb("game_state").notNull(), // { board: number[], history: ... }
-  currentTurn: integer("current_turn").notNull().default(1), // 1 = host, 2 = guest
-  status: text("status").notNull().default("waiting"), // 'waiting', 'connecting', 'active', 'finished', 'expired'
-  winnerId: text("winner_id").references(() => users.id, { onDelete: "set null" }),
-  finishReason: text("finish_reason"), // 'win', 'draw', 'forfeit', 'resign', 'disconnect'
-  turnDeadline: timestamp("turn_deadline", { withTimezone: true }),
+export const rateLimit = pgTable("rate_limit", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ([
-  index("idx_game_rooms_code").on(table.roomCode),
-  index("idx_game_rooms_status").on(table.status),
+  index("idx_rate_limit_expires_at").on(table.expiresAt),
 ]));
-
-export const webrtcSignals = pgTable("webrtc_signals", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  roomId: uuid("room_id").notNull().references(() => gameRooms.id, { onDelete: "cascade" }),
-  role: text("role").notNull(), // 'host', 'guest'
-  sdpOffer: text("sdp_offer"),
-  sdpAnswer: text("sdp_answer"),
-  iceCandidates: jsonb("ice_candidates").$type<any[]>().default([]),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ([
-  uniqueIndex("idx_webrtc_signals_room_role").on(table.roomId, table.role),
-]));
-
-export const gameStats = pgTable("game_stats", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  gameType: text("game_type").notNull(), // 'ox', etc.
-  wins: integer("wins").notNull().default(0),
-  losses: integer("losses").notNull().default(0),
-  draws: integer("draws").notNull().default(0),
-  winStreak: integer("win_streak").notNull().default(0),
-  bestStreak: integer("best_streak").notNull().default(0),
-  totalGames: integer("total_games").notNull().default(0),
-  lastPlayedAt: timestamp("last_played_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ([
-  uniqueIndex("idx_game_stats_user_game").on(table.userId, table.gameType),
-]));
-
-export const gameRoomsRelations = relations(gameRooms, ({ one, many }) => ({
-  host: one(users, {
-    fields: [gameRooms.hostId],
-    references: [users.id],
-    relationName: "host",
-  }),
-  guest: one(users, {
-    fields: [gameRooms.guestId],
-    references: [users.id],
-    relationName: "guest",
-  }),
-  winner: one(users, {
-    fields: [gameRooms.winnerId],
-    references: [users.id],
-    relationName: "winner",
-  }),
-  webrtcSignals: many(webrtcSignals),
-}));
-
-export const webrtcSignalsRelations = relations(webrtcSignals, ({ one }) => ({
-  room: one(gameRooms, {
-    fields: [webrtcSignals.roomId],
-    references: [gameRooms.id],
-  }),
-}));
-
-export const gameStatsRelations = relations(gameStats, ({ one }) => ({
-  user: one(users, {
-    fields: [gameStats.userId],
-    references: [users.id],
-  }),
-}));
-

@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { shopOrderItems, shopOrders, users } from "@/db/schema";
 import { isShopAdmin } from "@/lib/shop-auth";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 // GET /api/admin/shop/orders — every order with buyer info + line items, newest
 // first, for the admin review queue. The slip is fetched separately (auth-gated)
 // via /api/shop/orders/[id]/slip.
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await auth();
     if (!isShopAdmin(session)) {
@@ -27,6 +28,11 @@ export async function GET() {
         slipPath: shopOrders.slipPath,
         createdAt: shopOrders.createdAt,
         reviewedAt: shopOrders.reviewedAt,
+        fulfillment: shopOrders.fulfillment,
+        shippingFee: shopOrders.shippingFee,
+        recipientName: shopOrders.recipientName,
+        recipientPhone: shopOrders.recipientPhone,
+        shippingAddress: shopOrders.shippingAddress,
         buyerName: users.name,
         buyerStudentId: users.studentId,
         buyerNickname: users.nickname,
@@ -34,6 +40,15 @@ export async function GET() {
       .from(shopOrders)
       .leftJoin(users, eq(shopOrders.buyerId, users.id))
       .orderBy(desc(shopOrders.createdAt));
+
+    // Bulk PII read — the review queue exposes every buyer/recipient name, phone and
+    // shipping address. Keep a tamper-evident record of who loaded it (PDPA),
+    // mirroring the attendance-list / export access logs.
+    await AuditService.logAction({
+      actorId: session!.user!.id!,
+      action: `Viewed shop order review queue (${orders.length} orders, included buyer/recipient contact + shipping address)`,
+      ipAddress: getClientIp(req),
+    });
 
     const orderIds = orders.map((o) => o.id);
     const items = orderIds.length
@@ -49,10 +64,15 @@ export async function GET() {
       hasSlip: Boolean(o.slipPath),
       createdAt: o.createdAt,
       reviewedAt: o.reviewedAt,
+      fulfillment: o.fulfillment,
+      shippingFee: o.shippingFee,
+      recipientName: o.recipientName,
+      recipientPhone: o.recipientPhone,
+      shippingAddress: o.shippingAddress,
       buyer: { name: o.buyerName, studentId: o.buyerStudentId, nickname: o.buyerNickname },
       items: items
         .filter((i) => i.orderId === o.id)
-        .map((i) => ({ productName: i.productName, variantLabel: i.variantLabel, unitPrice: i.unitPrice, quantity: i.quantity })),
+        .map((i) => ({ productName: i.productName, variantLabel: i.variantLabel, customValues: i.customValues ?? null, unitPrice: i.unitPrice, quantity: i.quantity })),
     }));
 
     return NextResponse.json(result);

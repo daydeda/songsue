@@ -5,8 +5,10 @@ import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 import { AuditService } from "../audit/audit.service";
 import { canGiveIndividualScore } from "@/lib/admin-access";
+import { awardIndividualPoints } from "@/lib/award-individual-points";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
+type DBTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export interface ScanResult {
   status: "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "not_found" | "quota_full" | "walk_ins_disabled" | "found" | "not_registered" | "error";
@@ -81,6 +83,10 @@ export class ScannerService {
     // Human-readable day label for audit logs (e.g. "Day 1"). Sessions are ordered
     // by sortOrder; the title overrides when set.
     const sessionLabel = session.title?.trim() || "this session";
+
+    // Per-attendee points this event grants on each attended check-in (0 = none).
+    // Awarded inside every "attended" transition below, in the same transaction.
+    const individualPoints = event.individualPointsAwarded ?? 0;
 
     const hasMedicalCondition = this.evaluateMedicalCondition(student);
 
@@ -189,6 +195,17 @@ export class ScannerService {
         // Atomic UPDATE: locks the row, increments, and returns the new value in
         // one round-trip. T2 blocks here until T1 commits, then reads the
         // already-incremented value — no separate SELECT FOR UPDATE needed.
+        // Capture the TRUE pre-update balance under a row lock first: deriving it as
+        // (newPoints - parsedScore) is wrong whenever GREATEST clamps a deduction to
+        // 0 (it would report a "from" value that never existed), which also skews the
+        // milestone math and the audit line below.
+        const [prevRow] = await tx
+          .select({ points: users.points })
+          .from(users)
+          .where(eq(users.id, student.id))
+          .for("update");
+        const previousPoints = prevRow?.points ?? 0;
+
         const [result] = await tx
           .update(users)
           // GREATEST floors at 0 so a deduction can never push a student into a negative balance.
@@ -196,8 +213,7 @@ export class ScannerService {
           .where(eq(users.id, student.id))
           .returning({ newPoints: users.points });
 
-        newPoints = result?.newPoints ?? parsedScore;
-        const previousPoints = newPoints - parsedScore;
+        newPoints = result?.newPoints ?? previousPoints;
 
         if (student.houseId) {
           const logReason = params.reason?.trim()
@@ -274,6 +290,15 @@ export class ScannerService {
             .returning({ id: attendance.id });
 
           if (rows.length > 0) {
+            await this.awardAttendanceIndividualPoints(tx, {
+              studentId: student.id,
+              studentName: student.name,
+              houseId: student.houseId,
+              eventId,
+              eventTitle: event.title,
+              points: individualPoints,
+              sessionLabel,
+            });
             await AuditService.logActionInternal(tx, {
               actorId,
               targetId: student.id,
@@ -291,7 +316,15 @@ export class ScannerService {
         return { status: "success", student: studentWithMedical, preTestWarning };
       }
 
-      // Scan only — staff sees medical alert before deciding to confirm
+      // Scan only — staff sees medical alert before deciding to confirm. PDPA: record
+      // the medical-detail view (admin/super_admin only) since no check-in transaction
+      // logs it on this non-mutating path.
+      if (canViewMedicalDetail && hasMedicalCondition) {
+        await this.logMedicalDetailView({
+          actorId, targetId: student.id, studentName: student.name,
+          eventTitle: event.title, ipAddress, context: "registered scan",
+        });
+      }
       return { status: "pending_confirmation", student: studentWithMedical };
     }
 
@@ -325,6 +358,15 @@ export class ScannerService {
               .returning({ id: attendance.id });
 
             if (rows.length > 0) {
+              await this.awardAttendanceIndividualPoints(tx, {
+                studentId: student.id,
+                studentName: student.name,
+                houseId: student.houseId,
+                eventId,
+                eventTitle: event.title,
+                points: individualPoints,
+                sessionLabel,
+              });
               await AuditService.logActionInternal(tx, {
                 actorId,
                 targetId: student.id,
@@ -340,6 +382,12 @@ export class ScannerService {
           }
           const preTestWarning = await this.getPreTestWarning(eventId, student.id);
           return { status: "success", student: studentWithMedical, preTestWarning };
+        }
+        if (canViewMedicalDetail && hasMedicalCondition) {
+          await this.logMedicalDetailView({
+            actorId, targetId: student.id, studentName: student.name,
+            eventTitle: event.title, ipAddress, context: "once-mode scan",
+          });
         }
         return { status: "pending_confirmation", student: studentWithMedical };
       }
@@ -418,6 +466,15 @@ export class ScannerService {
 
           if (inserted.length === 0) throw new Error("ALREADY_CHECKED_IN");
 
+          await this.awardAttendanceIndividualPoints(tx, {
+            studentId: student.id,
+            studentName: student.name,
+            houseId: student.houseId,
+            eventId,
+            eventTitle: event.title,
+            points: individualPoints,
+            sessionLabel,
+          });
           await AuditService.logActionInternal(tx, {
             actorId,
             targetId: student.id,
@@ -442,8 +499,52 @@ export class ScannerService {
       return { status: "success_walk_in", student: studentWithMedical, preTestWarning };
     }
 
-    // Walk-in scan only — staff sees medical alert before deciding to confirm
+    // Walk-in scan only — staff sees medical alert before deciding to confirm. PDPA:
+    // record the medical-detail view (admin/super_admin only); the non-mutating scan
+    // path has no check-in transaction to log it.
+    if (canViewMedicalDetail && hasMedicalCondition) {
+      await this.logMedicalDetailView({
+        actorId, targetId: student.id, studentName: student.name,
+        eventTitle: event.title, ipAddress, context: "walk-in scan",
+      });
+    }
     return { status: "pending_confirmation", isWalkIn: true, student: studentWithMedical };
+  }
+
+  /**
+   * Awards an event's per-attendee `individualPointsAwarded` to a student the moment
+   * their check-in becomes 'attended'. Runs INSIDE the caller's check-in transaction,
+   * so the points and the attendance row commit together — and only when the row
+   * actually transitioned (the callers guard on rows.length > 0), which keeps it
+   * idempotent: a re-scan that updates 0 rows never re-awards. Per-day by design —
+   * each attended session check-in awards again. No-op when the event grants 0.
+   *
+   * Mirrors the manual 'score' action: increments users.points, fires the same 100-pt
+   * milestone house bonus, and writes a score_history row. No audit log here — the
+   * check-in itself is already audited by each caller.
+   */
+  private static async awardAttendanceIndividualPoints(
+    tx: DBTransaction,
+    params: {
+      studentId: string;
+      studentName: string;
+      houseId: string | null;
+      eventId: string;
+      eventTitle: string;
+      points: number;
+      sessionLabel: string;
+    }
+  ): Promise<void> {
+    const { studentId, studentName, houseId, eventId, eventTitle, points, sessionLabel } = params;
+    await awardIndividualPoints(tx, {
+      studentId,
+      studentName,
+      houseId,
+      eventId,
+      points,
+      reason: `Awarded ${points} individual points to ${studentName} for attending "${eventTitle}" (${sessionLabel})`,
+      activityLabel: eventTitle,
+    });
   }
 
   /**
@@ -477,6 +578,33 @@ export class ScannerService {
     if (submitted) return null;
 
     return { formId: preTest.id, title: preTest.title };
+  }
+
+  /**
+   * Best-effort audit of an admin viewing a student's medical DETAIL at the scanner
+   * on a non-mutating scan (the 'pending_confirmation' path), which otherwise leaves
+   * no trail — the check-in transactions log the confirm, but a scan that stops at
+   * the medical alert does not. PDPA: medical-detail reads must be logged. Swallows
+   * its own errors so a transient audit failure never blocks check-in at a live event.
+   */
+  private static async logMedicalDetailView(params: {
+    actorId: string;
+    targetId: string;
+    studentName: string;
+    eventTitle: string;
+    ipAddress: string;
+    context: string;
+  }): Promise<void> {
+    try {
+      await AuditService.logAction({
+        actorId: params.actorId,
+        targetId: params.targetId,
+        action: `Viewed medical detail at scanner (${params.context}) for ${params.studentName} — event "${params.eventTitle}"`,
+        ipAddress: params.ipAddress,
+      });
+    } catch (e) {
+      console.error("Failed to audit scanner medical-detail view:", e);
+    }
   }
 
   static async searchStudents(query: string) {

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { attendance, events, eventSessions } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -116,16 +116,34 @@ export async function GET(
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
-    // Bulk PII export — keep a tamper-evident record of who pulled it (PDPA),
-    // and note when health info was part of the export. Mirrors the CSV report
-    // and the attendance-list access log.
+    // Defensive cap: the whole roster + the xlsx buffer are built in memory (xlsx
+    // can't stream). Per-event this is bounded, but refuse a pathologically large
+    // export rather than risk OOM — the admin can export one day at a time instead.
+    const MAX_EXPORT_ROWS = 50000;
+    if (list.length > MAX_EXPORT_ROWS) {
+      return NextResponse.json(
+        { error: `This export is too large (${list.length} rows). Please use the day filter to export one session at a time.` },
+        { status: 413 }
+      );
+    }
+
+    // Bulk PII export — keep a tamper-evident record of who pulled it (PDPA), and
+    // note the health info in the export. Mirrors the CSV report and the
+    // attendance-list access log.
+    //
+    // The "Meds Check" (medsCheckOption) column is in EVERY export, so every export
+    // carries health info regardless of role — the descriptor must say so, or a
+    // plain admin's medical-data export looks clean in the log. super_admin
+    // additionally receives full medical detail + emergency-contact columns; a plain
+    // admin gets only the meds-check signal. Record which, so the log never
+    // understates the exposure.
+    const healthNote = canViewMedical
+      ? ", included health detail + emergency contacts"
+      : ", included meds-check status";
     await AuditService.logAction({
       actorId: session.user.id!,
-      action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${canViewMedical ? ", included health info" : ""})`,
-      ipAddress:
-        req.headers.get("x-forwarded-for")?.split(",")[0] ||
-        req.headers.get("x-real-ip") ||
-        "127.0.0.1",
+      action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${healthNote})`,
+      ipAddress: getClientIp(req),
     });
 
     // Same nationality heuristic as the admin events UI: the first of the last
@@ -228,7 +246,8 @@ export async function GET(
       if (orphans.length > 0) groups.push({ label: "Unassigned", rows: orphans });
     }
 
-    // Per-scope tallies, reused for each day and the event-wide total.
+    // Per-DAY tallies: one attendance row per person per day, so counting raw
+    // rows is correct here (a single day has ≤1 row per person).
     const statsFor = (rows: Att[]) => {
       const pre = rows.filter((a) => a.method === "pre-registered");
       const preTotal = pre.length;
@@ -237,6 +256,35 @@ export async function GET(
       const noShow = Math.max(0, preTotal - preAttended);
       const checkedIn = rows.filter((a) => a.status === "attended").length;
       const distinct = new Set(rows.map((a) => a.studentId)).size;
+      const pct = preTotal > 0 ? (noShow / preTotal) * 100 : 0;
+      return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, pct };
+    };
+
+    // Event-wide ("ALL DAYS") tallies must COUNT EACH STUDENT ONCE, not sum the
+    // per-day rows: a person present on Day 1 and Day 2 has one row per day, so
+    // summing double-counts them. Collapse to one unit per student — keyed exactly
+    // like the on-screen "All days" tallies (studentId, then user.studentId, then
+    // the row id) — and classify each person across all their day rows: pre-
+    // registered if ANY day was a pre-registration, attended if present on ANY day,
+    // walk-in only if EVERY day was a walk-in. Mirrors the UI summary in
+    // src/app/admin/events/page.tsx so the export total matches the screen.
+    const distinctStatsFor = (rows: Att[]) => {
+      const byStudent = new Map<string, Att[]>();
+      for (const a of rows) {
+        const k = a.studentId || a.user?.studentId || a.id;
+        const arr = byStudent.get(k);
+        if (arr) arr.push(a);
+        else byStudent.set(k, [a]);
+      }
+      const units = [...byStudent.values()];
+      const preTotal = units.filter((u) => u.some((a) => a.method === "pre-registered")).length;
+      const preAttended = units.filter(
+        (u) => u.some((a) => a.method === "pre-registered") && u.some((a) => a.status === "attended")
+      ).length;
+      const walkIns = units.filter((u) => u.every((a) => a.method === "walk-in")).length;
+      const noShow = Math.max(0, preTotal - preAttended);
+      const checkedIn = units.filter((u) => u.some((a) => a.status === "attended")).length;
+      const distinct = units.length;
       const pct = preTotal > 0 ? (noShow / preTotal) * 100 : 0;
       return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, pct };
     };
@@ -270,8 +318,12 @@ export async function GET(
       "Day", "Pre-registered", "Attended", "No-shows", "No-show %",
       "Walk-ins", "Total Checked-in", "Distinct Students",
     ];
-    const summaryRowFor = (label: string, rows: Att[]): Record<string, string | number> => {
-      const s = statsFor(rows);
+    const summaryRowFor = (
+      label: string,
+      rows: Att[],
+      stats: (rows: Att[]) => ReturnType<typeof statsFor> = statsFor
+    ): Record<string, string | number> => {
+      const s = stats(rows);
       return {
         "Day": label,
         "Pre-registered": s.preTotal,
@@ -287,7 +339,13 @@ export async function GET(
     if (isMultiDay) {
       for (const g of groups) summaryRows.push(summaryRowFor(g.label, g.rows));
     }
-    summaryRows.push(summaryRowFor(isMultiDay ? "ALL DAYS (total)" : "Total", list));
+    // Multi-day total dedupes per student (distinctStatsFor); single-day already
+    // has ≤1 row per person, so the raw statsFor total is already distinct.
+    summaryRows.push(
+      isMultiDay
+        ? summaryRowFor("ALL DAYS (distinct students)", list, distinctStatsFor)
+        : summaryRowFor("Total", list)
+    );
     const summaryWs = XLSX.utils.json_to_sheet(summaryRows, { header: summaryHeader });
     summaryWs["!autofilter"] = { ref: summaryWs["!ref"] || "A1" };
     summaryWs["!cols"] = summaryHeader.map((h) => ({ wch: Math.max(14, h.length + 2) }));

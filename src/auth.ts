@@ -7,11 +7,33 @@ import { db } from "@/db"
 import { accounts, sessions, users, verificationTokens } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { AuditService } from "@/modules/audit/audit.service"
+import { isSiteMoved } from "@/lib/site-moved"
 
-// Comma-separated list in the SUPER_ADMIN_EMAILS env var; falls back to the
-// original hardcoded owner address so existing deployments keep working until
-// the env var is set everywhere.
-const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS ?? "daydedaa@gmail.com")
+// Fail fast at runtime if AUTH_URL is missing in production: with trustHost:true an
+// unset AUTH_URL lets Auth.js derive the OAuth callback host from the request Host
+// header (host-header injection / callback redirection). Skipped during `next build`
+// (NEXT_PHASE), where runtime env vars aren't provided yet.
+//
+// Also skipped on the retired "we've moved" deploy: that deployment intentionally has
+// no AUTH_URL/DB env, and the edge proxy imports this module on EVERY request — so a
+// throw here at module-load crashed the whole site with a bare 500 (no Content-Type),
+// which browsers download instead of render, and the moved notice never got to run.
+if (
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build" &&
+  !isSiteMoved() &&
+  !process.env.AUTH_URL
+) {
+  throw new Error(
+    "AUTH_URL must be set in production (trustHost:true relies on it; otherwise the OAuth callback host comes from the Host header)."
+  )
+}
+
+// Comma-separated list in the SUPER_ADMIN_EMAILS env var. No hardcoded fallback: a
+// personal address baked into source is a config landmine (and a non-@cmu.ac.th
+// account). Existing super_admins already hold the role in the DB; set this env var
+// (Portainer) to keep auto-promoting official accounts on sign-in.
+const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS ?? "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
@@ -302,10 +324,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         let ipAddress = "unknown";
         try {
           const h = await headers();
-          ipAddress =
-            h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-            h.get("x-real-ip") ||
-            "unknown";
+          // Prefer the un-spoofable X-Real-IP (nginx overwrites it); fall back to
+          // the LAST X-Forwarded-For hop (the real IP nginx appends), never the
+          // client-supplied leftmost entry. Mirrors getClientIp in audit.service.ts.
+          const realIp = h.get("x-real-ip")?.trim();
+          const xffHops = h.get("x-forwarded-for")?.split(",").map((s) => s.trim()).filter(Boolean);
+          ipAddress = realIp || xffHops?.[xffHops.length - 1] || "unknown";
         } catch {
           // headers() can throw outside a request scope; keep "unknown"
         }

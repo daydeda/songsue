@@ -3,7 +3,43 @@ import { db } from "@/db";
 import { attendance, events } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+
+// Columns read for a normal/staff roster. Medical free-text + emergency contacts
+// are fetched so super_admin/admin get full detail and registration/organizer can
+// have the medical-CATEGORY signal derived below; they are stripped per-role in
+// the sanitize step.
+const FULL_USER_COLUMNS = {
+  id: true,
+  name: true,
+  nickname: true,
+  studentId: true,
+  major: true,
+  phone: true,
+  role: true,
+  roles: true,
+  chronicDiseases: true,
+  medicalHistory: true,
+  drugAllergies: true,
+  foodAllergies: true,
+  dietaryRestrictions: true,
+  faintingHistory: true,
+  emergencyMedication: true,
+  emergencyContacts: true,
+} as const;
+
+// Thin-roster roles (smo / club_president / major_president) only ever receive
+// identity + check-in (see sanitize step), so don't even fetch phone, emergency
+// contacts, or medical detail. A strict subset of FULL_USER_COLUMNS.
+const THIN_USER_COLUMNS = {
+  id: true,
+  name: true,
+  nickname: true,
+  studentId: true,
+  major: true,
+  role: true,
+  roles: true,
+} as const;
 
 export async function GET(
   req: Request,
@@ -59,29 +95,16 @@ export async function GET(
           columns: { id: true, title: true, sortOrder: true, startTime: true, endTime: true },
         },
         user: {
-          columns: {
-            id: true,
-            name: true,
-            nickname: true,
-            studentId: true,
-            major: true,
-            phone: true,
-            role: true,
-            roles: true,
-            // Medical detail is always read here so we can derive the
-            // "has a condition" signal, but it is only forwarded to
-            // super_admin/admin below (see sanitize step).
-            chronicDiseases: true,
-            medicalHistory: true,
-            drugAllergies: true,
-            foodAllergies: true,
-            dietaryRestrictions: true,
-            faintingHistory: true,
-            emergencyMedication: true,
-            // Emergency contacts are available to all admin-area roles
-            // (super_admin/admin/registration/organizer), unlike medical detail.
-            emergencyContacts: true,
-          },
+          // Staff get the full SELECT (medical detail is read here so the
+          // "has a condition" signal can be derived, then forwarded only to
+          // super_admin/admin). Thin-roster roles get a reduced SELECT — phone /
+          // emergency contacts / medical are stripped from their response anyway,
+          // so they aren't fetched. The cast keeps the inferred row type stable;
+          // the omitted columns are simply absent at runtime and never read on the
+          // thin-roster path.
+          columns: (isThinRoster
+            ? THIN_USER_COLUMNS
+            : FULL_USER_COLUMNS) as typeof FULL_USER_COLUMNS,
           with: {
             house: {
               columns: {
@@ -158,16 +181,23 @@ export async function GET(
       return { ...row, medsCheckOption: null, user: safeUser };
     });
 
-    // FE-12: Log the sensitive data access (Immutable Audit Trail)
-    // Since attendance list now contains medical info, we must log this access if they have permission to view it.
+    // FE-12 / PDPA: log every access that returns sensitive data. Admins receive
+    // full medical detail; registration/organizer receive emergency contacts + the
+    // medical-category signal — BOTH are auditable PDPA reads, so log them too. This
+    // used to fire ONLY for canViewMedical, leaving registration/organizer reads of
+    // emergency-contact PII untracked. Thin-roster scanner roles get no sensitive
+    // data (identity + check-in only), so they are not logged.
     if (canViewMedical) {
       await AuditService.logAction({
         actorId: session.user.id!,
-        action: `Viewed Attendance List for Event ${eventId} (included health info)`,
-        ipAddress:
-          req.headers.get("x-forwarded-for")?.split(",")[0] ||
-          req.headers.get("x-real-ip") ||
-          "127.0.0.1",
+        action: `Viewed Attendance List for Event ${eventId} (included health detail + emergency contacts)`,
+        ipAddress: getClientIp(req),
+      });
+    } else if (!isThinRoster) {
+      await AuditService.logAction({
+        actorId: session.user.id!,
+        action: `Viewed Attendance List for Event ${eventId} (emergency contacts + medical-category signal)`,
+        ipAddress: getClientIp(req),
       });
     }
 

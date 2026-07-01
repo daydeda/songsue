@@ -38,6 +38,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           opensAt: data.opensAt,
           closesAt: data.closesAt,
           isActive: data.isActive,
+          allowedRoles: data.allowedRoles,
+          allowedMajors: data.allowedMajors,
+          targetThai: data.targetThai,
+          targetInternational: data.targetInternational,
+          customFields: data.customFields,
+          deliveryFee: data.deliveryFee,
+          deliveryTiers: data.deliveryTiers,
           sortOrder: data.sortOrder,
           updatedAt: new Date(),
         })
@@ -57,10 +64,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (v.id) {
           await tx
             .update(shopVariants)
-            .set({ label: v.label, stock: v.stock, allowCustom: v.allowCustom, sortOrder: i })
+            .set({ label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta, sortOrder: i })
             .where(and(eq(shopVariants.id, v.id), eq(shopVariants.productId, id)));
         } else {
-          await tx.insert(shopVariants).values({ productId: id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, sortOrder: i });
+          await tx.insert(shopVariants).values({ productId: id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta, sortOrder: i });
         }
       }
 

@@ -49,11 +49,18 @@ export function usePolling(
     let timer: ReturnType<typeof setTimeout> | null = null;
     let controller: AbortController | null = null;
     let inFlight = false;
+    // Current gap before the next tick. Starts at the base interval, doubles on
+    // each consecutive failure (see loop) and resets to the base on the first
+    // success, so a flapping/overloaded backend isn't hammered every interval.
+    let currentDelay = intervalMs;
 
     // Hard ceiling on a single request. Generous (a few intervals) so a normally
     // slow-but-fine response is never cut off, but bounded so a truly stuck request
     // is abandoned rather than held open indefinitely.
     const hardStopMs = Math.max(intervalMs * 3, 15000);
+    // Upper bound for the exponential backoff: ~5 min (or the base interval, if
+    // that's already larger), so a long outage settles to an occasional retry.
+    const maxBackoffMs = Math.max(intervalMs, 300000);
 
     const clearTimer = () => {
       if (timer) {
@@ -62,17 +69,22 @@ export function usePolling(
       }
     };
 
-    const runOnce = async () => {
-      if (stopped || inFlight || document.visibilityState !== "visible") return;
+    // Resolves true if the tick settled cleanly, false if the callback threw
+    // (a real fetch failure, or an aborted/overrun request) — the loop uses this
+    // to decide whether to back off. A skipped tick counts as success (no failure).
+    const runOnce = async (): Promise<boolean> => {
+      if (stopped || inFlight || document.visibilityState !== "visible") return true;
       inFlight = true;
       controller = new AbortController();
       const ac = controller;
       const hardStop = setTimeout(() => ac.abort(), hardStopMs);
       try {
         await savedCallback.current(ac.signal);
+        return true;
       } catch {
         // Best-effort polling: swallow errors (including AbortError) and try again
-        // on the next tick.
+        // on the next tick, after backing off.
+        return false;
       } finally {
         clearTimeout(hardStop);
         inFlight = false;
@@ -81,14 +93,17 @@ export function usePolling(
 
     const loop = async (myEpoch: number) => {
       if (stopped || myEpoch !== epoch) return;
-      await runOnce();
+      const ok = await runOnce();
       if (stopped || myEpoch !== epoch || document.visibilityState !== "visible") return;
-      timer = setTimeout(() => loop(myEpoch), intervalMs);
+      // Exponential backoff on failure, reset to the base interval on success.
+      currentDelay = ok ? intervalMs : Math.min(currentDelay * 2, maxBackoffMs);
+      timer = setTimeout(() => loop(myEpoch), currentDelay);
     };
 
     const start = () => {
       epoch += 1; // invalidate any prior loop before starting a fresh one
       clearTimer();
+      currentDelay = intervalMs; // fresh visible session starts at the base cadence
       loop(epoch);
     };
 

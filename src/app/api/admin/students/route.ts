@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { NextResponse } from "next/server";
+import { effectiveRoles } from "@/lib/admin-access";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 export const maxDuration = 20;
@@ -8,7 +9,12 @@ export const maxDuration = 20;
 export async function GET() {
   try {
     const session = await auth();
-    if (!session?.user || !["super_admin", "admin", "registration"].includes(session.user.role || "")) {
+    if (
+      !session?.user ||
+      !effectiveRoles(session.user.role, session.user.roles).some((r) =>
+        ["super_admin", "admin", "registration"].includes(r),
+      )
+    ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

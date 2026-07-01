@@ -31,6 +31,8 @@ export interface CalendarItem {
   allowedMajors: string[] | null;
   targetThai: boolean;
   targetInternational: boolean;
+  recurrence: "none" | "daily" | "weekly" | "monthly";
+  recurrenceUntil: string | null; // ISO, null when no end date
 }
 
 type EventRow = typeof import("@/db/schema").events.$inferSelect;
@@ -53,6 +55,8 @@ function mapEvent(e: EventRow): CalendarItem {
     allowedMajors: e.allowedMajors ?? null,
     targetThai: e.targetThai ?? true,
     targetInternational: e.targetInternational ?? true,
+    recurrence: "none",
+    recurrenceUntil: null,
   };
 }
 
@@ -73,6 +77,8 @@ function mapEntry(e: EntryRow): CalendarItem {
     allowedMajors: e.allowedMajors ?? null,
     targetThai: e.targetThai ?? true,
     targetInternational: e.targetInternational ?? true,
+    recurrence: (e.recurrence as "none" | "daily" | "weekly" | "monthly") ?? "none",
+    recurrenceUntil: e.recurrenceUntil ? e.recurrenceUntil.toISOString() : null,
   };
 }
 

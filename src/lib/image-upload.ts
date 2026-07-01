@@ -27,7 +27,7 @@ export interface HardenedImage {
 // maxBytes guards memory; maxDim caps the re-encoded longest edge.
 export async function hardenImageUpload(
   file: File,
-  { maxBytes = 10 * 1024 * 1024, maxDim = 1600 }: { maxBytes?: number; maxDim?: number } = {}
+  { maxBytes = 5 * 1024 * 1024, maxDim = 1600 }: { maxBytes?: number; maxDim?: number } = {}
 ): Promise<HardenedImage> {
   if (!file) throw new ImageValidationError("No file uploaded");
   if (file.size > maxBytes) {

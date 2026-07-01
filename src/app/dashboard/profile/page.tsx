@@ -9,6 +9,7 @@ import {
   Maximize, Move, AlertTriangle, Check
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { compressImageFile } from "@/lib/compress-image";
 import { useRouter } from "next/navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
  
@@ -20,6 +21,9 @@ export default function ProfilePage() {
   const router = useRouter();
  
   const [loading, setLoading] = useState(true);
+  // Set when the initial profile fetch fails — we then show an error instead of a
+  // blank form, since saving a blank form would overwrite the real profile.
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +66,10 @@ export default function ProfilePage() {
  
   useEffect(() => {
     fetch("/api/profile")
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error("failed");
+        return r.json();
+      })
       .then(user => {
         if (user) {
           setFormData({
@@ -102,10 +109,34 @@ export default function ProfilePage() {
       })
       .catch(err => {
         console.error(err);
+        setLoadError(true);
         setLoading(false);
       });
   }, []);
   const set = <K extends keyof typeof formData>(key: K, value: typeof formData[K]) => setFormData((p) => ({ ...p, [key]: value }));
+
+  const degreeDigit = formData.studentId.trim()[4];
+  const majorOptions: string[] =
+    degreeDigit === "3" ? ["SE", "KIM", "DTM"]
+    : degreeDigit === "5" ? ["KIM", "DTM"]
+    : ["ANI", "DG", "DII", "MMIT", "SE"];
+
+  const UNDERGRAD_MAJOR_LABELS: Record<string, string> = {
+    ANI: "ANI - Animation and Visual Effect",
+    DG: "DG - Digital Game",
+    DII: "DII - Digital Industry Integration",
+    MMIT: "MMIT - Modern Management and Information Technology",
+    SE: "SE - Software Engineering",
+  };
+
+  // Reset major when degree level changes (only relevant while the field is editable)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!isProfileCompleted && !majorOptions.includes(formData.major)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      set("major", majorOptions[0]);
+    }
+  }, [degreeDigit]);
 
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
@@ -201,23 +232,29 @@ export default function ProfilePage() {
     setPreviewUrl(localUrl);
     setUploading(true);
     setError(null);
- 
-    const fd = new FormData();
-    fd.append("file", file);
- 
+
+    const isTh = t.back === "กลับ";
     try {
+      // Avatars display small, so downscale hard in the browser (512px → ~10–20KB).
+      // This also keeps the upload under the reverse proxy's body cap, which would
+      // otherwise reject a raw multi-MB phone photo with a 413 before it reaches the app.
+      const upload = await compressImageFile(file, { maxDim: 512 });
+      const fd = new FormData();
+      fd.append("file", upload);
       const res = await fetch("/api/upload", {
         method: "POST",
         body: fd
       });
-      const data = await res.json();
-      if (data.url) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.url) {
         set("image", data.url);
+      } else if (res.status === 413) {
+        setError(isTh ? "ไฟล์รูปใหญ่เกินไป กรุณาเลือกรูปที่เล็กลง" : "Image is too large. Please choose a smaller photo.");
       } else {
-        setError(data.error || "Upload failed");
+        setError(data?.error || (isTh ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again."));
       }
     } catch (err) {
-      setError("Upload failed");
+      setError(isTh ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -311,6 +348,27 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
         <Loader2 className="animate-spin text-accent" size={32} />
+      </div>
+    );
+  }
+
+  // Load failed — never render the (blank) form, because saving it would
+  // overwrite the student's real profile with empty values.
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 360 }}>
+          <AlertTriangle size={40} style={{ color: "#ef4444", margin: "0 auto 16px", display: "block" }} />
+          <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
+            {t.back === "กลับ" ? "โหลดโปรไฟล์ไม่สำเร็จ" : "Couldn't load your profile"}
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 20 }}>
+            {t.back === "กลับ" ? "กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง" : "Please check your connection and try again."}
+          </p>
+          <button onClick={() => window.location.reload()} className="btn btn-primary">
+            {t.back === "กลับ" ? "ลองอีกครั้ง" : "Try again"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -526,11 +584,11 @@ export default function ProfilePage() {
                       opacity: isProfileCompleted ? 0.7 : undefined,
                     }}
                   >
-                    <option value="ANI">ANI - Animation and Visual Effect</option>
-                    <option value="DG">DG - Digital Game</option>
-                    <option value="DII">DII - Digital Industry Integration</option>
-                    <option value="MMIT">MMIT - Modern Management and Information Technology</option>
-                    <option value="SE">SE - Software Engineering</option>
+                    {majorOptions.map((code) => (
+                      <option key={code} value={code}>
+                        {UNDERGRAD_MAJOR_LABELS[code] ?? code}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="field col-span-6">

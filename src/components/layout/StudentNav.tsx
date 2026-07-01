@@ -21,7 +21,7 @@ Gamepad2
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { houseSlug } from "@/lib/houses";
-import { canEnterAdmin } from "@/lib/admin-access";
+import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState, useRef, useEffect } from "react";
 
@@ -262,7 +262,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
         </Link>
       );
     })}
-    {(canEnterAdmin(user?.role)) && (
+    {(canEnterAdminAny(effectiveRoles(user?.role, user?.roles))) && (
       <Link href="/admin" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
         {t.adminPanel}
@@ -367,7 +367,7 @@ border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent"
 </Link>
 );
 })}
-{(canEnterAdmin(user?.role)) && (
+{(canEnterAdminAny(effectiveRoles(user?.role, user?.roles))) && (
 <Link 
 href="/admin"
 className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`}

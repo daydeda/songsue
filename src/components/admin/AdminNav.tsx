@@ -43,9 +43,14 @@ export function AdminNav({ roles }: { roles: string[] }) {
   const filteredNav = NAV.filter(item => {
     // Scanner-only users (smo, club/major president, no full-admin role) see just the
     // QR Scanner plus the Events page (attendance-view only). Shared predicate so this
-    // can't drift from proxy/admin-access.
+    // can't drift from proxy/admin-access. club_president additionally sees Clubs, but
+    // scoped read-only to their own club's roster (see admin/clubs/page.tsx + its APIs).
     if (scannerOnly) {
-      return item.href === "/admin/scanner" || item.href === "/admin/events";
+      return (
+        item.href === "/admin/scanner" ||
+        item.href === "/admin/events" ||
+        (item.href === "/admin/clubs" && roles.includes("club_president"))
+      );
     }
     if (item.href === "/admin/students") return canSeeStudents;
     if (item.href === "/admin/clubs") return canSeeClubs;

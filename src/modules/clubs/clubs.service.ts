@@ -117,6 +117,30 @@ export class ClubsService {
   }
 
   /**
+   * Adds a user to a club as a plain 'member' — the rank-and-file counterpart to
+   * the 'president' role. Idempotent: re-adding someone who's already a member
+   * OR already a president is a no-op (never downgrades an existing president —
+   * that role is only ever granted/revoked via setUserClubPresidencies, which
+   * stays in sync with the user's club_president system role tag; this method
+   * intentionally has no way to set role='president', to avoid creating a
+   * club_members row that claims presidency without the matching system role).
+   */
+  static async addClubMember(clubId: string, userId: string) {
+    const [inserted] = await db
+      .insert(clubMembers)
+      .values({ clubId, userId, role: "member" })
+      .onConflictDoNothing({ target: [clubMembers.clubId, clubMembers.userId] })
+      .returning();
+    if (inserted) return inserted;
+
+    const [existing] = await db
+      .select()
+      .from(clubMembers)
+      .where(and(eq(clubMembers.clubId, clubId), eq(clubMembers.userId, userId)));
+    return existing;
+  }
+
+  /**
    * Upserts a 'president' club_members row for (clubId, userId). Idempotent —
    * re-adding an existing president is a no-op besides confirming the role.
    */

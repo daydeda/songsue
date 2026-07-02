@@ -37,6 +37,9 @@ const eventUpdateSchema = z.object({
   firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event — separate from allowedRoles.
   managedByRoles: z.array(z.string()).optional().nullable(),
+  // WHICH club(s)/major(s) own this event — see EventScopeService.
+  ownerClubIds: z.array(z.string().uuid()).optional().nullable(),
+  ownerMajors: z.array(z.string()).optional().nullable(),
 }).refine(
   // Only enforce when BOTH ends are supplied — this is a partial update.
   (d) => {
@@ -112,6 +115,12 @@ export async function PUT(
             ...(data.firstYearOnly !== undefined && { firstYearOnly: data.firstYearOnly }),
             ...(data.managedByRoles !== undefined && {
               managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null
+            }),
+            ...(data.ownerClubIds !== undefined && {
+              ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null
+            }),
+            ...(data.ownerMajors !== undefined && {
+              ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null
             }),
             updatedAt: new Date(),
           })

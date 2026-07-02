@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { events, attendance, eventSessions } from "@/db/schema";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 import { sql } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
@@ -38,6 +39,11 @@ const eventSchema = z.object({
   // Which president role(s) MANAGE this event (club_president / major_president).
   // Separate from allowedRoles (participant visibility) — see GET scoping above.
   managedByRoles: z.array(z.string()).optional().nullable(),
+  // WHICH club(s)/major(s) own this event — see EventScopeService. Required for a
+  // club_president/major_president in managedByRoles to actually see the event;
+  // left empty it stays hidden from every president until staff assigns an owner.
+  ownerClubIds: z.array(z.string().uuid()).optional().nullable(),
+  ownerMajors: z.array(z.string()).optional().nullable(),
 }).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
   message: "endTime must be after startTime",
   path: ["endTime"],
@@ -75,13 +81,17 @@ export async function GET() {
     }
 
     // Event scoping for president roles: club_president / major_president see ONLY
-    // events whose managedByRoles is tagged with their role — i.e. events created
-    // for them to manage. This is independent of allowedRoles (participant
+    // events they own (ownerClubIds/ownerMajors match their own club membership /
+    // major — see EventScopeService), not merely events tagged with the generic
+    // managedByRoles president tag. This is independent of allowedRoles (participant
     // visibility). Staff roles and smo are unscoped (see all). This drives both the
     // admin events page AND the scanner's event picker, which share this endpoint.
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     const scopeToPresidentTags = !isStaff && presidentTags.length > 0;
+    const presidentScope = scopeToPresidentTags
+      ? await EventScopeService.getPresidentScope(session.user.id!, myRoles)
+      : null;
 
     // Award runs deliberately do NOT live on this polled read path — they run on
     // their own isolated, advisory-locked endpoints (/api/admin/award-check and
@@ -117,10 +127,8 @@ export async function GET() {
       sessions: sessionsByEvent.get(e.id) ?? [],
     }));
 
-    const scoped = scopeToPresidentTags
-      ? eventsWithCount.filter((e) =>
-          (e.managedByRoles ?? []).some((r) => presidentTags.includes(r))
-        )
+    const scoped = presidentScope
+      ? EventScopeService.filterEventsByScope(eventsWithCount, presidentScope)
       : eventsWithCount;
 
     return NextResponse.json(scoped);
@@ -183,6 +191,8 @@ export async function POST(req: Request) {
           allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
           firstYearOnly: data.firstYearOnly ?? false,
           managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null,
+          ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null,
+          ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null,
         })
         .returning();
 

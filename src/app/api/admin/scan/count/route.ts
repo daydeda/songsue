@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { captureException } from "@/lib/logger";
 import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // GET /api/admin/scan/count?eventId=<uuid>&sessionId=<uuid>
 //
@@ -39,8 +40,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Invalid sessionId" }, { status: 400 });
     }
 
-    // President roles may only read events they manage (managedByRoles), mirroring
-    // the /api/admin/scan and attendance scoping. Staff and smo are unscoped.
+    // President roles may only read events they OWN (ownerClubIds/ownerMajors),
+    // mirroring the /api/admin/scan and attendance scoping. Staff and smo are
+    // unscoped.
     const myRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
     const isStaff = myRoles.some((r) =>
       ["super_admin", "admin", "registration", "organizer"].includes(r),
@@ -51,9 +53,10 @@ export async function GET(req: Request) {
     if (!isStaff && presidentTags.length > 0) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
-        columns: { managedByRoles: true },
+        columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

@@ -36,8 +36,19 @@ export async function GET() {
     const session = await auth();
 
 
-    const allEvents = await db.query.events.findMany({
+    const rawEvents = await db.query.events.findMany({
       orderBy: (events, { asc }) => [asc(events.startTime)],
+    });
+    // Strip internal president-ownership metadata before it ever reaches a
+    // student/guest response — ownerClubIds/ownerMajors identify which
+    // club_president/major_president manages an event (see EventScopeService)
+    // and have no bearing on student eligibility, so this student-facing feed
+    // has no reason to expose them.
+    const allEvents = rawEvents.map((event) => {
+      const sanitized = { ...event };
+      delete (sanitized as { ownerClubIds?: unknown }).ownerClubIds;
+      delete (sanitized as { ownerMajors?: unknown }).ownerMajors;
+      return sanitized;
     });
 
     // Registered seat counts per event (see getSeatCounts) — one cached grouped

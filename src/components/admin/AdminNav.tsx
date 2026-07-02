@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Megaphone,
   ShoppingBag,
+  Building2,
   User
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -20,6 +21,7 @@ const NAV = [
   { href: "/admin/events",    key: "manageEvents",         icon: Calendar },
   { href: "/admin/scanner",   key: "qrScanner",            icon: QrCode },
   { href: "/admin/students",  key: "adminStudentsDirectory",icon: Users },
+  { href: "/admin/clubs",     key: "manageClubs",          icon: Building2 },
   { href: "/admin/audit-logs",key: "auditTrails",          icon: ShieldCheck },
   { href: "/admin/announcement",key: "manageAnnouncement", icon: Megaphone },
   { href: "/admin/shop",      key: "manageShop",           icon: ShoppingBag },
@@ -36,6 +38,7 @@ export function AdminNav({ roles }: { roles: string[] }) {
   const canSeeStudents = has(["super_admin", "admin", "registration"]); // organizer barred
   const canSeeAudit = has(["super_admin", "admin"]);                    // organizer + registration barred
   const canManage = has(["super_admin", "admin"]);                      // announcement + shop
+  const canSeeClubs = has(["super_admin", "admin"]);                    // club identity management
 
   const filteredNav = NAV.filter(item => {
     // Scanner-only users (smo, club/major president, no full-admin role) see just the
@@ -45,6 +48,7 @@ export function AdminNav({ roles }: { roles: string[] }) {
       return item.href === "/admin/scanner" || item.href === "/admin/events";
     }
     if (item.href === "/admin/students") return canSeeStudents;
+    if (item.href === "/admin/clubs") return canSeeClubs;
     if (item.href === "/admin/audit-logs") return canSeeAudit;
     if (item.href === "/admin/announcement" || item.href === "/admin/shop") return canManage;
     return true; // dashboard, events, scanner — every full-admin role

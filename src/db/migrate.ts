@@ -901,6 +901,57 @@ async function migrate() {
   await sql`ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS recurrence_until timestamptz`;
   console.log("  ✅ calendar_entries.recurrence + recurrence_until");
 
+  // 58. clubs — dynamic entity (created/renamed/retired by staff) used to scope
+  // club-president event ownership. uuid PK (unlike the fixed-slug houses). Never
+  // hard-deleted: archived via is_archived so owned events / membership history
+  // survive. The partial unique index keeps two ACTIVE clubs from sharing a name
+  // while letting a new club reuse an archived club's old name. New table +
+  // CREATE INDEX IF NOT EXISTS ⇒ additive, idempotent, non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS clubs (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      name text NOT NULL,
+      is_archived boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS clubs_active_name_unique ON clubs (name) WHERE is_archived = false`;
+  console.log("  ✅ clubs table + clubs_active_name_unique (partial, active names only)");
+
+  // 59. club_members — many-to-many membership join between users and clubs. A user
+  // may preside over / belong to several clubs; a club has several members. `role`
+  // ('president' | 'member') is reserved for a future per-club roster feature — the
+  // current feature only writes 'president' rows. FKs ON DELETE CASCADE so deleting
+  // a user or club cleans up its memberships. Unique(club_id,user_id) blocks dup
+  // rows; the user/club single-column indexes back the scope lookups (by user) and
+  // roster reads (by club). New table + CREATE INDEX IF NOT EXISTS ⇒ additive,
+  // idempotent, non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS club_members (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      club_id uuid NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role text NOT NULL DEFAULT 'member',
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS club_members_club_user_unique ON club_members (club_id, user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS club_members_user_idx ON club_members (user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS club_members_club_idx ON club_members (club_id)`;
+  console.log("  ✅ club_members table + unique(club_id,user_id) + user/club indexes");
+
+  // 60. events.owner_club_ids / owner_majors — president OWNERSHIP scope (which
+  // club/major owns the event), separate from the existing managed_by_roles (which
+  // only flags that a president role is involved at all). Both nullable jsonb with
+  // NO default: null means "no owner assigned yet", which the scoping logic treats
+  // as "hidden from all presidents until staff assigns one" (staff/admin bypass) —
+  // intentional, mirrors the allowed_majors jsonb pattern. ADD COLUMN IF NOT EXISTS
+  // ⇒ additive, idempotent, non-destructive.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_club_ids jsonb`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_majors jsonb`;
+  console.log("  ✅ events.owner_club_ids + owner_majors (nullable, no default)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

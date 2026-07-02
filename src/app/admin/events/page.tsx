@@ -48,6 +48,8 @@ interface AdminEvent {
   allowedMajors: string[] | null;
   firstYearOnly: boolean;
   managedByRoles: string[] | null;
+  ownerClubIds: string[] | null;
+  ownerMajors: string[] | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
   attendeeCount?: number;
@@ -304,6 +306,8 @@ const EMPTY_FORM = {
   allowedMajors: [] as string[], // empty = all majors allowed
   firstYearOnly: false, // true = only the current first-year intake may join
   managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
+  ownerClubIds: [] as string[], // WHICH club(s) own this event, when managedByRoles includes club_president
+  ownerMajors: [] as string[], // WHICH major(s) own this event, when managedByRoles includes major_president
 };
 
 export default function AdminEventsPage() {
@@ -333,6 +337,10 @@ export default function AdminEventsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
+  // For the "Managed By" owner pickers below — which club(s) can be assigned as
+  // an event's ownerClubIds. Fetched once; only staff (who can reach this page)
+  // are allowed to call /api/admin/clubs anyway.
+  const [clubs, setClubs] = useState<{ id: string; name: string; isArchived: boolean }[]>([]);
   // Multi-day / multi-session support. registrationMode is intentionally NOT
   // pre-selected (null) — a plain single-day event needs no choice. Picking
   // "once" (register once, attend any/all days) or "per_session" (each day
@@ -1120,6 +1128,15 @@ export default function AdminEventsPage() {
   // friendly, pauses when the tab is hidden).
   usePolling(fetchEvents, 15000);
 
+  // Clubs for the "Managed By" owner picker — fetched once, not polled (the
+  // Clubs admin page is where staff manage the list itself).
+  useEffect(() => {
+    fetch("/api/admin/clubs")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setClubs(d); })
+      .catch(() => {});
+  }, []);
+
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 
   // ---- Sessions / days editor helpers ----
@@ -1487,7 +1504,9 @@ export default function AdminEventsPage() {
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
       firstYearOnly: evt.firstYearOnly || false,
-      managedByRoles: evt.managedByRoles || []
+      managedByRoles: evt.managedByRoles || [],
+      ownerClubIds: evt.ownerClubIds || [],
+      ownerMajors: evt.ownerMajors || []
     });
     // Only pre-select a mode (which reveals the Days editor) when the event is
     // genuinely multi-day or per-session. A plain single-session "once" event
@@ -2797,6 +2816,103 @@ export default function AdminEventsPage() {
                         : `✓ ${lang === "th" ? "ดูแลโดย: " : "Managed by: "}${formData.managedByRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
                     </div>
                   </div>
+
+                  {/* Owner club(s)/major(s) — WHICH club_president/major_president may
+                      actually manage this event (see EventScopeService). Without an
+                      owner assigned here, the event stays hidden from every president
+                      even though managedByRoles marks it as president-managed. */}
+                  {formData.managedByRoles.includes("club_president") && (
+                    <div style={{ marginTop: 14 }}>
+                      <label className="label" style={{ fontSize: 12 }}>
+                        {lang === "th" ? "ชมรมที่เป็นเจ้าของกิจกรรม" : "Owning club(s)"}
+                      </label>
+                      {clubs.filter((c) => !c.isArchived).length === 0 ? (
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                          {lang === "th" ? "ยังไม่มีชมรม — สร้างได้ที่ Admin > Clubs" : "No clubs yet — create one under Admin > Clubs."}
+                        </p>
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                          {clubs.filter((c) => !c.isArchived).map((club) => {
+                            const isSelected = formData.ownerClubIds.includes(club.id);
+                            return (
+                              <div
+                                key={club.id}
+                                onClick={() => {
+                                  const current = formData.ownerClubIds;
+                                  const next = isSelected
+                                    ? current.filter((id) => id !== club.id)
+                                    : [...current, club.id];
+                                  setFormData({ ...formData, ownerClubIds: next });
+                                }}
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: 10,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  background: isSelected ? "rgba(245,158,11,0.15)" : "var(--bg-elevated)",
+                                  color: isSelected ? "#f59e0b" : "var(--text-secondary)",
+                                  border: `1px solid ${isSelected ? "rgba(245,158,11,0.4)" : "var(--border-subtle)"}`,
+                                }}
+                              >
+                                {club.name}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {formData.ownerClubIds.length === 0 && (
+                        <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginTop: 6 }}>
+                          {lang === "th"
+                            ? "⚠ ยังไม่ได้กำหนดชมรม — จะไม่แสดงกับประธานชมรมคนใดจนกว่าจะเลือก"
+                            : "⚠ No club assigned yet — hidden from every club president until you pick one."}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {formData.managedByRoles.includes("major_president") && (
+                    <div style={{ marginTop: 14 }}>
+                      <label className="label" style={{ fontSize: 12 }}>
+                        {lang === "th" ? "สาขาที่เป็นเจ้าของกิจกรรม" : "Owning major(s)"}
+                      </label>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                        {ALL_MAJORS.map((major) => {
+                          const isSelected = formData.ownerMajors.includes(major);
+                          return (
+                            <div
+                              key={major}
+                              onClick={() => {
+                                const current = formData.ownerMajors;
+                                const next = isSelected
+                                  ? current.filter((m) => m !== major)
+                                  : [...current, major];
+                                setFormData({ ...formData, ownerMajors: next });
+                              }}
+                              style={{
+                                padding: "6px 12px",
+                                borderRadius: 10,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                background: isSelected ? "rgba(6,182,212,0.15)" : "var(--bg-elevated)",
+                                color: isSelected ? "#06b6d4" : "var(--text-secondary)",
+                                border: `1px solid ${isSelected ? "rgba(6,182,212,0.4)" : "var(--border-subtle)"}`,
+                              }}
+                            >
+                              {major}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {formData.ownerMajors.length === 0 && (
+                        <p style={{ fontSize: 11, color: "#06b6d4", fontWeight: 700, marginTop: 6 }}>
+                          {lang === "th"
+                            ? "⚠ ยังไม่ได้กำหนดสาขา — จะไม่แสดงกับประธานสาขาคนใดจนกว่าจะเลือก"
+                            : "⚠ No major assigned yet — hidden from every major president until you pick one."}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="field">

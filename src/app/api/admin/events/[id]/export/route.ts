@@ -4,6 +4,7 @@ import { attendance, events, eventSessions } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -77,20 +78,21 @@ export async function GET(
 
     const event = await db.query.events.findFirst({
       where: eq(events.id, eventId),
-      columns: { id: true, title: true, managedByRoles: true },
+      columns: { id: true, title: true, managedByRoles: true, ownerClubIds: true, ownerMajors: true },
     });
     if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
     // Event scoping for president roles (mirrors the attendance API): club_president
-    // / major_president may only export events they manage (managedByRoles).
-    // Staff and smo are unscoped.
+    // / major_president may only export events they OWN (ownerClubIds/ownerMajors
+    // match their own club membership / major). Staff and smo are unscoped.
     const presidentTags = roles.filter((r) =>
       ["club_president", "major_president"].includes(r)
     );
     if (!isStaffRole && presidentTags.length > 0) {
-      const managed = (event.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, roles);
+      const managed = EventScopeService.isEventManagedByScope(event, scope);
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

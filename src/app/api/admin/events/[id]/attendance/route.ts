@@ -4,6 +4,7 @@ import { attendance, events } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // Columns read for a normal/staff roster. Medical free-text + emergency contacts
 // are fetched so super_admin/admin get full detail and registration/organizer can
@@ -70,14 +71,16 @@ export async function GET(
 
     // Event scoping for president roles (mirrors the /api/admin/events list filter):
     // club_president / major_president may only read attendance for events they
-    // manage (managedByRoles), independent of allowedRoles. Staff and smo unscoped.
+    // OWN (ownerClubIds/ownerMajors match their own club membership / major — see
+    // EventScopeService), independent of allowedRoles. Staff and smo unscoped.
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     if (!isStaffRole && presidentTags.length > 0) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
-        columns: { managedByRoles: true },
+        columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

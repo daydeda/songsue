@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import * as schema from "@/db/schema";
-import { updatePlayerStats, finalizeGameInDb } from "./stats-helper";
+import { updatePlayerStats, finalizeGameInDb, type GameDbClient } from "./stats-helper";
 import { eq } from "drizzle-orm";
 
 describe("OX Game Stats and Finalization", () => {
   let client: PGlite;
-  let db: any;
+  let db: GameDbClient;
 
   beforeEach(async () => {
     client = new PGlite();
@@ -90,7 +90,8 @@ describe("OX Game Stats and Finalization", () => {
       );
     `);
 
-    db = drizzlePglite(client, { schema });
+    // Structurally compatible pglite db standing in for the app's postgres-js db
+    db = drizzlePglite(client, { schema }) as unknown as GameDbClient;
 
     // Seed test users
     await db.insert(schema.users).values([
@@ -112,12 +113,12 @@ describe("OX Game Stats and Finalization", () => {
       });
 
       expect(stats).toBeDefined();
-      expect(stats.wins).toBe(1);
-      expect(stats.losses).toBe(0);
-      expect(stats.draws).toBe(0);
-      expect(stats.winStreak).toBe(1);
-      expect(stats.bestStreak).toBe(1);
-      expect(stats.totalGames).toBe(1);
+      expect(stats!.wins).toBe(1);
+      expect(stats!.losses).toBe(0);
+      expect(stats!.draws).toBe(0);
+      expect(stats!.winStreak).toBe(1);
+      expect(stats!.bestStreak).toBe(1);
+      expect(stats!.totalGames).toBe(1);
     });
 
     it("should atomically increment wins and update win streak", async () => {
@@ -132,11 +133,11 @@ describe("OX Game Stats and Finalization", () => {
         where: eq(schema.gameStats.userId, "user1"),
       });
 
-      expect(stats.wins).toBe(2);
-      expect(stats.losses).toBe(1);
-      expect(stats.winStreak).toBe(0);
-      expect(stats.bestStreak).toBe(2); // Best streak should remain 2
-      expect(stats.totalGames).toBe(3);
+      expect(stats!.wins).toBe(2);
+      expect(stats!.losses).toBe(1);
+      expect(stats!.winStreak).toBe(0);
+      expect(stats!.bestStreak).toBe(2); // Best streak should remain 2
+      expect(stats!.totalGames).toBe(3);
     });
 
     it("should handle draws and preserve win streak", async () => {
@@ -147,11 +148,11 @@ describe("OX Game Stats and Finalization", () => {
         where: eq(schema.gameStats.userId, "user1"),
       });
 
-      expect(stats.wins).toBe(1);
-      expect(stats.draws).toBe(1);
-      expect(stats.winStreak).toBe(1); // Streak preserved on draw
-      expect(stats.bestStreak).toBe(1);
-      expect(stats.totalGames).toBe(2);
+      expect(stats!.wins).toBe(1);
+      expect(stats!.draws).toBe(1);
+      expect(stats!.winStreak).toBe(1); // Streak preserved on draw
+      expect(stats!.bestStreak).toBe(1);
+      expect(stats!.totalGames).toBe(2);
     });
   });
 
@@ -185,9 +186,9 @@ describe("OX Game Stats and Finalization", () => {
       const updatedRoom = await db.query.gameRooms.findFirst({
         where: eq(schema.gameRooms.id, roomId),
       });
-      expect(updatedRoom.status).toBe("finished");
-      expect(updatedRoom.winnerId).toBe("user1");
-      expect(updatedRoom.finishReason).toBe("win");
+      expect(updatedRoom!.status).toBe("finished");
+      expect(updatedRoom!.winnerId).toBe("user1");
+      expect(updatedRoom!.finishReason).toBe("win");
 
       // Verify stats updated
       const hostStats = await db.query.gameStats.findFirst({
@@ -196,8 +197,8 @@ describe("OX Game Stats and Finalization", () => {
       const guestStats = await db.query.gameStats.findFirst({
         where: eq(schema.gameStats.userId, "user2"),
       });
-      expect(hostStats.wins).toBe(1);
-      expect(guestStats.losses).toBe(1);
+      expect(hostStats!.wins).toBe(1);
+      expect(guestStats!.losses).toBe(1);
 
       // Verify signals deleted
       const signals = await db.query.webrtcSignals.findMany({
@@ -230,7 +231,7 @@ describe("OX Game Stats and Finalization", () => {
       const hostStats = await db.query.gameStats.findFirst({
         where: eq(schema.gameStats.userId, "user1"),
       });
-      expect(hostStats.wins).toBe(1); // Should still be 1, not 2
+      expect(hostStats!.wins).toBe(1); // Should still be 1, not 2
     });
   });
 });

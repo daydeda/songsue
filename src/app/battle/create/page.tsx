@@ -25,8 +25,8 @@ export default function CreateRoomPage() {
 
         const room = await res.json();
         router.replace(`/battle/room/${room.roomCode}`);
-      } catch (err: any) {
-        setError(err.message || "An unexpected error occurred");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "An unexpected error occurred");
       }
     }
     create();

@@ -22,16 +22,20 @@ export default function AdminAuditLogsPage() {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`/api/admin/audit-logs?page=${page}&pageSize=${PAGE_SIZE}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d && Array.isArray(d.logs)) {
-          setLogs(d.logs);
-          setTotal(typeof d.total === "number" ? d.total : d.logs.length);
-        }
-      })
-      .finally(() => setLoading(false));
+    // Deferred so the loading flag flips outside the synchronous effect body.
+    const timer = setTimeout(() => {
+      setLoading(true);
+      fetch(`/api/admin/audit-logs?page=${page}&pageSize=${PAGE_SIZE}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d && Array.isArray(d.logs)) {
+            setLogs(d.logs);
+            setTotal(typeof d.total === "number" ? d.total : d.logs.length);
+          }
+        })
+        .finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(timer);
   }, [page]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

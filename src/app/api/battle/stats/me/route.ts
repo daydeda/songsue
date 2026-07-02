@@ -15,25 +15,11 @@ export async function GET() {
 
     const userId = session.user.id;
 
-    // Fetch stats
-    let stats = await db.query.gameStats.findFirst({
+    // Fetch stats — null when the user has never played (US-FIX-20i AC-5);
+    // the client renders a "no games yet" state instead of fabricated zeros.
+    const stats = await db.query.gameStats.findFirst({
       where: (gs, { eq, and }) => and(eq(gs.userId, userId), eq(gs.gameType, "ox")),
     });
-
-    if (!stats) {
-      stats = {
-        id: "",
-        userId,
-        gameType: "ox",
-        wins: 0,
-        losses: 0,
-        draws: 0,
-        winStreak: 0,
-        bestStreak: 0,
-        totalGames: 0,
-        lastPlayedAt: new Date(),
-      };
-    }
 
     // Fetch match history (last 10 games)
     const history = await db.query.gameRooms.findMany({
@@ -54,7 +40,7 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      stats,
+      stats: stats ?? null,
       history,
     });
 

@@ -24,7 +24,7 @@ export function createInitialState(): OXState {
   };
 }
 
-export function validateMove(state: OXState, move: OXMove, currentTurn: 1 | 2): boolean {
+export function validateMove(state: OXState, move: OXMove): boolean {
   const cellIndex = move.cell - 1;
   
   // Cell index out of bounds

@@ -11,7 +11,7 @@ describe("OX (Tic-Tac-Toe) Game Engine", () => {
     let state = createInitialState();
     
     // Move is valid on an empty cell
-    const valid = validateMove(state, { cell: 5 }, 1);
+    const valid = validateMove(state, { cell: 5 });
     expect(valid).toBe(true);
 
     // Apply the move
@@ -19,11 +19,11 @@ describe("OX (Tic-Tac-Toe) Game Engine", () => {
     expect(state.board[4]).toBe(1); // X (Player 1) in the center
 
     // Cannot make move on already occupied cell
-    const invalid = validateMove(state, { cell: 5 }, 2);
+    const invalid = validateMove(state, { cell: 5 });
     expect(invalid).toBe(false);
 
     // Can make move on empty cell
-    const valid2 = validateMove(state, { cell: 1 }, 2);
+    const valid2 = validateMove(state, { cell: 1 });
     expect(valid2).toBe(true);
     
     state = applyMove(state, { cell: 1 }, 2);
@@ -46,7 +46,7 @@ describe("OX (Tic-Tac-Toe) Game Engine", () => {
   });
 
   it("should detect draw conditions", () => {
-    let state = createInitialState();
+    const state = createInitialState();
     /*
       X | O | X
       X | O | O

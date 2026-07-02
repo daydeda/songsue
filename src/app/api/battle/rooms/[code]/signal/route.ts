@@ -76,7 +76,7 @@ export async function POST(
           iceCandidates: [iceCandidate],
         });
       } else {
-        const candidates = existing.iceCandidates as any[] || [];
+        const candidates = (existing.iceCandidates as unknown[] | null) ?? [];
         if (candidates.length >= 30) {
           return NextResponse.json({ error: "ICE candidates limit (30) reached" }, { status: 400 });
         }
@@ -170,6 +170,10 @@ export async function GET(
 
     return NextResponse.json({
       role: opponentRole,
+      // Piggybacked room status (US-PERF-21b): this endpoint is polled at 1s during
+      // the handshake and already fetched the room row — lets clients react to
+      // "active" without waiting for the slower state poll. No extra query.
+      roomStatus: room.status,
       sdpOffer: opponentSignal?.sdpOffer || null,
       sdpAnswer: opponentSignal?.sdpAnswer || null,
       iceCandidates: opponentSignal?.iceCandidates || [],

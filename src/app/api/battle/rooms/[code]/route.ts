@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { captureException } from "@/lib/logger";
+import { rateLimit } from "@/lib/rate-limit";
 
 // GET /api/battle/rooms/[code] - Inspect room status
 export async function GET(
@@ -18,6 +19,16 @@ export async function GET(
 
     const { code } = await params;
     const roomCode = code.toUpperCase();
+
+    // Room codes are only 4 chars — throttle per user so a signed-in account
+    // can't enumerate room codes. Durable Postgres-backed window.
+    const limiter = await rateLimit(`battle:room-lookup:${session.user.id}`, 10, 60000);
+    if (!limiter.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil((limiter.resetTime - Date.now()) / 1000))) } }
+      );
+    }
 
     const room = await db.query.gameRooms.findFirst({
       where: (r, { eq }) => eq(r.roomCode, roomCode),

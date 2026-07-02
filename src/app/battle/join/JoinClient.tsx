@@ -4,15 +4,17 @@ import { StudentNav } from "@/components/layout/StudentNav";
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Html5Qrcode } from "html5-qrcode";
-import { Swords, Camera, AlertTriangle, ArrowLeft, Loader2, CameraOff } from "lucide-react";
+import { Swords, Camera, AlertTriangle, ArrowLeft, Loader2, CameraOff, Info } from "lucide-react";
 import Link from "next/link";
+import { useLanguage } from "@/lib/LanguageContext";
 
 interface JoinClientProps {
-  initialSession: any;
+  initialSession: { user: { id: string; name?: string | null } } | null;
 }
 
 export function JoinClient({ initialSession }: JoinClientProps) {
   const router = useRouter();
+  const { t } = useLanguage();
   const searchParams = useSearchParams();
   const queryRoom = searchParams.get("room") || "";
 
@@ -33,6 +35,35 @@ export function JoinClient({ initialSession }: JoinClientProps) {
     useRef<HTMLInputElement>(null),
   ];
 
+  const stopScanner = () => {
+    setIsScanning(false);
+  };
+
+  const handleJoinRoom = async (roomCode: string) => {
+    if (roomCode.length !== 4) return;
+    setLoading(true);
+    setError(null);
+    stopScanner();
+
+    try {
+      const res = await fetch(`/api/battle/rooms/${roomCode}/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to join room");
+      }
+
+      router.push(`/battle/room/${roomCode}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not join the room");
+      setLoading(false);
+    }
+  };
+
   // Lifecycle
   useEffect(() => {
     isMountedRef.current = true;
@@ -42,13 +73,14 @@ export function JoinClient({ initialSession }: JoinClientProps) {
     };
   }, []);
 
-  // Pre-fill room code if provided in query URL
+  // Pre-fill room code if provided in query URL (deferred so no sync setState in effect)
   useEffect(() => {
-    if (queryRoom && queryRoom.length === 4) {
-      const chars = queryRoom.toUpperCase().split("");
-      setCode(chars);
+    if (!queryRoom || queryRoom.length !== 4) return;
+    const timer = setTimeout(() => {
+      setCode(queryRoom.toUpperCase().split(""));
       handleJoinRoom(queryRoom.toUpperCase());
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [queryRoom]);
 
   // Handles input typing inside the character blocks
@@ -103,31 +135,6 @@ export function JoinClient({ initialSession }: JoinClientProps) {
         setCode(chars);
         handleJoinRoom(cleanText);
       }
-    }
-  };
-
-  const handleJoinRoom = async (roomCode: string) => {
-    if (roomCode.length !== 4) return;
-    setLoading(true);
-    setError(null);
-    stopScanner();
-
-    try {
-      const res = await fetch(`/api/battle/rooms/${roomCode}/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to join room");
-      }
-
-      router.push(`/battle/room/${roomCode}`);
-    } catch (err: any) {
-      setError(err.message || "Could not join the room");
-      setLoading(false);
     }
   };
 
@@ -209,11 +216,11 @@ export function JoinClient({ initialSession }: JoinClientProps) {
           },
           () => {}
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
         if (isCurrentEffect) {
           let msg = "Could not initialize camera scanner.";
-          if (err.name === "NotAllowedError" || /permission/i.test(err.message)) {
+          if (err instanceof Error && (err.name === "NotAllowedError" || /permission/i.test(err.message))) {
             msg = "Camera permission denied. Please allow camera access in browser settings.";
           }
           setScannerError(msg);
@@ -237,10 +244,6 @@ export function JoinClient({ initialSession }: JoinClientProps) {
     setError(null);
     setScannerError(null);
     setIsScanning(true);
-  };
-
-  const stopScanner = () => {
-    setIsScanning(false);
   };
 
   const currentCode = code.join("");
@@ -268,6 +271,11 @@ export function JoinClient({ initialSession }: JoinClientProps) {
             </h1>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
               พิมพ์รหัสห้อง 4 หลัก หรือสแกน QR Code เพื่อเชื่อมต่อกับเพื่อนผู้ท้าชิง
+            </p>
+            {/* P2P privacy note (US-FIX-20i AC-2) */}
+            <p style={{ display: "flex", alignItems: "flex-start", gap: 6, color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 12, textAlign: "left" }}>
+              <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{t.battleP2pPrivacyNote}</span>
             </p>
           </div>
 

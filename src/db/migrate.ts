@@ -4,19 +4,32 @@
  * Safe to run on an existing DB — uses IF NOT EXISTS and ADD COLUMN IF NOT EXISTS.
  */
 import postgres from "postgres";
-
-const connectionString = process.env.DATABASE_URL!;
-if (!connectionString) {
-  console.error("❌ DATABASE_URL environment variable is not set.");
-  process.exit(1);
-}
-
-// The Supabase transaction pooler (port 6543) runs in transaction mode and does
-// NOT support prepared statements — postgres-js must use the simple query
-// protocol there, or every DDL statement fails. Mirrors src/db/index.ts.
-const usingTransactionPooler = connectionString.includes(":6543");
+import { drizzle } from "drizzle-orm/pglite";
+import { PGlite } from "@electric-sql/pglite";
+import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 
 async function migrate() {
+  if (process.env.DB_TYPE === "pglite") {
+    console.log("📦 Applying migrations to PGlite local database...");
+    const client = new PGlite("./.pglite-data");
+    const db = drizzle(client);
+    await migratePglite(db, { migrationsFolder: "./drizzle" });
+    await client.close();
+    console.log("✅ PGlite migrations complete!");
+    process.exit(0);
+  }
+
+  const connectionString = process.env.DATABASE_URL!;
+  if (!connectionString) {
+    console.error("❌ DATABASE_URL environment variable is not set.");
+    process.exit(1);
+  }
+
+  // The Supabase transaction pooler (port 6543) runs in transaction mode and does
+  // NOT support prepared statements — postgres-js must use the simple query
+  // protocol there, or every DDL statement fails. Mirrors src/db/index.ts.
+  const usingTransactionPooler = connectionString.includes(":6543");
+
   console.log("🔄 Applying incremental migration...");
   const sql = postgres(connectionString, { max: 1, prepare: !usingTransactionPooler });
 

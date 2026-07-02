@@ -232,7 +232,9 @@ export default function AdminStudentsDirectory() {
   }, [search]);
 
   useEffect(() => {
-    setCurrentPage(1);
+    // Deferred page reset on filter change, keeping setState out of the effect body.
+    const timer = setTimeout(() => setCurrentPage(1), 0);
+    return () => clearTimeout(timer);
   }, [debouncedSearch, houseFilter, roleFilter, majorFilter, educationFilter, yearFilter]);
 
   const refreshData = () => {

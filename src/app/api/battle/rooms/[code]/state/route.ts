@@ -21,16 +21,12 @@ export async function GET(
     const roomCode = code.toUpperCase();
     const userId = session.user.id;
 
+    // Player info is requested only until the client knows both players
+    // (US-PERF-21e) — the steady-state poll is then a single indexed lookup.
+    const includePlayers = new URL(req.url).searchParams.get("players") === "1";
+
     const room = await db.query.gameRooms.findFirst({
       where: (r, { eq }) => eq(r.roomCode, roomCode),
-      with: {
-        host: {
-          columns: { id: true, name: true, nickname: true, houseId: true }
-        },
-        guest: {
-          columns: { id: true, name: true, nickname: true, houseId: true }
-        }
-      }
     });
 
     if (!room) {
@@ -63,19 +59,25 @@ export async function GET(
         // Re-read from DB to get the actual finalized/current state (handles races)
         const updatedRoom = await db.query.gameRooms.findFirst({
           where: (r, { eq }) => eq(r.id, room.id),
-          with: {
-            host: {
-              columns: { id: true, name: true, nickname: true, houseId: true }
-            },
-            guest: {
-              columns: { id: true, name: true, nickname: true, houseId: true }
-            }
-          }
         });
         if (updatedRoom) {
           Object.assign(room, updatedRoom);
         }
       }
+    }
+
+    // Fetch player info only when explicitly requested (US-PERF-21e)
+    type PlayerInfo = { id: string; name: string | null; nickname: string | null; houseId: string | null };
+    let host: PlayerInfo | null = null;
+    let guest: PlayerInfo | null = null;
+    if (includePlayers) {
+      const playerIds = [room.hostId, room.guestId].filter((id): id is string => Boolean(id));
+      const players = await db.query.users.findMany({
+        where: (u, { inArray }) => inArray(u.id, playerIds),
+        columns: { id: true, name: true, nickname: true, houseId: true },
+      });
+      host = players.find((p) => p.id === room.hostId) ?? null;
+      guest = players.find((p) => p.id === room.guestId) ?? null;
     }
 
     return NextResponse.json({
@@ -90,8 +92,7 @@ export async function GET(
       winnerId: room.winnerId,
       finishReason: room.finishReason,
       turnDeadline: room.turnDeadline,
-      host: room.host,
-      guest: room.guest,
+      ...(includePlayers ? { host, guest } : {}),
     });
 
   } catch (error) {

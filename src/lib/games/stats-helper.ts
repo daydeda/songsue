@@ -2,7 +2,11 @@ import { db } from "@/db";
 import { gameRooms, gameStats, webrtcSignals } from "@/db/schema";
 import { eq, and, sql, lt, inArray } from "drizzle-orm";
 
-export async function updatePlayerStats(tx: any, userId: string, result: 'win' | 'loss' | 'draw') {
+// Accepts the app db instance or a transaction created from it, so the helpers
+// can run inside route transactions and directly against a test/cron db.
+export type GameDbClient = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export async function updatePlayerStats(tx: GameDbClient, userId: string, result: 'win' | 'loss' | 'draw') {
   await tx.insert(gameStats)
     .values({
       userId,
@@ -34,7 +38,7 @@ export async function updatePlayerStats(tx: any, userId: string, result: 'win' |
 }
 
 export async function finalizeGameInDb(
-  tx: any,
+  tx: GameDbClient,
   room: { id: string; hostId: string; guestId: string | null },
   winnerId: string | null,
   reason: string

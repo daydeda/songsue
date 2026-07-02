@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -225,12 +225,12 @@ function ProductModal({ product, settings, th, onClose, onOrdered }: {
   const customFields = product.customFields ?? [];
   const missingRequiredCustom = customFields.some((f) => f.required && !(customAnswers[f.key] ?? "").trim());
   const remaining = variant?.remaining ?? null;
-  const maxQty = useMemo(() => {
-    const caps = [99];
-    if (remaining != null) caps.push(remaining);
-    if (product.maxPerOrder != null) caps.push(product.maxPerOrder);
-    return Math.max(1, Math.min(...caps));
-  }, [remaining, product.maxPerOrder]);
+  // Plain computation — cheap enough that memoization isn't worth it, and the
+  // React Compiler couldn't preserve the manual memo (deps derived from find()).
+  const maxQtyCaps = [99];
+  if (remaining != null) maxQtyCaps.push(remaining);
+  if (product.maxPerOrder != null) maxQtyCaps.push(product.maxPerOrder);
+  const maxQty = Math.max(1, Math.min(...maxQtyCaps));
 
   // Clamp at render instead of in an effect: variant changes can shrink maxQty.
   const qty = Math.min(qtyRaw, maxQty);

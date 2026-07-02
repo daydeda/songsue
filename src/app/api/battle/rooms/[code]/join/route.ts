@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { captureException } from "@/lib/logger";
-import { getClientIp, AuditService } from "@/modules/audit/audit.service";
+import { rateLimit } from "@/lib/rate-limit";
 
 // POST /api/battle/rooms/[code]/join - Guest joins a room
 export async function POST(
@@ -20,6 +20,16 @@ export async function POST(
     const { code } = await params;
     const roomCode = code.toUpperCase();
     const guestId = session.user.id;
+
+    // Room codes are only 4 chars (~1M combinations) — throttle per user so a
+    // signed-in account can't brute-force codes. Durable Postgres-backed window.
+    const limiter = await rateLimit(`battle:join:${guestId}`, 10, 60000);
+    if (!limiter.success) {
+      return NextResponse.json(
+        { error: "Too many join attempts. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil((limiter.resetTime - Date.now()) / 1000))) } }
+      );
+    }
 
     // Verify guest user exists in database (handles stale session cookies after database resets)
     const guestExists = await db.query.users.findFirst({
@@ -61,12 +71,9 @@ export async function POST(
       })
       .where(eq(gameRooms.id, room.id));
 
-    const ip = getClientIp(req);
-    await AuditService.logAction({
-      actorId: guestId,
-      action: `Joined P2P game room ${roomCode} as guest`,
-      ipAddress: ip,
-    });
+    // Joining a room is NOT audit-logged (US-FIX-20i AC-3 decision): the audit_logs
+    // hash chain is reserved for compliance-relevant events. For games only room
+    // creation and game finish are kept; join volume would bloat the chain.
 
     return NextResponse.json({
       roomId: room.id,

@@ -79,7 +79,7 @@ export async function POST(
     const playerTurn = room.currentTurn as 1 | 2;
 
     // 3. Validate move legality
-    if (!validateMove(state, { cell: cell as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }, playerTurn)) {
+    if (!validateMove(state, { cell: cell as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 })) {
       return NextResponse.json({ error: "Illegal move" }, { status: 400 });
     }
 
@@ -126,6 +126,19 @@ export async function POST(
         ipAddress: ip,
       });
 
+      // Compose from values already in scope — no re-query (US-PERF-21e).
+      // The client only consumes game fields here, not player info.
+      return NextResponse.json({
+        roomId: room.id,
+        roomCode: room.roomCode,
+        status: "finished",
+        gameState: nextState,
+        currentTurn: playerTurn,
+        winnerId,
+        finishReason: reason,
+        turnDeadline: null,
+      });
+
     } else {
       // Ongoing: switch turn, renew deadline
       const nextTurn = room.currentTurn === 1 ? 2 : 1;
@@ -150,33 +163,20 @@ export async function POST(
       if (updated.length === 0) {
         return NextResponse.json({ error: "Conflict: turn has already changed or game is not active" }, { status: 409 });
       }
+
+      // The conditional UPDATE's .returning() row is the fresh state — no re-query (US-PERF-21e)
+      const fresh = updated[0];
+      return NextResponse.json({
+        roomId: fresh.id,
+        roomCode: fresh.roomCode,
+        status: fresh.status,
+        gameState: fresh.gameState,
+        currentTurn: fresh.currentTurn,
+        winnerId: fresh.winnerId,
+        finishReason: fresh.finishReason,
+        turnDeadline: fresh.turnDeadline,
+      });
     }
-
-    // Return fresh state
-    const freshRoom = await db.query.gameRooms.findFirst({
-      where: (r, { eq }) => eq(r.id, room.id),
-      with: {
-        host: {
-          columns: { id: true, name: true, nickname: true, houseId: true }
-        },
-        guest: {
-          columns: { id: true, name: true, nickname: true, houseId: true }
-        }
-      }
-    });
-
-    return NextResponse.json({
-      roomId: freshRoom?.id,
-      roomCode: freshRoom?.roomCode,
-      status: freshRoom?.status,
-      gameState: freshRoom?.gameState,
-      currentTurn: freshRoom?.currentTurn,
-      winnerId: freshRoom?.winnerId,
-      finishReason: freshRoom?.finishReason,
-      turnDeadline: freshRoom?.turnDeadline,
-      host: freshRoom?.host,
-      guest: freshRoom?.guest,
-    });
 
   } catch (error) {
     captureException(error, { route: "POST /api/battle/rooms/[code]/move" });

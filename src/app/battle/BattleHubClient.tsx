@@ -80,9 +80,9 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
         if (!lbRes.ok) throw new Error("Failed to load leaderboard");
         const lbData = await lbRes.json();
         setLeaderboard(lbData.leaderboard);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        setError(err.message || "An unexpected error occurred");
+        setError(err instanceof Error ? err.message : "An unexpected error occurred");
       } finally {
         setLoading(false);
       }
@@ -107,8 +107,8 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
 
       const room = await res.json();
       router.push(`/battle/room/${room.roomCode}`);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create room");
       setCreating(false);
     }
   }
@@ -238,6 +238,18 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
                 <p style={{ fontSize: 32, fontWeight: 900, marginTop: 4 }}>{stats.bestStreak}</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Never-played state (stats is null until the first finished game — US-FIX-20i AC-5) */}
+        {!loading && !stats && (
+          <div className="glass" style={{ padding: 24, marginBottom: 40, border: "1px dashed var(--border-medium)", textAlign: "center" }}>
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <Medal size={18} color="var(--text-muted)" /> ยังไม่มีสถิติการประลอง
+            </h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+              คุณยังไม่เคยเล่นเกมจนจบเลย — สร้างห้องหรือเข้าร่วมเกมแรกเพื่อเริ่มเก็บสถิติ!
+            </p>
           </div>
         )}
 

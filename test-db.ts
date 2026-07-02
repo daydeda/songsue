@@ -8,10 +8,10 @@ if (isPglite && process.env.NODE_ENV === "production") {
 
 async function test() {
   try {
-    let result: any;
+    let result: unknown;
     if (isPglite) {
       console.log("📦 PGlite active. Testing connection...");
-      const { PGlite } = require("@electric-sql/pglite");
+      const { PGlite } = await import("@electric-sql/pglite");
       const client = new PGlite("./.pglite-data");
       result = await client.query("SELECT 1 as connected");
       await client.close();
@@ -19,7 +19,7 @@ async function test() {
       if (!process.env.DATABASE_URL) {
         throw new Error("DATABASE_URL environment variable is required");
       }
-      const postgres = require("postgres");
+      const { default: postgres } = await import("postgres");
       const sql = postgres(process.env.DATABASE_URL);
       result = await sql`SELECT 1 as connected`;
       await sql.end();
@@ -33,4 +33,3 @@ async function test() {
 }
 
 test();
-

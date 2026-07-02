@@ -3,8 +3,9 @@
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Swords, Trophy, AlertTriangle, ArrowLeft, Loader2, Zap, Hourglass, LogOut, Award, RefreshCcw, RotateCcw } from "lucide-react";
+import { Swords, Trophy, AlertTriangle, ArrowLeft, Loader2, Zap, Hourglass, LogOut, Award, RefreshCcw, RotateCcw, Info } from "lucide-react";
 import Link from "next/link";
+import { useLanguage } from "@/lib/LanguageContext";
 import dynamic from "next/dynamic";
 
 const QRCodeSVG = dynamic(() => import("qrcode.react").then((mod) => mod.QRCodeSVG), {
@@ -12,7 +13,7 @@ const QRCodeSVG = dynamic(() => import("qrcode.react").then((mod) => mod.QRCodeS
 });
 
 interface RoomClientProps {
-  initialSession: any;
+  initialSession: { user: { id: string; name?: string | null } } | null;
   roomCode: string;
 }
 
@@ -29,6 +30,7 @@ interface OXState {
 
 export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
   const router = useRouter();
+  const { t } = useLanguage();
   const user = initialSession?.user;
   const roomCodeUpper = roomCode.toUpperCase();
 
@@ -66,14 +68,19 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
   // WebRTC Refs
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
-  const iceCandidatesQueue = useRef<any[]>([]);
+  const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([]);
   const isInitiator = useRef<boolean>(false);
   const webrtcActive = useRef<boolean>(false);
 
   // Polling intervals refs
   const statePollInterval = useRef<NodeJS.Timeout | null>(null);
   const signalPollInterval = useRef<NodeJS.Timeout | null>(null);
-  const lastProcessedSignalTime = useRef<number>(0);
+  // WebRTC fallback watchdog (US-PERF-21a): the connecting screen promises a 10s cutover
+  const webrtcTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Prevents overlapping signaling polls (interval tick + immediate kicks — US-PERF-21c)
+  const signalPollBusy = useRef<boolean>(false);
+  // Once both players are known, state polls stop asking for the (joined) player info (US-PERF-21e)
+  const playersKnownRef = useRef<boolean>(false);
 
   const getMyPlayerNumber = () => {
     if (!user) return 0;
@@ -84,6 +91,13 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
   const myNumber = getMyPlayerNumber();
   const myTurn = status === "active" && currentTurn === myNumber;
+  // Turn-awareness only matters for the in-game fallback poll (US-PERF-21d);
+  // pinning it to false otherwise keeps the poll effect from restarting per turn on WebRTC games.
+  const turnAwareMyTurn = status === "active" && connType === "polling" ? myTurn : false;
+
+  useEffect(() => {
+    playersKnownRef.current = Boolean(host && guest);
+  }, [host, guest]);
 
   // Initialize and check room
   useEffect(() => {
@@ -102,8 +116,8 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         
         // If guest has already joined or I am the guest, we will be in connecting
         isInitiator.current = user?.id === data.host.id;
-      } catch (err: any) {
-        setError(err.message || "Could not fetch room details");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Could not fetch room details");
       }
     }
     checkRoom();
@@ -121,31 +135,35 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
     const poll = async () => {
       try {
-        const res = await fetch(`/api/battle/rooms/${roomCodeUpper}/state`);
+        // Ask for player info only until both players are known (US-PERF-21e)
+        const playersParam = playersKnownRef.current ? "" : "?players=1";
+        const res = await fetch(`/api/battle/rooms/${roomCodeUpper}/state${playersParam}`);
         if (!res.ok) return;
         const data = await res.json();
 
-        // Sync basic room info
+        // Sync basic room info (players guarded: absent when not requested, and
+        // identity-preserved so unchanged data doesn't churn state/effects)
         setStatus(data.status);
-        setHost(data.host);
-        setGuest(data.guest);
+        if (data.host) setHost(prev => (prev && prev.id === data.host.id ? prev : data.host));
+        if (data.guest) setGuest(prev => (prev && prev.id === data.guest.id ? prev : data.guest));
         setGameState(data.gameState);
         setCurrentTurn(data.currentTurn);
         setWinnerId(data.winnerId);
         setFinishReason(data.finishReason);
         setTurnDeadline(data.turnDeadline);
-
-        // If guest joined and we are in waiting, shift status to connecting
-        if (data.status === "connecting" && status === "waiting") {
-          setStatus("connecting");
-        }
       } catch (err) {
         console.error("State polling error:", err);
       }
     };
 
-    // Determine interval dynamically: webrtc -> 30s backoff reconciliation, fallback polling -> 5s
-    const intervalMs = connType === "webrtc" ? 30000 : 5000;
+    // Phase-aware interval (US-PERF-21b/21d): pre-game phases are short-lived so they
+    // poll fast; in-game fallback polls fast only while waiting for the opponent;
+    // a healthy WebRTC session needs only slow reconciliation.
+    const intervalMs =
+      status === "waiting" || status === "connecting" ? 2000
+      : connType === "webrtc" ? 30000
+      : turnAwareMyTurn ? 10000
+      : 2500;
 
     poll(); // Run instantly on hook setup/change
     statePollInterval.current = setInterval(poll, intervalMs);
@@ -156,7 +174,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         statePollInterval.current = null;
       }
     };
-  }, [roomId, status, connType, isTabVisible, roomCodeUpper]);
+  }, [roomId, status, connType, isTabVisible, roomCodeUpper, turnAwareMyTurn]);
 
   // Turn timer countdown
   useEffect(() => {
@@ -174,23 +192,6 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
     return () => clearInterval(interval);
   }, [turnDeadline, status]);
 
-  // WebRTC Setup Orchestrator (Separate lifecycle from status change cleanup, trigger on connecting)
-  useEffect(() => {
-    if (status === "connecting" && !webrtcActive.current && !pcRef.current) {
-      setupWebRTC();
-    }
-    if (status === "finished" || status === "expired") {
-      cleanupWebRTC();
-    }
-  }, [status]);
-
-  // Teardown everything strictly on unmount
-  useEffect(() => {
-    return () => {
-      cleanupWebRTC();
-    };
-  }, []);
-
   // WebRTC Setup Logic
   const setupWebRTC = async () => {
     try {
@@ -200,6 +201,18 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
       pcRef.current = pc;
+
+      // Fallback watchdog (US-PERF-21a): browsers can sit in "checking" for 15-40s
+      // before declaring failure — cut over to HTTP polling after 10s as the UI promises,
+      // and mark the room active so the game actually starts.
+      webrtcTimeoutRef.current = setTimeout(() => {
+        if (!webrtcActive.current) {
+          console.warn("WebRTC connect timeout (10s) — falling back to HTTP polling");
+          cleanupWebRTC();
+          setConnType("polling");
+          markRoomActive();
+        }
+      }, 10000);
 
       // Handle candidates
       pc.onicecandidate = (event) => {
@@ -212,9 +225,20 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         setWebrtcState(pc.connectionState);
         if (pc.connectionState === "connected") {
           webrtcActive.current = true;
+          if (webrtcTimeoutRef.current) {
+            clearTimeout(webrtcTimeoutRef.current);
+            webrtcTimeoutRef.current = null;
+          }
           setConnType("webrtc");
           markRoomActive();
-        } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        } else if (pc.connectionState === "failed") {
+          // ICE failed outright — fall back AND activate the room so the game
+          // can start via REST (US-PERF-21a); /active is idempotent server-side.
+          webrtcActive.current = false;
+          setConnType("polling");
+          cleanupWebRTC();
+          markRoomActive();
+        } else if (pc.connectionState === "closed") {
           webrtcActive.current = false;
           setConnType("polling"); // Fallback
           cleanupWebRTC();
@@ -245,8 +269,9 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         };
       }
 
-      // Start signaling polling interval
-      lastProcessedSignalTime.current = Date.now();
+      // Start signaling polling: kick one poll immediately (the opponent's offer is
+      // usually already waiting — US-PERF-21c), then continue on the 1s interval.
+      pollSignaling();
       signalPollInterval.current = setInterval(pollSignaling, 1000);
 
     } catch (err) {
@@ -259,6 +284,10 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
     dc.onopen = () => {
       setWebrtcState("connected");
       webrtcActive.current = true;
+      if (webrtcTimeoutRef.current) {
+        clearTimeout(webrtcTimeoutRef.current);
+        webrtcTimeoutRef.current = null;
+      }
       setConnType("webrtc");
       markRoomActive();
       // Instantly clear signaling poll interval when connected
@@ -301,10 +330,20 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
   const pollSignaling = async () => {
     if (!isTabVisible) return;
+    // In-flight guard: interval ticks and immediate kicks must not overlap,
+    // or setRemoteDescription could run twice (US-PERF-21c)
+    if (signalPollBusy.current) return;
+    signalPollBusy.current = true;
     try {
       const res = await fetch(`/api/battle/rooms/${roomCodeUpper}/signal`);
       if (!res.ok) return;
       const data = await res.json();
+
+      // Room status piggybacked on the 1s signaling channel (US-PERF-21b):
+      // reflects "active" within ~1s instead of waiting for the state poll.
+      if (data.roomStatus && data.roomStatus !== "waiting") {
+        setStatus(prev => (prev === data.roomStatus ? prev : data.roomStatus));
+      }
 
       const pc = pcRef.current;
       if (!pc) return;
@@ -329,6 +368,10 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ role: "guest", sdpAnswer: answer.sdp || "" })
         });
+
+        // Re-poll right away: the host's ICE candidates are usually already
+        // uploaded by now — don't wait for the next 1s tick (US-PERF-21c)
+        setTimeout(() => pollSignaling(), 50);
       }
 
       // 2. Process ICE Candidates
@@ -343,6 +386,8 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
       }
     } catch (err) {
       console.error("Signaling poll error:", err);
+    } finally {
+      signalPollBusy.current = false;
     }
   };
 
@@ -373,6 +418,10 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
   };
 
   const cleanupWebRTC = () => {
+    if (webrtcTimeoutRef.current) {
+      clearTimeout(webrtcTimeoutRef.current);
+      webrtcTimeoutRef.current = null;
+    }
     if (signalPollInterval.current) clearInterval(signalPollInterval.current);
     if (dcRef.current) {
       dcRef.current.close();
@@ -384,6 +433,25 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
     }
     webrtcActive.current = false;
   };
+
+  // WebRTC Setup Orchestrator (separate lifecycle from status change cleanup, trigger on connecting).
+  // Setup is deferred to a timeout so its state updates run outside the effect body.
+  useEffect(() => {
+    if (status === "connecting" && !webrtcActive.current && !pcRef.current) {
+      const timer = setTimeout(() => setupWebRTC(), 0);
+      return () => clearTimeout(timer);
+    }
+    if (status === "finished" || status === "expired") {
+      cleanupWebRTC();
+    }
+  }, [status]);
+
+  // Teardown everything strictly on unmount
+  useEffect(() => {
+    return () => {
+      cleanupWebRTC();
+    };
+  }, []);
 
   // Submit Move Action
   const handlePlaceMark = async (cell: number) => {
@@ -450,8 +518,8 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
           console.error("Failed to sync move status via data channel", e);
         }
       }
-    } catch (err: any) {
-      setError(err.message || "Move verification failed");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Move verification failed");
       // Rollback on error
       router.refresh();
     } finally {
@@ -473,8 +541,8 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
       setStatus(freshData.status);
       setWinnerId(freshData.winnerId);
       setFinishReason(freshData.finishReason);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Resignation failed");
     }
   };
 
@@ -545,8 +613,13 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
               <Swords size={32} className="pulse" />
             </div>
             <h1 style={{ fontSize: "1.75rem", fontWeight: 900, marginBottom: 12 }}>รอผู้ท้าชิงเข้าร่วม...</h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", maxWidth: 400, margin: "0 auto 32px" }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", maxWidth: 400, margin: "0 auto 16px" }}>
               ให้ฝ่ายตรงข้ามเปิดกล้องสแกน QR Code นี้ หรือพิมพ์รหัสห้อง 4 ตัวอักษรเพื่อเริ่มการเชื่อมต่อ WebRTC P2P
+            </p>
+            {/* P2P privacy note (US-FIX-20i AC-2) */}
+            <p style={{ display: "flex", alignItems: "flex-start", gap: 6, color: "var(--text-muted)", fontSize: "0.8rem", maxWidth: 400, margin: "0 auto 32px", textAlign: "left" }}>
+              <Info size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{t.battleP2pPrivacyNote}</span>
             </p>
 
             {/* QR Code */}

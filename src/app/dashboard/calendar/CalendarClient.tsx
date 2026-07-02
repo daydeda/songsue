@@ -195,7 +195,9 @@ export default function CalendarClient({
   }, []);
 
   useEffect(() => {
-    loadItems();
+    // Deferred so loadItems' loading flag flips outside the synchronous effect body.
+    const timer = setTimeout(() => loadItems(), 0);
+    return () => clearTimeout(timer);
   }, [loadItems]);
 
   // Load the event list lazily for the "link to event" picker (managers only).
@@ -1218,7 +1220,9 @@ function SubscribePanel({ onClose }: { onClose: () => void }) {
   }, []);
 
   useEffect(() => {
-    load();
+    // Deferred so load's loading flag flips outside the synchronous effect body.
+    const timer = setTimeout(() => load(), 0);
+    return () => clearTimeout(timer);
   }, [load]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";

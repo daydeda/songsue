@@ -8,6 +8,23 @@ const memberBodySchema = z.object({
   userId: z.string().trim().min(1, "userId is required"),
 });
 
+// Shared by POST/DELETE: super_admin/admin may manage any club; a
+// club_president may manage ONLY their own club(s), verified server-side
+// against club_members (never trust the client-supplied :id alone). Gates on
+// the full role SET, not just the primary role — see the matching comment on
+// GET below for why.
+async function canManageClubMembers(
+  session: { user?: { role?: string | null; roles?: string[] | null; id?: string | null } } | null,
+  clubId: string,
+): Promise<boolean> {
+  if (!session?.user) return false;
+  if (["super_admin", "admin"].includes(session.user.role || "")) return true;
+  const isClubPresident = effectiveRoles(session.user.role, session.user.roles).includes("club_president");
+  if (!isClubPresident) return false;
+  const ownClubIds = await ClubsService.getPresidentClubIds(session.user.id!);
+  return ownClubIds.includes(clubId);
+}
+
 // GET /api/admin/clubs/[id]/members — List a club's members (name, studentId,
 // role). Gate: super_admin/admin, OR a club_president viewing THEIR OWN club
 // (verified server-side against club_members — never trust the client-supplied
@@ -50,25 +67,24 @@ export async function GET(
 }
 
 // POST /api/admin/clubs/[id]/members — Add a user to this club as a plain
-// 'member'. Gate: super_admin/admin only, same as club identity management
-// elsewhere — a club_president can VIEW their own roster (see GET above) but
-// not edit it, so membership changes stay with staff. There is deliberately no
-// way to grant 'president' here: that role must go through the Students page's
-// role editor (setUserClubPresidencies), which keeps the club_members row in
-// sync with the user's club_president system role tag — doing it here would let
-// someone end up "president" of a club with no actual club_president role.
+// 'member'. Gate: super_admin/admin (any club), or a club_president managing
+// THEIR OWN club. There is deliberately no way to grant 'president' here: that
+// role must go through the Students page's role editor
+// (setUserClubPresidencies), which keeps the club_members row in sync with the
+// user's club_president system role tag — doing it here would let someone end
+// up "president" of a club with no actual club_president role (or let a club
+// president silently promote themselves/others).
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin"].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    const { id } = await params;
+    if (!(await canManageClubMembers(session, id))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
     const body = await req.json().catch(() => null);
     const data = memberBodySchema.parse(body);
 
@@ -97,23 +113,23 @@ export async function POST(
 }
 
 // DELETE /api/admin/clubs/[id]/members — Remove a plain 'member' from this
-// club. Gate: super_admin/admin only. Deliberately refuses to remove a
-// role='president' row — presidency must be revoked via the Students page's
-// role editor (which un-checks club_president and clears the matching
-// club_members row together), so this stays the one path that can desync a
-// club_president system role from an actual club_members presidency.
+// club. Gate: super_admin/admin (any club), or a club_president managing THEIR
+// OWN club. Deliberately refuses to remove a role='president' row (even their
+// own) — presidency must be revoked via the Students page's role editor (which
+// un-checks club_president and clears the matching club_members row
+// together), so this stays the one path that can desync a club_president
+// system role from an actual club_members presidency.
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin"].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    const { id } = await params;
+    if (!(await canManageClubMembers(session, id))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
     const body = await req.json().catch(() => null);
     const data = memberBodySchema.parse(body);
 

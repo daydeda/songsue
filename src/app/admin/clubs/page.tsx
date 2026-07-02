@@ -41,6 +41,10 @@ export default function ClubsPage() {
   // this flag only controls which buttons render (Members yes, Rename/Archive/
   // Delete no).
   const isClubPresident = userRole === "club_president";
+  // Members-modal edit actions (add/remove a plain member) — staff can manage
+  // any club, club_president only their own. The server independently
+  // re-verifies club_president ownership on every request; this flag is UI-only.
+  const canManageMembers = canManage || isClubPresident;
 
   const [clubs, setClubs] = useState<Club[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,11 +71,13 @@ export default function ClubsPage() {
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [membersError, setMembersError] = useState<string | null>(null);
 
-  // Add-member picker — canManage only. `students` is the admin directory
-  // (/api/admin/students, already staff-gated), fetched lazily once on first
-  // use and cached for the session rather than re-fetched per club opened.
-  const [students, setStudents] = useState<StudentOption[]>([]);
+  // Add-member picker — canManageMembers only. Search is scoped to the club
+  // currently open (GET /api/admin/clubs/[id]/members/search), NOT the full
+  // student directory — a club_president has no legitimate reason to see every
+  // student's house/role/major, so that broader endpoint stays staff-only.
   const [memberSearch, setMemberSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<StudentOption[]>([]);
+  const [searching, setSearching] = useState(false);
   const [addingUserId, setAddingUserId] = useState<string | null>(null);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
@@ -96,15 +102,31 @@ export default function ClubsPage() {
     setViewingMembers(club);
     setMembers([]);
     setMemberSearch("");
+    setSearchResults([]);
     setAddMemberError(null);
     loadMembers(club.id);
-    if (canManage && students.length === 0) {
-      fetch("/api/admin/students")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((d) => { if (Array.isArray(d)) setStudents(d); })
-        .catch(() => {});
-    }
   };
+
+  // Debounced, club-scoped student search — only fires once the modal is open
+  // and the caller may manage members, and only past a 2-char query (so it
+  // never returns a "browse everyone" list, see the search route's own doc).
+  useEffect(() => {
+    if (!viewingMembers || !canManageMembers) return;
+    const timer = setTimeout(() => {
+      const q = memberSearch.trim();
+      if (q.length < 2) {
+        setSearchResults([]);
+        return;
+      }
+      setSearching(true);
+      fetch(`/api/admin/clubs/${viewingMembers.id}/members/search?q=${encodeURIComponent(q)}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => { if (Array.isArray(d)) setSearchResults(d); })
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [memberSearch, viewingMembers, canManageMembers]);
 
   const addMember = async (userId: string) => {
     if (!viewingMembers) return;
@@ -121,6 +143,7 @@ export default function ClubsPage() {
         throw new Error((data && data.error) || "Failed to add member");
       }
       setMemberSearch("");
+      setSearchResults([]);
       loadMembers(viewingMembers.id);
       refresh();
     } catch (err) {
@@ -579,11 +602,14 @@ export default function ClubsPage() {
               </button>
             </div>
 
-            {/* Add-member picker — canManage only. Adds with role='member' only;
-                granting 'president' stays a Students-page action so the
-                club_members row can never drift from the user's system role
-                (see ClubsService.addClubMember). */}
-            {canManage && (
+            {/* Add-member picker — canManageMembers (staff, or club_president for
+                their own club). Search is scoped server-side to THIS club (see
+                GET .../members/search) — a club_president never gets the full
+                student directory. Adds with role='member' only; granting
+                'president' stays a Students-page action so the club_members row
+                can never drift from the user's system role (see
+                ClubsService.addClubMember). */}
+            {canManageMembers && (
               <div style={{ padding: "16px 20px 0", flexShrink: 0 }}>
                 <input
                   className="input"
@@ -593,39 +619,40 @@ export default function ClubsPage() {
                 />
                 {memberSearch.trim() && (
                   <div style={{ marginTop: 8, maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                    {students
-                      .filter((s) => !members.some((m) => m.userId === s.id))
-                      .filter((s) => {
-                        const q = memberSearch.trim().toLowerCase();
-                        return (s.name || "").toLowerCase().includes(q) || (s.studentId || "").toLowerCase().includes(q);
-                      })
-                      .slice(0, 6)
-                      .map((s) => (
-                        <div
-                          key={s.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "8px 10px",
-                            borderRadius: 10,
-                            background: "var(--bg-elevated)",
-                          }}
-                        >
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{s.name}</div>
-                            {s.studentId && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.studentId}</div>}
-                          </div>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            disabled={addingUserId === s.id}
-                            onClick={() => addMember(s.id)}
+                    {searching ? (
+                      <div style={{ display: "flex", justifyContent: "center", padding: 12 }}>
+                        <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+                      </div>
+                    ) : (
+                      searchResults
+                        .filter((s) => !members.some((m) => m.userId === s.id))
+                        .map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              background: "var(--bg-elevated)",
+                            }}
                           >
-                            {addingUserId === s.id ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <Plus size={12} />}
-                            Add
-                          </button>
-                        </div>
-                      ))}
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{s.name}</div>
+                              {s.studentId && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.studentId}</div>}
+                            </div>
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              disabled={addingUserId === s.id}
+                              onClick={() => addMember(s.id)}
+                            >
+                              {addingUserId === s.id ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <Plus size={12} />}
+                              Add
+                            </button>
+                          </div>
+                        ))
+                    )}
                   </div>
                 )}
                 {addMemberError && (
@@ -643,7 +670,7 @@ export default function ClubsPage() {
                 <p style={{ color: "#ef4444", fontWeight: 600, fontSize: 13, padding: "12px 12px" }}>{membersError}</p>
               ) : members.length === 0 ? (
                 <p style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 13, padding: "12px 12px" }}>
-                  {canManage
+                  {canManageMembers
                     ? "No members yet — search above to add one, or assign a club_president from the Students page."
                     : "No members yet — assign a club_president to this club from the Students page."}
                 </p>
@@ -675,7 +702,7 @@ export default function ClubsPage() {
                         {m.role === "president" && (
                           <span className="badge badge-blue">President</span>
                         )}
-                        {canManage && m.role !== "president" && (
+                        {canManageMembers && m.role !== "president" && (
                           <button
                             className="btn btn-ghost btn-sm"
                             style={{ color: "#ef4444", padding: "4px 8px" }}

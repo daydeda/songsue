@@ -333,6 +333,17 @@ export default function AdminEventsPage() {
   // admin/super_admin for that detail. isAttendanceOnly is exactly that
   // thin-roster set on this page (only staff + thin-roster ever reach here).
   const canSeeExportButton = canExportAttendance || isAttendanceOnly;
+  // Club/major presidents may edit their OWN event's details (title, description,
+  // schedule, location, quota, etc.) — GET /api/admin/events already scopes their
+  // list to only events they own (see EventScopeService), so any event a president
+  // sees here is theirs to edit. They still may NOT touch role/major access,
+  // Managed By, or points — those stay staff-only (see canEditRestrictedFields
+  // below and the matching server-side strip in PUT /api/admin/events/[id]).
+  const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
+  const canEditEventDetails = !isAttendanceOnly || isPresidentRole;
+  // Role/major access control, Managed By (president/owner), and points are
+  // admin/registration/organizer only — even for a president editing their own event.
+  const canEditRestrictedFields = !isAttendanceOnly;
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1913,19 +1924,23 @@ export default function AdminEventsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventPointsLabel}</label>
-                    <div style={{ position: "relative" }}>
+                    <div style={{ position: "relative", opacity: canEditRestrictedFields ? 1 : 0.5 }}>
                       <Trophy size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#fbbf24" }} />
-                      <input className="input" type="number" min={0} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
+                      <input className="input" type="number" min={0} disabled={!canEditRestrictedFields} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventHousePointsHint}</p>
+                    <p style={{ fontSize: 11, color: canEditRestrictedFields ? "var(--text-muted)" : "#f59e0b", fontWeight: canEditRestrictedFields ? 400 : 700, marginTop: 6 }}>
+                      {canEditRestrictedFields ? t.eventHousePointsHint : t.eventStaffOnlyFieldHint}
+                    </p>
                   </div>
                   <div className="field">
                     <label className="label">{t.eventIndividualPointsLabel}</label>
-                    <div style={{ position: "relative" }}>
+                    <div style={{ position: "relative", opacity: canEditRestrictedFields ? 1 : 0.5 }}>
                       <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
-                      <input className="input" type="number" min={0} value={formData.individualPointsAwarded} onChange={(e) => set("individualPointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
+                      <input className="input" type="number" min={0} disabled={!canEditRestrictedFields} value={formData.individualPointsAwarded} onChange={(e) => set("individualPointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventIndividualPointsHint}</p>
+                    <p style={{ fontSize: 11, color: canEditRestrictedFields ? "var(--text-muted)" : "#f59e0b", fontWeight: canEditRestrictedFields ? 400 : 700, marginTop: 6 }}>
+                      {canEditRestrictedFields ? t.eventIndividualPointsHint : t.eventStaffOnlyFieldHint}
+                    </p>
                   </div>
                 </div>
 
@@ -2529,8 +2544,8 @@ export default function AdminEventsPage() {
               {/* Right Column: Poster & Description */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-                {/* Role Access Control */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                {/* Role Access Control — admin/registration/organizer only */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Users size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามบทบาท)" : "Role-Based Access Control"}
@@ -2540,6 +2555,9 @@ export default function AdminEventsPage() {
                       ? "เลือกบทบาทที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกบทบาท"
                       : "Select which roles can see & join this event. Leave all unchecked = visible to everyone."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {ALL_PARTICIPANT_ROLES.map((role) => {
                       const isSelected = formData.allowedRoles.includes(role);
@@ -2650,8 +2668,9 @@ export default function AdminEventsPage() {
                 </div>
 
                 {/* Major Access Control — limits which student majors may join.
-                    Combined with the role filter as AND. Empty = all majors. */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                    Combined with the role filter as AND. Empty = all majors.
+                    admin/registration/organizer only. */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Users size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามสาขา)" : "Major-Based Access Control"}
@@ -2661,6 +2680,9 @@ export default function AdminEventsPage() {
                       ? "เลือกสาขาที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกสาขา"
                       : "Select which majors can see & join this event. Leave all unchecked = open to every major."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {ALL_MAJORS.map((major) => {
                       const isSelected = formData.allowedMajors.includes(major);
@@ -2736,8 +2758,10 @@ export default function AdminEventsPage() {
 
                 {/* Managed By — which president role(s) MANAGE this event (see it in
                     their admin list, view attendance, scan, export). Independent of
-                    the role/major access above, which only controls who can JOIN. */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                    the role/major access above, which only controls who can JOIN.
+                    admin/registration/organizer only — a president must never be
+                    able to reassign who manages/owns their own event. */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <ShieldCheck size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "ผู้ดูแลกิจกรรม (ประธาน)" : "Managed By (President)"}
@@ -2747,6 +2771,9 @@ export default function AdminEventsPage() {
                       ? "เลือกประธานที่ดูแลกิจกรรมนี้ (เห็นในรายการ ดูการเช็คอิน สแกน ส่งออก) — ไม่กระทบสิทธิ์การเข้าร่วมของนักศึกษา"
                       : "Choose which president(s) manage this event (view it, see attendance, scan, export). Does NOT affect which students can join."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {(["club_president", "major_president"] as const).map((role) => {
                       const isSelected = formData.managedByRoles.includes(role);
@@ -3464,8 +3491,9 @@ export default function AdminEventsPage() {
                         </button>
                         )}
                      </div>
-                     {!isAttendanceOnly && (
+                     {(canEditEventDetails || !isAttendanceOnly) && (
                      <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+                       {canEditEventDetails && (
                        <button
                          className="btn btn-ghost"
                          style={{ flex: 1, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(0,0,0,0.03)", fontSize: 13 }}
@@ -3473,6 +3501,8 @@ export default function AdminEventsPage() {
                        >
                          <Edit2 size={13} /> {t.eventEditBtnLabel || "Edit"}
                        </button>
+                       )}
+                       {!isAttendanceOnly && (
                        <button
                          id={`delete-event-${evt.id}-btn`}
                          className="btn btn-danger"
@@ -3482,6 +3512,7 @@ export default function AdminEventsPage() {
                        >
                          {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} {t.eventDeleteBtnLabel || "Delete"}
                        </button>
+                       )}
                      </div>
                      )}
                    </div>

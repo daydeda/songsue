@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { sessionInputSchema } from "@/lib/event-schema";
+import { effectiveRoles } from "@/lib/admin-access";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 const eventUpdateSchema = z.object({
   title: z.string().min(1).optional(),
@@ -56,14 +58,42 @@ export async function PUT(
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
+    if (!session?.user || (!isAdminRole && !isPresidentRole)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
     const body = await req.json().catch(() => null);
     const data = eventUpdateSchema.parse(body);
+
+    // A club/major president may edit their OWN event's details (title,
+    // description, schedule, location, quota, etc.) but never role/major access,
+    // Managed By, or points — those stay staff-only, so strip them from the
+    // payload here regardless of what the client sent (defense in depth — the UI
+    // already disables these fields for presidents, this is the real gate).
+    if (!isAdminRole) {
+      const existing = await db.query.events.findFirst({
+        where: eq(events.id, id),
+        columns: { ownerClubIds: true, ownerMajors: true },
+      });
+      if (!existing) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+      if (!EventScopeService.isEventManagedByScope(existing, scope)) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      data.pointsAwarded = undefined;
+      data.individualPointsAwarded = undefined;
+      data.allowedRoles = undefined;
+      data.allowedMajors = undefined;
+      data.managedByRoles = undefined;
+      data.ownerClubIds = undefined;
+      data.ownerMajors = undefined;
+    }
 
     // When posters are provided, normalize them and keep the imageUrl cover in
     // sync with imageUrls[0]. If only the legacy imageUrl is sent, fall back to it.

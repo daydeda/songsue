@@ -25,11 +25,22 @@ type ClubMember = {
   studentId: string | null;
 };
 
+type StudentOption = {
+  id: string;
+  name: string;
+  studentId: string | null;
+};
+
 export default function ClubsPage() {
   const { data: session } = useSession();
   const { t } = useLanguage();
   const userRole = session?.user?.role || "student";
   const canManage = userRole === "super_admin" || userRole === "admin";
+  // club_president gets read-only access to this page, scoped to just their own
+  // club(s) — the list/members APIs already filter to that scope server-side, so
+  // this flag only controls which buttons render (Members yes, Rename/Archive/
+  // Delete no).
+  const isClubPresident = userRole === "club_president";
 
   const [clubs, setClubs] = useState<Club[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,12 +67,19 @@ export default function ClubsPage() {
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [membersError, setMembersError] = useState<string | null>(null);
 
-  const openMembers = (club: Club) => {
-    setViewingMembers(club);
-    setMembers([]);
+  // Add-member picker — canManage only. `students` is the admin directory
+  // (/api/admin/students, already staff-gated), fetched lazily once on first
+  // use and cached for the session rather than re-fetched per club opened.
+  const [students, setStudents] = useState<StudentOption[]>([]);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [addingUserId, setAddingUserId] = useState<string | null>(null);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [addMemberError, setAddMemberError] = useState<string | null>(null);
+
+  const loadMembers = (clubId: string) => {
     setMembersError(null);
     setLoadingMembers(true);
-    fetch(`/api/admin/clubs/${club.id}/members`)
+    fetch(`/api/admin/clubs/${clubId}/members`)
       .then(async (r) => {
         if (!r.ok) {
           const data = await r.json().catch(() => null);
@@ -72,6 +90,66 @@ export default function ClubsPage() {
       .then((d) => { if (Array.isArray(d)) setMembers(d); })
       .catch((err) => setMembersError(err instanceof Error ? err.message : "Failed to load members"))
       .finally(() => setLoadingMembers(false));
+  };
+
+  const openMembers = (club: Club) => {
+    setViewingMembers(club);
+    setMembers([]);
+    setMemberSearch("");
+    setAddMemberError(null);
+    loadMembers(club.id);
+    if (canManage && students.length === 0) {
+      fetch("/api/admin/students")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => { if (Array.isArray(d)) setStudents(d); })
+        .catch(() => {});
+    }
+  };
+
+  const addMember = async (userId: string) => {
+    if (!viewingMembers) return;
+    setAddingUserId(userId);
+    setAddMemberError(null);
+    try {
+      const res = await fetch(`/api/admin/clubs/${viewingMembers.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error((data && data.error) || "Failed to add member");
+      }
+      setMemberSearch("");
+      loadMembers(viewingMembers.id);
+      refresh();
+    } catch (err) {
+      setAddMemberError(err instanceof Error ? err.message : "Failed to add member");
+    } finally {
+      setAddingUserId(null);
+    }
+  };
+
+  const removeMember = async (userId: string) => {
+    if (!viewingMembers) return;
+    setRemovingUserId(userId);
+    try {
+      const res = await fetch(`/api/admin/clubs/${viewingMembers.id}/members`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error((data && data.error) || "Failed to remove member");
+      }
+      loadMembers(viewingMembers.id);
+      refresh();
+    } catch (err) {
+      setMembersError(err instanceof Error ? err.message : "Failed to remove member");
+    } finally {
+      setRemovingUserId(null);
+    }
   };
 
   const refresh = () => {
@@ -292,7 +370,9 @@ export default function ClubsPage() {
           ) : clubs.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 100, gap: 16 }}>
               <Building2 size={40} style={{ color: "var(--text-muted)" }} />
-              <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>No clubs yet.</p>
+              <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>
+                {canManage ? "No clubs yet." : "You haven't been assigned as a club president yet — contact an admin."}
+              </p>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -303,7 +383,7 @@ export default function ClubsPage() {
                     <th>Members</th>
                     <th>Status</th>
                     <th>Created</th>
-                    {canManage && <th style={{ textAlign: "right", paddingRight: 32 }}>Actions</th>}
+                    {(canManage || isClubPresident) && <th style={{ textAlign: "right", paddingRight: 32 }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -336,34 +416,38 @@ export default function ClubsPage() {
                       <td style={{ color: "var(--text-muted)", fontWeight: 500 }}>
                         {new Date(club.createdAt).toLocaleDateString()}
                       </td>
-                      {canManage && (
+                      {(canManage || isClubPresident) && (
                         <td style={{ textAlign: "right", paddingRight: 32 }}>
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <button className="btn btn-ghost btn-sm" onClick={() => openMembers(club)}>
                               <Eye size={14} />
                               Members
                             </button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => openRename(club)}>
-                              <Pencil size={14} />
-                              Rename
-                            </button>
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              disabled={archivingId === club.id}
-                              onClick={() => toggleArchived(club)}
-                            >
-                              {club.isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-                              {club.isArchived ? "Unarchive" : "Archive"}
-                            </button>
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              style={{ color: "#ef4444" }}
-                              disabled={deletingId === club.id}
-                              onClick={() => setConfirmDelete(club)}
-                            >
-                              {deletingId === club.id ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Trash2 size={14} />}
-                              Delete
-                            </button>
+                            {canManage && (
+                              <>
+                                <button className="btn btn-ghost btn-sm" onClick={() => openRename(club)}>
+                                  <Pencil size={14} />
+                                  Rename
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={archivingId === club.id}
+                                  onClick={() => toggleArchived(club)}
+                                >
+                                  {club.isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                                  {club.isArchived ? "Unarchive" : "Archive"}
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ color: "#ef4444" }}
+                                  disabled={deletingId === club.id}
+                                  onClick={() => setConfirmDelete(club)}
+                                >
+                                  {deletingId === club.id ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Trash2 size={14} />}
+                                  Delete
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       )}
@@ -444,10 +528,11 @@ export default function ClubsPage() {
         </div>
       )}
 
-      {/* Members Modal — one club's roster at a time, super_admin/admin only.
-          A different club's president can never reach this (proxy blocks
-          club_president from /admin/clubs entirely, and the API is gated
-          super_admin/admin — see /api/admin/clubs/[id]/members). */}
+      {/* Members Modal — one club's roster at a time. super_admin/admin can open
+          any club; a club_president can open only their own (the list API already
+          scopes `clubs` to just their club(s), and the members API re-verifies
+          server-side against club_members — see /api/admin/clubs/[id]/members —
+          so a different club's president can never reach this via a crafted id). */}
       {viewingMembers && (
         <div
           style={{
@@ -494,6 +579,61 @@ export default function ClubsPage() {
               </button>
             </div>
 
+            {/* Add-member picker — canManage only. Adds with role='member' only;
+                granting 'president' stays a Students-page action so the
+                club_members row can never drift from the user's system role
+                (see ClubsService.addClubMember). */}
+            {canManage && (
+              <div style={{ padding: "16px 20px 0", flexShrink: 0 }}>
+                <input
+                  className="input"
+                  placeholder="Search students by name or student ID to add…"
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                />
+                {memberSearch.trim() && (
+                  <div style={{ marginTop: 8, maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                    {students
+                      .filter((s) => !members.some((m) => m.userId === s.id))
+                      .filter((s) => {
+                        const q = memberSearch.trim().toLowerCase();
+                        return (s.name || "").toLowerCase().includes(q) || (s.studentId || "").toLowerCase().includes(q);
+                      })
+                      .slice(0, 6)
+                      .map((s) => (
+                        <div
+                          key={s.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            background: "var(--bg-elevated)",
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{s.name}</div>
+                            {s.studentId && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.studentId}</div>}
+                          </div>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            disabled={addingUserId === s.id}
+                            onClick={() => addMember(s.id)}
+                          >
+                            {addingUserId === s.id ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <Plus size={12} />}
+                            Add
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+                {addMemberError && (
+                  <p style={{ color: "#ef4444", fontWeight: 600, fontSize: 12, marginTop: 6 }}>{addMemberError}</p>
+                )}
+              </div>
+            )}
+
             <div style={{ padding: "12px 20px", overflowY: "auto", flex: 1 }}>
               {loadingMembers ? (
                 <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
@@ -503,7 +643,9 @@ export default function ClubsPage() {
                 <p style={{ color: "#ef4444", fontWeight: 600, fontSize: 13, padding: "12px 12px" }}>{membersError}</p>
               ) : members.length === 0 ? (
                 <p style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 13, padding: "12px 12px" }}>
-                  No members yet — assign a club_president to this club from the Students page.
+                  {canManage
+                    ? "No members yet — search above to add one, or assign a club_president from the Students page."
+                    : "No members yet — assign a club_president to this club from the Students page."}
                 </p>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -529,9 +671,22 @@ export default function ClubsPage() {
                           </div>
                         )}
                       </div>
-                      {m.role === "president" && (
-                        <span className="badge badge-blue">President</span>
-                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {m.role === "president" && (
+                          <span className="badge badge-blue">President</span>
+                        )}
+                        {canManage && m.role !== "president" && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: "#ef4444", padding: "4px 8px" }}
+                            disabled={removingUserId === m.userId}
+                            onClick={() => removeMember(m.userId)}
+                            title="Remove from club"
+                          >
+                            {removingUserId === m.userId ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <X size={14} />}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

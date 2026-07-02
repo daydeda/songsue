@@ -1,40 +1,39 @@
-﻿# User Story: US-FIX-20d - à¹à¸à¹‰à¸à¸²à¸£à¸ªà¹ˆà¸‡ ICE Candidates à¹ƒà¸«à¹‰ Append à¸à¸±à¹ˆà¸‡ Server à¹à¸—à¸™à¸à¸²à¸£à¹€à¸‚à¸µà¸¢à¸™à¸—à¸±à¸š
+﻿# User Story: US-FIX-20d - แก้การส่ง ICE Candidates ให้ Append ฝั่ง Server แทนการเขียนทับ
 
-**Status:** ðŸ” Implemented â€” In Review (à¸žà¸±à¸’à¸™à¸²à¹€à¸ªà¸£à¹‡à¸ˆ 2026-07-02, à¸—à¸”à¸ªà¸­à¸š local à¹à¸¥à¹‰à¸§)
+**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02, ทดสอบ local แล้ว)
 **Epic:** [P2P Game Hardening & Production Readiness (Recheck Report 2026-07-02)](../../report/2026-07-02-p2p-game-recheck.md)
-**Priority:** ðŸŸ  Moderate â€” à¸‚à¸¶à¹‰à¸™à¸à¸±à¸š US-FIX-20a
+**Priority:** 🟠 Moderate — ขึ้นกับ US-FIX-20a
 **Owner:** Developer
 **Version:** 1.0 | **Last Updated:** 2026-07-02
 
 ---
 
-## ðŸ“– Description
-**à¹ƒà¸™à¸à¸²à¸™à¸°** à¸œà¸¹à¹‰à¹€à¸¥à¹ˆà¸™à¹€à¸à¸¡ P2P Battle
-**à¸‰à¸±à¸™à¸•à¹‰à¸­à¸‡à¸à¸²à¸£** à¹ƒà¸«à¹‰ ICE candidates à¸—à¸¸à¸à¸•à¸±à¸§à¸—à¸µà¹ˆ browser à¸„à¹‰à¸™à¸žà¸šà¸–à¸¹à¸à¸ªà¹ˆà¸‡à¸–à¸¶à¸‡à¸„à¸¹à¹ˆà¹à¸‚à¹ˆà¸‡à¸„à¸£à¸šà¸–à¹‰à¸§à¸™
-**à¹€à¸žà¸·à¹ˆà¸­à¹ƒà¸«à¹‰** à¸à¸²à¸£à¹€à¸ˆà¸£à¸ˆà¸²à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­ WebRTC à¸ªà¸³à¹€à¸£à¹‡à¸ˆà¸­à¸¢à¹ˆà¸²à¸‡à¸ªà¸¡à¹ˆà¸³à¹€à¸ªà¸¡à¸­ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆà¹à¸šà¸šà¸‚à¸¶à¹‰à¸™à¸à¸±à¸šà¸”à¸§à¸‡à¸§à¹ˆà¸² candidate à¸•à¸±à¸§à¸ªà¸¸à¸”à¸—à¹‰à¸²à¸¢à¹ƒà¸Šà¹‰à¹„à¸”à¹‰à¸«à¸£à¸·à¸­à¹„à¸¡à¹ˆ
+## 📖 Description
+**ในฐานะ** ผู้เล่นเกม P2P Battle
+**ฉันต้องการ** ให้ ICE candidates ทุกตัวที่ browser ค้นพบถูกส่งถึงคู่แข่งครบถ้วน
+**เพื่อให้** การเจรจาเชื่อมต่อ WebRTC สำเร็จอย่างสม่ำเสมอ ไม่ใช่สำเร็จแบบขึ้นกับดวงว่า candidate ตัวสุดท้ายใช้ได้หรือไม่
 
-## ðŸ› à¸—à¸µà¹ˆà¸¡à¸²à¸‚à¸­à¸‡à¸›à¸±à¸à¸«à¸² (à¸ˆà¸²à¸ Recheck Report â€” FIX-5)
-1. à¸à¸±à¹ˆà¸‡ client (`uploadIceCandidate` à¹ƒà¸™ `RoomClient.tsx`): GET `/signal` à¸„à¸·à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸‚à¸­à¸‡**à¸à¸±à¹ˆà¸‡à¸•à¸£à¸‡à¸‚à¹‰à¸²à¸¡**à¹€à¸ªà¸¡à¸­ (`role: opponentRole`) à¸—à¸³à¹ƒà¸«à¹‰à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚ `data.role === myRole` à¹„à¸¡à¹ˆà¸¡à¸µà¸§à¸±à¸™à¹€à¸›à¹‡à¸™à¸ˆà¸£à¸´à¸‡ â†’ `existingCandidates` à¸§à¹ˆà¸²à¸‡à¹€à¸ªà¸¡à¸­ â†’ à¸—à¸¸à¸ POST à¹€à¸‚à¸µà¸¢à¸™à¸—à¸±à¸š array à¸—à¸±à¹‰à¸‡à¸à¹‰à¸­à¸™à¹€à¸«à¸¥à¸·à¸­ candidate à¸•à¸±à¸§à¹€à¸”à¸µà¸¢à¸§
-2. à¹à¸¡à¹‰à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚à¸–à¸¹à¸ à¸à¹‡à¸¢à¸±à¸‡à¹€à¸›à¹‡à¸™ read-modify-write à¸à¸±à¹ˆà¸‡ client â€” candidates à¸—à¸µà¹ˆà¹€à¸à¸´à¸”à¸–à¸µà¹ˆà¹† à¸ˆà¸° race à¸à¸±à¸™à¹€à¸­à¸‡à¹à¸¥à¸°à¸«à¸²à¸¢à¹„à¸›
+## 🐛 ที่มาของปัญหา (จาก Recheck Report — FIX-5)
+1. ฝั่ง client (`uploadIceCandidate` ใน `RoomClient.tsx`): GET `/signal` คืนข้อมูลของ**ฝั่งตรงข้าม**เสมอ (`role: opponentRole`) ทำให้เงื่อนไข `data.role === myRole` ไม่มีวันเป็นจริง → `existingCandidates` ว่างเสมอ → ทุก POST เขียนทับ array ทั้งก้อนเหลือ candidate ตัวเดียว
+2. แม้เงื่อนไขถูก ก็ยังเป็น read-modify-write ฝั่ง client — candidates ที่เกิดถี่ๆ จะ race กันเองและหายไป
 
 ---
 
-## âœ… Acceptance Criteria
-1. [x] Client à¸ªà¹ˆà¸‡ ICE candidate **à¸—à¸µà¸¥à¸°à¸•à¸±à¸§** (payload à¹€à¸¥à¹‡à¸ à¹„à¸¡à¹ˆà¸¡à¸µ read-modify-write à¸à¸±à¹ˆà¸‡ client)
-2. [x] Server (`signal/route.ts`) à¹€à¸›à¹‡à¸™à¸œà¸¹à¹‰ append candidate à¸¥à¸‡ `ice_candidates` à¹à¸šà¸š atomic (à¹€à¸Šà¹ˆà¸™ `SET ice_candidates = ice_candidates || :new` à¹ƒà¸™ SQL à¹€à¸”à¸µà¸¢à¸§) â€” à¹„à¸¡à¹ˆà¸¡à¸µ candidate à¸«à¸²à¸¢à¹à¸¡à¹‰ POST à¸‹à¹‰à¸­à¸™à¸à¸±à¸™
-3. [x] GET `/signal` à¸¢à¸±à¸‡à¸„à¸‡à¸„à¸·à¸™ candidates à¸‚à¸­à¸‡à¸à¸±à¹ˆà¸‡à¸•à¸£à¸‡à¸‚à¹‰à¸²à¸¡à¸„à¸£à¸šà¸—à¸¸à¸à¸•à¸±à¸§à¸•à¸²à¸¡à¸¥à¸³à¸”à¸±à¸š
-4. [x] à¸ˆà¸³à¸™à¸§à¸™ candidates à¸•à¹ˆà¸­ record à¸¡à¸µà¹€à¸žà¸”à¸²à¸™ (à¹€à¸Šà¹ˆà¸™ â‰¤ 30 à¸•à¸±à¸§) à¹€à¸žà¸·à¹ˆà¸­à¸à¸±à¸™ payload à¸šà¸§à¸¡ â€” à¹€à¸à¸´à¸™à¹à¸¥à¹‰à¸§à¸›à¸à¸´à¹€à¸ªà¸˜
-5. [x] à¸—à¸”à¸ªà¸­à¸šà¸ˆà¸£à¸´à¸‡: host/guest à¸•à¹ˆà¸­à¸à¸±à¸™à¸ªà¸³à¹€à¸£à¹‡à¸ˆà¸•à¸´à¸”à¸•à¹ˆà¸­à¸à¸±à¸™ â‰¥ 5 à¸„à¸£à¸±à¹‰à¸‡à¸šà¸™à¹€à¸„à¸£à¸·à¸­à¸‚à¹ˆà¸²à¸¢à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™ à¹à¸¥à¸° log à¸¢à¸·à¸™à¸¢à¸±à¸™à¸§à¹ˆà¸² candidates à¸—à¸¸à¸à¸•à¸±à¸§à¸–à¸¹à¸à¹€à¸à¹‡à¸šà¸„à¸£à¸š
+## ✅ Acceptance Criteria
+1. [x] Client ส่ง ICE candidate **ทีละตัว** (payload เล็ก ไม่มี read-modify-write ฝั่ง client)
+2. [x] Server (`signal/route.ts`) เป็นผู้ append candidate ลง `ice_candidates` แบบ atomic (เช่น `SET ice_candidates = ice_candidates || :new` ใน SQL เดียว) — ไม่มี candidate หายแม้ POST ซ้อนกัน
+3. [x] GET `/signal` ยังคงคืน candidates ของฝั่งตรงข้ามครบทุกตัวตามลำดับ
+4. [x] จำนวน candidates ต่อ record มีเพดาน (เช่น ≤ 30 ตัว) เพื่อกัน payload บวม — เกินแล้วปฏิเสธ
+5. [x] ทดสอบจริง: host/guest ต่อกันสำเร็จติดต่อกัน ≥ 5 ครั้งบนเครือข่ายเดียวกัน และ log ยืนยันว่า candidates ทุกตัวถูกเก็บครบ
 
-## ðŸ›  Technical Tasks (à¸‡à¸²à¸™à¸žà¸±à¸’à¸™à¸²à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸—à¸³)
-- [x] à¹€à¸žà¸´à¹ˆà¸¡à¸£à¸¹à¸›à¹à¸šà¸š request à¹ƒà¸«à¸¡à¹ˆà¹ƒà¸™ `POST /api/battle/rooms/[code]/signal`: field `iceCandidate` (à¸•à¸±à¸§à¹€à¸”à¸µà¸¢à¸§) â€” server append à¸”à¹‰à¸§à¸¢ jsonb concat à¹ƒà¸™ query à¹€à¸”à¸µà¸¢à¸§
-- [x] à¸•à¸±à¸” logic GET-à¸à¹ˆà¸­à¸™-POST à¹ƒà¸™ `uploadIceCandidate` à¸à¸±à¹ˆà¸‡ client à¹ƒà¸«à¹‰à¹€à¸«à¸¥à¸·à¸­ POST candidate à¹€à¸”à¸µà¸¢à¸§à¸•à¸£à¸‡à¹†
-- [x] à¸„à¸‡ compatibility à¸‚à¸­à¸‡ field `sdpOffer`/`sdpAnswer` à¹€à¸”à¸´à¸¡
-- [x] à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸žà¸”à¸²à¸™à¸ˆà¸³à¸™à¸§à¸™ candidates + à¸•à¸£à¸§à¸ˆà¸£à¸¹à¸›à¸£à¹ˆà¸²à¸‡ candidate à¸‚à¸±à¹‰à¸™à¸•à¹ˆà¸³ (à¸¡à¸µ `candidate`/`sdpMid` à¹€à¸›à¹‡à¸™ string)
-- [x] à¸—à¸”à¸ªà¸­à¸šà¸à¸²à¸£à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸‹à¹‰à¸³à¸«à¸¥à¸²à¸¢à¸£à¸­à¸š + à¸à¸£à¸“à¸µ candidates à¸¡à¸²à¸–à¸µà¹ˆà¸žà¸£à¹‰à¸­à¸¡à¸à¸±à¸™
+## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
+- [x] เพิ่มรูปแบบ request ใหม่ใน `POST /api/battle/rooms/[code]/signal`: field `iceCandidate` (ตัวเดียว) — server append ด้วย jsonb concat ใน query เดียว
+- [x] ตัด logic GET-ก่อน-POST ใน `uploadIceCandidate` ฝั่ง client ให้เหลือ POST candidate เดียวตรงๆ
+- [x] คง compatibility ของ field `sdpOffer`/`sdpAnswer` เดิม
+- [x] เพิ่มเพดานจำนวน candidates + ตรวจรูปร่าง candidate ขั้นต่ำ (มี `candidate`/`sdpMid` เป็น string)
+- [x] ทดสอบการเชื่อมต่อซ้ำหลายรอบ + กรณี candidates มาถี่พร้อมกัน
 
-## ðŸ”— Related Files
+## 🔗 Related Files
 - Report: [Recheck Report 2026-07-02](../../report/2026-07-02-p2p-game-recheck.md) (FIX-5)
 - Code: `src/app/api/battle/rooms/[code]/signal/route.ts`, `src/app/battle/room/[code]/RoomClient.tsx`
-- à¹€à¸à¸µà¹ˆà¸¢à¸§à¸‚à¹‰à¸­à¸‡: [US-FIX-20f](US-FIX-20f.md) (validate payload à¸—à¸±à¹‰à¸‡ route à¸”à¹‰à¸§à¸¢ Zod)
-
+- เกี่ยวข้อง: [US-FIX-20f](US-FIX-20f.md) (validate payload ทั้ง route ด้วย Zod)

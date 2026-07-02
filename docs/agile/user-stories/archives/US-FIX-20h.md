@@ -1,37 +1,36 @@
-﻿# User Story: US-FIX-20h - DB Config Safety: à¸•à¸±à¸” Fallback URL à¸­à¸±à¸™à¸•à¸£à¸²à¸¢à¹à¸¥à¸° Gate PGlite à¹€à¸‰à¸žà¸²à¸° Development
+﻿# User Story: US-FIX-20h - DB Config Safety: ตัด Fallback URL อันตรายและ Gate PGlite เฉพาะ Development
 
-**Status:** ðŸ” Implemented â€” In Review (à¸žà¸±à¸’à¸™à¸²à¹€à¸ªà¸£à¹‡à¸ˆ 2026-07-02, à¸—à¸”à¸ªà¸­à¸š local à¹à¸¥à¹‰à¸§)
+**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02, ทดสอบ local แล้ว)
 **Epic:** [P2P Game Hardening & Production Readiness (Recheck Report 2026-07-02)](../../report/2026-07-02-p2p-game-recheck.md)
-**Priority:** ðŸŸ  Moderate âš¡ Quick win (~à¹„à¸¡à¹ˆà¸à¸µà¹ˆà¸šà¸£à¸£à¸—à¸±à¸”) â€” à¹„à¸¡à¹ˆà¸‚à¸¶à¹‰à¸™à¸à¸±à¸š story à¸­à¸·à¹ˆà¸™ à¸—à¸³à¹„à¸”à¹‰à¸—à¸±à¸™à¸—à¸µ
+**Priority:** 🟠 Moderate ⚡ Quick win (~ไม่กี่บรรทัด) — ไม่ขึ้นกับ story อื่น ทำได้ทันที
 **Owner:** Developer
 **Version:** 1.0 | **Last Updated:** 2026-07-02
 
 ---
 
-## ðŸ“– Description
-**à¹ƒà¸™à¸à¸²à¸™à¸°** à¸œà¸¹à¹‰à¸”à¸¹à¹à¸¥à¸£à¸°à¸šà¸š
-**à¸‰à¸±à¸™à¸•à¹‰à¸­à¸‡à¸à¸²à¸£** à¹ƒà¸«à¹‰à¸Šà¸±à¹‰à¸™à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥ (`src/db/index.ts`) à¸¥à¹‰à¸¡à¹€à¸«à¸¥à¸§à¹à¸šà¸š "à¸”à¸±à¸‡à¹à¸¥à¸°à¸Šà¸±à¸”à¹€à¸ˆà¸™" à¹€à¸¡à¸·à¹ˆà¸­ config à¸œà¸´à¸” à¹à¸—à¸™à¸—à¸µà¹ˆà¸ˆà¸°à¹€à¸‡à¸µà¸¢à¸šà¹† à¸•à¹ˆà¸­à¹„à¸›à¸¢à¸±à¸‡à¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸œà¸´à¸”à¸•à¸±à¸§
-**à¹€à¸žà¸·à¹ˆà¸­à¹ƒà¸«à¹‰** à¸„à¸§à¸²à¸¡à¸œà¸´à¸”à¸žà¸¥à¸²à¸”à¹ƒà¸™à¸à¸²à¸£à¸•à¸±à¹‰à¸‡à¸„à¹ˆà¸² env à¸šà¸™ production à¸–à¸¹à¸à¸•à¸£à¸§à¸ˆà¸žà¸šà¸—à¸±à¸™à¸—à¸µà¸•à¸­à¸™ deploy à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸„à¹‰à¸™à¸žà¸šà¸—à¸µà¸«à¸¥à¸±à¸‡à¸§à¹ˆà¸²à¹à¸­à¸›à¸§à¸´à¹ˆà¸‡à¸­à¸¢à¸¹à¹ˆà¸šà¸™à¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹€à¸›à¸¥à¹ˆà¸²
+## 📖 Description
+**ในฐานะ** ผู้ดูแลระบบ
+**ฉันต้องการ** ให้ชั้นเชื่อมต่อฐานข้อมูล (`src/db/index.ts`) ล้มเหลวแบบ "ดังและชัดเจน" เมื่อ config ผิด แทนที่จะเงียบๆ ต่อไปยังฐานข้อมูลผิดตัว
+**เพื่อให้** ความผิดพลาดในการตั้งค่า env บน production ถูกตรวจพบทันทีตอน deploy ไม่ใช่ค้นพบทีหลังว่าแอปวิ่งอยู่บนฐานข้อมูลเปล่า
 
-## ðŸ› à¸—à¸µà¹ˆà¸¡à¸²à¸‚à¸­à¸‡à¸›à¸±à¸à¸«à¸² (à¸ˆà¸²à¸ Recheck Report â€” FIX-9)
-1. à¸¡à¸µà¸à¸²à¸£à¹€à¸žà¸´à¹ˆà¸¡ fallback `postgres(process.env.DATABASE_URL || "postgresql://localhost:5432/activecamt_prod", ...)` â€” à¹€à¸”à¸´à¸¡à¹ƒà¸Šà¹‰ `DATABASE_URL!` à¸‹à¸¶à¹ˆà¸‡ crash à¸—à¸±à¸™à¸—à¸µà¹€à¸¡à¸·à¹ˆà¸­ env à¸«à¸²à¸¢ à¸•à¸­à¸™à¸™à¸µà¹‰à¸–à¹‰à¸² prod à¸¥à¸·à¸¡à¸•à¸±à¹‰à¸‡ env à¹à¸­à¸›à¸ˆà¸°à¸žà¸¢à¸²à¸¢à¸²à¸¡à¸•à¹ˆà¸­ `localhost` à¹à¸šà¸šà¹€à¸‡à¸µà¸¢à¸šà¹†
-2. à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚ `DB_TYPE === "pglite"` à¹„à¸¡à¹ˆ gate à¸”à¹‰à¸§à¸¢ environment â€” à¸–à¹‰à¸²à¸•à¸±à¸§à¹à¸›à¸£à¸™à¸µà¹‰à¸«à¸¥à¸¸à¸”à¹€à¸‚à¹‰à¸² production à¹à¸­à¸›à¸—à¸±à¹‰à¸‡à¸£à¸°à¸šà¸šà¸ˆà¸°à¸£à¸±à¸™à¸šà¸™ PGlite (WASM in-process DB) à¸—à¸µà¹ˆà¸§à¹ˆà¸²à¸‡à¹€à¸›à¸¥à¹ˆà¸² à¹‚à¸”à¸¢à¹„à¸¡à¹ˆà¸¡à¸µ error à¹ƒà¸”à¹† à¸œà¸¹à¹‰à¹ƒà¸Šà¹‰à¸ˆà¸°à¹€à¸«à¹‡à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸«à¸²à¸¢à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”
+## 🐛 ที่มาของปัญหา (จาก Recheck Report — FIX-9)
+1. มีการเพิ่ม fallback `postgres(process.env.DATABASE_URL || "postgresql://localhost:5432/activecamt_prod", ...)` — เดิมใช้ `DATABASE_URL!` ซึ่ง crash ทันทีเมื่อ env หาย ตอนนี้ถ้า prod ลืมตั้ง env แอปจะพยายามต่อ `localhost` แบบเงียบๆ
+2. เงื่อนไข `DB_TYPE === "pglite"` ไม่ gate ด้วย environment — ถ้าตัวแปรนี้หลุดเข้า production แอปทั้งระบบจะรันบน PGlite (WASM in-process DB) ที่ว่างเปล่า โดยไม่มี error ใดๆ ผู้ใช้จะเห็นข้อมูลหายทั้งหมด
 
 ---
 
-## âœ… Acceptance Criteria
-1. [x] à¹€à¸¡à¸·à¹ˆà¸­ `DATABASE_URL` à¹„à¸¡à¹ˆà¸–à¸¹à¸à¸•à¸±à¹‰à¸‡à¹à¸¥à¸°à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹ƒà¸Šà¹‰ pglite â†’ à¹‚à¸›à¸£à¹€à¸‹à¸ª throw à¸—à¸±à¸™à¸—à¸µà¸•à¸­à¸™ init à¸žà¸£à¹‰à¸­à¸¡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸Šà¸±à¸”à¹€à¸ˆà¸™ (à¹„à¸¡à¹ˆà¸¡à¸µ fallback URL à¹ƒà¸”à¹†)
-2. [x] `DB_TYPE=pglite` à¸¡à¸µà¸œà¸¥à¹€à¸‰à¸žà¸²à¸°à¹€à¸¡à¸·à¹ˆà¸­ `NODE_ENV !== "production"` â€” à¸–à¹‰à¸²à¸–à¸¹à¸à¸•à¸±à¹‰à¸‡à¹ƒà¸™ production à¹ƒà¸«à¹‰ throw à¸žà¸£à¹‰à¸­à¸¡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸­à¸˜à¸´à¸šà¸²à¸¢ (fail-fast à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ silently ignore)
-3. [x] à¸žà¸¤à¸•à¸´à¸à¸£à¸£à¸¡ dev à¸›à¸à¸•à¸´ (pglite ZeroSetup à¹à¸¥à¸° local postgres) à¸¢à¸±à¸‡à¸—à¸³à¸‡à¸²à¸™à¹€à¸«à¸¡à¸·à¸­à¸™à¹€à¸”à¸´à¸¡ â€” `run-local.ps1` à¸—à¸±à¹‰à¸‡à¸ªà¸­à¸‡à¹‚à¸«à¸¡à¸”à¹ƒà¸Šà¹‰à¹„à¸”à¹‰
-4. [x] `npm run build` à¹à¸¥à¸° `test-db.ts` à¸œà¹ˆà¸²à¸™à¸—à¸±à¹‰à¸‡à¹‚à¸«à¸¡à¸” pglite à¹à¸¥à¸° postgres
+## ✅ Acceptance Criteria
+1. [x] เมื่อ `DATABASE_URL` ไม่ถูกตั้งและไม่ได้ใช้ pglite → โปรเซส throw ทันทีตอน init พร้อมข้อความชัดเจน (ไม่มี fallback URL ใดๆ)
+2. [x] `DB_TYPE=pglite` มีผลเฉพาะเมื่อ `NODE_ENV !== "production"` — ถ้าถูกตั้งใน production ให้ throw พร้อมข้อความอธิบาย (fail-fast ไม่ใช่ silently ignore)
+3. [x] พฤติกรรม dev ปกติ (pglite ZeroSetup และ local postgres) ยังทำงานเหมือนเดิม — `run-local.ps1` ทั้งสองโหมดใช้ได้
+4. [x] `npm run build` และ `test-db.ts` ผ่านทั้งโหมด pglite และ postgres
 
-## ðŸ›  Technical Tasks (à¸‡à¸²à¸™à¸žà¸±à¸’à¸™à¸²à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸—à¸³)
-- [x] à¹à¸à¹‰ `src/db/index.ts`: à¸„à¸·à¸™à¸à¸²à¸£à¹ƒà¸Šà¹‰ `process.env.DATABASE_URL` à¹à¸šà¸šà¸šà¸±à¸‡à¸„à¸±à¸š (throw à¸–à¹‰à¸²à¹„à¸¡à¹ˆà¸¡à¸µ) à¹ƒà¸™à¸ªà¸²à¸‚à¸² postgres
-- [x] à¹€à¸žà¸´à¹ˆà¸¡ guard à¸ªà¸²à¸‚à¸² pglite: `if (NODE_ENV === "production") throw new Error(...)`
-- [x] à¸•à¸£à¸§à¸ˆ `test-db.ts` à¹ƒà¸«à¹‰à¸ªà¸­à¸”à¸„à¸¥à¹‰à¸­à¸‡à¸à¸±à¸š guard à¹ƒà¸«à¸¡à¹ˆ
-- [x] à¸—à¸”à¸ªà¸­à¸š 4 à¸à¸£à¸“à¸µ: dev+pglite âœ“, dev+postgres âœ“, à¹„à¸¡à¹ˆà¸¡à¸µ DATABASE_URL â†’ throw, prod+DB_TYPE=pglite â†’ throw
+## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
+- [x] แก้ `src/db/index.ts`: คืนการใช้ `process.env.DATABASE_URL` แบบบังคับ (throw ถ้าไม่มี) ในสาขา postgres
+- [x] เพิ่ม guard สาขา pglite: `if (NODE_ENV === "production") throw new Error(...)`
+- [x] ตรวจ `test-db.ts` ให้สอดคล้องกับ guard ใหม่
+- [x] ทดสอบ 4 กรณี: dev+pglite ✓, dev+postgres ✓, ไม่มี DATABASE_URL → throw, prod+DB_TYPE=pglite → throw
 
-## ðŸ”— Related Files
+## 🔗 Related Files
 - Report: [Recheck Report 2026-07-02](../../report/2026-07-02-p2p-game-recheck.md) (FIX-9)
 - Code: `src/db/index.ts`, `test-db.ts`, `run-local.ps1`
-

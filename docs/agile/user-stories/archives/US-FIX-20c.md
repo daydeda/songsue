@@ -1,39 +1,38 @@
-﻿# User Story: US-FIX-20c - à¹à¸à¹‰ WebRTC Lifecycle à¹„à¸¡à¹ˆà¹ƒà¸«à¹‰ Connection à¸–à¸¹à¸à¸›à¸´à¸”à¸—à¸±à¸™à¸—à¸µà¸—à¸µà¹ˆà¸•à¹ˆà¸­à¸ªà¸³à¹€à¸£à¹‡à¸ˆ
+﻿# User Story: US-FIX-20c - แก้ WebRTC Lifecycle ไม่ให้ Connection ถูกปิดทันทีที่ต่อสำเร็จ
 
-**Status:** ðŸ” Implemented â€” In Review (à¸žà¸±à¸’à¸™à¸²à¹€à¸ªà¸£à¹‡à¸ˆ 2026-07-02, à¸—à¸”à¸ªà¸­à¸š local à¹à¸¥à¹‰à¸§)
+**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02, ทดสอบ local แล้ว)
 **Epic:** [P2P Game Hardening & Production Readiness (Recheck Report 2026-07-02)](../../report/2026-07-02-p2p-game-recheck.md)
-**Priority:** ðŸŸ  Moderate â€” à¸‚à¸¶à¹‰à¸™à¸à¸±à¸š US-FIX-20a (build à¸•à¹‰à¸­à¸‡à¸œà¹ˆà¸²à¸™à¸à¹ˆà¸­à¸™à¸ˆà¸¶à¸‡à¸—à¸”à¸ªà¸­à¸šà¹„à¸”à¹‰)
+**Priority:** 🟠 Moderate — ขึ้นกับ US-FIX-20a (build ต้องผ่านก่อนจึงทดสอบได้)
 **Owner:** Developer
 **Version:** 1.0 | **Last Updated:** 2026-07-02
 
 ---
 
-## ðŸ“– Description
-**à¹ƒà¸™à¸à¸²à¸™à¸°** à¸œà¸¹à¹‰à¹€à¸¥à¹ˆà¸™à¹€à¸à¸¡ P2P Battle
-**à¸‰à¸±à¸™à¸•à¹‰à¸­à¸‡à¸à¸²à¸£** à¹ƒà¸«à¹‰à¸à¸²à¸£à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­ WebRTC data channel à¸„à¸‡à¸­à¸¢à¸¹à¹ˆà¸•à¸¥à¸­à¸”à¸—à¸±à¹‰à¸‡à¹€à¸à¸¡à¸«à¸¥à¸±à¸‡à¸ˆà¸²à¸à¸ˆà¸±à¸šà¸„à¸¹à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ
-**à¹€à¸žà¸·à¹ˆà¸­à¹ƒà¸«à¹‰** à¸à¸²à¸£à¹€à¸”à¸´à¸™à¸«à¸¡à¸²à¸à¸ªà¹ˆà¸‡à¸–à¸¶à¸‡à¸„à¸¹à¹ˆà¹à¸‚à¹ˆà¸‡à¹à¸šà¸š real-time à¸•à¸²à¸¡à¸ˆà¸¸à¸”à¸›à¸£à¸°à¸ªà¸‡à¸„à¹Œà¸‚à¸­à¸‡ feature à¹à¸—à¸™à¸—à¸µà¹ˆà¸ˆà¸°à¸•à¸à¸à¸¥à¸±à¸šà¹„à¸›à¹ƒà¸Šà¹‰ REST polling à¸—à¸¸à¸à¸„à¸£à¸±à¹‰à¸‡
+## 📖 Description
+**ในฐานะ** ผู้เล่นเกม P2P Battle
+**ฉันต้องการ** ให้การเชื่อมต่อ WebRTC data channel คงอยู่ตลอดทั้งเกมหลังจากจับคู่สำเร็จ
+**เพื่อให้** การเดินหมากส่งถึงคู่แข่งแบบ real-time ตามจุดประสงค์ของ feature แทนที่จะตกกลับไปใช้ REST polling ทุกครั้ง
 
-## ðŸ› à¸—à¸µà¹ˆà¸¡à¸²à¸‚à¸­à¸‡à¸›à¸±à¸à¸«à¸² (à¸ˆà¸²à¸ Recheck Report â€” FIX-4)
-à¹ƒà¸™ `RoomClient.tsx` effect à¸—à¸µà¹ˆà¹€à¸£à¸µà¸¢à¸ `setupWebRTC()` à¸–à¸¹à¸ key à¸”à¹‰à¸§à¸¢ `[status]` à¹à¸¥à¸° return `cleanupWebRTC` à¹€à¸¡à¸·à¹ˆà¸­à¸à¸²à¸£à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸ªà¸³à¹€à¸£à¹‡à¸ˆ â†’ `markRoomActive()` â†’ server à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ status à¹€à¸›à¹‡à¸™ `active` â†’ state poll à¸­à¸±à¸›à¹€à¸”à¸• `status` â†’ React à¸£à¸±à¸™ cleanup à¸‚à¸­à¸‡ effect à¸£à¸­à¸šà¸à¹ˆà¸­à¸™ â†’ **à¸›à¸´à¸” peer connection + data channel à¸—à¸µà¹ˆà¹€à¸žà¸´à¹ˆà¸‡à¸•à¹ˆà¸­à¹„à¸”à¹‰** à¹à¸¥à¹‰à¸§ `dc.onclose` à¸ªà¸¥à¸±à¸šà¸à¸¥à¸±à¸šà¹€à¸›à¹‡à¸™ polling à¸–à¸²à¸§à¸£ â€” à¸ªà¹ˆà¸§à¸™ P2P à¸‚à¸­à¸‡ feature à¸ˆà¸¶à¸‡à¹à¸—à¸šà¹„à¸¡à¹ˆà¹€à¸„à¸¢à¸—à¸³à¸‡à¸²à¸™à¸ˆà¸£à¸´à¸‡
+## 🐛 ที่มาของปัญหา (จาก Recheck Report — FIX-4)
+ใน `RoomClient.tsx` effect ที่เรียก `setupWebRTC()` ถูก key ด้วย `[status]` และ return `cleanupWebRTC` เมื่อการเชื่อมต่อสำเร็จ → `markRoomActive()` → server เปลี่ยน status เป็น `active` → state poll อัปเดต `status` → React รัน cleanup ของ effect รอบก่อน → **ปิด peer connection + data channel ที่เพิ่งต่อได้** แล้ว `dc.onclose` สลับกลับเป็น polling ถาวร — ส่วน P2P ของ feature จึงแทบไม่เคยทำงานจริง
 
 ---
 
-## âœ… Acceptance Criteria
-1. [x] à¹€à¸¡à¸·à¹ˆà¸­ WebRTC à¸•à¹ˆà¸­à¸ªà¸³à¹€à¸£à¹‡à¸ˆà¹à¸¥à¸°à¸«à¹‰à¸­à¸‡à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¹€à¸›à¹‡à¸™ `active` connection à¸•à¹‰à¸­à¸‡**à¸„à¸‡à¸­à¸¢à¸¹à¹ˆ** (à¸•à¸£à¸§à¸ˆà¸”à¹‰à¸§à¸¢ indicator `connType === "webrtc"` à¸„à¹‰à¸²à¸‡à¸•à¸¥à¸­à¸”à¹€à¸à¸¡)
-2. [x] `cleanupWebRTC()` à¸–à¸¹à¸à¹€à¸£à¸µà¸¢à¸à¹€à¸‰à¸žà¸²à¸°: component unmount, à¹€à¸à¸¡à¸ˆà¸š (`finished`/`expired`), à¸«à¸£à¸·à¸­ connection fail à¸ˆà¸£à¸´à¸‡
-3. [x] à¸à¸£à¸“à¸µ WebRTC à¸¥à¹‰à¸¡à¹€à¸«à¸¥à¸§ (STUN à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™/NAT à¸›à¸´à¸”) à¸¢à¸±à¸‡ fallback à¹€à¸›à¹‡à¸™ polling à¹„à¸”à¹‰à¹€à¸«à¸¡à¸·à¸­à¸™à¹€à¸”à¸´à¸¡
-4. [x] à¸à¸²à¸£à¹€à¸”à¸´à¸™à¸«à¸¡à¸²à¸à¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡à¸ªà¸­à¸‡à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡à¸œà¹ˆà¸²à¸™ data channel à¹à¸ªà¸”à¸‡à¸œà¸¥à¸à¸±à¹ˆà¸‡à¸•à¸£à¸‡à¸‚à¹‰à¸²à¸¡à¸ à¸²à¸¢à¹ƒà¸™ < 1 à¸§à¸´à¸™à¸²à¸—à¸µ (à¸—à¸”à¸ªà¸­à¸šà¸ˆà¸£à¸´à¸‡ 2 browser/2 à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡à¸šà¸™ local)
-5. [x] à¹„à¸¡à¹ˆà¸¡à¸µ memory/interval leak: à¸­à¸­à¸à¸ˆà¸²à¸à¸«à¸™à¹‰à¸²à¸«à¹‰à¸­à¸‡à¹à¸¥à¹‰à¸§ interval à¹à¸¥à¸° peer connection à¸–à¸¹à¸à¸›à¸´à¸”à¸„à¸£à¸š
+## ✅ Acceptance Criteria
+1. [x] เมื่อ WebRTC ต่อสำเร็จและห้องเปลี่ยนเป็น `active` connection ต้อง**คงอยู่** (ตรวจด้วย indicator `connType === "webrtc"` ค้างตลอดเกม)
+2. [x] `cleanupWebRTC()` ถูกเรียกเฉพาะ: component unmount, เกมจบ (`finished`/`expired`), หรือ connection fail จริง
+3. [x] กรณี WebRTC ล้มเหลว (STUN ไม่ผ่าน/NAT ปิด) ยัง fallback เป็น polling ได้เหมือนเดิม
+4. [x] การเดินหมากระหว่างสองเครื่องผ่าน data channel แสดงผลฝั่งตรงข้ามภายใน < 1 วินาที (ทดสอบจริง 2 browser/2 เครื่องบน local)
+5. [x] ไม่มี memory/interval leak: ออกจากหน้าห้องแล้ว interval และ peer connection ถูกปิดครบ
 
-## ðŸ›  Technical Tasks (à¸‡à¸²à¸™à¸žà¸±à¸’à¸™à¸²à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸—à¸³)
-- [x] à¹à¸¢à¸ WebRTC lifecycle à¸­à¸­à¸à¸ˆà¸²à¸ `useEffect([status])` â€” à¹€à¸Šà¹ˆà¸™ trigger setup à¸„à¸£à¸±à¹‰à¸‡à¹€à¸”à¸µà¸¢à¸§à¹€à¸¡à¸·à¹ˆà¸­à¹€à¸‚à¹‰à¸²à¸ªà¸–à¸²à¸™à¸° `connecting` (guard à¸”à¹‰à¸§à¸¢ ref) à¹à¸¥à¸°à¸œà¸¹à¸ cleanup à¸à¸±à¸š unmount-only effect (`useEffect(() => cleanup, [])`)
-- [x] à¹€à¸žà¸´à¹ˆà¸¡à¸à¸²à¸£à¹€à¸£à¸µà¸¢à¸ `cleanupWebRTC()` à¸­à¸¢à¹ˆà¸²à¸‡à¸Šà¸±à¸”à¹€à¸ˆà¸™à¹€à¸¡à¸·à¹ˆà¸­ status à¹€à¸›à¹‡à¸™ `finished`/`expired`
-- [x] à¸•à¸£à¸§à¸ˆ `webrtcActive` / `connType` à¹ƒà¸«à¹‰à¸ªà¸­à¸”à¸„à¸¥à¹‰à¸­à¸‡à¸à¸±à¸š lifecycle à¹ƒà¸«à¸¡à¹ˆ (à¹„à¸¡à¹ˆà¸„à¹‰à¸²à¸‡à¸„à¹ˆà¸² stale)
-- [x] à¸—à¸”à¸ªà¸­à¸š E2E à¸šà¸™ local: host + guest à¸„à¸™à¸¥à¸° browser à¹€à¸¥à¹ˆà¸™à¸ˆà¸šà¹€à¸à¸¡à¹‚à¸”à¸¢ `connType` à¹€à¸›à¹‡à¸™ `webrtc` à¸•à¸¥à¸­à¸”, à¸—à¸”à¸ªà¸­à¸š fallback à¹‚à¸”à¸¢ block STUN
-- [x] à¸šà¸±à¸™à¸—à¸¶à¸à¸œà¸¥à¸à¸²à¸£à¸—à¸”à¸ªà¸­à¸šà¹ƒà¸™ PR
+## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
+- [x] แยก WebRTC lifecycle ออกจาก `useEffect([status])` — เช่น trigger setup ครั้งเดียวเมื่อเข้าสถานะ `connecting` (guard ด้วย ref) และผูก cleanup กับ unmount-only effect (`useEffect(() => cleanup, [])`)
+- [x] เพิ่มการเรียก `cleanupWebRTC()` อย่างชัดเจนเมื่อ status เป็น `finished`/`expired`
+- [x] ตรวจ `webrtcActive` / `connType` ให้สอดคล้องกับ lifecycle ใหม่ (ไม่ค้างค่า stale)
+- [x] ทดสอบ E2E บน local: host + guest คนละ browser เล่นจบเกมโดย `connType` เป็น `webrtc` ตลอด, ทดสอบ fallback โดย block STUN
+- [x] บันทึกผลการทดสอบใน PR
 
-## ðŸ”— Related Files
+## 🔗 Related Files
 - Report: [Recheck Report 2026-07-02](../../report/2026-07-02-p2p-game-recheck.md) (FIX-4)
 - Code: `src/app/battle/room/[code]/RoomClient.tsx`
-- à¹€à¸à¸µà¹ˆà¸¢à¸§à¸‚à¹‰à¸­à¸‡: [US-FIX-20d](US-FIX-20d.md) (ICE append), [US-FIX-20g](US-FIX-20g.md) (polling load)
-
+- เกี่ยวข้อง: [US-FIX-20d](US-FIX-20d.md) (ICE append), [US-FIX-20g](US-FIX-20g.md) (polling load)

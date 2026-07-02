@@ -1,45 +1,44 @@
-﻿# User Story: US-FIX-20b - Harden Dev Login Bypass à¹„à¸¡à¹ˆà¹ƒà¸«à¹‰à¸à¸£à¸°à¸—à¸šà¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ˆà¸£à¸´à¸‡
+﻿# User Story: US-FIX-20b - Harden Dev Login Bypass ไม่ให้กระทบฐานข้อมูลจริง
 
-**Status:** ðŸ” Implemented â€” In Review (à¸žà¸±à¸’à¸™à¸²à¹€à¸ªà¸£à¹‡à¸ˆ 2026-07-02, à¸—à¸”à¸ªà¸­à¸š local à¹à¸¥à¹‰à¸§)
+**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02, ทดสอบ local แล้ว)
 **Epic:** [P2P Game Hardening & Production Readiness (Recheck Report 2026-07-02)](../../report/2026-07-02-p2p-game-recheck.md)
-**Priority:** ðŸ”´ Crucial â€” à¸—à¸³à¸‚à¸™à¸²à¸™à¸à¸±à¸š US-FIX-20a à¹„à¸”à¹‰à¸—à¸±à¸™à¸—à¸µ
+**Priority:** 🔴 Crucial — ทำขนานกับ US-FIX-20a ได้ทันที
 **Owner:** Developer
 **Version:** 1.0 | **Last Updated:** 2026-07-02
 
 ---
 
-## ðŸ“– Description
-**à¹ƒà¸™à¸à¸²à¸™à¸°** à¸™à¸±à¸à¸žà¸±à¸’à¸™à¸²à¸£à¸°à¸šà¸š
-**à¸‰à¸±à¸™à¸•à¹‰à¸­à¸‡à¸à¸²à¸£** à¹ƒà¸«à¹‰ Dev Login Bypass (Credentials provider à¹ƒà¸™ `src/auth.ts`) à¹ƒà¸Šà¹‰à¸‡à¸²à¸™à¹„à¸”à¹‰à¹€à¸‰à¸žà¸²à¸°à¸ªà¸ à¸²à¸žà¹à¸§à¸”à¸¥à¹‰à¸­à¸¡ local à¸—à¸µà¹ˆà¸›à¸¥à¸­à¸”à¸ à¸±à¸¢à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ à¹à¸¥à¸°à¹„à¸¡à¹ˆà¹€à¸‚à¸µà¸¢à¸™ role à¸¥à¸‡à¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸—à¸µà¹ˆà¹€à¸›à¹‡à¸™ production
-**à¹€à¸žà¸·à¹ˆà¸­à¹ƒà¸«à¹‰** à¸—à¸µà¸¡à¸¢à¸±à¸‡à¸—à¸”à¸ªà¸­à¸š role à¸•à¹ˆà¸²à¸‡à¹† à¹„à¸”à¹‰à¸ªà¸°à¸”à¸§à¸ à¹‚à¸”à¸¢à¹„à¸¡à¹ˆà¸¡à¸µà¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¹ˆà¸¢à¸‡à¸—à¸µà¹ˆà¸ˆà¸°à¸ªà¸£à¹‰à¸²à¸‡ user à¸›à¸¥à¸­à¸¡à¸«à¸£à¸·à¸­à¹à¸à¹‰ role à¸‚à¸­à¸‡ account à¸ˆà¸£à¸´à¸‡à¸šà¸™ production DB à¹à¸¥à¸°à¹„à¸¡à¹ˆà¸¡à¸µà¹ƒà¸„à¸£à¹ƒà¸™ LAN à¹ƒà¸Šà¹‰ bypass à¸¢à¸¶à¸” session `super_admin` à¹„à¸”à¹‰
+## 📖 Description
+**ในฐานะ** นักพัฒนาระบบ
+**ฉันต้องการ** ให้ Dev Login Bypass (Credentials provider ใน `src/auth.ts`) ใช้งานได้เฉพาะสภาพแวดล้อม local ที่ปลอดภัยเท่านั้น และไม่เขียน role ลงฐานข้อมูลที่เป็น production
+**เพื่อให้** ทีมยังทดสอบ role ต่างๆ ได้สะดวก โดยไม่มีความเสี่ยงที่จะสร้าง user ปลอมหรือแก้ role ของ account จริงบน production DB และไม่มีใครใน LAN ใช้ bypass ยึด session `super_admin` ได้
 
-## ðŸ› à¸—à¸µà¹ˆà¸¡à¸²à¸‚à¸­à¸‡à¸›à¸±à¸à¸«à¸² (à¸ˆà¸²à¸ Recheck Report â€” FIX-2)
-1. `authorize()` à¸ªà¸£à¹‰à¸²à¸‡/à¸­à¸±à¸›à¹€à¸”à¸• user à¹ƒà¸™ DB à¸•à¸²à¸¡à¸„à¹ˆà¸²à¹ƒà¸™ form à¹‚à¸”à¸¢à¹„à¸¡à¹ˆ validate â€” `role` à¹€à¸›à¹‡à¸™ string à¸­à¸°à¹„à¸£à¸à¹‡à¹„à¸”à¹‰ à¹à¸¥à¸° default à¸„à¸·à¸­à¸­à¸µà¹€à¸¡à¸¥ super admin à¸ˆà¸£à¸´à¸‡ (`smocamt.official@gmail.com`)
-2. `.env` à¸‚à¸­à¸‡à¹‚à¸›à¸£à¹€à¸ˆà¸„à¸Šà¸µà¹‰ production Supabase (à¸•à¸²à¸¡ `src/db/guard.ts`) à¹à¸¥à¸° `next dev` à¹‚à¸«à¸¥à¸” `.env` â†’ dev login à¹€à¸‚à¸µà¸¢à¸™à¸¥à¸‡ **prod DB** à¹„à¸”à¹‰à¸ˆà¸£à¸´à¸‡
-3. à¹„à¸¡à¹ˆà¸¡à¸µ secret à¸›à¹‰à¸­à¸‡à¸à¸±à¸™ + `allowedDevOrigins` à¹ƒà¸™ `next.config.ts` à¹€à¸›à¸´à¸”à¸—à¸¸à¸ IP â†’ à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡à¸­à¸·à¹ˆà¸™à¹ƒà¸™ LAN à¹ƒà¸Šà¹‰ bypass à¹„à¸”à¹‰
-4. à¸—à¸µà¹ˆà¸›à¸¥à¸­à¸”à¸ à¸±à¸¢à¸­à¸¢à¸¹à¹ˆà¹à¸¥à¹‰à¸§: provider à¸–à¸¹à¸ gate à¸”à¹‰à¸§à¸¢ `NODE_ENV === "development"` à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¸—à¸³à¸‡à¸²à¸™à¸šà¸™ production build â€” **à¸•à¹‰à¸­à¸‡à¸„à¸‡à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚à¸™à¸µà¹‰à¹„à¸§à¹‰**
+## 🐛 ที่มาของปัญหา (จาก Recheck Report — FIX-2)
+1. `authorize()` สร้าง/อัปเดต user ใน DB ตามค่าใน form โดยไม่ validate — `role` เป็น string อะไรก็ได้ และ default คืออีเมล super admin จริง (`smocamt.official@gmail.com`)
+2. `.env` ของโปรเจคชี้ production Supabase (ตาม `src/db/guard.ts`) และ `next dev` โหลด `.env` → dev login เขียนลง **prod DB** ได้จริง
+3. ไม่มี secret ป้องกัน + `allowedDevOrigins` ใน `next.config.ts` เปิดทุก IP → เครื่องอื่นใน LAN ใช้ bypass ได้
+4. ที่ปลอดภัยอยู่แล้ว: provider ถูก gate ด้วย `NODE_ENV === "development"` จึงไม่ทำงานบน production build — **ต้องคงเงื่อนไขนี้ไว้**
 
 ---
 
-## âœ… Acceptance Criteria
-1. [x] Dev bypass à¸—à¸³à¸‡à¸²à¸™à¹€à¸‰à¸žà¸²à¸°à¹€à¸¡à¸·à¹ˆà¸­ `NODE_ENV === "development"` **à¹à¸¥à¸°** à¸•à¸±à¹‰à¸‡ env flag `ENABLE_DEV_LOGIN=true` à¸­à¸¢à¹ˆà¸²à¸‡à¸Šà¸±à¸”à¹€à¸ˆà¸™ (à¸„à¹ˆà¸² default = à¸›à¸´à¸”)
-2. [x] `authorize()` à¸›à¸à¸´à¹€à¸ªà¸˜à¸à¸²à¸£à¸—à¸³à¸‡à¸²à¸™ (return null + log à¸„à¸³à¹€à¸•à¸·à¸­à¸™) à¹€à¸¡à¸·à¹ˆà¸­ `DATABASE_URL` à¸”à¸¹à¹€à¸›à¹‡à¸™ remote/production â€” à¹ƒà¸Šà¹‰à¹€à¸à¸“à¸‘à¹Œà¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸š `assertDestructiveAllowed()` à¹ƒà¸™ `src/db/guard.ts` (supabase.co, :6543, à¸¯à¸¥à¸¯)
-3. [x] à¸„à¹ˆà¸² `role` à¸–à¸¹à¸ validate à¸à¸±à¸š allowlist (`student`, `smo`, `club_president`, `admin`, `super_admin`) â€” à¸„à¹ˆà¸²à¸­à¸·à¹ˆà¸™à¸–à¸¹à¸à¸›à¸à¸´à¹€à¸ªà¸˜
-4. [x] bypass **à¹„à¸¡à¹ˆà¹€à¸‚à¸µà¸¢à¸™/à¸­à¸±à¸›à¹€à¸”à¸• role à¸¥à¸‡à¸•à¸²à¸£à¸²à¸‡ users** â€” role à¸—à¸µà¹ˆà¹€à¸¥à¸·à¸­à¸à¸­à¸¢à¸¹à¹ˆà¹ƒà¸™ JWT session à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ (à¸¢à¸­à¸¡à¸£à¸±à¸šà¹„à¸”à¹‰à¸—à¸µà¹ˆà¸ˆà¸°à¸ªà¸£à¹‰à¸²à¸‡ user à¹ƒà¸«à¸¡à¹ˆà¹€à¸‰à¸žà¸²à¸°à¸à¸£à¸“à¸µ DB à¹€à¸›à¹‡à¸™ local à¹à¸¥à¸°à¹„à¸¡à¹ˆà¸¡à¸µ user à¸™à¸±à¹‰à¸™à¸­à¸¢à¸¹à¹ˆ)
-5. [x] à¸«à¹‰à¸²à¸¡à¹ƒà¸Šà¹‰à¸­à¸µà¹€à¸¡à¸¥à¹ƒà¸™ `SUPER_ADMIN_EMAILS` à¹€à¸›à¹‡à¸™ default à¸‚à¸­à¸‡ form à¹ƒà¸™ `LandingUI.tsx` (à¹ƒà¸Šà¹‰à¸­à¸µà¹€à¸¡à¸¥ dev à¸ªà¸¡à¸¡à¸¸à¸•à¸´ à¹€à¸Šà¹ˆà¸™ `dev@localhost.test`)
-6. [x] UI à¸‚à¸­à¸‡ bypass à¸¢à¸±à¸‡à¹à¸ªà¸”à¸‡à¹€à¸‰à¸žà¸²à¸° development build à¹€à¸«à¸¡à¸·à¸­à¸™à¹€à¸”à¸´à¸¡ à¹à¸¥à¸°à¸¡à¸µà¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸•à¸·à¸­à¸™à¹€à¸¡à¸·à¹ˆà¸­ flag à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹€à¸›à¸´à¸”
-7. [x] à¸—à¸”à¸ªà¸­à¸š: (à¸) prod build à¹„à¸¡à¹ˆà¸¡à¸µ provider à¸™à¸µà¹‰, (à¸‚) dev + flag à¸›à¸´à¸” â†’ à¹ƒà¸Šà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰, (à¸„) dev + flag à¹€à¸›à¸´à¸” + DATABASE_URL remote â†’ à¸–à¸¹à¸à¸›à¸à¸´à¹€à¸ªà¸˜à¸žà¸£à¹‰à¸­à¸¡ log, (à¸‡) dev + local DB â†’ login à¹„à¸”à¹‰à¸—à¸¸à¸ role à¹ƒà¸™ allowlist
+## ✅ Acceptance Criteria
+1. [x] Dev bypass ทำงานเฉพาะเมื่อ `NODE_ENV === "development"` **และ** ตั้ง env flag `ENABLE_DEV_LOGIN=true` อย่างชัดเจน (ค่า default = ปิด)
+2. [x] `authorize()` ปฏิเสธการทำงาน (return null + log คำเตือน) เมื่อ `DATABASE_URL` ดูเป็น remote/production — ใช้เกณฑ์เดียวกับ `assertDestructiveAllowed()` ใน `src/db/guard.ts` (supabase.co, :6543, ฯลฯ)
+3. [x] ค่า `role` ถูก validate กับ allowlist (`student`, `smo`, `club_president`, `admin`, `super_admin`) — ค่าอื่นถูกปฏิเสธ
+4. [x] bypass **ไม่เขียน/อัปเดต role ลงตาราง users** — role ที่เลือกอยู่ใน JWT session เท่านั้น (ยอมรับได้ที่จะสร้าง user ใหม่เฉพาะกรณี DB เป็น local และไม่มี user นั้นอยู่)
+5. [x] ห้ามใช้อีเมลใน `SUPER_ADMIN_EMAILS` เป็น default ของ form ใน `LandingUI.tsx` (ใช้อีเมล dev สมมุติ เช่น `dev@localhost.test`)
+6. [x] UI ของ bypass ยังแสดงเฉพาะ development build เหมือนเดิม และมีข้อความเตือนเมื่อ flag ไม่ได้เปิด
+7. [x] ทดสอบ: (ก) prod build ไม่มี provider นี้, (ข) dev + flag ปิด → ใช้ไม่ได้, (ค) dev + flag เปิด + DATABASE_URL remote → ถูกปฏิเสธพร้อม log, (ง) dev + local DB → login ได้ทุก role ใน allowlist
 
-## ðŸ›  Technical Tasks (à¸‡à¸²à¸™à¸žà¸±à¸’à¸™à¸²à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸—à¸³)
-- [x] à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚ `process.env.ENABLE_DEV_LOGIN === "true"` à¸„à¸£à¸­à¸š Credentials provider à¹ƒà¸™ `src/auth.ts`
-- [x] à¹à¸¢à¸ helper `isRemoteDatabase(url)` à¸ˆà¸²à¸ regex à¹ƒà¸™ `src/db/guard.ts` à¹à¸¥à¹‰à¸§ reuse à¹ƒà¸™ `authorize()`
-- [x] à¹€à¸žà¸´à¹ˆà¸¡ `DEV_ROLE_ALLOWLIST` à¹à¸¥à¸° validate à¸à¹ˆà¸­à¸™à¹ƒà¸Šà¹‰
-- [x] à¸•à¸±à¸” `db.update(users).set({ role, roles, ... })` (role sync) à¸­à¸­à¸à¸ˆà¸²à¸ `authorize()` â€” à¸„à¸·à¸™à¸„à¹ˆà¸² role à¸ˆà¸²à¸ form à¸¥à¸‡ JWT à¹‚à¸”à¸¢à¸•à¸£à¸‡
-- [x] à¸›à¸£à¸±à¸š `jwt`/`session` callback à¹ƒà¸«à¹‰ session à¸‚à¸­à¸‡ dev bypass à¹„à¸¡à¹ˆà¸–à¸¹à¸ periodic DB refresh à¸—à¸±à¸š role à¸—à¸µà¹ˆà¹€à¸¥à¸·à¸­à¸ (à¸«à¸£à¸·à¸­à¸¢à¸­à¸¡à¸£à¸±à¸šà¸žà¸¤à¸•à¸´à¸à¸£à¸£à¸¡à¹à¸¥à¸°à¸£à¸°à¸šà¸¸à¹ƒà¸™ doc)
-- [x] à¹à¸à¹‰ default email/role à¹ƒà¸™ `src/components/home/LandingUI.tsx` + à¹€à¸žà¸´à¹ˆà¸¡à¸„à¸³à¸­à¸˜à¸´à¸šà¸²à¸¢à¸à¸²à¸£à¸•à¸±à¹‰à¸‡ `ENABLE_DEV_LOGIN` à¹ƒà¸™ `README.md` / `run-local.ps1`
-- [x] à¹€à¸‚à¸µà¸¢à¸™à¸œà¸¥à¸—à¸”à¸ªà¸­à¸š 4 à¸à¸£à¸“à¸µà¸•à¸²à¸¡ AC à¸‚à¹‰à¸­ 7 à¸¥à¸‡à¹ƒà¸™ PR description
+## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
+- [x] เพิ่มเงื่อนไข `process.env.ENABLE_DEV_LOGIN === "true"` ครอบ Credentials provider ใน `src/auth.ts`
+- [x] แยก helper `isRemoteDatabase(url)` จาก regex ใน `src/db/guard.ts` แล้ว reuse ใน `authorize()`
+- [x] เพิ่ม `DEV_ROLE_ALLOWLIST` และ validate ก่อนใช้
+- [x] ตัด `db.update(users).set({ role, roles, ... })` (role sync) ออกจาก `authorize()` — คืนค่า role จาก form ลง JWT โดยตรง
+- [x] ปรับ `jwt`/`session` callback ให้ session ของ dev bypass ไม่ถูก periodic DB refresh ทับ role ที่เลือก (หรือยอมรับพฤติกรรมและระบุใน doc)
+- [x] แก้ default email/role ใน `src/components/home/LandingUI.tsx` + เพิ่มคำอธิบายการตั้ง `ENABLE_DEV_LOGIN` ใน `README.md` / `run-local.ps1`
+- [x] เขียนผลทดสอบ 4 กรณีตาม AC ข้อ 7 ลงใน PR description
 
-## ðŸ”— Related Files
+## 🔗 Related Files
 - Report: [Recheck Report 2026-07-02](../../report/2026-07-02-p2p-game-recheck.md) (FIX-2)
 - Code: `src/auth.ts`, `src/components/home/LandingUI.tsx`, `src/db/guard.ts`, `next.config.ts`, `run-local.ps1`
-

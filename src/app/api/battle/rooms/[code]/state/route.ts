@@ -60,9 +60,21 @@ export async function GET(
           await finalizeGameInDb(tx, room, winnerId, "forfeit");
         });
 
-        room.status = "finished";
-        room.winnerId = winnerId;
-        room.finishReason = "forfeit";
+        // Re-read from DB to get the actual finalized/current state (handles races)
+        const updatedRoom = await db.query.gameRooms.findFirst({
+          where: (r, { eq }) => eq(r.id, room.id),
+          with: {
+            host: {
+              columns: { id: true, name: true, nickname: true, houseId: true }
+            },
+            guest: {
+              columns: { id: true, name: true, nickname: true, houseId: true }
+            }
+          }
+        });
+        if (updatedRoom) {
+          Object.assign(room, updatedRoom);
+        }
       }
     }
 

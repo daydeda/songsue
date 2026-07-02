@@ -49,6 +49,19 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
   // Connection State
   const [connType, setConnType] = useState<"webrtc" | "polling">("polling");
   const [webrtcState, setWebrtcState] = useState<string>("disconnected");
+  const [isTabVisible, setIsTabVisible] = useState<boolean>(true);
+
+  // Tab Visibility handler to pause polling when page is in background
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibility = () => {
+      setIsTabVisible(document.visibilityState === "visible");
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, []);
 
   // WebRTC Refs
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -96,9 +109,15 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
     checkRoom();
   }, [roomCodeUpper, user?.id]);
 
-  // Main game state polling (every 2 seconds)
+  // Main game state polling (dynamic interval, pauses on hidden tabs)
   useEffect(() => {
-    if (!roomId || status === "finished" || status === "expired") return;
+    if (!roomId || status === "finished" || status === "expired" || !isTabVisible) {
+      if (statePollInterval.current) {
+        clearInterval(statePollInterval.current);
+        statePollInterval.current = null;
+      }
+      return;
+    }
 
     const poll = async () => {
       try {
@@ -125,13 +144,19 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
       }
     };
 
-    poll(); // Run instantly
-    statePollInterval.current = setInterval(poll, 2000);
+    // Determine interval dynamically: webrtc -> 30s backoff reconciliation, fallback polling -> 5s
+    const intervalMs = connType === "webrtc" ? 30000 : 5000;
+
+    poll(); // Run instantly on hook setup/change
+    statePollInterval.current = setInterval(poll, intervalMs);
 
     return () => {
-      if (statePollInterval.current) clearInterval(statePollInterval.current);
+      if (statePollInterval.current) {
+        clearInterval(statePollInterval.current);
+        statePollInterval.current = null;
+      }
     };
-  }, [roomId, status]);
+  }, [roomId, status, connType, isTabVisible, roomCodeUpper]);
 
   // Turn timer countdown
   useEffect(() => {
@@ -149,17 +174,22 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
     return () => clearInterval(interval);
   }, [turnDeadline, status]);
 
-  // WebRTC Setup Orchestrator
+  // WebRTC Setup Orchestrator (Separate lifecycle from status change cleanup, trigger on connecting)
   useEffect(() => {
-    if (status !== "connecting" || webrtcActive.current) return;
+    if (status === "connecting" && !webrtcActive.current && !pcRef.current) {
+      setupWebRTC();
+    }
+    if (status === "finished" || status === "expired") {
+      cleanupWebRTC();
+    }
+  }, [status]);
 
-    setupWebRTC();
-
+  // Teardown everything strictly on unmount
+  useEffect(() => {
     return () => {
-      // Cleanup WebRTC connection on unmount or status change
       cleanupWebRTC();
     };
-  }, [status]);
+  }, []);
 
   // WebRTC Setup Logic
   const setupWebRTC = async () => {
@@ -187,6 +217,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
           webrtcActive.current = false;
           setConnType("polling"); // Fallback
+          cleanupWebRTC();
         }
       };
 
@@ -230,6 +261,11 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
       webrtcActive.current = true;
       setConnType("webrtc");
       markRoomActive();
+      // Instantly clear signaling poll interval when connected
+      if (signalPollInterval.current) {
+        clearInterval(signalPollInterval.current);
+        signalPollInterval.current = null;
+      }
     };
 
     dc.onmessage = (event) => {
@@ -243,6 +279,14 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
             return { board: nextBoard };
           });
           setCurrentTurn(msg.player === 1 ? 2 : 1);
+        } else if (msg.type === "sync") {
+          // Complete server-verified state synchronization (including turn deadline)
+          setGameState(msg.gameState);
+          setCurrentTurn(msg.currentTurn);
+          setStatus(msg.status);
+          setWinnerId(msg.winnerId);
+          setFinishReason(msg.finishReason);
+          setTurnDeadline(msg.turnDeadline);
         }
       } catch (err) {
         console.error("DataChannel read error:", err);
@@ -256,6 +300,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
   };
 
   const pollSignaling = async () => {
+    if (!isTabVisible) return;
     try {
       const res = await fetch(`/api/battle/rooms/${roomCodeUpper}/signal`);
       if (!res.ok) return;
@@ -305,22 +350,13 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
     try {
       const myRole = isInitiator.current ? "host" : "guest";
       
-      // Get existing candidates from signal GET first, then append
-      const res = await fetch(`/api/battle/rooms/${roomCodeUpper}/signal`);
-      let existingCandidates = [];
-      if (res.ok) {
-        const data = await res.json();
-        if (data.role === myRole) {
-          existingCandidates = data.iceCandidates || [];
-        }
-      }
-
+      // Post singular candidate directly to be appended atomically by server
       await fetch(`/api/battle/rooms/${roomCodeUpper}/signal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role: myRole,
-          iceCandidates: [...existingCandidates, candidate.toJSON()]
+          iceCandidate: candidate.toJSON()
         })
       });
     } catch (err) {
@@ -397,6 +433,23 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
       setWinnerId(freshData.winnerId);
       setFinishReason(freshData.finishReason);
       setTurnDeadline(freshData.turnDeadline);
+
+      // Sync the fresh server-verified state to the opponent immediately via Data Channel
+      if (connType === "webrtc" && dcRef.current && dcRef.current.readyState === "open") {
+        try {
+          dcRef.current.send(JSON.stringify({
+            type: "sync",
+            gameState: freshData.gameState,
+            currentTurn: freshData.currentTurn,
+            status: freshData.status,
+            winnerId: freshData.winnerId,
+            finishReason: freshData.finishReason,
+            turnDeadline: freshData.turnDeadline
+          }));
+        } catch (e) {
+          console.error("Failed to sync move status via data channel", e);
+        }
+      }
     } catch (err: any) {
       setError(err.message || "Move verification failed");
       // Rollback on error

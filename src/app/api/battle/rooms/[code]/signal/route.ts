@@ -1,9 +1,25 @@
 import { db } from "@/db";
 import { webrtcSignals } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { captureException } from "@/lib/logger";
+import { z } from "zod";
+
+const iceCandidateSchema = z.object({
+  candidate: z.string(),
+  sdpMid: z.string().nullable().optional(),
+  sdpMLineIndex: z.number().nullable().optional(),
+  usernameFragment: z.string().nullable().optional(),
+});
+
+const signalSchema = z.object({
+  role: z.enum(["host", "guest"]),
+  sdpOffer: z.string().max(20000).optional(),
+  sdpAnswer: z.string().max(20000).optional(),
+  iceCandidate: iceCandidateSchema.optional(),
+  iceCandidates: z.array(iceCandidateSchema).optional(),
+});
 
 // POST /api/battle/rooms/[code]/signal - Upload my WebRTC signals (SDP/ICE)
 export async function POST(
@@ -32,11 +48,19 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized to access this room" }, { status: 403 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const role = body.role as "host" | "guest";
-    const { sdpOffer, sdpAnswer, iceCandidates } = body;
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-    if (!role || (role === "host" && room.hostId !== userId) || (role === "guest" && room.guestId !== userId)) {
+    const parsed = signalSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid signal payload", details: parsed.error.format() }, { status: 400 });
+    }
+
+    const { role, sdpOffer, sdpAnswer, iceCandidate, iceCandidates } = parsed.data;
+
+    if ((role === "host" && room.hostId !== userId) || (role === "guest" && room.guestId !== userId)) {
       return NextResponse.json({ error: "Invalid role for this user" }, { status: 400 });
     }
 
@@ -44,23 +68,62 @@ export async function POST(
       where: (s, { eq, and }) => and(eq(s.roomId, room.id), eq(s.role, role)),
     });
 
-    if (existing) {
-      await db.update(webrtcSignals)
-        .set({
-          sdpOffer: sdpOffer !== undefined ? sdpOffer : existing.sdpOffer,
-          sdpAnswer: sdpAnswer !== undefined ? sdpAnswer : existing.sdpAnswer,
-          iceCandidates: iceCandidates !== undefined ? iceCandidates : existing.iceCandidates,
-          updatedAt: new Date(),
-        })
-        .where(eq(webrtcSignals.id, existing.id));
+    if (iceCandidate !== undefined) {
+      if (!existing) {
+        await db.insert(webrtcSignals).values({
+          roomId: room.id,
+          role,
+          iceCandidates: [iceCandidate],
+        });
+      } else {
+        const candidates = existing.iceCandidates as any[] || [];
+        if (candidates.length >= 30) {
+          return NextResponse.json({ error: "ICE candidates limit (30) reached" }, { status: 400 });
+        }
+
+        const result = await db.update(webrtcSignals)
+          .set({
+            iceCandidates: sql`
+              CASE 
+                WHEN jsonb_typeof(ice_candidates) = 'array' AND jsonb_array_length(ice_candidates) < 30 
+                THEN ice_candidates || ${JSON.stringify(iceCandidate)}::jsonb
+                ELSE ice_candidates
+              END
+            `,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(webrtcSignals.id, existing.id), sql`jsonb_array_length(ice_candidates) < 30`))
+          .returning();
+
+        if (result.length === 0) {
+          return NextResponse.json({ error: "ICE candidates limit (30) reached" }, { status: 400 });
+        }
+      }
     } else {
-      await db.insert(webrtcSignals).values({
-        roomId: room.id,
-        role,
-        sdpOffer: sdpOffer || null,
-        sdpAnswer: sdpAnswer || null,
-        iceCandidates: iceCandidates || [],
-      });
+      if (existing) {
+        if (iceCandidates !== undefined && iceCandidates.length > 30) {
+          return NextResponse.json({ error: "ICE candidates limit (30) exceeded" }, { status: 400 });
+        }
+        await db.update(webrtcSignals)
+          .set({
+            sdpOffer: sdpOffer !== undefined ? sdpOffer : existing.sdpOffer,
+            sdpAnswer: sdpAnswer !== undefined ? sdpAnswer : existing.sdpAnswer,
+            iceCandidates: iceCandidates !== undefined ? iceCandidates : existing.iceCandidates,
+            updatedAt: new Date(),
+          })
+          .where(eq(webrtcSignals.id, existing.id));
+      } else {
+        if (iceCandidates !== undefined && iceCandidates.length > 30) {
+          return NextResponse.json({ error: "ICE candidates limit (30) exceeded" }, { status: 400 });
+        }
+        await db.insert(webrtcSignals).values({
+          roomId: room.id,
+          role,
+          sdpOffer: sdpOffer || null,
+          sdpAnswer: sdpAnswer || null,
+          iceCandidates: iceCandidates || [],
+        });
+      }
     }
 
     return NextResponse.json({ success: true });

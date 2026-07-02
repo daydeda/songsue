@@ -2,6 +2,10 @@ import "dotenv/config";
 
 const isPglite = process.env.DB_TYPE === "pglite";
 
+if (isPglite && process.env.NODE_ENV === "production") {
+  throw new Error("DB_TYPE 'pglite' is not allowed in production environment");
+}
+
 async function test() {
   try {
     let result: any;
@@ -12,8 +16,11 @@ async function test() {
       result = await client.query("SELECT 1 as connected");
       await client.close();
     } else {
+      if (!process.env.DATABASE_URL) {
+        throw new Error("DATABASE_URL environment variable is required");
+      }
       const postgres = require("postgres");
-      const sql = postgres(process.env.DATABASE_URL!);
+      const sql = postgres(process.env.DATABASE_URL);
       result = await sql`SELECT 1 as connected`;
       await sql.end();
     }

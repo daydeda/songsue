@@ -8,6 +8,7 @@ import { accounts, sessions, users, verificationTokens } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { AuditService } from "@/modules/audit/audit.service"
 import { isSiteMoved } from "@/lib/site-moved"
+import { isRemoteDatabase } from "@/db/guard"
 
 // Fail fast at runtime if AUTH_URL is missing in production: with trustHost:true an
 // unset AUTH_URL lets Auth.js derive the OAuth callback host from the request Host
@@ -140,7 +141,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // interactive selection makes each sign-in plant a fresh, matching cookie.
       authorization: { params: { prompt: "select_account" } },
     }),
-    ...(process.env.NODE_ENV === "development"
+    ...(process.env.NODE_ENV === "development" && process.env.ENABLE_DEV_LOGIN === "true"
       ? [
           Credentials({
             name: "Dev Bypass Login",
@@ -150,9 +151,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               role: { label: "Role", type: "text" },
             },
             async authorize(credentials) {
-              const email = (credentials?.email as string || "smocamt.official@gmail.com").toLowerCase();
-              const name = credentials?.name as string || "Dev User";
+              const dbUrl = process.env.DATABASE_URL ?? "";
+              if (isRemoteDatabase(dbUrl)) {
+                console.warn(
+                  "⛔ Refusing Dev Bypass Login: DATABASE_URL looks like a remote/production database."
+                );
+                return null;
+              }
+
               const role = credentials?.role as string || "super_admin";
+              const DEV_ROLE_ALLOWLIST = ["student", "smo", "club_president", "admin", "super_admin"];
+              if (!DEV_ROLE_ALLOWLIST.includes(role)) {
+                console.warn(`⛔ Refusing Dev Bypass Login: Role "${role}" is not in the allowlist.`);
+                return null;
+              }
+
+              const email = (credentials?.email as string || "dev-superadmin@localhost.test").toLowerCase();
+              const name = credentials?.name as string || "Dev User";
 
               let user = await db.query.users.findFirst({
                 where: (u, { eq }) => eq(u.email, email),
@@ -173,29 +188,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 user = await db.query.users.findFirst({
                   where: (u, { eq }) => eq(u.email, email),
                 });
-              } else {
-                // Keep the database role synced with the chosen login bypass role
-                await db.update(users)
-                  .set({ role, roles: [role], profileCompleted: true })
-                  .where(eq(users.id, user.id));
-                user.role = role;
-                user.roles = [role];
-                user.profileCompleted = true;
               }
-
 
               return {
                 id: user!.id,
                 name: user!.name ?? null,
                 email: user!.email,
-                role: user!.role ?? "student",
-                roles: (user!.roles as string[]) ?? ["student"],
+                role: role,
+                roles: [role],
                 profileCompleted: user!.profileCompleted ?? false,
                 houseId: user!.houseId ?? null,
                 imageTransform: (user!.imageTransform as { scale: number; x: number; y: number } | null) ?? null,
                 qrToken: user!.qrToken ?? null,
                 studentId: user!.studentId ?? null,
                 image: user!.image ?? null,
+                isDevBypass: true,
               };
             },
           }),
@@ -233,20 +240,52 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // On sign-in: hydrate the token with all user data from DB
       if (user) {
         token.id = user.id;
-        const dbUser = await fetchUserDataFromDb(user.id as string);
-        if (dbUser) await applyDbUserToToken(token, dbUser, user.id as string);
+        const isBypass = (user as { isDevBypass?: boolean }).isDevBypass;
+        if (isBypass) {
+          token.isDevBypass = true;
+          token.role = user.role;
+          token.roles = user.roles;
+          const dbUser = await fetchUserDataFromDb(user.id as string);
+          if (dbUser) {
+            token.name = dbUser.name;
+            token.image = dbUser.image;
+            token.email = dbUser.email;
+            token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.houseId = dbUser.houseId ?? null;
+            token.imageTransform = dbUser.imageTransform ?? null;
+            token.qrToken = dbUser.qrToken;
+            token.studentId = dbUser.studentId ?? null;
+          }
+        } else {
+          const dbUser = await fetchUserDataFromDb(user.id as string);
+          if (dbUser) await applyDbUserToToken(token, dbUser, user.id as string);
+        }
         token.lastDbRefresh = Date.now();
         return token;
       }
 
       const userId = (token.id || token.sub) as string;
+      const isBypass = token.isDevBypass;
 
       // On explicit update trigger (e.g. user just completed their profile): force
       // an immediate DB refresh. Persists because we're in the jwt callback.
       if (trigger === "update" && userId) {
         token.updateTime = Date.now();
         const dbUser = await fetchUserDataFromDb(userId);
-        if (dbUser) await applyDbUserToToken(token, dbUser, userId);
+        if (dbUser) {
+          if (isBypass) {
+            token.name = dbUser.name;
+            token.image = dbUser.image;
+            token.email = dbUser.email;
+            token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.houseId = dbUser.houseId ?? null;
+            token.imageTransform = dbUser.imageTransform ?? null;
+            token.qrToken = dbUser.qrToken;
+            token.studentId = dbUser.studentId ?? null;
+          } else {
+            await applyDbUserToToken(token, dbUser, userId);
+          }
+        }
         token.lastDbRefresh = Date.now();
         return token;
       }
@@ -268,7 +307,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (userId && (profileIncomplete || periodicDue)) {
         const dbUser = await fetchUserDataFromDb(userId);
-        if (dbUser) await applyDbUserToToken(token, dbUser, userId);
+        if (dbUser) {
+          if (isBypass) {
+            token.name = dbUser.name;
+            token.image = dbUser.image;
+            token.email = dbUser.email;
+            token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.houseId = dbUser.houseId ?? null;
+            token.imageTransform = dbUser.imageTransform ?? null;
+            token.qrToken = dbUser.qrToken;
+            token.studentId = dbUser.studentId ?? null;
+          } else {
+            await applyDbUserToToken(token, dbUser, userId);
+          }
+        }
         token.lastDbRefresh = Date.now();
       }
 

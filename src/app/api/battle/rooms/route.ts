@@ -5,6 +5,11 @@ import { auth } from "@/auth";
 import { createInitialState } from "@/lib/games/ox";
 import { getClientIp, AuditService } from "@/modules/audit/audit.service";
 import { captureException } from "@/lib/logger";
+import { z } from "zod";
+
+const createRoomSchema = z.object({
+  gameType: z.enum(["ox"]),
+});
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -32,12 +37,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User not found in database. Please log out and sign in again." }, { status: 401 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const gameType = body.gameType || "ox";
-
-    if (gameType !== "ox") {
-      return NextResponse.json({ error: "Unsupported game type" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
+
+    const parsed = createRoomSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid room creation payload", details: parsed.error.format() }, { status: 400 });
+    }
+
+    const { gameType } = parsed.data;
 
     // Generate unique room code
     let roomCode = "";

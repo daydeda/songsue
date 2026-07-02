@@ -36,15 +36,15 @@ gantt
 
 | ID | Story / Task | Owner | Estimate | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **[US-GAME-18a](../user-stories/US-GAME-18a.md)** | **Staff สร้างห้องเกม (Game Room)**<br>- สร้าง Room Code 6 หลัก และหน้าจอจัดการของ Host | Developer | 12 hrs | [x] (OX MVP) |
-| **[US-GAME-18b](../user-stories/US-GAME-18b.md)** | **ผู้เข้าร่วม Join ด้วย QR หรือ Room Code**<br>- ตั้งชื่อเล่น/เข้าร่วมโดยไม่ต้องลงชื่อเข้าใช้งานหลัก | Developer | 8 hrs | [x] (OX MVP) |
-| **[US-GAME-18c](../user-stories/US-GAME-18c.md)** | **Host เห็นรายชื่อผู้เข้าร่วมแบบ Live Lobby**<br>- หน้าจอรอล็อบบี้อัปเดตแบบเรียลไทม์ | Developer | 6 hrs | [x] (OX MVP) |
-| **[US-GAME-18d](../user-stories/US-GAME-18d.md)** | **Quiz — คำถามพร้อมนับถอยหลัง**<br>- หน้าจอแสดงผลคำตอบและกราฟสถิติ | Developer | 16 hrs | [ ] |
-| **[US-GAME-18e](../user-stories/US-GAME-18e.md)** | **Mini-game — เกมกดปุ่มแข่งความเร็ว**<br>- วัดเวลาตอบสนองในระดับมิลลิวินาที (ms) | Developer | 10 hrs | [ ] |
-| **[US-GAME-18f](../user-stories/US-GAME-18f.md)** | **Live Poll — โหวตเรียลไทม์พร้อมส่งออก**<br>- สร้างหน้าโหวต กราฟเปรียบเทียบ และปุ่มส่งออก CSV | Developer | 10 hrs | [ ] |
-| **[US-GAME-18g](../user-stories/US-GAME-18g.md)** | **Leaderboard แสดงคะแนนและสรุปผล**<br>- ตารางแสดงคะแนนพร้อมการจัดอันดับสะสมข้ามรอบ | Developer | 8 hrs | [x] (OX MVP) |
-| **[US-GAME-18h](../user-stories/US-GAME-18h.md)** | **เชื่อมคะแนนเกมเข้าสู่ระบบ House Points**<br>- ตรวจสอบและให้สิทธิ์ผู้ใช้ CMU เพื่อโอนคะแนนเข้าบอร์ดบ้าน | Developer | 10 hrs | [ ] |
-| **[US-GAME-18i](../user-stories/US-GAME-18i.md)** | **ระบบแอดมินปิดห้องเกมเมื่อจบเกม**<br>- บันทึกผลเกมไว้ฝั่งเซิร์ฟเวอร์ก่อนตัดการเชื่อมต่อ | Developer | 6 hrs | [x] (OX MVP) |
+| **[US-GAME-18a](../user-stories/archives/US-GAME-18a.md)** | **Staff สร้างห้องเกม (Game Room)**<br>- สร้าง Room Code 6 หลัก และหน้าจอจัดการของ Host | Developer | 12 hrs | [x] (OX MVP) |
+| **[US-GAME-18b](../user-stories/archives/US-GAME-18b.md)** | **ผู้เข้าร่วม Join ด้วย QR หรือ Room Code**<br>- ตั้งชื่อเล่น/เข้าร่วมโดยไม่ต้องลงชื่อเข้าใช้งานหลัก | Developer | 8 hrs | [x] (OX MVP) |
+| **[US-GAME-18c](../user-stories/archives/US-GAME-18c.md)** | **Host เห็นรายชื่อผู้เข้าร่วมแบบ Live Lobby**<br>- หน้าจอรอล็อบบี้อัปเดตแบบเรียลไทม์ | Developer | 6 hrs | [x] (OX MVP) |
+| **[US-GAME-18d](../user-stories/archives/US-GAME-18d.md)** | **Quiz — คำถามพร้อมนับถอยหลัง**<br>- หน้าจอแสดงผลคำตอบและกราฟสถิติ | Developer | 16 hrs | [ ] |
+| **[US-GAME-18e](../user-stories/archives/US-GAME-18e.md)** | **Mini-game — เกมกดปุ่มแข่งความเร็ว**<br>- วัดเวลาตอบสนองในระดับมิลลิวินาที (ms) | Developer | 10 hrs | [ ] |
+| **[US-GAME-18f](../user-stories/archives/US-GAME-18f.md)** | **Live Poll — โหวตเรียลไทม์พร้อมส่งออก**<br>- สร้างหน้าโหวต กราฟเปรียบเทียบ และปุ่มส่งออก CSV | Developer | 10 hrs | [ ] |
+| **[US-GAME-18g](../user-stories/archives/US-GAME-18g.md)** | **Leaderboard แสดงคะแนนและสรุปผล**<br>- ตารางแสดงคะแนนพร้อมการจัดอันดับสะสมข้ามรอบ | Developer | 8 hrs | [x] (OX MVP) |
+| **[US-GAME-18h](../user-stories/archives/US-GAME-18h.md)** | **เชื่อมคะแนนเกมเข้าสู่ระบบ House Points**<br>- ตรวจสอบและให้สิทธิ์ผู้ใช้ CMU เพื่อโอนคะแนนเข้าบอร์ดบ้าน | Developer | 10 hrs | [ ] |
+| **[US-GAME-18i](../user-stories/archives/US-GAME-18i.md)** | **ระบบแอดมินปิดห้องเกมเมื่อจบเกม**<br>- บันทึกผลเกมไว้ฝั่งเซิร์ฟเวอร์ก่อนตัดการเชื่อมต่อ | Developer | 6 hrs | [x] (OX MVP) |
 
 ---
 

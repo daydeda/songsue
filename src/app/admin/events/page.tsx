@@ -310,8 +310,9 @@ export default function AdminEventsPage() {
   const { t, lang } = useLanguage();
   const { data: session } = useSession();
   // The admin area also admits registration/organizer (see admin/layout.tsx),
-  // but attendee exports — which include PDPA-sensitive medical & emergency
-  // contact data — are restricted to super_admin/admin only.
+  // but seeing medical detail in the exported file / student modal — which
+  // includes PDPA-sensitive medical & emergency contact data — is restricted to
+  // super_admin/admin only.
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
   // Scanner-only roles (smo, club_president, major_president) reach this page to
@@ -321,6 +322,13 @@ export default function AdminEventsPage() {
   const isAttendanceOnly = !myRoles.some((r) =>
     ["super_admin", "admin", "registration", "organizer"].includes(r)
   );
+  // The Export Excel button: staff export the full (role-gated) file; the
+  // scanner-only student-leader roles may also export, but the server
+  // (api/admin/events/[id]/export) hands them a THIN file with no phone,
+  // meds-check, medical, or emergency-contact columns — they must ask an
+  // admin/super_admin for that detail. isAttendanceOnly is exactly that
+  // thin-roster set on this page (only staff + thin-roster ever reach here).
+  const canSeeExportButton = canExportAttendance || isAttendanceOnly;
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1701,9 +1709,11 @@ export default function AdminEventsPage() {
   }, {} as Record<string, AttendanceUnit[]>), [attendanceUnits]);
 
   // Export the event's attendees as .xlsx. The file is built server-side at
-  // /api/admin/events/[id]/export, which re-checks the super_admin/admin role
-  // (the button is also gated via canExportAttendance) and audit-logs the PII
-  // pull. We just trigger the download; the browser sends the session cookie.
+  // /api/admin/events/[id]/export, which re-checks the role (staff vs.
+  // thin-roster — the button is also gated via canSeeExportButton), scopes
+  // president roles to events they manage, strips sensitive columns for
+  // thin-roster roles, and audit-logs the pull. We just trigger the download;
+  // the browser sends the session cookie.
   const exportAttendanceXlsx = () => {
     if (!activeEventId) return;
     // Carry the selected day through to the server so the spreadsheet matches the
@@ -4698,10 +4708,14 @@ export default function AdminEventsPage() {
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {canExportAttendance && !loadingAttendance && attendance.length > 0 && (
+                {canSeeExportButton && !loadingAttendance && attendance.length > 0 && (
                   <button
                     onClick={exportAttendanceXlsx}
-                    title="Export all attendees of this event to Excel (.xlsx)"
+                    title={
+                      canExportAttendance
+                        ? "Export all attendees of this event to Excel (.xlsx)"
+                        : "Export attendees to Excel (.xlsx) — name, ID, and check-in only. Ask an admin for phone, medical, or emergency-contact detail."
+                    }
                     style={{
                       display: "flex",
                       alignItems: "center",

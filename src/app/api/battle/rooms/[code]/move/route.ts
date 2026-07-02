@@ -3,7 +3,6 @@ import { gameRooms } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { validateMove, applyMove, checkResult, OXState } from "@/lib/games/ox";
 import { finalizeGameInDb } from "@/lib/games/stats-helper";
 import { getClientIp, AuditService } from "@/modules/audit/audit.service";
@@ -15,8 +14,6 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,12 +69,12 @@ export async function POST(
     const playerTurn = room.currentTurn as 1 | 2;
 
     // 3. Validate move legality
-    if (!validateMove(state, { cell: cell as any }, playerTurn)) {
+    if (!validateMove(state, { cell: cell as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }, playerTurn)) {
       return NextResponse.json({ error: "Illegal move" }, { status: 400 });
     }
 
     // 4. Apply move
-    const nextState = applyMove(state, { cell: cell as any }, playerTurn);
+    const nextState = applyMove(state, { cell: cell as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }, playerTurn);
     const gameCheck = checkResult(nextState);
 
     if (gameCheck.status === "win" || gameCheck.status === "draw") {

@@ -1,9 +1,8 @@
 import { db } from "@/db";
-import { gameRooms, webrtcSignals } from "@/db/schema";
+import { webrtcSignals } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { captureException } from "@/lib/logger";
 
 // POST /api/battle/rooms/[code]/signal - Upload my WebRTC signals (SDP/ICE)
@@ -12,8 +11,6 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -80,8 +77,6 @@ export async function GET(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -1,9 +1,6 @@
 import { db } from "@/db";
-import { gameRooms } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { finalizeGameInDb } from "@/lib/games/stats-helper";
 import { getClientIp, AuditService } from "@/modules/audit/audit.service";
 import { captureException } from "@/lib/logger";
@@ -14,8 +11,6 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

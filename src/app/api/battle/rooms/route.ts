@@ -2,7 +2,6 @@ import { db } from "@/db";
 import { gameRooms } from "@/db/schema";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { createInitialState } from "@/lib/games/ox";
 import { getClientIp, AuditService } from "@/modules/audit/audit.service";
 import { captureException } from "@/lib/logger";
@@ -17,8 +16,6 @@ function generateRoomCode(): string {
 // POST /api/battle/rooms - Create a new room
 export async function POST(req: Request) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

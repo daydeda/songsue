@@ -3,7 +3,6 @@ import { gameRooms } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { captureException } from "@/lib/logger";
 
 // GET /api/battle/rooms/[code] - Inspect room status
@@ -12,8 +11,6 @@ export async function GET(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

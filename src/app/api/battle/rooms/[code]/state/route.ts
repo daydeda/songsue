@@ -3,7 +3,6 @@ import { gameRooms } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { finalizeGameInDb } from "@/lib/games/stats-helper";
 import { captureException } from "@/lib/logger";
 
@@ -13,8 +12,6 @@ export async function GET(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,7 +21,7 @@ export async function GET(
     const roomCode = code.toUpperCase();
     const userId = session.user.id;
 
-    let room = await db.query.gameRooms.findFirst({
+    const room = await db.query.gameRooms.findFirst({
       where: (r, { eq }) => eq(r.roomCode, roomCode),
       with: {
         host: {

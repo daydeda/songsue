@@ -1,16 +1,13 @@
 import { db } from "@/db";
-import { gameStats, gameRooms } from "@/db/schema";
+import { gameRooms } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { captureException } from "@/lib/logger";
 
 // GET /api/battle/stats/me - Retrieve my OX stats and match history
-export async function GET(req: Request) {
+export async function GET() {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -3,14 +3,11 @@ import { gameStats } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGameTables } from "@/db/ensure-tables";
 import { captureException } from "@/lib/logger";
 
 // GET /api/battle/leaderboard - Retrieve top players sorted by wins DESC
 export async function GET(req: Request) {
   try {
-    await ensureGameTables();
-
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

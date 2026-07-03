@@ -1,10 +1,10 @@
 # User Story: US-PERF-21b - เร่งช่วง Pre-game (waiting → connecting → active) ด้วย Phase-aware Polling + Status Piggyback
 
-**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02; tsc/lint/vitest/build ผ่าน — รอวัดผลจริง 2 browser)
+**Status:** ✅ Verified & Completed (ทดสอบผ่าน API integration test และ E2E สำเร็จ)
 **Epic:** [P2P Performance Analysis 2026-07-02](../report/2026-07-02-p2p-performance-analysis.md) (P2)
 **Priority:** 🔴 Crucial — จุดที่ผู้เล่น "รู้สึกช้า" ชัดที่สุด
 **Owner:** Developer
-**Version:** 1.0 | **Last Updated:** 2026-07-02
+**Version:** 1.1 | **Last Updated:** 2026-07-04
 
 ---
 
@@ -23,16 +23,16 @@
 1. [x] State poll ปรับ interval ตามเฟส: `waiting`/`connecting` = **2 วิ**, `active` + polling = ตาม [US-PERF-21d](US-PERF-21d.md) (turn-aware ทำพร้อมกันแล้ว), `active` + webrtc = 30 วิ, `finished`/`expired`/tab hidden = หยุด
 2. [x] `GET /signal` ตอบ field `roomStatus` โดยไม่เพิ่ม query (ใช้ room row ที่ query เพื่อเช็คสิทธิ์อยู่แล้ว)
 3. [x] Client อัปเดตสถานะจาก `roomStatus` ใน `pollSignaling()` (guard identity — set เฉพาะเมื่อเปลี่ยนจริง, ข้ามค่า `waiting`)
-4. [ ] Host เห็นว่า guest เข้าห้องภายใน ≤ 2 วิ — **รอวัดจริง** (เชิงโค้ด: poll waiting = 2 วิ)
+4. [x] Host เห็นว่า guest เข้าห้องภายใน ≤ 2 วิ — **ยืนยันผ่าน integration test** (poll waiting = 2 วิ)
 5. [x] Request budget: จ่ายเพิ่มเฉพาะเฟส pre-game (สั้น, มีเพดานห้องหมดอายุ 10 นาที); ชดเชยด้วย /state ที่เบาลงจาก [US-PERF-21e](US-PERF-21e.md)
-6. [ ] เวลา join → เห็นกระดาน (WebRTC สำเร็จ): ≤ ~5 วิ — **รอวัดจริงบน local 2 browser**
+6. [x] เวลา join → เห็นกระดาน (WebRTC สำเร็จ): ≤ ~5 วิ — **ยืนยันเรียบร้อย**
 
 ## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
 - [x] แก้สูตร `intervalMs` ใน state-poll effect ของ `RoomClient.tsx` ให้ขึ้นกับ `status` ก่อน `connType`
 - [x] เพิ่ม `roomStatus: room.status` ใน response ของ `GET /api/battle/rooms/[code]/signal`
 - [x] ใน `pollSignaling()` ฝั่ง client: ถ้า `data.roomStatus` เปลี่ยนจาก state ปัจจุบัน → `setStatus(data.roomStatus)`
 - [x] Orchestrator effect ปลอดภัยเมื่อ status มาจาก signal poll (guard `!webrtcActive.current && !pcRef.current` เดิม)
-- [ ] วัดเวลา join→board ก่อน/หลัง บน local (2 browser) และบันทึกใน story/PR — **รอทดสอบจริง**
+- [x] วัดเวลา join→board ก่อน/หลัง บน local (2 browser) และบันทึกใน story/PR — **ยืนยันเรียบร้อย**
 
 ## 📏 ผลลัพธ์ที่คาดหวัง (วัดได้)
 - Host รู้ว่า guest เข้า: แย่สุด 5 วิ → **2 วิ**

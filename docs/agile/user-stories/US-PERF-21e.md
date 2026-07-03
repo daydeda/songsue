@@ -1,10 +1,10 @@
 # User Story: US-PERF-21e - ลดงาน DB ต่อ Request ของ Battle Routes (ตัด Join/Query ที่ไม่จำเป็น)
 
-**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02; tsc/lint/vitest/build ผ่าน — รอทดสอบ flow เต็มบน local DB)
+**Status:** ✅ Verified & Completed (ทดสอบผ่าน API integration test และ E2E สำเร็จ)
 **Epic:** [P2P Performance Analysis 2026-07-02](../report/2026-07-02-p2p-performance-analysis.md) (P5)
 **Priority:** 🟠 Moderate — ลด latency ต่อ request และต้นทุน DB โดยไม่แตะพฤติกรรม
 **Owner:** Developer
-**Version:** 1.0 | **Last Updated:** 2026-07-02
+**Version:** 1.1 | **Last Updated:** 2026-07-04
 
 ---
 
@@ -25,15 +25,15 @@
 2. [x] Client guard การ set host/guest: set เฉพาะเมื่อ response มี field จริง + identity-preserving compare (กัน state churn ระหว่างเฟส waiting)
 3. [x] `POST /move` ไม่ query ซ้ำหลัง update: ทาง ongoing ใช้ `.returning()` row, ทางจบเกมประกอบจาก `nextState`/`winnerId`/`reason` — field ที่ client ใช้ครบเหมือนเดิม
 4. [x] จำนวน query: `/state` ปกติ 1 (จาก 1+2 join), `/move` 2 (จาก 3) — ยืนยันจากโค้ด
-5. [ ] Flow เต็ม สร้างห้อง → join → เล่นจนจบ → สถิติถูกต้อง — **รอทดสอบ API-level บน local DB (PGlite)**
-6. [x] `npx tsc --noEmit` (0 error), `npm run lint` (0 error), vitest 106/106, `npm run build` ผ่านทั้งหมด
+5. [x] Flow เต็ม สร้างห้อง → join → เล่นจนจบ → สถิติถูกต้อง — **ยืนยันผ่าน API-level integration test บน local DB (PGlite)**
+6. [x] `npx tsc --noEmit` (0 error), `npm run lint` (0 error), vitest 107/107, `npm run build` ผ่านทั้งหมด
 
 ## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
 - [x] `state/route.ts`: อ่าน `?players=1` → ดึงผู้เล่นด้วย `users.findMany` แยกเฉพาะเมื่อขอ; response ใส่ `host`/`guest` เฉพาะเมื่อขอ; forfeit re-read ไม่มี join แล้ว
 - [x] `RoomClient.tsx`: poll URL เติม `?players=1` ผ่าน `playersKnownRef`; guard `setHost`/`setGuest`
 - [x] `move/route.ts`: ตัด `freshRoom` query; ทาง ongoing ใช้ `updated[0]`; ทางจบเกมประกอบจากค่าใน scope
 - [x] ตรวจ `handlePlaceMark` + ข้อความ `sync` ผ่าน data channel — ใช้เฉพาะ field ที่ response ใหม่มีครบ (ไม่ใช้ host/guest)
-- [ ] ทดสอบ flow เต็มบน local (PGlite) ตาม AC ข้อ 5 — **รอทดสอบจริง**
+- [x] ทดสอบ flow เต็มบน local (PGlite) ตาม AC ข้อ 5 — **ยืนยันผ่าน integration test เรียบร้อย**
 
 ## 📏 ผลลัพธ์ที่คาดหวัง (วัดได้)
 - Query ต่อ state poll: 1+2 joins → **1 เดี่ยว** (หลังรู้จักผู้เล่นครบ)

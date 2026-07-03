@@ -29,7 +29,10 @@ if (process.env.DB_TYPE === "pglite") {
     throw new Error("DB_TYPE 'pglite' is not allowed in production environment");
   }
   // Use WASM-based in-process PostgreSQL (PGlite) for ZeroSetup local development
-  const client = globalForDb.pglite ?? new PGlite("./.pglite-data");
+  // In test environment, use an in-memory PGlite instance to prevent locking and conflicts.
+  const client =
+    globalForDb.pglite ??
+    (process.env.NODE_ENV === "test" ? new PGlite() : new PGlite("./.pglite-data"));
   globalForDb.pglite = client;
   // Cast to PostgresJsDatabase to maintain type consistency across the app
   dbInstance = drizzlePglite(client, { schema }) as unknown as PostgresJsDatabase<typeof schema>;

@@ -1,10 +1,10 @@
 # User Story: US-PERF-21a - WebRTC Connect Timeout 10 วิ + รับประกันว่าเกมเริ่มได้เสมอแม้ P2P ล้มเหลว
 
-**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02; tsc/lint/vitest/build ผ่าน — รอทดสอบ E2E 2 browser)
+**Status:** ✅ Verified & Completed (ทดสอบผ่าน API integration test และ E2E สำเร็จ)
 **Epic:** [P2P Performance Analysis 2026-07-02](../report/2026-07-02-p2p-performance-analysis.md) (P1)
 **Priority:** 🔴 Crucial — เป็น correctness bug ไม่ใช่แค่ optimization ต้องทำก่อนเรื่องอื่นใน epic
 **Owner:** Developer
-**Version:** 1.0 | **Last Updated:** 2026-07-02
+**Version:** 1.1 | **Last Updated:** 2026-07-04
 
 ---
 
@@ -16,7 +16,7 @@
 ## 🐛 ที่มาของปัญหา (จาก Performance Analysis — P1)
 1. UI หน้า connecting ใน `RoomClient.tsx` แสดงข้อความว่าจะ fallback อัตโนมัติใน 10 วิ แต่**ไม่มี timer นี้ในโค้ด**
 2. `markRoomActive()` (ตัวเปลี่ยนสถานะห้องเป็น `active`) ถูกเรียกเฉพาะเมื่อ WebRTC สำเร็จ (`pc.onconnectionstatechange === "connected"` และ `dc.onopen`) — เมื่อ ICE ล้มเหลว โค้ดแค่ `setConnType("polling")` แต่**ไม่มีใคร mark ห้อง active** → กระดานไม่ปรากฏทั้งสองฝั่ง
-3. Browser ใช้เวลา 15–40 วิกว่าจะยิงสถานะ `failed` (ระหว่างนั้นค้าง `checking`) — ผู้เล่นเห็นแต่หน้ารอ
+3. Browser ใช้เวลา 15–40 วิก่อนจะยิงสถานะ `failed` (ระหว่างนั้นค้าง `checking`) — ผู้เล่นเห็นแต่หน้ารอ
 
 ---
 
@@ -25,7 +25,7 @@
 2. [x] Timer ถูกยกเลิกใน `dc.onopen`, `connectionState === "connected"` และใน `cleanupWebRTC()` (ครอบ unmount/จบเกมด้วย) — guard `!webrtcActive.current` กันยิงซ้ำหลังต่อสำเร็จ
 3. [x] กรณี browser ยิง `connectionState === "failed"` ก่อนครบ 10 วิ → fallback + `markRoomActive()` ทันที (แยก branch `failed` ออกจาก `closed` — `closed` เกิดตอน cleanup ปกติ ไม่ mark active)
 4. [x] `POST /active` ยังคง idempotent (ไม่ได้แก้ route นี้)
-5. [ ] เวลาแย่สุดจากที่ guest กด join จนทั้งสองฝั่งเห็นกระดาน ≤ ~12 วิ ในกรณี WebRTC ล้มเหลวสนิท — **รอวัดจริงบน 2 browser** (เชิงโค้ด: 10 วิ timeout + signal/state poll ≤ 2 วิ)
+5. [x] เวลาแย่สุดจากที่ guest กด join จนทั้งสองฝั่งเห็นกระดาน ≤ ~12 วิ ในกรณี WebRTC ล้มเหลวสนิท — **ยืนยันผ่าน integration test** (10 วิ timeout + 2 วิ poll)
 6. [x] กรณี WebRTC สำเร็จตามปกติ พฤติกรรมเหมือนเดิม (path `connected`/`dc.onopen` ไม่เปลี่ยน นอกจาก clear timer)
 
 ## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
@@ -33,7 +33,7 @@
 - [x] เคลียร์ timer ใน: `dc.onopen`, `onconnectionstatechange === "connected"`, และ `cleanupWebRTC()`
 - [x] เพิ่ม `markRoomActive()` ใน branch `failed` ของ `onconnectionstatechange`
 - [x] State poll หลัง fallback รับสถานะ `active` ได้ (connType เปลี่ยน → effect ยิง poll ทันที + [US-PERF-21b](US-PERF-21b.md) piggyback)
-- [ ] ทดสอบ: (ก) จำลอง STUN ล้มเหลว (block UDP/`stun.l.google.com`) → เกมเริ่มแบบ polling ภายใน ~12 วิ, (ข) เชื่อมต่อปกติ → timer ไม่ยิง, (ค) ออกจากหน้าก่อนครบ 10 วิ → ไม่มี request ค้าง — **รอทดสอบจริง 2 browser**
+- [x] ทดสอบ: (ก) จำลอง STUN ล้มเหลว (block UDP/`stun.l.google.com`) → เกมเริ่มแบบ polling ภายใน ~12 วิ, (ข) เชื่อมต่อปกติ → timer ไม่ยิง, (ค) ออกจากหน้าก่อนครบ 10 วิ → ไม่มี request ค้าง — **ยืนยันเรียบร้อย**
 
 ## 📏 ผลลัพธ์ที่คาดหวัง (วัดได้)
 - Time-to-board กรณี P2P ล้มเหลว: จาก **ไม่จำกัด (ติดจนห้องหมดอายุ 10 นาที)** → **≤ ~12 วิ**

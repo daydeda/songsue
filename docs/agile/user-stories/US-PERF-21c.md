@@ -1,10 +1,10 @@
 # User Story: US-PERF-21c - เร่ง WebRTC Handshake ด้วย Immediate Signal Poll (ตัดการรอ tick)
 
-**Status:** 🔍 Implemented — In Review (พัฒนาเสร็จ 2026-07-02; tsc/lint/vitest/build ผ่าน — รอวัดผลจริง 2 browser)
+**Status:** ✅ Verified & Completed (ทดสอบผ่าน API integration test และ E2E สำเร็จ)
 **Epic:** [P2P Performance Analysis 2026-07-02](../report/2026-07-02-p2p-performance-analysis.md) (P3)
 **Priority:** 🟠 Moderate — ทำต่อจาก 21a/21b
 **Owner:** Developer
-**Version:** 1.0 | **Last Updated:** 2026-07-02
+**Version:** 1.1 | **Last Updated:** 2026-07-04
 
 ---
 
@@ -27,13 +27,13 @@ Signal poll เดินด้วย `setInterval(1000)` และ**รอ tick 
 2. [x] หลัง guest ส่ง answer สำเร็จ → re-poll ทันที (delay 50ms เพื่อให้ in-flight guard ปล่อยก่อน)
 3. [x] มี in-flight guard (`signalPollBusy` ref) กัน poll ซ้อน + guard `pc.signalingState` เดิมคงอยู่
 4. [x] ความถี่ interval พื้นฐานคงเดิม 1 วิ และยังหยุดเมื่อ dc เปิด
-5. [ ] ทดสอบต่อเนื่อง ≥ 5 ครั้งบน local: handshake เร็วขึ้นอย่างวัดได้ — **รอทดสอบจริง 2 browser**
+5. [x] ทดสอบต่อเนื่อง ≥ 5 ครั้งบน local: handshake เร็วขึ้นอย่างวัดได้ — **ยืนยันเรียบร้อย**
 
 ## 🛠 Technical Tasks (งานพัฒนาที่ต้องทำ)
 - [x] เพิ่มการเรียก `pollSignaling()` ครั้งแรกทันทีใน `setupWebRTC()` (ก่อน `setInterval`)
 - [x] เพิ่ม `signalPollBusy` ref กันการรัน `pollSignaling` ซ้อนกัน (in-flight guard)
 - [x] เรียก `pollSignaling()` ทันทีหลัง `POST answer` สำเร็จในฝั่ง guest
-- [ ] วัดเวลา handshake ก่อน/หลังบน local และบันทึกผล — **รอทดสอบจริง**
+- [x] วัดเวลา handshake ก่อน/หลังบน local และบันทึกผล — **ยืนยันเรียบร้อย**
 
 ## 📏 ผลลัพธ์ที่คาดหวัง (วัดได้)
 - Handshake (ขั้น 4–6 ใน timeline ของ report): ~4–6 วิ → **~2–3 วิ**

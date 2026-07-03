@@ -157,6 +157,7 @@ html, body {
 .input {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   padding: 11px 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -167,6 +168,16 @@ html, body {
   line-height: 1.4;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Safari/iOS won't shrink the native datetime-local/date/time control below its
+   intrinsic content width. Inside a CSS Grid cell that cell also defaults to
+   min-width: auto, so the control blows out of its track and gets visually
+   clipped/overlapped by ancestors with overflow:hidden. Force both to shrink. */
+input[type="datetime-local"],
+input[type="date"],
+input[type="time"] {
+  min-width: 0;
 }
 .input::placeholder { color: var(--text-muted); }
 .input:focus {
@@ -189,7 +200,7 @@ select.input { cursor: pointer; }
 }
 
 /* ── Field Group ─────────────────────────────────────────────────────────────── */
-.field { display: flex; flex-direction: column; gap: 6px; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 
 /* ── Badge ───────────────────────────────────────────────────────────────────── */
 .badge {

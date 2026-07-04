@@ -2,9 +2,10 @@
 
 import { useSession, signOut } from "next-auth/react";
 import type { Session } from "next-auth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Camera, Check, Loader2, LogOut, User, Menu, X, AlertTriangle, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { compressImageFile } from "@/lib/compress-image";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { FACULTIES, majorsForFaculty } from "@/lib/faculties";
 
@@ -134,6 +135,24 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
     set("emergencyContacts", contacts);
   };
 
+  const degreeDigit = formData.studentId.trim()[4];
+  const majorOptions: string[] =
+    degreeDigit === "3" ? ["SE", "KIM", "DTM"]
+    : degreeDigit === "5" ? ["KIM", "DTM"]
+    : ["ANI", "DG", "DII", "MMIT", "SE"];
+
+  // Faculty-scoped major list. CAMT keeps the existing degree-digit-aware list
+  // (undergrad SE/KIM/DTM by intake year vs the base ANI/DG/DII/MMIT/SE);
+  // other faculties use their (currently empty, pending real data) list from
+  // src/lib/faculties.ts.
+  const currentMajorOptions = formData.faculty === "CAMT" ? majorOptions : majorsForFaculty(formData.faculty);
+
+  // Reset major to a valid option when the degree level or faculty changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!currentMajorOptions.includes(formData.major)) set("major", currentMajorOptions[0] ?? "");
+  }, [degreeDigit, formData.faculty]);
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -141,14 +160,20 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
     setPreviewUrl(URL.createObjectURL(file));
     setUploading(true);
     setError(null);
-    const fd = new FormData();
-    fd.append("file", file);
+    const th = lang === "th";
     try {
+      // Avatars display small, so downscale hard (512px → ~10–20KB). This also
+      // keeps the upload under the reverse proxy's body cap (a raw multi-MB photo
+      // would otherwise 413 before reaching the app).
+      const upload = await compressImageFile(file, { maxDim: 512 });
+      const fd = new FormData();
+      fd.append("file", upload);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (data.url) set("image", data.url);
-      else setError(data.error || "Upload failed");
-    } catch { setError("Upload failed"); }
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.url) set("image", data.url);
+      else if (res.status === 413) setError(th ? "ไฟล์รูปใหญ่เกินไป กรุณาเลือกรูปที่เล็กลง" : "Image is too large. Please choose a smaller photo.");
+      else setError(data?.error || (th ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again."));
+    } catch { setError(lang === "th" ? "อัปโหลดไม่สำเร็จ กรุณาลองใหม่" : "Upload failed. Please try again."); }
     finally { setUploading(false); }
   };
 
@@ -429,13 +454,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
             <select
               className={inp}
               value={formData.faculty}
-              onChange={(e) => {
-                const fac = e.target.value;
-                const majors = majorsForFaculty(fac);
-                // Switching faculty resets the major to that faculty's first
-                // option (or empty when the faculty has no major sub-selection).
-                setFormData((p) => ({ ...p, faculty: fac, major: majors[0] ?? "" }));
-              }}
+              onChange={(e) => set("faculty", e.target.value)}
               style={{ minHeight: 48 }}
             >
               {FACULTIES.map((f) => (
@@ -445,11 +464,11 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
           </div>
 
           {/* Major (only for faculties that have a major list) */}
-          {majorsForFaculty(formData.faculty).length > 0 && (
+          {currentMajorOptions.length > 0 && (
             <div className="field">
               <label className={lbl}>{t.major}</label>
               <select className={inp} value={formData.major} onChange={(e) => set("major", e.target.value)} style={{ minHeight: 48 }}>
-                {majorsForFaculty(formData.faculty).map((m) => (
+                {currentMajorOptions.map((m) => (
                   <option key={m} value={m}>{MAJOR_LABELS[m] ?? m}</option>
                 ))}
               </select>

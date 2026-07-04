@@ -16,11 +16,12 @@ LayoutDashboard,
 QrCode,
 ShoppingBag,
 Users,
-CalendarDays
+CalendarDays,
+Gamepad2
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { houseSlug } from "@/lib/houses";
-import { canEnterAdmin } from "@/lib/admin-access";
+import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState, useRef, useEffect } from "react";
 
@@ -51,14 +52,15 @@ const user = session?.user;
 
 // Top-bar tabs — only the core destinations, kept lean.
 const primaryLinks = user ? [
-{ href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
-{ href: "/dashboard/calendar", label: t.calendar || "Calendar", icon: CalendarDays },
-{ href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
-{ href: "/dashboard/history", label: t.eventHistory, icon: History },
-{ href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },
+  { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
+  { href: "/dashboard/calendar", label: t.calendar || "Calendar", icon: CalendarDays },
+  { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
+  { href: "/dashboard/history", label: t.eventHistory, icon: History },
+  { href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },
+  // { href: "/battle", label: lang === "th" ? "เกม P2P" : "P2P Battle", icon: Gamepad2 },
 ] : [
-{ href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
-{ href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
+  { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
+  { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
 ];
 
 // Secondary destinations — live in the avatar ▾ account menu (and the mobile drawer).
@@ -260,7 +262,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
         </Link>
       );
     })}
-    {(canEnterAdmin(user?.role)) && (
+    {(canEnterAdminAny(effectiveRoles(user?.role, user?.roles))) && (
       <Link href="/admin" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
         {t.adminPanel}
@@ -365,7 +367,7 @@ border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent"
 </Link>
 );
 })}
-{(canEnterAdmin(user?.role)) && (
+{(canEnterAdminAny(effectiveRoles(user?.role, user?.roles))) && (
 <Link 
 href="/admin"
 className={`nav-link admin-link ${pathname.startsWith("/admin") ? "active" : ""}`}

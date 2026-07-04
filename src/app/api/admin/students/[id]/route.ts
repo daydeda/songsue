@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { effectiveRoles } from "@/lib/admin-access";
 
 // Next.js 15+: params is a Promise and must be awaited
 export async function GET(
@@ -12,7 +13,7 @@ export async function GET(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "super_admin") {
+    if (!session?.user || !effectiveRoles(session.user.role, session.user.roles).includes("super_admin")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -23,10 +24,7 @@ export async function GET(
       actorId: session.user.id!,
       targetId: targetStudentId,
       action: "Viewed Sensitive Medical/Emergency Info",
-      ipAddress:
-        req.headers.get("x-forwarded-for")?.split(",")[0] ||
-        req.headers.get("x-real-ip") ||
-        "127.0.0.1",
+      ipAddress: getClientIp(req),
     });
 
     const studentData = await db.query.users.findFirst({

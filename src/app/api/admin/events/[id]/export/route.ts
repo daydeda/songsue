@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { attendance, events, eventSessions } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -15,13 +16,15 @@ interface EmergencyContact {
 }
 
 // The medical/emergency columns are selected conditionally (super_admin only),
-// so Drizzle infers them as absent. Treat them as optional when present.
+// and email/phone/contactChannels are selected conditionally (thin-roster roles
+// get none of them), so Drizzle infers them as absent. Treat them as optional
+// when present.
 type AttendeeUser = {
   name: string;
   nickname: string | null;
   studentId: string | null;
-  email: string;
-  phone: string | null;
+  email?: string;
+  phone?: string | null;
   contactChannels?: string | null;
   major: string | null;
   role: string | null;
@@ -37,10 +40,14 @@ type AttendeeUser = {
 };
 
 // GET /api/admin/events/[id]/export — attendee list as a real .xlsx with
-// auto-filter enabled. Restricted to super_admin/admin only (unlike the
-// attendance/report endpoints, which also admit registration/organizer).
-// Medical & emergency-contact columns follow the same policy as the attendance
-// API: included for super_admin only.
+// auto-filter enabled. Staff (super_admin/admin) may export any event.
+// Scanner-only student-leader roles (smo/club_president/major_president) may
+// also export, but only get a THIN roster (no phone, no meds-check, no medical
+// or emergency-contact columns — mirrors THIN_USER_COLUMNS in the sibling
+// attendance API) — same "ask an admin for detail" policy enforced there.
+// registration/organizer still cannot export at all (unlike the
+// attendance/report endpoints, which admit them for on-screen viewing).
+// Medical & emergency-contact columns are included for super_admin only.
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -50,12 +57,19 @@ export async function GET(
     const roles =
       session?.user?.roles ??
       (session?.user?.role ? [session.user.role] : []);
-    const canExport = roles.includes("super_admin") || roles.includes("admin");
+    const isStaffRole = roles.includes("super_admin") || roles.includes("admin");
+    const isThinExportRole = roles.some((r) =>
+      ["smo", "club_president", "major_president"].includes(r)
+    );
+    const canExport = isStaffRole || isThinExportRole;
     if (!session?.user || !canExport) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
     const canViewMedical = roles.includes("super_admin");
+    // Thin export: identity + check-in only, same as the attendance roster's
+    // thin-roster view. Any staff role overrides this.
+    const isThinRoster = !isStaffRole;
 
     const { id: eventId } = await params;
     // Optional ?sessionId= narrows the export to one day of a multi-day event,
@@ -64,10 +78,24 @@ export async function GET(
 
     const event = await db.query.events.findFirst({
       where: eq(events.id, eventId),
-      columns: { id: true, title: true },
+      columns: { id: true, title: true, managedByRoles: true, ownerClubIds: true, ownerMajors: true },
     });
     if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    // Event scoping for president roles (mirrors the attendance API): club_president
+    // / major_president may only export events they OWN (ownerClubIds/ownerMajors
+    // match their own club membership / major). Staff and smo are unscoped.
+    const presidentTags = roles.filter((r) =>
+      ["club_president", "major_president"].includes(r)
+    );
+    if (!isStaffRole && presidentTags.length > 0) {
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, roles);
+      const managed = EventScopeService.isEventManagedByScope(event, scope);
+      if (!managed) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     // Resolve the day's label for the audit log + filename when a day is selected.
@@ -94,9 +122,9 @@ export async function GET(
             name: true,
             nickname: true,
             studentId: true,
-            email: true,
-            phone: true,
-            contactChannels: true,
+            email: !isThinRoster,
+            phone: !isThinRoster,
+            contactChannels: !isThinRoster,
             major: true,
             role: true,
             chronicDiseases: canViewMedical,
@@ -116,16 +144,36 @@ export async function GET(
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
-    // Bulk PII export — keep a tamper-evident record of who pulled it (PDPA),
-    // and note when health info was part of the export. Mirrors the CSV report
-    // and the attendance-list access log.
+    // Defensive cap: the whole roster + the xlsx buffer are built in memory (xlsx
+    // can't stream). Per-event this is bounded, but refuse a pathologically large
+    // export rather than risk OOM — the admin can export one day at a time instead.
+    const MAX_EXPORT_ROWS = 50000;
+    if (list.length > MAX_EXPORT_ROWS) {
+      return NextResponse.json(
+        { error: `This export is too large (${list.length} rows). Please use the day filter to export one session at a time.` },
+        { status: 413 }
+      );
+    }
+
+    // Bulk PII export — keep a tamper-evident record of who pulled it (PDPA), and
+    // note the health info in the export. Mirrors the CSV report and the
+    // attendance-list access log.
+    //
+    // The "Meds Check" (medsCheckOption) column is in every STAFF export, so a
+    // plain admin's export still carries health info the descriptor must disclose.
+    // super_admin additionally receives full medical detail + emergency-contact
+    // columns; a plain admin gets only the meds-check signal. Thin-roster exporters
+    // (smo/president roles) get neither — no health info of any kind. Record which,
+    // so the log never understates (or overstates) the exposure.
+    const healthNote = canViewMedical
+      ? ", included health detail + emergency contacts"
+      : isThinRoster
+      ? ", no health info (thin roster)"
+      : ", included meds-check status";
     await AuditService.logAction({
       actorId: session.user.id!,
-      action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${canViewMedical ? ", included health info" : ""})`,
-      ipAddress:
-        req.headers.get("x-forwarded-for")?.split(",")[0] ||
-        req.headers.get("x-real-ip") ||
-        "127.0.0.1",
+      action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${healthNote})`,
+      ipAddress: getClientIp(req),
     });
 
     // Same nationality heuristic as the admin events UI: the first of the last
@@ -154,17 +202,23 @@ export async function GET(
         "Nickname": u?.nickname || "",
         "Student ID": u?.studentId || "",
         "Nationality": nationality(u?.studentId),
-        "Email": u?.email || "",
-        "Phone": u?.phone || "",
-        "Contact Channels": u?.contactChannels || "",
         "Major": u?.major || "",
         "Role": u?.role || "",
         "House": u?.house?.name || "",
         "Status": m.status === "attended" ? "Checked In" : m.status || "",
         "Check-in (Bangkok)": fmtTime(m.checkInTime),
         "Method": m.method || "",
-        "Meds Check": m.medsCheckOption || "",
       };
+      // Thin-roster exporters (smo/club_president/major_president) get identity +
+      // check-in only — no email, phone, contact channels, or meds-check status
+      // (the latter would reveal a medical condition). Mirrors THIN_USER_COLUMNS
+      // in the sibling attendance API. They must ask an admin for detail.
+      if (!isThinRoster) {
+        base["Email"] = u?.email || "";
+        base["Phone"] = u?.phone || "";
+        base["Contact Channels"] = u?.contactChannels || "";
+        base["Meds Check"] = m.medsCheckOption || "";
+      }
       if (canViewMedical) {
         base["Chronic Diseases"] = u?.chronicDiseases || "";
         base["Medical History"] = u?.medicalHistory || "";
@@ -179,8 +233,10 @@ export async function GET(
     };
 
     const header = [
-      "Name", "Nickname", "Student ID", "Nationality", "Email", "Phone", "Contact Channels",
-      "Major", "Role", "House", "Status", "Check-in (Bangkok)", "Method", "Meds Check",
+      "Name", "Nickname", "Student ID", "Nationality",
+      ...(!isThinRoster ? ["Email", "Phone", "Contact Channels"] : []),
+      "Major", "Role", "House", "Status", "Check-in (Bangkok)", "Method",
+      ...(!isThinRoster ? ["Meds Check"] : []),
       ...(canViewMedical
         ? [
             "Chronic Diseases", "Medical History", "Drug Allergies", "Food Allergies",
@@ -228,7 +284,8 @@ export async function GET(
       if (orphans.length > 0) groups.push({ label: "Unassigned", rows: orphans });
     }
 
-    // Per-scope tallies, reused for each day and the event-wide total.
+    // Per-DAY tallies: one attendance row per person per day, so counting raw
+    // rows is correct here (a single day has ≤1 row per person).
     const statsFor = (rows: Att[]) => {
       const pre = rows.filter((a) => a.method === "pre-registered");
       const preTotal = pre.length;
@@ -237,6 +294,35 @@ export async function GET(
       const noShow = Math.max(0, preTotal - preAttended);
       const checkedIn = rows.filter((a) => a.status === "attended").length;
       const distinct = new Set(rows.map((a) => a.studentId)).size;
+      const pct = preTotal > 0 ? (noShow / preTotal) * 100 : 0;
+      return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, pct };
+    };
+
+    // Event-wide ("ALL DAYS") tallies must COUNT EACH STUDENT ONCE, not sum the
+    // per-day rows: a person present on Day 1 and Day 2 has one row per day, so
+    // summing double-counts them. Collapse to one unit per student — keyed exactly
+    // like the on-screen "All days" tallies (studentId, then user.studentId, then
+    // the row id) — and classify each person across all their day rows: pre-
+    // registered if ANY day was a pre-registration, attended if present on ANY day,
+    // walk-in only if EVERY day was a walk-in. Mirrors the UI summary in
+    // src/app/admin/events/page.tsx so the export total matches the screen.
+    const distinctStatsFor = (rows: Att[]) => {
+      const byStudent = new Map<string, Att[]>();
+      for (const a of rows) {
+        const k = a.studentId || a.user?.studentId || a.id;
+        const arr = byStudent.get(k);
+        if (arr) arr.push(a);
+        else byStudent.set(k, [a]);
+      }
+      const units = [...byStudent.values()];
+      const preTotal = units.filter((u) => u.some((a) => a.method === "pre-registered")).length;
+      const preAttended = units.filter(
+        (u) => u.some((a) => a.method === "pre-registered") && u.some((a) => a.status === "attended")
+      ).length;
+      const walkIns = units.filter((u) => u.every((a) => a.method === "walk-in")).length;
+      const noShow = Math.max(0, preTotal - preAttended);
+      const checkedIn = units.filter((u) => u.some((a) => a.status === "attended")).length;
+      const distinct = units.length;
       const pct = preTotal > 0 ? (noShow / preTotal) * 100 : 0;
       return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, pct };
     };
@@ -270,8 +356,12 @@ export async function GET(
       "Day", "Pre-registered", "Attended", "No-shows", "No-show %",
       "Walk-ins", "Total Checked-in", "Distinct Students",
     ];
-    const summaryRowFor = (label: string, rows: Att[]): Record<string, string | number> => {
-      const s = statsFor(rows);
+    const summaryRowFor = (
+      label: string,
+      rows: Att[],
+      stats: (rows: Att[]) => ReturnType<typeof statsFor> = statsFor
+    ): Record<string, string | number> => {
+      const s = stats(rows);
       return {
         "Day": label,
         "Pre-registered": s.preTotal,
@@ -287,7 +377,13 @@ export async function GET(
     if (isMultiDay) {
       for (const g of groups) summaryRows.push(summaryRowFor(g.label, g.rows));
     }
-    summaryRows.push(summaryRowFor(isMultiDay ? "ALL DAYS (total)" : "Total", list));
+    // Multi-day total dedupes per student (distinctStatsFor); single-day already
+    // has ≤1 row per person, so the raw statsFor total is already distinct.
+    summaryRows.push(
+      isMultiDay
+        ? summaryRowFor("ALL DAYS (distinct students)", list, distinctStatsFor)
+        : summaryRowFor("Total", list)
+    );
     const summaryWs = XLSX.utils.json_to_sheet(summaryRows, { header: summaryHeader });
     summaryWs["!autofilter"] = { ref: summaryWs["!ref"] || "A1" };
     summaryWs["!cols"] = summaryHeader.map((h) => ({ wch: Math.max(14, h.length + 2) }));

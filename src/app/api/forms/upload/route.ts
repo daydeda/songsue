@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     // uploads could exhaust the free-tier storage cap. 30/min comfortably covers a
     // form with several file questions plus retries while blocking a spam loop.
     const ip = getClientIp(req);
-    const limiter = rateLimit(ip, 30, 60000);
+    const limiter = await rateLimit(ip, 30, 60000);
     if (!limiter.success) {
       return NextResponse.json(
         { error: "Too many uploads. Please slow down." },
@@ -50,8 +50,8 @@ export async function POST(req: Request) {
     }
 
     const formData = await req.formData();
-    const file = formData.get("file") as File;
-    if (!file) {
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {

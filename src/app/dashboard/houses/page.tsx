@@ -93,6 +93,9 @@ export default function HousesPage() {
   const [activeTab, setActiveTab] = useState<"house" | "individual">("house");
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  // Set when a poll tick fails before anything has loaded — surfaces an error
+  // screen instead of leaving the page stuck on the spinner forever.
+  const [error, setError] = useState(false);
   const [myStanding, setMyStanding] = useState<{ points: number; rank: number | null; total: number } | null>(null);
 
   const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
@@ -230,22 +233,32 @@ export default function HousesPage() {
   // hidden, and never stacks requests). The student's own authoritative rank (/me)
   // is refreshed in the same tick so the "Your rank" banner stays current too.
   usePolling(async (signal) => {
-    const [hData, aData, iData] = await Promise.all([
-      fetch("/api/houses", { signal }).then((r) => r.json()),
-      fetch("/api/houses/activity", { signal }).then((r) => r.json()),
-      fetch("/api/houses/individual", { signal }).then((r) => r.json()),
-    ]);
-    if (Array.isArray(hData)) setHouses(hData);
-    if (Array.isArray(aData)) setActivities(aData);
-    if (Array.isArray(iData)) setIndividuals(iData);
-    if (myId) {
-      const meRes = await fetch("/api/houses/individual/me", { signal });
-      if (meRes.ok) {
-        const d = await meRes.json();
-        if (d && typeof d.points === "number") setMyStanding(d);
+    try {
+      const [hData, aData, iData] = await Promise.all([
+        fetch("/api/houses", { signal }).then((r) => r.json()),
+        fetch("/api/houses/activity", { signal }).then((r) => r.json()),
+        fetch("/api/houses/individual", { signal }).then((r) => r.json()),
+      ]);
+      if (Array.isArray(hData)) setHouses(hData);
+      if (Array.isArray(aData)) setActivities(aData);
+      if (Array.isArray(iData)) setIndividuals(iData);
+      if (myId) {
+        const meRes = await fetch("/api/houses/individual/me", { signal });
+        if (meRes.ok) {
+          const d = await meRes.json();
+          if (d && typeof d.points === "number") setMyStanding(d);
+        }
       }
+      setError(false);
+    } catch {
+      // A genuine fetch failure (not a navigation/visibility abort) surfaces the
+      // error screen; the poller keeps retrying, so it recovers on its own.
+      if (!signal.aborted) setError(true);
+    } finally {
+      // ALWAYS clear loading, even on throw, so a failed first fetch can't strand
+      // the page on the spinner.
+      setLoading(false);
     }
-    setLoading(false);
   }, 30000);
 
   // Fetch the current user's authoritative rank + score as soon as the session is
@@ -260,7 +273,7 @@ export default function HousesPage() {
       .catch(() => {});
     return () => ac.abort();
   }, [myId]);
- 
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
@@ -268,7 +281,24 @@ export default function HousesPage() {
       </div>
     );
   }
- 
+
+  // Nothing loaded and the last poll failed — show an error instead of a blank
+  // leaderboard. The 30s poll keeps retrying, so it recovers automatically.
+  if (error && houses.length === 0 && individuals.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 360 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)", marginBottom: 8 }}>
+            {lang === "th" ? "โหลดกระดานคะแนนไม่สำเร็จ" : lang === "cn" ? "无法加载排行榜" : lang === "mm" ? "အမှတ်ဇယား ဖွင့်၍မရပါ" : "Couldn't load the leaderboard"}
+          </h2>
+          <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
+            {lang === "th" ? "กรุณาตรวจสอบการเชื่อมต่อ ระบบกำลังลองใหม่ให้อัตโนมัติ" : lang === "cn" ? "请检查您的网络连接，系统会自动重试。" : lang === "mm" ? "အင်တာနက်ချိတ်ဆက်မှုကို စစ်ဆေးပါ။ စနစ်က အလိုအလျောက် ထပ်စမ်းနေပါသည်။" : "Please check your connection — it will keep retrying automatically."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const maxPoints = Math.max(...houses.map(h => h.points), 1);
 
   // The student's own house and its rank within the (points-sorted) standings —
@@ -282,7 +312,14 @@ export default function HousesPage() {
   // Individual pagination calculations
   const itemsPerPage = 10;
   const totalPages = Math.ceil(individuals.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
+  // A poll can shrink the list below the current page, which would otherwise
+  // strand the user on an empty page. Snap back during render (React's supported
+  // pattern) instead of a setState-in-effect — keeps currentPage authoritative
+  // for the pagination controls below with no extra render commit.
+  const maxPage = Math.max(1, totalPages);
+  if (currentPage > maxPage) setCurrentPage(maxPage);
+  const page = Math.min(currentPage, maxPage);
+  const startIndex = (page - 1) * itemsPerPage;
   const paginatedIndividuals = individuals.slice(startIndex, startIndex + itemsPerPage);
   const topThreeIndividuals = individuals.slice(0, 3);
   const maxIndividualPoints = Math.max(...individuals.map(ind => ind.points), 1);

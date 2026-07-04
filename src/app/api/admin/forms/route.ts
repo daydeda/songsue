@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { forms } from "@/db/schema";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { desc, eq, count } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -88,10 +88,7 @@ export async function POST(req: Request) {
     await AuditService.logAction({
       actorId: session.user.id!,
       action: `Created new custom form: "${title}" (ID: ${newForm.id}) with award: ${pointsAwarded} PTS`,
-      ipAddress:
-        req.headers.get("x-forwarded-for")?.split(",")[0] ||
-        req.headers.get("x-real-ip") ||
-        "127.0.0.1",
+      ipAddress: getClientIp(req),
     });
 
     return NextResponse.json(newForm);

@@ -4,19 +4,32 @@
  * Safe to run on an existing DB — uses IF NOT EXISTS and ADD COLUMN IF NOT EXISTS.
  */
 import postgres from "postgres";
-
-const connectionString = process.env.DATABASE_URL!;
-if (!connectionString) {
-  console.error("❌ DATABASE_URL environment variable is not set.");
-  process.exit(1);
-}
-
-// The Supabase transaction pooler (port 6543) runs in transaction mode and does
-// NOT support prepared statements — postgres-js must use the simple query
-// protocol there, or every DDL statement fails. Mirrors src/db/index.ts.
-const usingTransactionPooler = connectionString.includes(":6543");
+import { drizzle } from "drizzle-orm/pglite";
+import { PGlite } from "@electric-sql/pglite";
+import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 
 async function migrate() {
+  if (process.env.DB_TYPE === "pglite") {
+    console.log("📦 Applying migrations to PGlite local database...");
+    const client = new PGlite("./.pglite-data");
+    const db = drizzle(client);
+    await migratePglite(db, { migrationsFolder: "./drizzle" });
+    await client.close();
+    console.log("✅ PGlite migrations complete!");
+    process.exit(0);
+  }
+
+  const connectionString = process.env.DATABASE_URL!;
+  if (!connectionString) {
+    console.error("❌ DATABASE_URL environment variable is not set.");
+    process.exit(1);
+  }
+
+  // The Supabase transaction pooler (port 6543) runs in transaction mode and does
+  // NOT support prepared statements — postgres-js must use the simple query
+  // protocol there, or every DDL statement fails. Mirrors src/db/index.ts.
+  const usingTransactionPooler = connectionString.includes(":6543");
+
   console.log("🔄 Applying incremental migration...");
   const sql = postgres(connectionString, { max: 1, prepare: !usingTransactionPooler });
 
@@ -685,9 +698,329 @@ async function migrate() {
   `;
   console.log("  ✅ calendar_feed_tokens table");
 
-  // 44. Single-faculty (CAMT) → 4-faculty house model. The column + index DDL
+  // 44. score_history.form_id — ties a contest-award ledger row to the specific
+  // form that produced it, so a re-opened form can revert ITS OWN award without
+  // touching the event scans, manual adjustments, and event-winner bonus that
+  // share the same event_id. Nullable + ON DELETE SET NULL: existing rows stay
+  // legal (form_id NULL) and the ledger entry survives if the form is deleted.
+  // Additive only — no data is rewritten or removed.
+  await sql`
+    ALTER TABLE score_history
+    ADD COLUMN IF NOT EXISTS form_id uuid
+  `;
+  // Add the FK only if it isn't already present (Postgres has no
+  // ADD CONSTRAINT IF NOT EXISTS). Guarded so re-runs are a no-op.
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'score_history_form_id_forms_id_fk'
+      ) THEN
+        ALTER TABLE score_history
+          ADD CONSTRAINT score_history_form_id_forms_id_fk
+          FOREIGN KEY (form_id) REFERENCES forms(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_score_history_form ON score_history (form_id)`;
+  console.log("  ✅ score_history.form_id (+ FK, index)");
+
+  // 45. events.individual_points_awarded — a SECOND, independent point pool per
+  // event. points_awarded (step 4) is the house winner bonus (winner-take-all at
+  // event-end); this is per-attendee individual points added to users.points the
+  // moment a check-in becomes 'attended' (per session, so multi-day attendance
+  // compounds). Additive, nullable-with-default, non-destructive: existing events
+  // default to 0 (no individual points), unchanged from before. Idempotent via
+  // ADD COLUMN IF NOT EXISTS.
+  await sql`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS individual_points_awarded integer DEFAULT 0
+  `;
+  console.log("  ✅ events.individual_points_awarded");
+
+  // 46. forms.individual_points_awarded — per-submitter individual points, the
+  // form analogue of step 45. points_awarded (the form's house contest, awarded
+  // winner-take-all at close) is unchanged; this is added to users.points the
+  // moment a student submits the form, and is NOT clawed back if the form
+  // re-opens (the submission persists). Additive, default 0, idempotent.
+  await sql`
+    ALTER TABLE forms
+    ADD COLUMN IF NOT EXISTS individual_points_awarded integer DEFAULT 0
+  `;
+  console.log("  ✅ forms.individual_points_awarded");
+
+  // 47. shop_products audience targeting — mirrors the events visibility model so
+  // a product can be shown only to certain roles / majors / Thai|international
+  // students (shared predicate src/lib/event-access.ts). allowedRoles and
+  // allowedMajors are jsonb string[] (NULL/[] = no restriction on that axis);
+  // target_thai / target_international default true (both false is treated as
+  // both true by the predicate). Additive, nullable / default-true,
+  // non-destructive: existing products get NULL arrays + both targets true, i.e.
+  // visible to everyone exactly as before. Idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS allowed_roles jsonb`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS allowed_majors jsonb`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS target_thai boolean DEFAULT true`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS target_international boolean DEFAULT true`;
+  console.log("  ✅ shop_products.allowed_roles / allowed_majors / target_thai / target_international");
+
+  // 48. Per-product custom fields (jersey name/number, engraving, etc.).
+  // shop_products.custom_fields holds the field CONFIG (jsonb array of
+  // {key,label,type,required,…}); shop_order_items.custom_values holds the buyer's
+  // snapshotted answers ([{label,value}]) captured at checkout. Both nullable
+  // (NULL = no custom fields / none filled). Additive, non-destructive, idempotent
+  // via ADD COLUMN IF NOT EXISTS. See src/lib/shop-custom-fields.ts.
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS custom_fields jsonb`;
+  await sql`ALTER TABLE shop_order_items ADD COLUMN IF NOT EXISTS custom_values jsonb`;
+  console.log("  ✅ shop_products.custom_fields / shop_order_items.custom_values");
+
+  // 49. Shop delivery / fulfillment (Phase 2). shop_settings gains a flat-fee
+  // delivery config (delivery_enabled / delivery_fee / pickup_info); shop_orders
+  // gains the per-order choice (fulfillment) + recipient name/phone/address (PDPA
+  // personal data, shop-admin only) + shipping_fee (snapshot folded into the
+  // total). Existing orders default to 'pickup' with fee 0 + NULL recipient fields,
+  // i.e. unchanged. Additive, non-destructive, idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS delivery_enabled boolean NOT NULL DEFAULT false`;
+  await sql`ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS delivery_fee integer NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE shop_settings ADD COLUMN IF NOT EXISTS pickup_info text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS fulfillment text NOT NULL DEFAULT 'pickup'`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS recipient_name text`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS recipient_phone text`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS shipping_address text`;
+  await sql`ALTER TABLE shop_orders ADD COLUMN IF NOT EXISTS shipping_fee integer NOT NULL DEFAULT 0`;
+  console.log("  ✅ shop_settings delivery config + shop_orders fulfillment/recipient/shipping_fee");
+
+  // 50. Per-product delivery pricing. shop_products gains an optional base fee
+  // (delivery_fee; NULL = use the shop-wide shop_settings.delivery_fee fallback)
+  // and quantity tiers (delivery_tiers jsonb [{minQty,fee}] — highest applicable
+  // minQty wins, "order more than N → fee goes up"). An order's total shipping is
+  // the SUM of each product's computed fee. The shop-wide fee stays as the
+  // fallback for products with no own config, so existing products are unchanged.
+  // Additive, nullable, non-destructive, idempotent via ADD COLUMN IF NOT EXISTS.
+  // See src/lib/shop-delivery.ts.
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS delivery_fee integer`;
+  await sql`ALTER TABLE shop_products ADD COLUMN IF NOT EXISTS delivery_tiers jsonb`;
+  console.log("  ✅ shop_products.delivery_fee / delivery_tiers");
+
+  // 51. events.first_year_only — audience restriction limiting an event to the
+  // CURRENT first-year intake, derived from the student-id prefix (CMU
+  // Buddhist-era admission year, e.g. ids starting with "69" for 2026; computed
+  // at runtime in src/lib/event-access.ts so it tracks the year automatically).
+  // Enforced alongside the existing role/major/Thai|international predicates;
+  // admin roles bypass. Additive, NOT NULL DEFAULT false: existing events
+  // backfill to false (no restriction = unchanged behaviour). Idempotent via
+  // ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS first_year_only boolean NOT NULL DEFAULT false`;
+  console.log("  ✅ events.first_year_only");
+
+  // 52. audit_logs.seq — a monotonic, gap-tolerant insertion-order column that
+  // breaks ties when two appends share the same millisecond `timestamp`. The hash
+  // chain is appended under an advisory lock, but tip selection
+  // (ORDER BY timestamp DESC LIMIT 1) and verification (ORDER BY timestamp ASC)
+  // still can't deterministically order equal-ms rows — they fork the chain and
+  // raise false tamper alarms. seq is a bigint backed by its own sequence
+  // (bigserial-style), assigned via nextval on insert.
+  //
+  // Built up in the safe, re-runnable order used for the session_id rollout
+  // (steps 36-40): add NULLABLE → backfill in chain order → attach the sequence →
+  // SET DEFAULT + NOT NULL LAST. All existing rows are preserved exactly.
+  //
+  // (a) Add nullable first so ADD COLUMN on a populated table is an instant
+  //     metadata change (no default ⇒ no table rewrite).
+  await sql`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS seq bigint`;
+
+  // (b) Backfill every not-yet-numbered row in CURRENT CHAIN ORDER (timestamp
+  //     ASC, id ASC as the deterministic tiebreaker), only WHERE seq IS NULL.
+  //     The COALESCE(max(seq),0) offset makes a partial re-run continue past
+  //     whatever is already numbered instead of restarting at 1 and colliding.
+  //     First run: max is NULL → 0 → existing rows get 1..N in chain order.
+  await sql`
+    WITH ordered AS (
+      SELECT id,
+             row_number() OVER (ORDER BY "timestamp" ASC, id ASC)
+               + COALESCE((SELECT max(seq) FROM audit_logs), 0) AS rn
+      FROM audit_logs
+      WHERE seq IS NULL
+    )
+    UPDATE audit_logs a
+    SET seq = ordered.rn
+    FROM ordered
+    WHERE a.id = ordered.id
+  `;
+
+  // (c) Create the sequence, make it OWNED BY the column (dropped with the column,
+  //     never orphaned), and point it just past the current max so new inserts
+  //     continue monotonically with no collision. setval(..., false) ⇒ the NEXT
+  //     nextval returns exactly that value (max+1, or 1 on an empty table).
+  await sql`CREATE SEQUENCE IF NOT EXISTS audit_logs_seq_seq`;
+  await sql`ALTER SEQUENCE audit_logs_seq_seq OWNED BY audit_logs.seq`;
+  await sql`SELECT setval('audit_logs_seq_seq', COALESCE((SELECT max(seq) FROM audit_logs), 0) + 1, false)`;
+
+  // (d) Attach the sequence as the column default and enforce NOT NULL LAST, only
+  //     after every existing row has a value. Both are no-ops on re-run.
+  await sql`ALTER TABLE audit_logs ALTER COLUMN seq SET DEFAULT nextval('audit_logs_seq_seq')`;
+  await sql`ALTER TABLE audit_logs ALTER COLUMN seq SET NOT NULL`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_logs_seq ON audit_logs (seq)`;
+  console.log("  ✅ audit_logs.seq (bigint sequence, backfilled in chain order, NOT NULL + indexed)");
+
+  // 53. Performance indexes — all CREATE INDEX IF NOT EXISTS, so idempotent,
+  // additive, and non-destructive. Mirror the indexes now declared in schema.ts.
+  //   - forms(event_id): the forms table had NO single-column index; every
+  //     "forms for this event" lookup full-scanned it.
+  //   - users(role): role-filtered admin/leaderboard queries.
+  //   - users(created_at): signup-time ordering / reporting.
+  //   - attendance(event_id, status): attendee/head-count roll-ups by event+status.
+  await sql`CREATE INDEX IF NOT EXISTS idx_forms_event_id ON forms (event_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_attendance_event_status ON attendance (event_id, status)`;
+  console.log("  ✅ perf indexes: forms(event_id), users(role), users(created_at), attendance(event_id,status)");
+
+  // 54. rate_limit — durable Postgres-backed rate limiter (replaces an in-memory
+  // Map that reset every deploy and wasn't shared across instances). One row per
+  // limiter key; `count` is the hit count in the current window and expires_at is
+  // when the window resets. The expires_at index lets a sweeper delete expired
+  // rows cheaply. New table ⇒ inherently additive; IF NOT EXISTS keeps it idempotent.
+  await sql`
+    CREATE TABLE IF NOT EXISTS rate_limit (
+      key text PRIMARY KEY,
+      count integer NOT NULL DEFAULT 0,
+      expires_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_rate_limit_expires_at ON rate_limit (expires_at)`;
+  console.log("  ✅ rate_limit table + idx_rate_limit_expires_at");
+
+  // 55. Index shop_order_items.product_id. The per-product order export
+  // (/api/admin/shop/products/[id]/orders) filters WHERE product_id = ? to list
+  // every line item bought for one product; product_id had an FK but no index,
+  // so that query full-scanned shop_order_items, which grows with every purchased
+  // line item. Mirrors the index now declared in schema.ts. CREATE INDEX IF NOT
+  // EXISTS ⇒ additive, idempotent, non-destructive.
+  await sql`CREATE INDEX IF NOT EXISTS idx_shop_order_items_product ON shop_order_items (product_id)`;
+  console.log("  ✅ idx_shop_order_items_product index");
+
+  // 56. shop_variants.price_delta — per-variant price surcharge in whole ฿ added on
+  // top of the product's base price (e.g. a special/oversized size that costs more).
+  // Defaults to 0 so every existing variant keeps the product price unchanged.
+  // ADD COLUMN IF NOT EXISTS + DEFAULT 0 ⇒ additive, idempotent, non-destructive.
+  await sql`ALTER TABLE shop_variants ADD COLUMN IF NOT EXISTS price_delta integer NOT NULL DEFAULT 0`;
+  console.log("  ✅ shop_variants.price_delta (฿ surcharge, default 0)");
+
+  // 57. calendar_entries: recurrence support. Two additive, idempotent columns:
+  //   recurrence       — rule preset (none|daily|weekly|monthly), default 'none'
+  //   recurrence_until — series end timestamp, nullable; when null the rule runs
+  //                      indefinitely (the grid bounds expansions by window anyway).
+  await sql`ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS recurrence text NOT NULL DEFAULT 'none'`;
+  await sql`ALTER TABLE calendar_entries ADD COLUMN IF NOT EXISTS recurrence_until timestamptz`;
+  console.log("  ✅ calendar_entries.recurrence + recurrence_until");
+
+  // 58. clubs — dynamic entity (created/renamed/retired by staff) used to scope
+  // club-president event ownership. uuid PK (unlike the fixed-slug houses). Never
+  // hard-deleted: archived via is_archived so owned events / membership history
+  // survive. The partial unique index keeps two ACTIVE clubs from sharing a name
+  // while letting a new club reuse an archived club's old name. New table +
+  // CREATE INDEX IF NOT EXISTS ⇒ additive, idempotent, non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS clubs (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      name text NOT NULL,
+      is_archived boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS clubs_active_name_unique ON clubs (name) WHERE is_archived = false`;
+  console.log("  ✅ clubs table + clubs_active_name_unique (partial, active names only)");
+
+  // 59. club_members — many-to-many membership join between users and clubs. A user
+  // may preside over / belong to several clubs; a club has several members. `role`
+  // ('president' | 'member') is reserved for a future per-club roster feature — the
+  // current feature only writes 'president' rows. FKs ON DELETE CASCADE so deleting
+  // a user or club cleans up its memberships. Unique(club_id,user_id) blocks dup
+  // rows; the user/club single-column indexes back the scope lookups (by user) and
+  // roster reads (by club). New table + CREATE INDEX IF NOT EXISTS ⇒ additive,
+  // idempotent, non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS club_members (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      club_id uuid NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role text NOT NULL DEFAULT 'member',
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS club_members_club_user_unique ON club_members (club_id, user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS club_members_user_idx ON club_members (user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS club_members_club_idx ON club_members (club_id)`;
+  console.log("  ✅ club_members table + unique(club_id,user_id) + user/club indexes");
+
+  // 60. events.owner_club_ids / owner_majors — president OWNERSHIP scope (which
+  // club/major owns the event), separate from the existing managed_by_roles (which
+  // only flags that a president role is involved at all). Both nullable jsonb with
+  // NO default: null means "no owner assigned yet", which the scoping logic treats
+  // as "hidden from all presidents until staff assigns one" (staff/admin bypass) —
+  // intentional, mirrors the allowed_majors jsonb pattern. ADD COLUMN IF NOT EXISTS
+  // ⇒ additive, idempotent, non-destructive.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_club_ids jsonb`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS owner_majors jsonb`;
+  console.log("  ✅ events.owner_club_ids + owner_majors (nullable, no default)");
+
+  // 61. P2P Game Arena tables (game_rooms, webrtc_signals, game_stats) and indexes.
+  // Additive, idempotent, safe to run via CREATE TABLE IF NOT EXISTS.
+  await sql`
+    CREATE TABLE IF NOT EXISTS game_rooms (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      room_code text NOT NULL,
+      game_type text NOT NULL,
+      host_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      guest_id text REFERENCES users(id) ON DELETE CASCADE,
+      game_state jsonb NOT NULL,
+      current_turn integer NOT NULL DEFAULT 1,
+      status text NOT NULL DEFAULT 'waiting',
+      winner_id text REFERENCES users(id) ON DELETE SET NULL,
+      finish_reason text,
+      turn_deadline timestamptz,
+      expires_at timestamptz NOT NULL,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_game_rooms_code ON game_rooms (room_code)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_game_rooms_status ON game_rooms (status)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS webrtc_signals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      room_id uuid NOT NULL REFERENCES game_rooms(id) ON DELETE CASCADE,
+      role text NOT NULL,
+      sdp_offer text,
+      sdp_answer text,
+      ice_candidates jsonb DEFAULT '[]'::jsonb,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_webrtc_signals_room_role ON webrtc_signals (room_id, role)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS game_stats (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      game_type text NOT NULL,
+      wins integer NOT NULL DEFAULT 0,
+      losses integer NOT NULL DEFAULT 0,
+      draws integer NOT NULL DEFAULT 0,
+      win_streak integer NOT NULL DEFAULT 0,
+      best_streak integer NOT NULL DEFAULT 0,
+      total_games integer NOT NULL DEFAULT 0,
+      last_played_at timestamptz DEFAULT now() NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_game_stats_user_game ON game_stats (user_id, game_type)`;
+  console.log("  ✅ game_rooms, webrtc_signals, game_stats tables and indexes");
+
+  // 62. Single-faculty (CAMT) → 4-faculty house model. The column + index DDL
   // (houses.faculty, houses.color_group, users.faculty + the two indexes) is
-  // applied by drizzle's own migration history (drizzle/0007_redundant_maverick.sql).
+  // applied by drizzle's own migration history (drizzle/0020_four_faculty_houses.sql).
   // This runner adds the schema columns idempotently too, so db:migrate alone is
   // sufficient, then does the data migration. NON-DESTRUCTIVE throughout: no
   // DROP/DELETE; score_history is untouched; only the per-user house pointer is reset.
@@ -698,7 +1031,7 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_houses_faculty ON houses (faculty)`;
   console.log("  ✅ houses.faculty + houses.color_group + users.faculty (+ indexes)");
 
-  // 45. Backfill the 4 EXISTING CAMT house rows. Their ids ('red'/'green'/
+  // 63. Backfill the 4 EXISTING CAMT house rows. Their ids ('red'/'green'/
   // 'yellow'/'blue') MUST stay unchanged — users.house_id and score_history.house_id
   // already reference them. Set faculty='CAMT' and color_group = id.
   await sql`
@@ -708,7 +1041,7 @@ async function migrate() {
   `;
   console.log("  ✅ backfilled 4 legacy CAMT houses (faculty + color_group)");
 
-  // 46. Insert the 12 new faculty houses (MASSCOM/ARCH/ARTS × red/green/yellow/blue).
+  // 64. Insert the 12 new faculty houses (MASSCOM/ARCH/ARTS × red/green/yellow/blue).
   // ids/names/colours mirror src/lib/faculties.ts (ALL_HOUSE_ROWS / houseRowId / COLORS).
   // ON CONFLICT (id) DO NOTHING makes re-runs a no-op and never clobbers points.
   await sql`
@@ -729,7 +1062,7 @@ async function migrate() {
   `;
   console.log("  ✅ inserted 12 new faculty houses (ON CONFLICT DO NOTHING)");
 
-  // 47. Backfill users.faculty for legacy rows (all existing students are CAMT),
+  // 65. Backfill users.faculty for legacy rows (all existing students are CAMT),
   // then reset the per-user current-house pointer so everyone re-derives their
   // (now faculty-scoped) house at next check-in. The reset is intentional and
   // non-destructive: house point history in score_history is preserved.

@@ -3,7 +3,10 @@ import { db } from "@/db";
 import { attendance, events } from "@/db/schema";
 import { and, eq, count } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { captureException } from "@/lib/logger";
+import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // GET /api/admin/scan/count?eventId=<uuid>&sessionId=<uuid>
 //
@@ -18,28 +21,28 @@ export async function GET(req: Request) {
   try {
     const session = await auth();
     // Mirror the scan POST gate: every scanner-capable role may see the count.
-    const isAdminRole = [
-      "super_admin",
-      "admin",
-      "registration",
-      "organizer",
-      "smo",
-      "club_president",
-      "major_president",
-    ].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    // Gate on the whole role set so a president whose primary role resolves to a
+    // non-entry role (e.g. anusmo) isn't wrongly blocked.
+    if (!session?.user || !canEnterAdminAny(effectiveRoles(session.user.role, session.user.roles))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const url = new URL(req.url);
     const eventId = url.searchParams.get("eventId");
     const sessionId = url.searchParams.get("sessionId");
-    if (!eventId) {
-      return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+    // Validate the ids are UUIDs before they reach the eq() filters — an invalid
+    // value would otherwise make Postgres throw 22P02 and surface as a 500.
+    const uuid = z.string().uuid();
+    if (!eventId || !uuid.safeParse(eventId).success) {
+      return NextResponse.json({ error: "Valid eventId is required" }, { status: 400 });
+    }
+    if (sessionId && !uuid.safeParse(sessionId).success) {
+      return NextResponse.json({ error: "Invalid sessionId" }, { status: 400 });
     }
 
-    // President roles may only read events they manage (managedByRoles), mirroring
-    // the /api/admin/scan and attendance scoping. Staff and smo are unscoped.
+    // President roles may only read events they OWN (ownerClubIds/ownerMajors),
+    // mirroring the /api/admin/scan and attendance scoping. Staff and smo are
+    // unscoped.
     const myRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
     const isStaff = myRoles.some((r) =>
       ["super_admin", "admin", "registration", "organizer"].includes(r),
@@ -50,9 +53,10 @@ export async function GET(req: Request) {
     if (!isStaff && presidentTags.length > 0) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
-        columns: { managedByRoles: true },
+        columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

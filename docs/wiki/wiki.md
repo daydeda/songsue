@@ -30,6 +30,13 @@
 
 ---
 
+## 🗄️ ระบบฐานข้อมูลและการจัดการ (Database Management)
+*คู่มือเครื่องมือสคีมาฐานข้อมูลและการจัดการ Migrations*
+
+- **[คู่มือ Drizzle ORM ในโครงการ]**: [Drizzle ORM Guide](./database/drizzle.md) — แนะนำโครงสร้างสคีมา, คำสั่ง Migrations, Studio, การใช้ Connection Pooling และ SQL Transaction ร่วมกับ Row Lock (FOR UPDATE)
+
+---
+
 ## 📄 เอกสารข้อเสนอโครงการและการงบประมาณ (Project Proposal & Budget)
 *รายละเอียดการเสนอโครงการกับคณะผู้บริหารและการวางงบประมาณ*
 

@@ -3,9 +3,11 @@ import { db } from "@/db";
 import { forms } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
 import { ASSIGNABLE_ROLES } from "@/lib/form-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { revertFormAward } from "@/lib/award-points";
 
 const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 
@@ -34,9 +36,29 @@ function sanitizeUserIds(v: unknown): string[] {
   return [...new Set(v.filter((id): id is string => typeof id === "string" && id.trim().length > 0))];
 }
 
+// Bound a form's point award the same way manual house adjustments are capped
+// (±10000, see /api/admin/houses/points) so a typo like 1000000 can't swing the
+// leaderboard. Non-numeric input falls back to 0 (matches the old `|| 0`).
+const MAX_FORM_POINTS = 10000;
+function clampPoints(v: unknown): number {
+  const n = parseInt(v as string);
+  if (Number.isNaN(n)) return 0;
+  return Math.max(-MAX_FORM_POINTS, Math.min(MAX_FORM_POINTS, n));
+}
+
+// Tolerantly read a JSON request body: a malformed/empty payload yields null so the
+// handler can answer 400 instead of letting the bare await throw a 500.
+async function readJsonBody(req: Request) {
+  try {
+    return await req.json();
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/admin/events/[id]/form — fetch all forms for this event with stats & submissions
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -64,6 +86,7 @@ export async function GET(
               },
             },
           },
+          orderBy: (s, { desc }) => [desc(s.submittedAt)],
         },
       },
       orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
@@ -87,6 +110,7 @@ export async function GET(
         description: formObj.description,
         questions: formObj.questions,
         pointsAwarded: formObj.pointsAwarded,
+        individualPointsAwarded: formObj.individualPointsAwarded,
         isActive: formObj.isActive,
         isAwarded: formObj.isAwarded,
         opensAt: formObj.opensAt,
@@ -115,6 +139,16 @@ export async function GET(
       };
     });
 
+    // PDPA: the admin form view returns every submitter's phone + contact channels.
+    // Log the PII read (who/when), mirroring the attendance-list access log. Hard
+    // (not best-effort): if we can't record the read, we don't serve it.
+    const submissionCount = result.reduce((n, f) => n + f.submissions.length, 0);
+    await AuditService.logAction({
+      actorId: session.user.id!,
+      action: `Viewed form submissions for event ${eventId} (${submissionCount} submissions, included submitter phone + contact channels)`,
+      ipAddress: getClientIp(req),
+    });
+
     return NextResponse.json({ forms: result });
   } catch (error) {
     console.error("Failed to fetch admin form data:", error);
@@ -134,7 +168,11 @@ export async function POST(
     }
 
     const { id: eventId } = await params;
-    const { title, description, questions, pointsAwarded, isActive, formType, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = await req.json();
+    const body = await readJsonBody(req);
+    if (body === null) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const { title, description, questions, pointsAwarded, individualPointsAwarded, isActive, formType, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
 
     const isValidQuestions =
       Array.isArray(questions) ||
@@ -144,7 +182,7 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const validTypes = ["K_pre", "K_post", "A", "S"];
+    const validTypes = ["K_pre", "K_post", "A", "S", "F"];
     if (formType && !validTypes.includes(formType)) {
       return NextResponse.json({ error: "Invalid form_type" }, { status: 400 });
     }
@@ -169,7 +207,8 @@ export async function POST(
         title,
         description: description || "",
         questions,
-        pointsAwarded: parseInt(pointsAwarded) || 0,
+        pointsAwarded: clampPoints(pointsAwarded),
+        individualPointsAwarded: clampPoints(individualPointsAwarded),
         isActive: isActive !== undefined ? !!isActive : true,
         opensAt: opensAtDate,
         closesAt: closesAtDate,
@@ -180,7 +219,7 @@ export async function POST(
 
     await AuditService.logAction({
       actorId: session.user.id!,
-      action: `Created form "${result.title}" (${result.id}) for event ${eventId} with award: ${result.pointsAwarded} PTS`,
+      action: `Created form "${result.title}" (${result.id}) for event ${eventId} with award: ${result.pointsAwarded} house PTS, ${result.individualPointsAwarded} individual PTS`,
       ipAddress: getClientIp(req),
     });
 
@@ -203,8 +242,11 @@ export async function PATCH(
     }
 
     const { id: eventId } = await params;
-    const body = await req.json();
-    const { formId, title, description, questions, pointsAwarded, isActive, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
+    const body = await readJsonBody(req);
+    if (body === null) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const { formId, title, description, questions, pointsAwarded, individualPointsAwarded, isActive, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
 
     if (!formId) {
       return NextResponse.json({ error: "formId is required" }, { status: 400 });
@@ -238,29 +280,73 @@ export async function PATCH(
       return NextResponse.json({ error: "\"Closes at\" must be after \"Opens at\"." }, { status: 400 });
     }
 
-    const [result] = await db
-      .update(forms)
-      .set({
-        title: title ?? existing.title,
-        description: description ?? existing.description,
-        questions: questions ?? existing.questions,
-        pointsAwarded: pointsAwarded !== undefined ? parseInt(pointsAwarded) || 0 : existing.pointsAwarded,
-        isActive: isActive !== undefined ? !!isActive : existing.isActive,
-        sortOrder: sortOrder !== undefined ? sortOrder : existing.sortOrder,
-        opensAt: effectiveOpensAt,
-        closesAt: effectiveClosesAt,
-        assignedRoles: "assignedRoles" in body ? sanitizeRoles(assignedRoles) : existing.assignedRoles,
-        assignedUserIds: "assignedUserIds" in body ? sanitizeUserIds(assignedUserIds) : existing.assignedUserIds,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))
-      .returning();
+    // Re-open: an already-awarded form whose new close time is back in the future
+    // will accept entries again, so the points it already handed out must be
+    // clawed back (and the form re-armed) — otherwise the next close double-counts.
+    const reopening =
+      existing.isAwarded && effectiveClosesAt.getTime() > Date.now();
 
-    await AuditService.logAction({
-      actorId: session.user.id!,
-      action: `Updated form "${result.title}" (${formId}) for event ${eventId}`,
-      ipAddress: getClientIp(req),
+    // Reverting real house points is sensitive — confine it to full admins, even
+    // though registration/organizer may otherwise edit a form.
+    if (reopening && !["super_admin", "admin"].includes(session.user.role || "")) {
+      return NextResponse.json(
+        { error: "Only an admin can re-open a form that has already awarded points." },
+        { status: 403 }
+      );
+    }
+
+    const result = await db.transaction(async (tx) => {
+      let revertNote = "";
+      if (reopening) {
+        const reverted = await revertFormAward(tx, formId);
+        revertNote = reverted.length
+          ? " Reverted award: " +
+            reverted.map((r) => `${r.houseId} -${r.points} PTS`).join(", ") +
+            "."
+          : " No points needed reverting.";
+      }
+
+      const [updated] = await tx
+        .update(forms)
+        .set({
+          title: title ?? existing.title,
+          description: description ?? existing.description,
+          questions: questions ?? existing.questions,
+          pointsAwarded: pointsAwarded !== undefined ? clampPoints(pointsAwarded) : existing.pointsAwarded,
+          individualPointsAwarded: individualPointsAwarded !== undefined ? clampPoints(individualPointsAwarded) : existing.individualPointsAwarded,
+          // A re-open re-arms the form; otherwise honour an explicit isActive.
+          isActive: reopening ? true : (isActive !== undefined ? !!isActive : existing.isActive),
+          isAwarded: reopening ? false : existing.isAwarded,
+          sortOrder: sortOrder !== undefined ? sortOrder : existing.sortOrder,
+          opensAt: effectiveOpensAt,
+          closesAt: effectiveClosesAt,
+          assignedRoles: "assignedRoles" in body ? sanitizeRoles(assignedRoles) : existing.assignedRoles,
+          assignedUserIds: "assignedUserIds" in body ? sanitizeUserIds(assignedUserIds) : existing.assignedUserIds,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))
+        .returning();
+
+      await AuditService.logActionInternal(tx, {
+        actorId: session.user!.id!,
+        action: reopening
+          ? `Re-opened awarded form "${updated.title}" (${formId}) for event ${eventId}.${revertNote}`
+          : `Updated form "${updated.title}" (${formId}) for event ${eventId}`,
+        ipAddress: getClientIp(req),
+      });
+
+      return updated;
     });
+
+    // A revert changed house totals — bust the cached leaderboard so it reflects
+    // the clawback on the next poll instead of waiting out the 15s window.
+    if (reopening) {
+      try {
+        revalidateTag("house-standings", { expire: 0 });
+      } catch {
+        // Best-effort: the cache TTL is the backstop, never fail the write on this.
+      }
+    }
 
     return NextResponse.json({ success: true, form: result });
   } catch (error) {
@@ -281,7 +367,11 @@ export async function DELETE(
     }
 
     const { id: eventId } = await params;
-    const { formId } = await req.json();
+    const body = await readJsonBody(req);
+    if (body === null) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const { formId } = body;
 
     if (!formId) {
       return NextResponse.json({ error: "formId is required" }, { status: 400 });

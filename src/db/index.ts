@@ -1,9 +1,12 @@
-import { drizzle } from "drizzle-orm/postgres-js";
+import { drizzle as drizzlePgJs, PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
+import { PGlite } from "@electric-sql/pglite";
 import postgres from "postgres";
 import * as schema from "./schema";
 
 const globalForDb = globalThis as unknown as {
   conn: postgres.Sql | undefined;
+  pglite: PGlite | undefined;
   errorGuardsInstalled: boolean | undefined;
 };
 
@@ -19,35 +22,40 @@ if (!globalForDb.errorGuardsInstalled) {
   globalForDb.errorGuardsInstalled = true;
 }
 
-// Production connects through the Supabase transaction pooler (port 6543), which
-// does NOT support prepared statements — postgres-js must run in "simple query"
-// mode there.
-//
-// `max` is the per-instance pool size. It must be > 1: a request issues several
-// queries concurrently (Promise.all), and with max=1 they serialize over one
-// connection — worse, a single slow/stuck query then head-of-line-blocks every
-// other query on the instance (including the auth session lookup), which can hang
-// the whole function.
-//
-// The right size depends on what we connect to:
-//  - Supabase transaction pooler (:6543): keep it small (5) so we stay within the
-//    pooler's shared client-slot budget — many instances share that budget.
-//  - A dedicated Postgres we own (self-hosted, direct :5432): that shared budget
-//    no longer applies, so a larger pool (15) lets concurrent requests — event
-//    scan-ins, the dashboard's parallel reads — run instead of queueing. 15 stays
-//    far under Postgres's default max_connections of 100.
-// DB_POOL_MAX overrides the default for per-host tuning without an image rebuild.
-const usingTransactionPooler = (process.env.DATABASE_URL ?? "").includes(":6543");
-const poolMax = Number(process.env.DB_POOL_MAX) || (usingTransactionPooler ? 5 : 15);
+let dbInstance: PostgresJsDatabase<typeof schema>;
 
-const conn =
-  globalForDb.conn ??
-  postgres(process.env.DATABASE_URL!, {
-    max: poolMax,
-    prepare: !usingTransactionPooler,
-    idle_timeout: 20,
-    connect_timeout: 10,
-  });
-if (process.env.NODE_ENV !== "production") globalForDb.conn = conn;
+if (process.env.DB_TYPE === "pglite") {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("DB_TYPE 'pglite' is not allowed in production environment");
+  }
+  // Use WASM-based in-process PostgreSQL (PGlite) for ZeroSetup local development
+  // In test environment, use an in-memory PGlite instance to prevent locking and conflicts.
+  const client =
+    globalForDb.pglite ??
+    (process.env.NODE_ENV === "test" ? new PGlite() : new PGlite("./.pglite-data"));
+  globalForDb.pglite = client;
+  // Cast to PostgresJsDatabase to maintain type consistency across the app
+  dbInstance = drizzlePglite(client, { schema }) as unknown as PostgresJsDatabase<typeof schema>;
+} else {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL environment variable is required when DB_TYPE is not 'pglite'");
+  }
 
-export const db = drizzle(conn, { schema });
+  const usingTransactionPooler = (process.env.DATABASE_URL ?? "").includes(":6543");
+  const poolMax = Number(process.env.DB_POOL_MAX) || (usingTransactionPooler ? 5 : 15);
+
+  const conn =
+    globalForDb.conn ??
+    postgres(process.env.DATABASE_URL, {
+      max: poolMax,
+      prepare: !usingTransactionPooler,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
+  if (process.env.NODE_ENV !== "production") globalForDb.conn = conn;
+
+  dbInstance = drizzlePgJs(conn, { schema });
+}
+
+export const db = dbInstance;
+

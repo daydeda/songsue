@@ -4,6 +4,19 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { AuditService } from "../audit/audit.service";
 import { COLORS, DEFAULT_FACULTY, normalizeFaculty } from "@/lib/faculties";
 
+// Transaction-scoped advisory lock key serializing concurrent house assignments
+// (student onboarding AND staff-bypass provisioning) so two new members can't both
+// read the same least-full house and pile into it. Shared by both code paths
+// (imported by src/app/api/profile/route.ts and src/modules/users/users.service.ts)
+// so they serialize against each other, not just within their own path. Distinct
+// from the audit and award lock keys.
+export const HOUSE_BALANCE_LOCK_KEY = 824517;
+
+// Either the base db handle or a transaction — both expose the .query API that
+// pickBalancedHouseId needs, so the caller can run the count + the new student's
+// house assignment under a single advisory lock.
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export class HousesService {
   /**
    * Picks the house a new STUDENT should join for balanced distribution (FE-03):
@@ -16,12 +29,23 @@ export class HousesService {
    * Returns the house id, or null if no houses exist yet (caller leaves houseId
    * unset rather than crashing).
    */
-  static async pickBalancedHouseId(): Promise<string | null> {
-    const housesList = await db.query.houses.findMany({
-      with: { users: { columns: { id: true } } },
-    });
+  static async pickBalancedHouseId(executor: DbOrTx = db): Promise<string | null> {
+    const housesList = await executor.query.houses.findMany({ columns: { id: true } });
     if (housesList.length === 0) return null;
-    const sorted = [...housesList].sort((a, b) => a.users.length - b.users.length);
+
+    // Count ALL members per house in SQL (GROUP BY) instead of loading the whole
+    // users table and counting in JS — the old shape was O(n) memory + work inside
+    // the onboarding advisory lock. Houses with zero members don't appear in these
+    // rows, so default them to 0 when ranking below.
+    const memberCounts = await executor
+      .select({ houseId: users.houseId, count: sql<number>`count(*)::int` })
+      .from(users)
+      .groupBy(users.houseId);
+
+    const countByHouse = new Map(memberCounts.map((r) => [r.houseId, r.count]));
+    const sorted = [...housesList].sort(
+      (a, b) => (countByHouse.get(a.id) ?? 0) - (countByHouse.get(b.id) ?? 0),
+    );
     return sorted[0].id;
   }
 
@@ -56,11 +80,14 @@ export class HousesService {
    * Returns the house id, or null if no houses exist yet (caller leaves houseId
    * unset rather than crashing).
    */
-  static async pickBalancedHouseIdForStaff(faculty: string | null | undefined = DEFAULT_FACULTY): Promise<string | null> {
+  static async pickBalancedHouseIdForStaff(
+    faculty: string | null | undefined = DEFAULT_FACULTY,
+    executor: DbOrTx = db,
+  ): Promise<string | null> {
     const fac = normalizeFaculty(faculty);
     // Scope to the staff member's faculty so staff land in one of their own
     // faculty's 4 colour houses (not spread across all 16).
-    const housesList = await db.query.houses.findMany({
+    const housesList = await executor.query.houses.findMany({
       where: eq(houses.faculty, fac),
       columns: { id: true },
     });
@@ -69,7 +96,7 @@ export class HousesService {
 
     // Count only staff-role members per house, within this faculty. Houses with
     // zero staff don't appear in these rows, so default them to 0 when ranking.
-    const staffCounts = await db
+    const staffCounts = await executor
       .select({ houseId: users.houseId, count: sql<number>`count(*)::int` })
       .from(users)
       .where(and(eq(users.role, "staff"), inArray(users.houseId, houseIds)))

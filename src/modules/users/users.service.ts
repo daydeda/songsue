@@ -1,9 +1,9 @@
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { verifyQrToken } from "@/lib/qr-token";
 import { getStaffBypassNickname } from "@/lib/staff-bypass";
-import { HousesService } from "@/modules/houses/houses.service";
+import { HousesService, HOUSE_BALANCE_LOCK_KEY } from "@/modules/houses/houses.service";
 
 export class UsersService {
   /**
@@ -64,30 +64,37 @@ export class UsersService {
     if (!nickname) return false;
 
     // Balance staff among houses by STAFF count only (students are ignored), so
-    // staff spread evenly regardless of the much larger student population.
-    const houseId = await HousesService.pickBalancedHouseIdForStaff();
+    // staff spread evenly regardless of the much larger student population. Pick +
+    // update run ATOMICALLY under the SAME advisory lock the student onboarding
+    // uses, so concurrent first-visits (staff or students) can't both read the same
+    // least-full house and pile into it. The count runs in this tx too
+    // (pickBalancedHouseIdForStaff(tx)), so it's serialized, not just the write.
+    const updated = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${HOUSE_BALANCE_LOCK_KEY})`);
+      const houseId = await HousesService.pickBalancedHouseIdForStaff("CAMT", tx);
 
-    const updated = await db
-      .update(users)
-      .set({
-        // Initial state only: seed both name and nickname so they display as the
-        // nickname out of the box, carrying no real name / student profile. This
-        // is NOT permanent — a staff user can later open the dashboard profile
-        // editor (PATCH /api/profile) and fill in a real name/major/etc., after
-        // which they look like any filled-in profile. Their role stays `staff`
-        // and their house stays put regardless: PATCH and the onboarding POST
-        // never write role or houseId, so only an admin can change those.
-        name: nickname,
-        nickname,
-        role: "staff",
-        roles: ["staff"],
-        faculty: "CAMT",
-        houseId,
-        profileCompleted: true,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(users.id, userId), eq(users.profileCompleted, false)))
-      .returning({ id: users.id });
+      return tx
+        .update(users)
+        .set({
+          // Initial state only: seed both name and nickname so they display as the
+          // nickname out of the box, carrying no real name / student profile. This
+          // is NOT permanent — a staff user can later open the dashboard profile
+          // editor (PATCH /api/profile) and fill in a real name/major/etc., after
+          // which they look like any filled-in profile. Their role stays `staff`
+          // and their house stays put regardless: PATCH and the onboarding POST
+          // never write role or houseId, so only an admin can change those.
+          name: nickname,
+          nickname,
+          role: "staff",
+          roles: ["staff"],
+          faculty: "CAMT",
+          houseId,
+          profileCompleted: true,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(users.id, userId), eq(users.profileCompleted, false)))
+        .returning({ id: users.id });
+    });
 
     return updated.length > 0;
   }

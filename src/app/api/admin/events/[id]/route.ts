@@ -4,8 +4,10 @@ import { events, eventSessions, attendance } from "@/db/schema";
 import { count, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuditService } from "@/modules/audit/audit.service";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { sessionInputSchema } from "@/lib/event-schema";
+import { effectiveRoles } from "@/lib/admin-access";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 const eventUpdateSchema = z.object({
   title: z.string().min(1).optional(),
@@ -16,7 +18,8 @@ const eventUpdateSchema = z.object({
   registrationCloseTime: z.string().datetime().optional().nullable(),
   quota: z.number().int().min(0).optional().nullable(),
   location: z.string().optional().nullable(),
-  pointsAwarded: z.number().int().min(0).optional().nullable(),
+  pointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
+  individualPointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
@@ -32,9 +35,21 @@ const eventUpdateSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Restrict the event to the current first-year intake (id-prefix derived).
+  firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event — separate from allowedRoles.
   managedByRoles: z.array(z.string()).optional().nullable(),
-});
+  // WHICH club(s)/major(s) own this event — see EventScopeService.
+  ownerClubIds: z.array(z.string().uuid()).optional().nullable(),
+  ownerMajors: z.array(z.string()).optional().nullable(),
+}).refine(
+  // Only enforce when BOTH ends are supplied — this is a partial update.
+  (d) => {
+    if (!d.startTime || !d.endTime) return true;
+    return new Date(d.endTime) > new Date(d.startTime);
+  },
+  { message: "endTime must be after startTime", path: ["endTime"] },
+);
 
 // PUT /api/admin/events/[id] — Update event
 export async function PUT(
@@ -43,14 +58,42 @@ export async function PUT(
 ) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
+    if (!session?.user || (!isAdminRole && !isPresidentRole)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id } = await params;
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const data = eventUpdateSchema.parse(body);
+
+    // A club/major president may edit their OWN event's details (title,
+    // description, schedule, location, quota, etc.) but never role/major access,
+    // Managed By, or points — those stay staff-only, so strip them from the
+    // payload here regardless of what the client sent (defense in depth — the UI
+    // already disables these fields for presidents, this is the real gate).
+    if (!isAdminRole) {
+      const existing = await db.query.events.findFirst({
+        where: eq(events.id, id),
+        columns: { ownerClubIds: true, ownerMajors: true },
+      });
+      if (!existing) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+      if (!EventScopeService.isEventManagedByScope(existing, scope)) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      data.pointsAwarded = undefined;
+      data.individualPointsAwarded = undefined;
+      data.allowedRoles = undefined;
+      data.allowedMajors = undefined;
+      data.managedByRoles = undefined;
+      data.ownerClubIds = undefined;
+      data.ownerMajors = undefined;
+    }
 
     // When posters are provided, normalize them and keep the imageUrl cover in
     // sync with imageUrls[0]. If only the legacy imageUrl is sent, fall back to it.
@@ -61,10 +104,7 @@ export async function PUT(
     }
     const coverFromPosters = posters !== undefined ? (posters[0] ?? null) : undefined;
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0] ||
-      req.headers.get("x-real-ip") ||
-      "127.0.0.1";
+    const ip = getClientIp(req);
 
     let updated: typeof events.$inferSelect;
     try {
@@ -85,6 +125,7 @@ export async function PUT(
             ...(data.quota !== undefined && { quota: data.quota }),
             ...(data.location !== undefined && { location: data.location }),
             ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
+            ...(data.individualPointsAwarded !== undefined && { individualPointsAwarded: data.individualPointsAwarded }),
             ...(posters !== undefined
               ? { imageUrls: posters, imageUrl: coverFromPosters }
               : (data.imageUrl !== undefined && { imageUrl: data.imageUrl })),
@@ -101,8 +142,15 @@ export async function PUT(
             ...(data.allowedMajors !== undefined && {
               allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null
             }),
+            ...(data.firstYearOnly !== undefined && { firstYearOnly: data.firstYearOnly }),
             ...(data.managedByRoles !== undefined && {
               managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null
+            }),
+            ...(data.ownerClubIds !== undefined && {
+              ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null
+            }),
+            ...(data.ownerMajors !== undefined && {
+              ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null
             }),
             updatedAt: new Date(),
           })
@@ -228,10 +276,7 @@ export async function DELETE(
       await AuditService.logActionInternal(tx, {
         actorId: session.user!.id!,
         action: `Deleted Event: ${deleted.title} (${deleted.id})`,
-        ipAddress:
-          req.headers.get("x-forwarded-for")?.split(",")[0] ||
-          req.headers.get("x-real-ip") ||
-          "127.0.0.1",
+        ipAddress: getClientIp(req),
       });
     });
 

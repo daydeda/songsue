@@ -1,5 +1,5 @@
 {
-  "id": "f75b9a02-19c8-4e5a-ac13-a7d45ecf0b12",
+  "id": "1488d8a9-fedc-4ade-abe4-f8fb7bec6bb4",
   "prevId": "df07f28b-8b06-4ee0-8c79-db73649382ae",
   "version": "7",
   "dialect": "postgresql",
@@ -1289,54 +1289,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "faculty": {
-          "name": "faculty",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'CAMT'"
-        },
-        "color_group": {
-          "name": "color_group",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'red'"
         }
       },
-      "indexes": {
-        "idx_houses_color_group": {
-          "name": "idx_houses_color_group",
-          "columns": [
-            {
-              "expression": "color_group",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_houses_faculty": {
-          "name": "idx_houses_faculty",
-          "columns": [
-            {
-              "expression": "faculty",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -1367,6 +1322,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "form_id": {
+          "name": "form_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "delta": {
           "name": "delta",
           "type": "integer",
@@ -1393,6 +1354,21 @@
           "columns": [
             {
               "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_score_history_form": {
+          "name": "idx_score_history_form",
+          "columns": [
+            {
+              "expression": "form_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1444,6 +1420,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "score_history_form_id_forms_id_fk": {
+          "name": "score_history_form_id_forms_id_fk",
+          "tableFrom": "score_history",
+          "tableTo": "forms",
+          "columnsFrom": [
+            "form_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -2090,12 +2079,6 @@
         },
         "nickname": {
           "name": "nickname",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "faculty": {
-          "name": "faculty",
           "type": "text",
           "primaryKey": false,
           "notNull": false

@@ -50,10 +50,17 @@ export async function GET() {
       opensAt: p.opensAt,
       closesAt: p.closesAt,
       isActive: p.isActive,
+      allowedRoles: p.allowedRoles ?? [],
+      allowedMajors: p.allowedMajors ?? [],
+      targetThai: p.targetThai ?? true,
+      targetInternational: p.targetInternational ?? true,
+      customFields: p.customFields ?? [],
+      deliveryFee: p.deliveryFee ?? null,
+      deliveryTiers: p.deliveryTiers ?? [],
       sortOrder: p.sortOrder,
       variants: variants
         .filter((v) => v.productId === p.id)
-        .map((v) => ({ id: v.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, sold: soldByVariant.get(v.id) ?? 0 })),
+        .map((v) => ({ id: v.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta ?? 0, sold: soldByVariant.get(v.id) ?? 0 })),
     }));
 
     return NextResponse.json(result);
@@ -85,12 +92,19 @@ export async function POST(req: Request) {
           opensAt: data.opensAt,
           closesAt: data.closesAt,
           isActive: data.isActive,
+          allowedRoles: data.allowedRoles,
+          allowedMajors: data.allowedMajors,
+          targetThai: data.targetThai,
+          targetInternational: data.targetInternational,
+          customFields: data.customFields,
+          deliveryFee: data.deliveryFee,
+          deliveryTiers: data.deliveryTiers,
           sortOrder: data.sortOrder,
         })
         .returning({ id: shopProducts.id });
 
       await tx.insert(shopVariants).values(
-        data.variants.map((v, i) => ({ productId: product.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, sortOrder: i }))
+        data.variants.map((v, i) => ({ productId: product.id, label: v.label, stock: v.stock, allowCustom: v.allowCustom, priceDelta: v.priceDelta, sortOrder: i }))
       );
 
       await AuditService.logActionInternal(tx, {

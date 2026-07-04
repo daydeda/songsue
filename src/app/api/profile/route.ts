@@ -1,11 +1,12 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { FACULTY_IDS } from "@/lib/faculties";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 // Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
 // Validate the shape instead of accepting z.any() — the onboarding form always
@@ -38,6 +39,25 @@ const profileSchema = z.object({
   image: z.string().optional().nullable(),
   studentId: z.string().optional().nullable(), // Allow empty or null for admins
 });
+
+// Sensitive medical/emergency fields. Self-edits to these are recorded (field NAMES
+// only, never values) as a PDPA change-trail — the actor here is the data subject.
+const SENSITIVE_FIELDS = [
+  "chronicDiseases", "medicalHistory", "drugAllergies", "foodAllergies",
+  "dietaryRestrictions", "emergencyMedication", "faintingHistory", "emergencyContacts",
+] as const;
+
+// Normalize a sensitive value for presence/change comparison: null/undefined and a
+// bare "-" both count as empty; arrays (emergency contacts) compare by JSON.
+function normSensitive(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (Array.isArray(v)) return JSON.stringify(v);
+  const s = String(v).trim();
+  return s === "-" ? "" : s;
+}
+const isSensitiveProvided = (v: unknown) => normSensitive(v) !== "";
+const sensitiveChanged = (a: unknown, b: unknown) => normSensitive(a) !== normSensitive(b);
 
 export async function GET() {
   try {
@@ -89,19 +109,50 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: "Profile already completed" }, { status: 400 });
     }
 
-    // 2. Update User. NOTE: house is NO LONGER assigned here — a student is sorted
-    // into one of their faculty's colour houses at their FIRST CHECK-IN
+    // 2. Update User in a transaction so the guard + PDPA audit write commit
+    // atomically. House is NO LONGER assigned here — a student is sorted into one
+    // of their faculty's colour houses at their FIRST CHECK-IN
     // (ScannerService.ensureHouseAssigned). Onboarding only records their faculty.
-    const [updated] = await db
-      .update(users)
-      .set({
-        ...data,
-        faculty: data.faculty ?? "CAMT",
-        profileCompleted: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, session.user.id))
-      .returning();
+    // No advisory lock needed: unlike the house-balancing paths (which read
+    // "fewest members" then write), this is a plain guarded UPDATE — Postgres row
+    // locking already makes the WHERE profileCompleted=false race-safe on its own.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(users)
+        .set({
+          ...data,
+          faculty: data.faculty ?? "CAMT",
+          profileCompleted: true,
+          updatedAt: new Date(),
+        })
+        // Guard on profileCompleted=false (mirrors provisionStaffBypass) so a
+        // concurrent same-user POST that slipped past the pre-tx check updates 0
+        // rows here — preventing a duplicate onboarding/PDPA audit row. 0 rows ⇒
+        // already completed (handled below).
+        .where(and(eq(users.id, session.user!.id!), eq(users.profileCompleted, false)))
+        .returning();
+
+      if (!row) return null; // already completed by a concurrent request — skip the audit write
+
+      // PDPA change-trail (field NAMES only): the data subject provided medical/
+      // emergency info at onboarding. Same tx, so it commits atomically with the row.
+      const provided = SENSITIVE_FIELDS.filter((f) => isSensitiveProvided((data as Record<string, unknown>)[f]));
+      if (provided.length > 0) {
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user!.id!,
+          targetId: session.user!.id!,
+          action: `Self: provided medical/emergency info at onboarding (${provided.join(", ")})`,
+          ipAddress: getClientIp(req),
+        });
+      }
+      return row;
+    });
+
+    // 0-row update ⇒ a concurrent POST already completed onboarding. Return the same
+    // "already completed" response as the pre-transaction check above.
+    if (!updated) {
+      return NextResponse.json({ error: "Profile already completed" }, { status: 400 });
+    }
 
     revalidatePath("/");
     revalidatePath("/dashboard");
@@ -150,14 +201,43 @@ export async function PATCH(req: Request) {
       delete data.faculty;
     }
 
-    const [updated] = await db
-      .update(users)
-      .set({
-        ...data,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, session.user.id))
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      // Read current sensitive fields first so we can record which the data subject
+      // actually CHANGED (names only). The audit write shares this tx — atomic with
+      // the update, no read-without-log window.
+      const before = await tx.query.users.findFirst({
+        where: eq(users.id, session.user!.id!),
+        columns: {
+          chronicDiseases: true, medicalHistory: true, drugAllergies: true,
+          foodAllergies: true, dietaryRestrictions: true, emergencyMedication: true,
+          faintingHistory: true, emergencyContacts: true,
+        },
+      });
+
+      const [row] = await tx
+        .update(users)
+        .set({
+          ...data,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, session.user!.id!))
+        .returning();
+
+      const beforeRec = (before ?? {}) as Record<string, unknown>;
+      const dataRec = data as Record<string, unknown>;
+      const changed = SENSITIVE_FIELDS.filter(
+        (f) => dataRec[f] !== undefined && sensitiveChanged(beforeRec[f], dataRec[f])
+      );
+      if (changed.length > 0) {
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user!.id!,
+          targetId: session.user!.id!,
+          action: `Self: updated own medical/emergency fields (${changed.join(", ")})`,
+          ipAddress: getClientIp(req),
+        });
+      }
+      return row;
+    });
 
     revalidatePath("/");
     revalidatePath("/dashboard");

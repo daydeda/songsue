@@ -20,7 +20,27 @@ const entryUpdateSchema = z.object({
   allowedMajors: z.array(z.string()).optional().nullable(),
   targetThai: z.boolean().optional(),
   targetInternational: z.boolean().optional(),
-});
+  recurrence: z.enum(["none", "daily", "weekly", "monthly"]).optional(),
+  recurrenceUntil: z.string().datetime().optional().nullable(),
+})
+  .refine(
+    (d) => {
+      if (!d.startTime || !d.endTime) return true;
+      return new Date(d.endTime) > new Date(d.startTime);
+    },
+    { message: "endTime must be after startTime", path: ["endTime"] },
+  )
+  .refine(
+    (d) => {
+      if (d.recurrence && d.recurrence !== "none") {
+        if (!d.recurrenceUntil) return false;
+        const ref = d.startTime ? new Date(d.startTime) : new Date(0);
+        return new Date(d.recurrenceUntil) > ref;
+      }
+      return true;
+    },
+    { message: "recurrenceUntil is required and must be after startTime for recurring entries", path: ["recurrenceUntil"] },
+  );
 
 // PUT /api/admin/calendar/[id] — update a calendar entry
 export async function PUT(
@@ -35,7 +55,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const data = entryUpdateSchema.parse(await req.json());
+    const data = entryUpdateSchema.parse(await req.json().catch(() => null));
     const ip = getClientIp(req);
 
     let updated: typeof calendarEntries.$inferSelect;
@@ -59,6 +79,10 @@ export async function PUT(
             }),
             ...(data.targetThai !== undefined && { targetThai: data.targetThai }),
             ...(data.targetInternational !== undefined && { targetInternational: data.targetInternational }),
+            ...(data.recurrence !== undefined && { recurrence: data.recurrence }),
+            ...(data.recurrenceUntil !== undefined && {
+              recurrenceUntil: data.recurrenceUntil ? new Date(data.recurrenceUntil) : null,
+            }),
             updatedAt: new Date(),
           })
           .where(eq(calendarEntries.id, id))

@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import {
   Plus, Edit2, Trash2, Calendar, MapPin, Clock,
   ArrowRight, User, Users, CheckCircle2, Search,
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
-  Lock, FileText, AlertTriangle, MessageSquare
+  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { parseRichText } from "@/lib/rich-text";
+import { currentFirstYearPrefix, yearOfStudy } from "@/lib/event-access";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
 import {
@@ -34,6 +35,7 @@ interface AdminEvent {
   registrationCloseTime: string | null;
   quota: number | null;
   pointsAwarded: number;
+  individualPointsAwarded: number;
   imageUrl: string | null;
   imageUrls: string[] | null;
   walkInsEnabled: boolean;
@@ -44,7 +46,10 @@ interface AdminEvent {
   quotaInternational: number | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
+  firstYearOnly: boolean;
   managedByRoles: string[] | null;
+  ownerClubIds: string[] | null;
+  ownerMajors: string[] | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
   attendeeCount?: number;
@@ -153,6 +158,7 @@ interface EventFormSummary {
   description: string;
   questions: unknown;
   pointsAwarded: number;
+  individualPointsAwarded: number;
   isActive: boolean;
   isAwarded: boolean;
   opensAt: string | null;
@@ -168,6 +174,7 @@ const FORM_TYPE_LABELS: Record<string, string> = {
   K_post: "K Post-Test",
   A: "A - Attitude",
   S: "S - Skill",
+  F: "F - Feedback",
 };
 
 // Roles an admin can assign an S (Skill) form to. Mirrors ASSIGNABLE_ROLES in
@@ -213,6 +220,7 @@ type BuilderState = {
   formTitle: string;
   formDescription: string;
   formPoints: number;
+  formIndividualPoints: number;
   formSections: FormSection[];
   formIsAwarded: boolean;
   formOpensAt: string;
@@ -222,7 +230,7 @@ type BuilderState = {
 };
 const builderFingerprint = (f: BuilderState): string =>
   JSON.stringify([
-    f.activeFormType, f.formTitle, f.formDescription, f.formPoints,
+    f.activeFormType, f.formTitle, f.formDescription, f.formPoints, f.formIndividualPoints,
     serializeForm(f.formSections), f.formIsAwarded, f.formOpensAt, f.formClosesAt,
     [...f.formAssignedRoles].sort(), [...f.formAssignedUserIds].sort(),
   ]);
@@ -232,6 +240,7 @@ const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: strin
   K_post: { bg: "rgba(16,185,129,0.12)",  text: "#10b981", border: "rgba(16,185,129,0.3)"  },
   A:      { bg: "rgba(245,158,11,0.12)",  text: "#f59e0b", border: "rgba(245,158,11,0.3)"  },
   S:      { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", border: "rgba(239,68,68,0.3)"   },
+  F:      { bg: "rgba(6,182,212,0.12)",   text: "#06b6d4", border: "rgba(6,182,212,0.3)"   },
 };
 
 // Role priority (mirrors ROLE_PRIORITY in src/auth.ts). A person's "primary"
@@ -261,16 +270,17 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
   major_president: "Major President",
 };
 
-// Student majors that an event's registration can be restricted to. Mirrors the
-// hardcoded list in the profile form (src/app/dashboard/profile/page.tsx) and the
-// `major` text column on users (ANI, DG, DII, MMIT, SE). Empty selection = all majors.
-const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE"] as const;
+// Student majors that an event's registration can be restricted to. Includes
+// postgraduate majors (KIM, DTM) added for Master's/Ph.D. targeting.
+const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 const MAJOR_LABELS: Record<string, string> = {
   ANI: "ANI - Animation & Visual Effects",
   DG: "DG - Digital Game",
   DII: "DII - Digital Industry Integration",
   MMIT: "MMIT - Modern Management & IT",
   SE: "SE - Software Engineering",
+  KIM: "KIM",
+  DTM: "DTM",
 };
 
 const EMPTY_FORM = {
@@ -283,6 +293,7 @@ const EMPTY_FORM = {
   registrationCloseTime: "",
   quota: 0,
   pointsAwarded: 0,
+  individualPointsAwarded: 0,
   imageUrl: "",
   imageUrls: [] as string[],
   walkInsEnabled: false,
@@ -293,15 +304,19 @@ const EMPTY_FORM = {
   quotaInternational: null as number | null,
   allowedRoles: [] as string[], // empty = all roles allowed
   allowedMajors: [] as string[], // empty = all majors allowed
+  firstYearOnly: false, // true = only the current first-year intake may join
   managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
+  ownerClubIds: [] as string[], // WHICH club(s) own this event, when managedByRoles includes club_president
+  ownerMajors: [] as string[], // WHICH major(s) own this event, when managedByRoles includes major_president
 };
 
 export default function AdminEventsPage() {
   const { t, lang } = useLanguage();
   const { data: session } = useSession();
   // The admin area also admits registration/organizer (see admin/layout.tsx),
-  // but attendee exports — which include PDPA-sensitive medical & emergency
-  // contact data — are restricted to super_admin/admin only.
+  // but seeing medical detail in the exported file / student modal — which
+  // includes PDPA-sensitive medical & emergency contact data — is restricted to
+  // super_admin/admin only.
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
   // Scanner-only roles (smo, club_president, major_president) reach this page to
@@ -311,10 +326,32 @@ export default function AdminEventsPage() {
   const isAttendanceOnly = !myRoles.some((r) =>
     ["super_admin", "admin", "registration", "organizer"].includes(r)
   );
+  // The Export Excel button: staff export the full (role-gated) file; the
+  // scanner-only student-leader roles may also export, but the server
+  // (api/admin/events/[id]/export) hands them a THIN file with no phone,
+  // meds-check, medical, or emergency-contact columns — they must ask an
+  // admin/super_admin for that detail. isAttendanceOnly is exactly that
+  // thin-roster set on this page (only staff + thin-roster ever reach here).
+  const canSeeExportButton = canExportAttendance || isAttendanceOnly;
+  // Club/major presidents may edit their OWN event's details (title, description,
+  // schedule, location, quota, etc.) — GET /api/admin/events already scopes their
+  // list to only events they own (see EventScopeService), so any event a president
+  // sees here is theirs to edit. They still may NOT touch role/major access,
+  // Managed By, or points — those stay staff-only (see canEditRestrictedFields
+  // below and the matching server-side strip in PUT /api/admin/events/[id]).
+  const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
+  const canEditEventDetails = !isAttendanceOnly || isPresidentRole;
+  // Role/major access control, Managed By (president/owner), and points are
+  // admin/registration/organizer only — even for a president editing their own event.
+  const canEditRestrictedFields = !isAttendanceOnly;
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
+  // For the "Managed By" owner pickers below — which club(s) can be assigned as
+  // an event's ownerClubIds. Fetched once; only staff (who can reach this page)
+  // are allowed to call /api/admin/clubs anyway.
+  const [clubs, setClubs] = useState<{ id: string; name: string; isArchived: boolean }[]>([]);
   // Multi-day / multi-session support. registrationMode is intentionally NOT
   // pre-selected (null) — a plain single-day event needs no choice. Picking
   // "once" (register once, attend any/all days) or "per_session" (each day
@@ -334,6 +371,10 @@ export default function AdminEventsPage() {
   const [showAttendance, setShowAttendance] = useState(false);
   const [attendance, setAttendance] = useState<AdminAttendance[]>([]);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  // Guards against an earlier in-flight roster fetch resolving after a newer one
+  // (opening event A then B must never render A's roster under B).
+  const attendanceReqRef = useRef(0);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
@@ -341,6 +382,7 @@ export default function AdminEventsPage() {
   const [filterStudentsOnly, setFilterStudentsOnly] = useState(false);
   const [filterThai, setFilterThai] = useState(true);
   const [filterInternational, setFilterInternational] = useState(true);
+  const [yearFilter, setYearFilter] = useState<Set<number>>(new Set()); // empty = all years
   // Per-day (session) filter for multi-day events. null = all days. Only shown
   // when the active event has more than one session.
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -352,7 +394,8 @@ export default function AdminEventsPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formPoints, setFormPoints] = useState(50);
+  const [formPoints, setFormPoints] = useState(0);
+  const [formIndividualPoints, setFormIndividualPoints] = useState(0);
   const [formSections, setFormSections] = useState<FormSection[]>([]);
   const [formIsAwarded, setFormIsAwarded] = useState(false);
   // Scheduling window + S-form assignment
@@ -367,6 +410,15 @@ export default function AdminEventsPage() {
   const [formSubmissions, setFormSubmissions] = useState<FormBuilderSubmission[]>([]);
   const [formSaving, setFormSaving] = useState(false);
   const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
+  const [submissionsPage, setSubmissionsPage] = useState(1);
+  const SUBMISSIONS_PER_PAGE = 10;
+  const submissionsListRef = useRef<HTMLDivElement | null>(null);
+  // Change page and scroll the list back to the top so the first card on the
+  // new page is in view (instead of staying at the bottom where Next was clicked).
+  const goToSubmissionsPage = (updater: (p: number) => number) => {
+    setSubmissionsPage(updater);
+    submissionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   
   // Multi-form state: list of all forms for the current event + which one is being edited
   const [allEventForms, setAllEventForms] = useState<EventFormSummary[]>([]);
@@ -417,6 +469,7 @@ export default function AdminEventsPage() {
     setFormTitle(f.title);
     setFormDescription(f.description || "");
     setFormPoints(f.pointsAwarded || 0);
+    setFormIndividualPoints(f.individualPointsAwarded || 0);
     const loadedSections = normalizeForm(f.questions).sections;
     setFormSections(loadedSections);
     setFormIsAwarded(f.isAwarded || false);
@@ -426,6 +479,7 @@ export default function AdminEventsPage() {
     setFormAssignedUserIds(f.assignedUserIds || []);
     setFormStats(f.stats);
     setFormSubmissions(f.submissions || []);
+    setSubmissionsPage(1);
     setFormTab(f.submissions && f.submissions.length > 0 ? "stats" : "edit");
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
@@ -435,6 +489,7 @@ export default function AdminEventsPage() {
       formTitle: f.title,
       formDescription: f.description || "",
       formPoints: f.pointsAwarded || 0,
+      formIndividualPoints: f.individualPointsAwarded || 0,
       formSections: loadedSections,
       formIsAwarded: f.isAwarded || false,
       formOpensAt: toDatetimeLocal(f.opensAt),
@@ -489,7 +544,8 @@ export default function AdminEventsPage() {
         }];
         setFormTitle("");
         setFormDescription("");
-        setFormPoints(50);
+        setFormPoints(0);
+        setFormIndividualPoints(0);
         setFormSections(defaultSections);
         setFormIsAwarded(false);
         setFormOpensAt("");
@@ -499,13 +555,14 @@ export default function AdminEventsPage() {
         setFormStats(null);
         setFormSubmissions([]);
         setPristineFingerprint(builderFingerprint({
-          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 50,
+          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0, formIndividualPoints: 0,
           formSections: defaultSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
           formAssignedRoles: [], formAssignedUserIds: [],
         }));
       }
     } catch (e) {
       console.error(e);
+      setFormBuilderError(lang === "th" ? "ไม่สามารถโหลดเครื่องมือสร้างฟอร์มได้ กรุณาลองใหม่อีกครั้ง" : "Couldn't load the form builder. Please try again.");
     } finally {
       setFormLoading(false);
     }
@@ -541,7 +598,8 @@ export default function AdminEventsPage() {
     }];
     setFormTitle(newTitle);
     setFormDescription("");
-    setFormPoints(50);
+    setFormPoints(0);
+    setFormIndividualPoints(0);
     setFormSections(newSections);
     setFormIsAwarded(false);
     setFormOpensAt("");
@@ -555,13 +613,13 @@ export default function AdminEventsPage() {
     setFormBuilderSuccess(null);
     // Baseline = the default template, so closing an untouched new form is silent.
     setPristineFingerprint(builderFingerprint({
-      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 50,
+      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0, formIndividualPoints: 0,
       formSections: newSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
       formAssignedRoles: [], formAssignedUserIds: [],
     }));
   };
 
-  const saveForm = async () => {
+  const saveForm = async (skipReopenConfirm = false) => {
     if (!formEventId) return;
     setFormBuilderError(null);
     setFormBuilderSuccess(null);
@@ -577,6 +635,29 @@ export default function AdminEventsPage() {
       return;
     }
 
+    // Re-opening an already-awarded form (pushing its close time back into the
+    // future) claws back the points it already gave the winning house. Confirm
+    // first — the server then reverts the award and re-arms the form.
+    const reopening = formIsAwarded && new Date(formClosesAt).getTime() > Date.now();
+    if (reopening && !skipReopenConfirm) {
+      setConfirmModal({
+        show: true,
+        title: lang === "th" ? "เปิดแบบฟอร์มที่ให้คะแนนแล้วอีกครั้ง?" : lang === "cn" ? "重新开放已计分的表单？" : lang === "mm" ? "အမှတ်ပေးပြီးသော ဖောင်ကို ပြန်ဖွင့်မလား?" : "Re-open this awarded form?",
+        message: lang === "th"
+          ? "แบบฟอร์มนี้ปิดและให้คะแนนบ้านที่ชนะไปแล้ว การตั้งเวลาปิดใหม่ในอนาคตจะ ดึงคะแนนที่ให้ไปแล้วคืน และเปิดรับคำตอบอีกครั้ง คะแนนจะถูกมอบใหม่เมื่อปิดอีกครั้ง"
+          : lang === "cn"
+          ? "此表单已关闭并向获胜宿舍计分。将关闭时间设为未来将会收回已发放的分数，并重新开放提交。下次关闭时会重新计分。"
+          : lang === "mm"
+          ? "ဤဖောင်သည် ပိတ်ပြီး အနိုင်ရအိမ်သို့ အမှတ်ပေးပြီးဖြစ်သည်။ ပိတ်ချိန်ကို အနာဂတ်သို့ ပြန်သတ်မှတ်ပါက ပေးပြီးသားအမှတ်များကို ပြန်ရုပ်သိမ်းပြီး တင်သွင်းမှုများ ပြန်ဖွင့်ပါမည်။ နောက်တစ်ကြိမ်ပိတ်သည့်အခါ အမှတ်ပြန်ပေးပါမည်။"
+          : "This form already closed and awarded points to the winning house. Setting the close time in the future will take those points back and re-open it for entries. Points are re-awarded when it closes again.",
+        confirmText: lang === "th" ? "เปิดอีกครั้งและดึงคะแนนคืน" : lang === "cn" ? "重新开放并收回分数" : lang === "mm" ? "ပြန်ဖွင့်ပြီး အမှတ်ပြန်ယူမည်" : "Re-open & revert points",
+        cancelText: lang === "th" ? "ยกเลิก" : lang === "cn" ? "取消" : lang === "mm" ? "မလုပ်တော့ပါ" : "Cancel",
+        isDanger: true,
+        onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); saveForm(true); },
+      });
+      return;
+    }
+
     setFormSaving(true);
     try {
       const isNew = !activeFormId;
@@ -588,6 +669,7 @@ export default function AdminEventsPage() {
           title: formTitle,
           description: formDescription,
           pointsAwarded: formPoints,
+          individualPointsAwarded: formIndividualPoints,
           questions: serializeForm(formSections),
           // Forms are always active now — the schedule window (opensAt/closesAt)
           // drives the lifecycle and auto-awards when closesAt passes.
@@ -605,7 +687,7 @@ export default function AdminEventsPage() {
         // there are no unsaved edits (also covers the new-form path, where
         // refreshAllForms can't yet match by the not-yet-set activeFormId).
         setPristineFingerprint(builderFingerprint({
-          activeFormType, formTitle, formDescription, formPoints, formSections,
+          activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
           formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
         }));
         // If this was a new form, set the activeFormId
@@ -657,7 +739,7 @@ export default function AdminEventsPage() {
   const builderDirty =
     showFormBuilder && !formLoading &&
     builderFingerprint({
-      activeFormType, formTitle, formDescription, formPoints, formSections,
+      activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
       formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
     }) !== pristineFingerprint;
 
@@ -974,12 +1056,18 @@ export default function AdminEventsPage() {
     ws["!cols"] = header.map(h => ({ wch: Math.min(45, Math.max(12, h.length + 2)) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Submissions");
-    // Keep Thai (and other Unicode) letters intact; only strip characters that
-    // are illegal in filenames, then collapse whitespace/separators to "_".
-    const safeTitle = (formEventTitle || "form")
+    // Name the file after the FORM (not just the event) so exports from an
+    // event's different forms (K_pre/K_post/A/S/F) don't collide or get
+    // confused. Prefer the form's own title; fall back to the event title plus
+    // the form-type label. Keep Thai (and other Unicode) letters intact; only
+    // strip characters that are illegal in filenames, then collapse
+    // whitespace/separators to "_".
+    const typeLabel = FORM_TYPE_LABELS[activeFormType] || activeFormType;
+    const rawName = formTitle.trim() || `${formEventTitle || "Event"} ${typeLabel}`;
+    const safeTitle = rawName
       .replace(/[\\/:*?"<>|]+/g, "")
       .replace(/\s+/g, "_")
-      .slice(0, 40)
+      .slice(0, 60)
       .replace(/^_+|_+$/g, "") || "form";
     XLSX.writeFile(wb, `submissions_${safeTitle}.xlsx`);
   };
@@ -1009,6 +1097,19 @@ export default function AdminEventsPage() {
     !!user && (user.hasMedicalInfo === true || hasActualMedicalInfo(user));
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The create/edit panel. Used to scroll it into view when it opens — the admin
+  // content scrolls inside `.admin-main` (overflow-y:auto), NOT the window, so a
+  // plain window.scrollTo does nothing. Re-runs on editingId so switching which
+  // event you're editing (panel already open) also brings it back to the top.
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showForm) return;
+    const el = formRef.current;
+    if (!el) return;
+    const scroller = el.closest(".admin-main");
+    if (scroller) scroller.scrollTo({ top: 0, behavior: "smooth" });
+    else el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showForm, editingId]);
 
   const fetchEvents = async (signal?: AbortSignal) => {
     try {
@@ -1037,6 +1138,15 @@ export default function AdminEventsPage() {
   // Poll the events listing instead of holding an SSE connection (free-tier
   // friendly, pauses when the tab is hidden).
   usePolling(fetchEvents, 15000);
+
+  // Clubs for the "Managed By" owner picker — fetched once, not polled (the
+  // Clubs admin page is where staff manage the list itself).
+  useEffect(() => {
+    fetch("/api/admin/clubs")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setClubs(d); })
+      .catch(() => {});
+  }, []);
 
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 
@@ -1390,6 +1500,7 @@ export default function AdminEventsPage() {
       registrationCloseTime: evt.registrationCloseTime ? toLocal(evt.registrationCloseTime) : "",
       quota: evt.quota || 0,
       pointsAwarded: evt.pointsAwarded || 0,
+      individualPointsAwarded: evt.individualPointsAwarded || 0,
       imageUrl: evt.imageUrl || "",
       // Legacy events have only imageUrl — wrap it so the manager shows one poster.
       imageUrls: (evt.imageUrls && evt.imageUrls.length > 0)
@@ -1403,7 +1514,10 @@ export default function AdminEventsPage() {
       quotaInternational: evt.quotaInternational || null,
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
-      managedByRoles: evt.managedByRoles || []
+      firstYearOnly: evt.firstYearOnly || false,
+      managedByRoles: evt.managedByRoles || [],
+      ownerClubIds: evt.ownerClubIds || [],
+      ownerMajors: evt.ownerMajors || []
     });
     // Only pre-select a mode (which reveals the Days editor) when the event is
     // genuinely multi-day or per-session. A plain single-session "once" event
@@ -1427,26 +1541,43 @@ export default function AdminEventsPage() {
     setSessions(evtSessions);
     setEditingId(evt.id);
     setShowForm(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Scrolling is handled by the showForm/editingId effect, which targets the
+    // real scroll container (.admin-main) rather than the window.
   };
 
   const viewAttendance = async (eventId: string) => {
+    // Token this request so a stale, slower response from a previously-opened
+    // event can't overwrite the roster of the one now in view.
+    const reqId = ++attendanceReqRef.current;
     setActiveEventId(eventId);
     setShowAttendance(true);
     setLoadingAttendance(true);
+    setAttendanceError(null);
+    setAttendance([]);
     setFilterMedical(false);
+    setFilterNotCheckedIn(false);
     setFilterStudentsOnly(false);
     setFilterThai(true);
     setFilterInternational(true);
     setSelectedSessionId(null);
     try {
       const res = await fetch(`/api/admin/events/${eventId}/attendance`);
-      const data = await res.json();
-      setAttendance(data);
+      const data = await res.json().catch(() => null);
+      // Ignore if a newer viewAttendance() superseded this one.
+      if (attendanceReqRef.current !== reqId) return;
+      if (!res.ok) {
+        setAttendance([]);
+        setAttendanceError((data && data.error) || "Failed to load attendance.");
+        return;
+      }
+      setAttendance(Array.isArray(data) ? data : []);
     } catch (err) {
+      if (attendanceReqRef.current !== reqId) return;
       console.error(err);
+      setAttendance([]);
+      setAttendanceError("Failed to load attendance.");
     } finally {
-      setLoadingAttendance(false);
+      if (attendanceReqRef.current === reqId) setLoadingAttendance(false);
     }
   };
 
@@ -1456,7 +1587,7 @@ export default function AdminEventsPage() {
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const isMultiDayEvent = activeEventSessions.length > 1;
 
-  const filteredAttendance = attendance.filter((m) => {
+  const filteredAttendance = useMemo(() => attendance.filter((m) => {
     if (selectedSessionId && m.session?.id !== selectedSessionId) {
       return false;
     }
@@ -1493,22 +1624,29 @@ export default function AdminEventsPage() {
     if (!filterInternational && isIntl) {
       return false;
     }
-    
+
+    if (yearFilter.size > 0) {
+      const y = yearOfStudy(m.user?.studentId);
+      const bucket = y == null ? null : (y >= 5 ? 5 : y);
+      if (bucket == null || !yearFilter.has(bucket)) return false;
+    }
+
     return true;
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasMedicalSignal is pure over its `user` arg (no state/props); listing it would recreate each render and defeat the memo
+  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterThai, filterInternational, yearFilter]);
 
   // Header tallies honor the selected day (but not the other roster filters) so
   // "X / Y checked in" matches whichever day is being viewed.
-  const sessionScoped = selectedSessionId
+  const sessionScoped = useMemo(() => selectedSessionId
     ? attendance.filter((m) => m.session?.id === selectedSessionId)
-    : attendance;
+    : attendance, [attendance, selectedSessionId]);
   // In the "All days" view a person who took part in several sessions has one
   // row per day. Counting the raw rows would SUM the days (e.g. Day1 271 +
   // Day2 246 = 517), which double-counts anyone present on both days. Collapse
   // to one unit per student — keyed exactly like the roster cards — so the
   // tallies count distinct people. With a day selected there's ≤1 row per
   // person already, so each row is its own unit (no behavior change).
-  const tallyUnits: AdminAttendance[][] = selectedSessionId
+  const tallyUnits = useMemo<AdminAttendance[][]>(() => selectedSessionId
     ? sessionScoped.map((m) => [m])
     : (() => {
         const byStudent = new Map<string, AdminAttendance[]>();
@@ -1519,17 +1657,20 @@ export default function AdminEventsPage() {
           else byStudent.set(k, [m]);
         }
         return [...byStudent.values()];
-      })();
-  const checkInCount = tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length;
-  const registeredCount = tallyUnits.length;
-
+      })(), [sessionScoped, selectedSessionId]);
   // Attendance summary for the day in view (mirrors the exported report's stats).
   // Based on the day-scoped set, not the browsing filters (medical/nationality).
   // A person is classified once across all their day rows: pre-registered if any
   // session was a pre-registration (else walk-in), attended if present on any day.
-  const summaryPreRegistered = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length;
-  const summaryAttendedPre = tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length;
-  const summaryWalkIns = tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length;
+  // All five tallies derive purely from tallyUnits, so compute them together once
+  // per roster change instead of five full passes on every render / 15s poll.
+  const { checkInCount, registeredCount, summaryPreRegistered, summaryAttendedPre, summaryWalkIns } = useMemo(() => ({
+    checkInCount: tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length,
+    registeredCount: tallyUnits.length,
+    summaryPreRegistered: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length,
+    summaryAttendedPre: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length,
+    summaryWalkIns: tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length,
+  }), [tallyUnits]);
   const summaryNoShows = Math.max(0, summaryPreRegistered - summaryAttendedPre);
   const summaryNoShowPct = summaryPreRegistered > 0 ? Math.round((summaryNoShows / summaryPreRegistered) * 100) : 0;
   const attendanceSummaryTiles = [
@@ -1566,7 +1707,7 @@ export default function AdminEventsPage() {
   // duplicates. When a specific day is selected there's already ≤1 row per
   // person, so each row is its own unit and the card renders exactly as before.
   type AttendanceUnit = { key: string; primary: AdminAttendance; rows: AdminAttendance[] };
-  const attendanceUnits: AttendanceUnit[] = (() => {
+  const attendanceUnits = useMemo<AttendanceUnit[]>(() => {
     if (selectedSessionId) {
       return filteredAttendance.map((m) => ({ key: m.id, primary: m, rows: [m] }));
     }
@@ -1588,19 +1729,21 @@ export default function AdminEventsPage() {
       u.primary = u.rows[0];
     }
     return order.map((k) => byStudent.get(k)!);
-  })();
+  }, [filteredAttendance, selectedSessionId]);
 
-  const groupedAttendance = attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
+  const groupedAttendance = useMemo(() => attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
     const houseId = curr.primary.user?.house?.id || "Unassigned";
     if (!acc[houseId]) acc[houseId] = [];
     acc[houseId].push(curr);
     return acc;
-  }, {} as Record<string, AttendanceUnit[]>);
+  }, {} as Record<string, AttendanceUnit[]>), [attendanceUnits]);
 
   // Export the event's attendees as .xlsx. The file is built server-side at
-  // /api/admin/events/[id]/export, which re-checks the super_admin/admin role
-  // (the button is also gated via canExportAttendance) and audit-logs the PII
-  // pull. We just trigger the download; the browser sends the session cookie.
+  // /api/admin/events/[id]/export, which re-checks the role (staff vs.
+  // thin-roster — the button is also gated via canSeeExportButton), scopes
+  // president roles to events they manage, strips sensitive columns for
+  // thin-roster roles, and audit-logs the pull. We just trigger the download;
+  // the browser sends the session cookie.
   const exportAttendanceXlsx = () => {
     if (!activeEventId) return;
     // Carry the selected day through to the server so the spreadsheet matches the
@@ -1639,7 +1782,7 @@ export default function AdminEventsPage() {
     );
   };
 
-  const filteredEvents = Array.isArray(events) ? events.filter(evt => {
+  const filteredEvents = useMemo(() => Array.isArray(events) ? events.filter(evt => {
     const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (evt.location && evt.location.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -1652,7 +1795,7 @@ export default function AdminEventsPage() {
     if (filterStatus === "past") return matchesSearch && isPast;
     if (filterStatus === "upcoming") return matchesSearch && isUpcoming;
     return matchesSearch;
-  }) : [];
+  }) : [], [events, searchQuery, filterStatus]);
 
   const getEventStatus = (evt: AdminEvent) => {
     const now = new Date();
@@ -1738,6 +1881,7 @@ export default function AdminEventsPage() {
       {/* Form */}
       {showForm && (
         <div
+          ref={formRef}
           className="animate-fade-in-up"
           style={{
             background: "var(--bg-surface)",
@@ -1767,20 +1911,36 @@ export default function AdminEventsPage() {
                   <input className="input" required value={formData.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. IT Freshy Night 2026" style={{ fontSize: 16, padding: "16px 20px", borderRadius: 16 }} />
                 </div>
 
+                <div className="field">
+                  <label className="label">{t.eventLocationLabel}</label>
+                  <div style={{ position: "relative" }}>
+                    <MapPin size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                    <input className="input" value={formData.location} onChange={(e) => set("location", e.target.value)} placeholder="CAMT Auditorium" style={{ paddingLeft: 44 }} />
+                  </div>
+                </div>
+
+                {/* Two parallel point pools: house points go to the WINNING house at
+                    event-end; individual points go to EACH attendee on every check-in. */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
-                    <label className="label">{t.eventLocationLabel}</label>
-                    <div style={{ position: "relative" }}>
-                      <MapPin size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-                      <input className="input" value={formData.location} onChange={(e) => set("location", e.target.value)} placeholder="CAMT Auditorium" style={{ paddingLeft: 44 }} />
+                    <label className="label">{t.eventPointsLabel}</label>
+                    <div style={{ position: "relative", opacity: canEditRestrictedFields ? 1 : 0.5 }}>
+                      <Trophy size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#fbbf24" }} />
+                      <input className="input" type="number" min={0} disabled={!canEditRestrictedFields} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
+                    <p style={{ fontSize: 11, color: canEditRestrictedFields ? "var(--text-muted)" : "#f59e0b", fontWeight: canEditRestrictedFields ? 400 : 700, marginTop: 6 }}>
+                      {canEditRestrictedFields ? t.eventHousePointsHint : t.eventStaffOnlyFieldHint}
+                    </p>
                   </div>
                   <div className="field">
-                    <label className="label">{t.eventPointsLabel}</label>
-                    <div style={{ position: "relative" }}>
+                    <label className="label">{t.eventIndividualPointsLabel}</label>
+                    <div style={{ position: "relative", opacity: canEditRestrictedFields ? 1 : 0.5 }}>
                       <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
-                      <input className="input" type="number" min={0} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
+                      <input className="input" type="number" min={0} disabled={!canEditRestrictedFields} value={formData.individualPointsAwarded} onChange={(e) => set("individualPointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
+                    <p style={{ fontSize: 11, color: canEditRestrictedFields ? "var(--text-muted)" : "#f59e0b", fontWeight: canEditRestrictedFields ? 400 : 700, marginTop: 6 }}>
+                      {canEditRestrictedFields ? t.eventIndividualPointsHint : t.eventStaffOnlyFieldHint}
+                    </p>
                   </div>
                 </div>
 
@@ -2121,6 +2281,50 @@ export default function AdminEventsPage() {
                   })()}
                 </div>
 
+                {/* First-year-only restriction */}
+                <div className="field" style={{ marginTop: 20 }}>
+                  <div
+                    onClick={() => set("firstYearOnly", !formData.firstYearOnly)}
+                    style={{
+                      minHeight: 48,
+                      background: "var(--bg-elevated)",
+                      borderRadius: 16,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "12px 16px",
+                      cursor: "pointer",
+                      border: formData.firstYearOnly ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <div style={{
+                      width: 24,
+                      height: 24,
+                      flexShrink: 0,
+                      borderRadius: 6,
+                      border: "2px solid var(--border-medium)",
+                      background: formData.firstYearOnly ? "var(--accent-primary)" : "transparent",
+                      borderColor: formData.firstYearOnly ? "var(--accent-primary)" : "var(--border-medium)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.1s"
+                    }}>
+                      {formData.firstYearOnly && <CheckCircle2 size={16} color="white" />}
+                    </div>
+                    <GraduationCap size={18} style={{ flexShrink: 0, color: formData.firstYearOnly ? "var(--accent-primary)" : "var(--text-muted)" }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: formData.firstYearOnly ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                        {t.firstYearOnly}
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                        {(t.firstYearOnlyHint || "").replace("{prefix}", currentFirstYearPrefix())}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Registration mode + Sessions / Days editor */}
                 <div className="field" style={{ marginTop: 4 }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2340,8 +2544,8 @@ export default function AdminEventsPage() {
               {/* Right Column: Poster & Description */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-                {/* Role Access Control */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                {/* Role Access Control — admin/registration/organizer only */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Users size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามบทบาท)" : "Role-Based Access Control"}
@@ -2351,6 +2555,9 @@ export default function AdminEventsPage() {
                       ? "เลือกบทบาทที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกบทบาท"
                       : "Select which roles can see & join this event. Leave all unchecked = visible to everyone."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {ALL_PARTICIPANT_ROLES.map((role) => {
                       const isSelected = formData.allowedRoles.includes(role);
@@ -2461,8 +2668,9 @@ export default function AdminEventsPage() {
                 </div>
 
                 {/* Major Access Control — limits which student majors may join.
-                    Combined with the role filter as AND. Empty = all majors. */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                    Combined with the role filter as AND. Empty = all majors.
+                    admin/registration/organizer only. */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Users size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามสาขา)" : "Major-Based Access Control"}
@@ -2472,6 +2680,9 @@ export default function AdminEventsPage() {
                       ? "เลือกสาขาที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกสาขา"
                       : "Select which majors can see & join this event. Leave all unchecked = open to every major."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {ALL_MAJORS.map((major) => {
                       const isSelected = formData.allowedMajors.includes(major);
@@ -2547,8 +2758,10 @@ export default function AdminEventsPage() {
 
                 {/* Managed By — which president role(s) MANAGE this event (see it in
                     their admin list, view attendance, scan, export). Independent of
-                    the role/major access above, which only controls who can JOIN. */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                    the role/major access above, which only controls who can JOIN.
+                    admin/registration/organizer only — a president must never be
+                    able to reassign who manages/owns their own event. */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <ShieldCheck size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "ผู้ดูแลกิจกรรม (ประธาน)" : "Managed By (President)"}
@@ -2558,6 +2771,9 @@ export default function AdminEventsPage() {
                       ? "เลือกประธานที่ดูแลกิจกรรมนี้ (เห็นในรายการ ดูการเช็คอิน สแกน ส่งออก) — ไม่กระทบสิทธิ์การเข้าร่วมของนักศึกษา"
                       : "Choose which president(s) manage this event (view it, see attendance, scan, export). Does NOT affect which students can join."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {(["club_president", "major_president"] as const).map((role) => {
                       const isSelected = formData.managedByRoles.includes(role);
@@ -2627,6 +2843,103 @@ export default function AdminEventsPage() {
                         : `✓ ${lang === "th" ? "ดูแลโดย: " : "Managed by: "}${formData.managedByRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
                     </div>
                   </div>
+
+                  {/* Owner club(s)/major(s) — WHICH club_president/major_president may
+                      actually manage this event (see EventScopeService). Without an
+                      owner assigned here, the event stays hidden from every president
+                      even though managedByRoles marks it as president-managed. */}
+                  {formData.managedByRoles.includes("club_president") && (
+                    <div style={{ marginTop: 14 }}>
+                      <label className="label" style={{ fontSize: 12 }}>
+                        {lang === "th" ? "ชมรมที่เป็นเจ้าของกิจกรรม" : "Owning club(s)"}
+                      </label>
+                      {clubs.filter((c) => !c.isArchived).length === 0 ? (
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                          {lang === "th" ? "ยังไม่มีชมรม — สร้างได้ที่ Admin > Clubs" : "No clubs yet — create one under Admin > Clubs."}
+                        </p>
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                          {clubs.filter((c) => !c.isArchived).map((club) => {
+                            const isSelected = formData.ownerClubIds.includes(club.id);
+                            return (
+                              <div
+                                key={club.id}
+                                onClick={() => {
+                                  const current = formData.ownerClubIds;
+                                  const next = isSelected
+                                    ? current.filter((id) => id !== club.id)
+                                    : [...current, club.id];
+                                  setFormData({ ...formData, ownerClubIds: next });
+                                }}
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: 10,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  background: isSelected ? "rgba(245,158,11,0.15)" : "var(--bg-elevated)",
+                                  color: isSelected ? "#f59e0b" : "var(--text-secondary)",
+                                  border: `1px solid ${isSelected ? "rgba(245,158,11,0.4)" : "var(--border-subtle)"}`,
+                                }}
+                              >
+                                {club.name}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {formData.ownerClubIds.length === 0 && (
+                        <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginTop: 6 }}>
+                          {lang === "th"
+                            ? "⚠ ยังไม่ได้กำหนดชมรม — จะไม่แสดงกับประธานชมรมคนใดจนกว่าจะเลือก"
+                            : "⚠ No club assigned yet — hidden from every club president until you pick one."}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {formData.managedByRoles.includes("major_president") && (
+                    <div style={{ marginTop: 14 }}>
+                      <label className="label" style={{ fontSize: 12 }}>
+                        {lang === "th" ? "สาขาที่เป็นเจ้าของกิจกรรม" : "Owning major(s)"}
+                      </label>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                        {ALL_MAJORS.map((major) => {
+                          const isSelected = formData.ownerMajors.includes(major);
+                          return (
+                            <div
+                              key={major}
+                              onClick={() => {
+                                const current = formData.ownerMajors;
+                                const next = isSelected
+                                  ? current.filter((m) => m !== major)
+                                  : [...current, major];
+                                setFormData({ ...formData, ownerMajors: next });
+                              }}
+                              style={{
+                                padding: "6px 12px",
+                                borderRadius: 10,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                background: isSelected ? "rgba(6,182,212,0.15)" : "var(--bg-elevated)",
+                                color: isSelected ? "#06b6d4" : "var(--text-secondary)",
+                                border: `1px solid ${isSelected ? "rgba(6,182,212,0.4)" : "var(--border-subtle)"}`,
+                              }}
+                            >
+                              {major}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {formData.ownerMajors.length === 0 && (
+                        <p style={{ fontSize: 11, color: "#06b6d4", fontWeight: 700, marginTop: 6 }}>
+                          {lang === "th"
+                            ? "⚠ ยังไม่ได้กำหนดสาขา — จะไม่แสดงกับประธานสาขาคนใดจนกว่าจะเลือก"
+                            : "⚠ No major assigned yet — hidden from every major president until you pick one."}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="field">
@@ -2811,7 +3124,7 @@ export default function AdminEventsPage() {
                 {error && <div style={{ color: "#ef4444", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} /> {error}</div>}
               </div>
               <div className="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => setShowForm(false)}>{t.discardBtn}</button>
+                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => { setShowForm(false); setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([]); }}>{t.discardBtn}</button>
                 <button type="submit" className="btn btn-primary btn-lg w-full sm:w-auto" style={{ borderRadius: 16, minWidth: 200 }} disabled={submitting}>
                   {submitting ? <>{lang === "th" ? "กำลังบันทึก..." : "Saving..."}</> : editingId ? t.updateSystemBtn : t.activateEventBtn}
                 </button>
@@ -2847,7 +3160,7 @@ export default function AdminEventsPage() {
             <p style={{ color: "var(--text-muted)", marginTop: 8 }}>{lang === "th" ? "ลองปรับตัวกรองหรือสร้างกิจกรรมใหม่เพื่อเริ่มต้น" : lang === "cn" ? "尝试调整您的筛选条件或创建一个新活动以开始。" : lang === "mm" ? "စတင်ရန် စစ်ထုတ်မှုများကို ချိန်ညှိပါ သို့မဟုတ် ပွဲအသစ်တစ်ခု ဖန်တီးပါ။" : "Try adjusting your filters or create a new event to get started."}</p>
           </div>
           {!isAttendanceOnly && (
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t.addEventBtn}</button>
+            <button className="btn btn-primary" onClick={() => { setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]); setShowForm(true); }}>+ {t.addEventBtn}</button>
           )}
         </div>
       ) : (
@@ -2936,6 +3249,30 @@ export default function AdminEventsPage() {
                           </span>
                         </div>
                       )}
+                      {evt.firstYearOnly && (
+                        <div className="event-card-tag" style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: "rgba(16,185,129,0.85)",
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          boxShadow: "0 2px 8px rgba(16,185,129,0.3)",
+                          textTransform: "uppercase",
+                        }}>
+                          <GraduationCap size={10} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {t.firstYearBadge}
+                          </span>
+                        </div>
+                      )}
                       {/* Managed-by badge — which president manages this event
                           (admin context only; independent of participant access). */}
                       {evt.managedByRoles && evt.managedByRoles.length > 0 && (
@@ -3000,28 +3337,47 @@ export default function AdminEventsPage() {
                     </div>
                   </div>
 
-                  {/* Points Badge */}
-                  {evt.pointsAwarded !== undefined && (
-                    <div style={{ position: "absolute", bottom: 28, left: 28 }}>
-                      <div style={{ 
-                        background: "rgba(0, 0, 0, 0.7)", 
-                        backdropFilter: "blur(8px)", 
-                        color: "#fff", 
-                        padding: "6px 12px", 
-                        borderRadius: 14, 
-                        fontSize: 11, 
-                        fontWeight: 900, 
-                        display: "inline-flex", 
-                        alignItems: "center", 
-                        gap: 6, 
+                  {/* Points Badges — house (winner bonus) and, when set, per-attendee individual */}
+                  <div style={{ position: "absolute", bottom: 28, left: 28, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {evt.pointsAwarded !== undefined && (
+                      <div style={{
+                        background: "rgba(0, 0, 0, 0.7)",
+                        backdropFilter: "blur(8px)",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
                         boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                         border: "1px solid rgba(255, 255, 255, 0.1)"
-                      }}>
+                      }} title={t.eventHousePointsHint}>
                         <Trophy size={12} style={{ color: "#fbbf24" }} />
                         <span>{evt.pointsAwarded} PTS</span>
                       </div>
-                    </div>
-                  )}
+                    )}
+                    {evt.individualPointsAwarded > 0 && (
+                      <div style={{
+                        background: "rgba(0, 0, 0, 0.7)",
+                        backdropFilter: "blur(8px)",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        borderRadius: 14,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)"
+                      }} title={t.eventIndividualPointsHint}>
+                        <Sparkles size={12} style={{ color: "var(--accent-primary)" }} />
+                        <span>+{evt.individualPointsAwarded} {t.eventIndividualPointsBadge}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Card Content */}
@@ -3135,8 +3491,9 @@ export default function AdminEventsPage() {
                         </button>
                         )}
                      </div>
-                     {!isAttendanceOnly && (
+                     {(canEditEventDetails || !isAttendanceOnly) && (
                      <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+                       {canEditEventDetails && (
                        <button
                          className="btn btn-ghost"
                          style={{ flex: 1, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(0,0,0,0.03)", fontSize: 13 }}
@@ -3144,6 +3501,8 @@ export default function AdminEventsPage() {
                        >
                          <Edit2 size={13} /> {t.eventEditBtnLabel || "Edit"}
                        </button>
+                       )}
+                       {!isAttendanceOnly && (
                        <button
                          id={`delete-event-${evt.id}-btn`}
                          className="btn btn-danger"
@@ -3153,6 +3512,7 @@ export default function AdminEventsPage() {
                        >
                          {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} {t.eventDeleteBtnLabel || "Delete"}
                        </button>
+                       )}
                      </div>
                      )}
                    </div>
@@ -3301,7 +3661,7 @@ export default function AdminEventsPage() {
             <div style={{ padding: "20px clamp(16px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 16 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{lang === "th" ? "แบบประเมินผู้เข้าร่วม" : lang === "cn" ? "互动反馈" : lang === "mm" ? "အပြန်အလှန် အကြံပြုချက်" : "Interactive Feedback"}</span>
-                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{formEventTitle || "Event"} Form</h3>
+                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{formEventTitle || "Event"} {t.fbFormSuffix || "Form"}</h3>
               </div>
               <button
                 className="btn btn-ghost"
@@ -3351,7 +3711,7 @@ export default function AdminEventsPage() {
                   color: "var(--accent-primary)", border: "1.5px dashed var(--accent-primary)",
                 }}
               >
-                + Add Form
+                {t.fbAddForm || "+ Add Form"}
               </button>
             </div>
 
@@ -3359,10 +3719,10 @@ export default function AdminEventsPage() {
             {showNewFormPicker && !formLoading && (
               <div style={{ padding: "20px clamp(12px,4vw,32px)", background: "var(--bg-surface)", borderBottom: "1px solid var(--border-subtle)" }}>
                 <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  Select the type of form to create for this event:
+                  {t.fbSelectFormTypePicker || "Select the type of form to create for this event:"}
                 </p>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {(["K_pre", "K_post", "A", "S"] as const).map((type) => {
+                  {(["K_pre", "K_post", "A", "S", "F"] as const).map((type) => {
                     const c = FORM_TYPE_COLORS[type];
                     const alreadyExists = allEventForms.some((f) => f.formType === type);
                     return (
@@ -3377,7 +3737,7 @@ export default function AdminEventsPage() {
                           background: c.bg, color: c.text, border: `1.5px solid ${c.border}`,
                           transition: "all 0.15s",
                         }}
-                        title={alreadyExists ? "A form of this type already exists for this event" : ""}
+                        title={alreadyExists ? (t.fbFormTypeAlreadyExists || "A form of this type already exists for this event") : ""}
                       >
                         {FORM_TYPE_LABELS[type]}
                         {alreadyExists && " ✓"}
@@ -3434,14 +3794,14 @@ export default function AdminEventsPage() {
             {formLoading ? (
               <div style={{ padding: "80px 0", textAlign: "center" }}>
                 <div className="spinner w-8 h-8 border-4 border-t-transparent" style={{ margin: "0 auto 16px" }} />
-                <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>Fetching evaluation system data...</p>
+                <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbFetchingData || "Fetching evaluation system data..."}</p>
               </div>
             ) : showNewFormPicker && !activeFormId ? (
               <div style={{ padding: "60px 40px", textAlign: "center" }}>
                 <ClipboardList size={48} style={{ color: "var(--text-muted)", margin: "0 auto 20px", opacity: 0.3, display: "block" }} />
-                <h4 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Select a form type above to get started</h4>
+                <h4 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{t.fbSelectFormTypeToStart || "Select a form type above to get started"}</h4>
                 <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                  Each form type (K Pre-Test, K Post-Test, A - Attitude, S - Skill) can only be created once per event.
+                  {t.fbSelectFormTypeDesc || "Each form type (K Pre-Test, K Post-Test, A - Attitude, S - Skill) can only be created once per event."}
                 </p>
               </div>
             ) : (
@@ -3519,16 +3879,16 @@ export default function AdminEventsPage() {
                             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 12, background: c.bg, border: `1px solid ${c.border}` }}>
                               <span style={{ fontSize: 12, fontWeight: 900, color: c.text }}>{FORM_TYPE_LABELS[activeFormType] || activeFormType}</span>
                               <span style={{ fontSize: 11, color: c.text, opacity: 0.7 }}>
-                                {activeFormType === "K_pre" ? "— No attendance required" : activeFormType === "S" ? "— Admin/staff only" : "— Requires check-in"}
+                                {activeFormType === "K_pre" ? (t.fbFormTypeNoAttendance || "— No attendance required") : activeFormType === "S" ? (t.fbFormTypeAdminOnly || "— Admin/staff only") : (t.fbFormTypeRequiresCheckin || "— Requires check-in")}
                               </span>
                             </div>
                           );
                         })()}
                         <div className="field">
                           <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-                            <Zap size={14} style={{ color: "var(--accent-primary)" }} /> House Points Reward
+                            <Zap size={14} style={{ color: "var(--accent-primary)" }} /> {t.fbHousePointsReward || "House Points Reward"}
                           </label>
-                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Winning house gets these points.</p>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t.fbWinningHouseGetsPoints || "Winning house gets these points."}</p>
                           <input
                             type="number"
                             className="input"
@@ -3537,7 +3897,21 @@ export default function AdminEventsPage() {
                             onChange={e => setFormPoints(Math.max(0, parseInt(e.target.value) || 0))}
                           />
                         </div>
-                        
+
+                        <div className="field">
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+                            <Sparkles size={14} style={{ color: "var(--accent-primary)" }} /> {t.fbIndividualPointsReward || "Individual Points Reward"}
+                          </label>
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t.fbEachSubmitterGetsPoints || "Each student gets these points when they submit."}</p>
+                          <input
+                            type="number"
+                            className="input"
+                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", fontWeight: 800 }}
+                            value={formIndividualPoints}
+                            onChange={e => setFormIndividualPoints(Math.max(0, parseInt(e.target.value) || 0))}
+                          />
+                        </div>
+
                         {(() => {
                           // Read-only lifecycle status. There is no manual open/close
                           // anymore — the schedule window below drives everything, and
@@ -3546,24 +3920,24 @@ export default function AdminEventsPage() {
                           const opens = formOpensAt ? new Date(formOpensAt) : null;
                           const closes = formClosesAt ? new Date(formClosesAt) : null;
                           let dot = "var(--green-house)";
-                          let label = "Open for entries";
+                          let label = t.fbStatusOpenForEntries || "Open for entries";
                           if (formIsAwarded) {
-                            dot = "#10b981"; label = "Finalized & points awarded";
+                            dot = "#10b981"; label = t.fbStatusFinalizedAwarded || "Finalized & points awarded";
                           } else if (closes && now > closes) {
-                            dot = "var(--text-muted)"; label = "Closed — points will be awarded automatically";
+                            dot = "var(--text-muted)"; label = t.fbStatusClosedAutoAward || "Closed — points will be awarded automatically";
                           } else if (opens && now < opens) {
-                            dot = "#6366f1"; label = "Scheduled — not open yet";
+                            dot = "#6366f1"; label = t.fbStatusScheduledNotOpen || "Scheduled — not open yet";
                           }
                           return (
                             <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.02)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: dot }} />
                                 <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)" }}>
-                                  Status: {label}
+                                  {t.fbStatusPrefix || "Status:"} {label}
                                 </span>
                               </div>
                               <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                                Set the open/close times in the schedule below. When the close time passes, the house with the most submissions automatically wins the points — no manual action needed.
+                                {t.fbStatusDesc || "Set the open/close times in the schedule below. When the close time passes, the house with the most submissions automatically wins the points — no manual action needed."}
                               </p>
                             </div>
                           );
@@ -3575,14 +3949,20 @@ export default function AdminEventsPage() {
                     <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Calendar size={16} style={{ color: "var(--accent-primary)" }} />
-                        <h4 style={{ fontSize: 14, fontWeight: 900 }}>Schedule</h4>
+                        <h4 style={{ fontSize: 14, fontWeight: 900 }}>{t.fbScheduleHeading || "Schedule"}</h4>
                       </div>
                       <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -4 }}>
-                        Set when this form opens and closes (Bangkok time). Leave <b>Opens at</b> blank to open immediately. <b>Closes at</b> is required: when it passes, entries stop and the winning house is awarded automatically.
+                        {t.fbScheduleDescPart1 || "Set when this form opens and closes (Bangkok time). Leave "}<b>{t.fbOpensAt || "Opens at"}</b>{t.fbScheduleDescPart2 || " blank to open immediately. "}<b>{t.fbClosesAt || "Closes at"}</b>{t.fbScheduleDescPart3 || " is required: when it passes, entries stop and the winning house is awarded automatically."}
                       </p>
+                      {formIsAwarded && (
+                        <p style={{ fontSize: 12, color: "#b45309", fontWeight: 700, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 12, padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 6 }}>
+                          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                          <span>{t.fbReopenWarningPart1 || "This form already closed and awarded its points. Setting "}<b>{t.fbClosesAt || "Closes at"}</b>{t.fbReopenWarningPart2 || " back to a future time re-opens it and "}<b>{t.fbReopenWarningBold || "takes the awarded points back"}</b>{t.fbReopenWarningPart3 || " from the winning house — they are re-awarded when it closes again."}</span>
+                        </p>
+                      )}
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 16 }}>
                         <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Opens at</label>
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.fbOpensAt || "Opens at"}</label>
                           <input
                             type="datetime-local"
                             lang="en-GB"
@@ -3590,11 +3970,10 @@ export default function AdminEventsPage() {
                             style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px" }}
                             value={formOpensAt}
                             onChange={(e) => setFormOpensAt(e.target.value)}
-                            disabled={formIsAwarded}
                           />
                         </div>
                         <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>Closes at <span style={{ color: "#ef4444" }}>*</span></label>
+                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.fbClosesAt || "Closes at"} <span style={{ color: "#ef4444" }}>*</span></label>
                           <input
                             type="datetime-local"
                             lang="en-GB"
@@ -3602,15 +3981,14 @@ export default function AdminEventsPage() {
                             style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", borderColor: !formClosesAt ? "#ef4444" : undefined }}
                             value={formClosesAt}
                             onChange={(e) => setFormClosesAt(e.target.value)}
-                            disabled={formIsAwarded}
                           />
                         </div>
                       </div>
                       {!formClosesAt && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> A close time is required so the form can auto-close and award points.</p>
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {t.fbValidationCloseRequired || "A close time is required so the form can auto-close and award points."}</p>
                       )}
                       {formOpensAt && formClosesAt && new Date(formClosesAt) <= new Date(formOpensAt) && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> Close time is before open time — students will never be able to submit.</p>
+                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {t.fbValidationCloseBeforeOpen || "Close time is before open time — students will never be able to submit."}</p>
                       )}
                     </div>
 
@@ -3619,15 +3997,15 @@ export default function AdminEventsPage() {
                       <div style={{ background: "rgba(239,68,68,0.04)", padding: 24, borderRadius: 24, border: "1px solid rgba(239,68,68,0.2)", display: "flex", flexDirection: "column", gap: 16 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <ClipboardList size={16} style={{ color: "#ef4444" }} />
-                          <h4 style={{ fontSize: 14, fontWeight: 900 }}>Who can do this form</h4>
+                          <h4 style={{ fontSize: 14, fontWeight: 900 }}>{t.fbSFormWhoCanFill || "Who can do this form"}</h4>
                         </div>
                         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8 }}>
-                          Skill forms are hidden from everyone except super-admins/admins and the people you assign here (by role or by person). It appears in their dashboard history to fill — no event check-in needed.
+                          {t.fbSFormDesc || "Skill forms are hidden from everyone except super-admins/admins and the people you assign here (by role or by person). It appears in their dashboard history to fill — no event check-in needed."}
                         </p>
 
                         {/* By role */}
                         <div>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assign by role</span>
+                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.fbSFormAssignByRole || "Assign by role"}</span>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
                             {ASSIGNABLE_FORM_ROLES.map((role) => {
                               const on = formAssignedRoles.includes(role);
@@ -3653,7 +4031,7 @@ export default function AdminEventsPage() {
 
                         {/* By person */}
                         <div>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assign specific people ({formAssignedUserIds.length})</span>
+                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.fbSFormAssignPeople || "Assign specific people"} ({formAssignedUserIds.length})</span>
                           {/* Selected chips */}
                           {formAssignedUserIds.length > 0 && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
@@ -3672,7 +4050,7 @@ export default function AdminEventsPage() {
                             type="text"
                             className="input"
                             style={{ width: "100%", height: 42, borderRadius: 12, padding: "0 14px", marginTop: 10 }}
-                            placeholder="Search people by name or student ID…"
+                            placeholder={t.fbSFormSearchPlaceholder || "Search people by name or student ID…"}
                             value={assigneeSearch}
                             onChange={(e) => setAssigneeSearch(e.target.value)}
                             disabled={formIsAwarded}
@@ -3696,12 +4074,12 @@ export default function AdminEventsPage() {
                                       style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(239,68,68,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
                                     >
                                       <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}</span></span>
-                                      <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#ef4444" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
+                                      <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#ef4444" : "var(--accent-primary)" }}>{on ? (t.fbSFormAddedLabel || "✓ Added") : (t.fbSFormAddLabel || "+ Add")}</span>
                                     </button>
                                   );
                                 })}
                               {assigneeUsers.length === 0 && (
-                                <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>Loading people…</p>
+                                <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>{t.fbSFormLoadingPeople || "Loading people…"}</p>
                               )}
                             </div>
                           )}
@@ -3709,7 +4087,7 @@ export default function AdminEventsPage() {
 
                         {formAssignedRoles.length === 0 && formAssignedUserIds.length === 0 && (
                           <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                            No one assigned yet — only super-admins/admins can see and fill this form.
+                            {t.fbSFormNoOneAssigned || "No one assigned yet — only super-admins/admins can see and fill this form."}
                           </p>
                         )}
                       </div>
@@ -4027,15 +4405,15 @@ export default function AdminEventsPage() {
                             style={{ height: 40, borderRadius: 12, padding: "0 16px", fontSize: 12 }}
                             onClick={() => setConfirmModal({
                               show: true,
-                              title: "Delete this form?",
-                              message: "This will permanently delete the form and all its submissions.",
-                              confirmText: "Delete Form",
-                              cancelText: "Cancel",
+                              title: t.fbDeleteFormTitle || "Delete this form?",
+                              message: t.fbDeleteFormMessage || "This will permanently delete the form and all its submissions.",
+                              confirmText: t.fbBtnDeleteForm || "Delete Form",
+                              cancelText: t.cancel || "Cancel",
                               isDanger: true,
                               onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); deleteActiveForm(); }
                             })}
                           >
-                            <Trash2 size={13} style={{ marginRight: 6 }} /> Delete Form
+                            <Trash2 size={13} style={{ marginRight: 6 }} /> {t.fbBtnDeleteForm || "Delete Form"}
                           </button>
                         )}
                       </div>
@@ -4046,16 +4424,16 @@ export default function AdminEventsPage() {
                           style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
                           onClick={closeFormBuilder}
                         >
-                          Cancel
+                          {t.cancel || "Cancel"}
                         </button>
                         <button
                           className="btn btn-primary"
                           type="button"
                           style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
-                          disabled={formSaving || formIsAwarded}
-                          onClick={saveForm}
+                          disabled={formSaving}
+                          onClick={() => saveForm()}
                         >
-                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : activeFormId ? "Save Changes" : "Create Form"}
+                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : formIsAwarded ? (t.fbBtnReopen || "Re-open & Save") : activeFormId ? (t.fbBtnSaveChanges || "Save Changes") : (t.fbBtnCreateForm || "Create Form")}
                         </button>
                       </div>
                     </div>
@@ -4082,14 +4460,14 @@ export default function AdminEventsPage() {
                                 <CheckCircle2 size={22} />
                               </div>
                               <div>
-                                <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>Contest Finalized &amp; Closed</h4>
+                                <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>{t.fbContestFinalizedTitle || "Contest Finalized & Closed"}</h4>
                                 <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                                  Points have been awarded to the winning house and this evaluation form is frozen.
+                                  {t.fbContestFinalizedDesc || "Points have been awarded to the winning house and this evaluation form is frozen."}
                                 </p>
                               </div>
                             </div>
                             <div style={{ padding: "8px 16px", borderRadius: 10, background: "rgba(16,185,129,0.1)", color: "#10b981", fontSize: 12, fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>
-                              <Lock size={14} style={{ flexShrink: 0 }} /> Permanent Lock
+                              <Lock size={14} style={{ flexShrink: 0 }} /> {t.fbPermanentLock || "Permanent Lock"}
                             </div>
                           </div>
                         );
@@ -4106,7 +4484,7 @@ export default function AdminEventsPage() {
                             </div>
                             <div>
                               <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--accent-primary)", marginBottom: 4 }}>
-                                {hasClosed ? "Closed — awaiting automatic award" : "Awards automatically when the form closes"}
+                                {hasClosed ? (t.fbClosedAwaitingAward || "Closed — awaiting automatic award") : (t.fbAwardsWhenFormCloses || "Awards automatically when the form closes")}
                               </h4>
                               <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
                                 {hasClosed
@@ -4123,7 +4501,7 @@ export default function AdminEventsPage() {
 
                     {/* Stats Leaderboard Cards */}
                     <div>
-                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 6 }}><BarChart3 size={16} style={{ flexShrink: 0 }} /> House Submission Standings</h4>
+                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 6 }}><BarChart3 size={16} style={{ flexShrink: 0 }} /> {t.fbHouseSubmissionStandings || "House Submission Standings"}</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         {["red", "green", "yellow", "blue"].map(hId => {
                           const houseColors: Record<string, string> = {
@@ -4153,7 +4531,7 @@ export default function AdminEventsPage() {
                             >
                               <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>{houseNames[hId]}</p>
                               <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-primary)" }}>{count}</p>
-                              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>submissions</p>
+                              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t.fbSubmissionsCount || "submissions"}</p>
                             </div>
                           );
                         })}
@@ -4161,9 +4539,9 @@ export default function AdminEventsPage() {
                     </div>
 
                     {/* List of Submissions */}
-                    <div>
+                    <div ref={submissionsListRef} style={{ scrollMarginTop: 80 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> Student Submissions ({formSubmissions.length})</h4>
+                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> {t.fbStudentSubmissions || "Student Submissions"} ({formSubmissions.length})</h4>
                         <button
                           type="button"
                           className="btn"
@@ -4176,14 +4554,19 @@ export default function AdminEventsPage() {
                       </div>
                       {formSubmissions.length === 0 ? (
                         <div style={{ textAlign: "center", padding: "60px 20px", border: "1px dashed var(--border-subtle)", borderRadius: 20 }}>
-                          <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>No feedback submissions yet.</p>
-                          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Once students complete the form, their answers will appear here live!</p>
+                          <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbNoSubmissionsYet || "No feedback submissions yet."}</p>
+                          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{t.fbNoSubmissionsDesc || "Once students complete the form, their answers will appear here live!"}</p>
                         </div>
-                      ) : (
+                      ) : (() => {
+                        const totalPages = Math.max(1, Math.ceil(formSubmissions.length / SUBMISSIONS_PER_PAGE));
+                        const currentPage = Math.min(submissionsPage, totalPages);
+                        const start = (currentPage - 1) * SUBMISSIONS_PER_PAGE;
+                        const pageSubs = formSubmissions.slice(start, start + SUBMISSIONS_PER_PAGE);
+                        return (
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                          {formSubmissions.map((sub, sIdx) => (
-                            <div 
-                              key={sub.id || sIdx} 
+                          {pageSubs.map((sub, sIdx) => (
+                            <div
+                              key={sub.id || (start + sIdx)}
                               style={{ 
                                 background: "var(--bg-elevated)", 
                                 border: "1px solid var(--border-subtle)", 
@@ -4277,8 +4660,34 @@ export default function AdminEventsPage() {
                               </div>
                             </div>
                           ))}
+                          {totalPages > 1 && (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={currentPage <= 1}
+                                onClick={() => goToSubmissionsPage((p) => Math.max(1, p - 1))}
+                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage <= 1 ? "not-allowed" : "pointer", opacity: currentPage <= 1 ? 0.5 : 1 }}
+                              >
+                                {lang === "th" ? "ก่อนหน้า" : lang === "cn" ? "上一页" : lang === "mm" ? "ယခင်" : "Previous"}
+                              </button>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>
+                                {(lang === "th" ? "หน้า" : lang === "cn" ? "第" : lang === "mm" ? "စာမျက်နှာ" : "Page")} {currentPage} / {totalPages}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={currentPage >= totalPages}
+                                onClick={() => goToSubmissionsPage((p) => Math.min(totalPages, p + 1))}
+                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage >= totalPages ? "not-allowed" : "pointer", opacity: currentPage >= totalPages ? 0.5 : 1 }}
+                              >
+                                {lang === "th" ? "ถัดไป" : lang === "cn" ? "下一页" : lang === "mm" ? "နောက်တစ်ခု" : "Next"}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -4446,10 +4855,14 @@ export default function AdminEventsPage() {
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {canExportAttendance && !loadingAttendance && attendance.length > 0 && (
+                {canSeeExportButton && !loadingAttendance && attendance.length > 0 && (
                   <button
                     onClick={exportAttendanceXlsx}
-                    title="Export all attendees of this event to Excel (.xlsx)"
+                    title={
+                      canExportAttendance
+                        ? "Export all attendees of this event to Excel (.xlsx)"
+                        : "Export attendees to Excel (.xlsx) — name, ID, and check-in only. Ask an admin for phone, medical, or emergency-contact detail."
+                    }
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -4627,6 +5040,38 @@ export default function AdminEventsPage() {
                     {filterStudentsOnly ? "Showing: Students Only" : "Filter: Students Only"}
                   </button>
 
+                  {([1, 2, 3, 4, 5] as const).map((yr) => {
+                    const active = yearFilter.has(yr);
+                    return (
+                      <button
+                        key={yr}
+                        onClick={() => {
+                          setYearFilter((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(yr)) next.delete(yr); else next.add(yr);
+                            return next;
+                          });
+                        }}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 99,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          transition: "all 0.2s",
+                          border: active ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                          background: active ? "var(--accent-glow)" : "var(--bg-surface)",
+                          color: active ? "var(--accent-primary)" : "var(--text-secondary)",
+                        }}
+                      >
+                        {yr === 5 ? "Yr 5+" : `Yr ${yr}`}
+                      </button>
+                    );
+                  })}
+
                   <label style={{
                     display: "flex",
                     alignItems: "center",
@@ -4673,10 +5118,10 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId) && (
+                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId || yearFilter.size > 0) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
-                    Filtered: Showing {filteredAttendance.length} of {attendance.length} records
+                    Filtered: Showing {attendanceUnits.length} of {tallyUnits.length} records
                   </p>
                 )}
               </div>
@@ -4687,6 +5132,19 @@ export default function AdminEventsPage() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
                   <div className="spinner" style={{ width: 48, height: 48, borderWidth: 3 }} />
                   <p style={{ color: "var(--text-secondary)", fontWeight: 600, fontSize: 16 }}>Synchronizing records...</p>
+                </div>
+              </div>
+            ) : attendanceError ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center", maxWidth: 420 }}>
+                  <div style={{ width: 80, height: 80, borderRadius: "50%", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ef4444" }}>
+                    <AlertTriangle size={36} />
+                  </div>
+                  <h3 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)" }}>Couldn&apos;t load the roster</h3>
+                  <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>{attendanceError}</p>
+                  <button className="btn btn-primary" style={{ borderRadius: 14, marginTop: 8, gap: 8 }} onClick={() => { if (activeEventId) viewAttendance(activeEventId); }}>
+                    <RefreshCw size={16} /> Retry
+                  </button>
                 </div>
               </div>
             ) : (

@@ -16,14 +16,19 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Language>("en");
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("app-lang") as Language;
-      if (saved && ["en", "th", "mm", "cn"].includes(saved)) {
-        setLangState(saved);
+    // Deferred: localStorage can only be read post-mount (SSR renders "en"),
+    // and the timeout keeps the setState out of the synchronous effect body.
+    const timer = setTimeout(() => {
+      try {
+        const saved = localStorage.getItem("app-lang") as Language;
+        if (saved && ["en", "th", "mm", "cn"].includes(saved)) {
+          setLangState(saved);
+        }
+      } catch (err) {
+        console.warn("Storage access failed:", err);
       }
-    } catch (err) {
-      console.warn("Storage access failed:", err);
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const setLang = (newLang: Language) => {

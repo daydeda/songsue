@@ -31,10 +31,10 @@ gantt
 
 | ID | Story / Task | Owner | Estimate | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **[US-PWA-17a](../user-stories/US-PWA-17a.md)** | **ติดตั้งแอปบน Home Screen (Add to Home Screen)**<br>- จัดทำ Metadata และ Link manifest<br>- รองรับ Android/iOS standalone mode | Developer | 8 hrs | [ ] |
-| **[US-PWA-17b](../user-stories/US-PWA-17b.md)** | **หน้า Offline Fallback Page**<br>- สร้างหน้า `offline/page.tsx`<br>- ตั้งค่า Cache Strategy ใน Service Worker | Developer | 8 hrs | [ ] |
-| **[US-PWA-17c](../user-stories/US-PWA-17c.md)** | **ประสบการณ์แบบ Native App (Splash & Theme)**<br>- เจนไอคอนขนาดต่าง ๆ (192, 512, maskable)<br>- กำหนดค่า Theme/Background Color | UI/UX Dev | 6 hrs | [ ] |
-| **[US-PWA-17d](../user-stories/US-PWA-17d.md)** | **QR Scanner ทำงานได้ใน PWA Mode**<br>- ทดสอบสิทธิ์กล้องใน standalone mode บน Safari iOS/Chrome Android | QA & Dev | 8 hrs | [ ] |
+| **[US-PWA-17a](../user-stories/archives/US-PWA-17a.md)** | **ติดตั้งแอปบน Home Screen (Add to Home Screen)**<br>- จัดทำ Metadata และ Link manifest<br>- รองรับ Android/iOS standalone mode | Developer | 8 hrs | [ ] |
+| **[US-PWA-17b](../user-stories/archives/US-PWA-17b.md)** | **หน้า Offline Fallback Page**<br>- สร้างหน้า `offline/page.tsx`<br>- ตั้งค่า Cache Strategy ใน Service Worker | Developer | 8 hrs | [ ] |
+| **[US-PWA-17c](../user-stories/archives/US-PWA-17c.md)** | **ประสบการณ์แบบ Native App (Splash & Theme)**<br>- เจนไอคอนขนาดต่าง ๆ (192, 512, maskable)<br>- กำหนดค่า Theme/Background Color | UI/UX Dev | 6 hrs | [ ] |
+| **[US-PWA-17d](../user-stories/archives/US-PWA-17d.md)** | **QR Scanner ทำงานได้ใน PWA Mode**<br>- ทดสอบสิทธิ์กล้องใน standalone mode บน Safari iOS/Chrome Android | QA & Dev | 8 hrs | [ ] |
 
 ---
 

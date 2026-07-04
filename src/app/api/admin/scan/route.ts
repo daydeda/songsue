@@ -1,7 +1,8 @@
 import { auth } from "@/auth";
-import { canGiveIndividualScore } from "@/lib/admin-access";
+import { canEnterAdminAny, canGiveIndividualScoreAny, effectiveRoles } from "@/lib/admin-access";
 import { ScannerService } from "@/modules/events/scanner.service";
 import { EventsService } from "@/modules/events/events.service";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { events } from "@/db/schema";
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
   // hot path: a single check-in is 2 requests (scan + confirm), so the limit must be
   // high enough for rapid mass check-in. 300/min ≈ 5 req/s comfortably covers it.
   const ip = getClientIp(req);
-  const limiter = rateLimit(ip, 300, 60000);
+  const limiter = await rateLimit(ip, 300, 60000);
   if (!limiter.success) {
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
@@ -47,25 +48,32 @@ export async function POST(req: Request) {
 
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    // Gate on the whole role SET, not just the primary role — a president whose
+    // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
+    // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
+    const roles = effectiveRoles(session.user.role, session.user.roles);
+    if (!canEnterAdminAny(roles)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
     const { qrToken, eventId, sessionId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
 
-    // President roles may only scan events they manage (managedByRoles), mirroring
-    // the /api/admin/events list + attendance/report scoping. Staff and smo unscoped.
-    const myRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
-    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
-    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    // President roles may only scan events they OWN (ownerClubIds/ownerMajors),
+    // mirroring the /api/admin/events list + attendance/report scoping. Staff and
+    // smo unscoped.
+    const isStaff = roles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const presidentTags = roles.filter((r) => ["club_president", "major_president"].includes(r));
     if (!isStaff && presidentTags.length > 0) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
-        columns: { managedByRoles: true },
+        columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, roles);
+      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
@@ -85,7 +93,7 @@ export async function POST(req: Request) {
     // check in attendees but must not award/deduct individual points. smo keeps it.
     // The "lookup" action (score-mode student resolve) is a read-only prelude to a
     // score, so block it here too — otherwise these roles could still use score UI.
-    if ((action === "score" || action === "lookup") && !canGiveIndividualScore(session.user.role)) {
+    if ((action === "score" || action === "lookup") && !canGiveIndividualScoreAny(roles)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -170,7 +178,7 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   // Manual search fires per keystroke; allow a higher ceiling than the default.
   const ip = getClientIp(req);
-  const limiter = rateLimit(ip, 120, 60000);
+  const limiter = await rateLimit(ip, 120, 60000);
   if (!limiter.success) {
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
@@ -185,8 +193,14 @@ export async function GET(req: Request) {
 
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(session?.user?.role || "");
-    if (!session?.user || !isAdminRole) {
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    // Gate on the whole role SET, not just the primary role — a president whose
+    // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
+    // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
+    const roles = effectiveRoles(session.user.role, session.user.roles);
+    if (!canEnterAdminAny(roles)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

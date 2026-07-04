@@ -14,6 +14,7 @@ export default defineConfig({
     // imports the prod DB client, surface it loudly instead of silently connecting.
     env: {
       DATABASE_URL: "",
+      DB_TYPE: "pglite",
     },
   },
 });

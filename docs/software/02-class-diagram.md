@@ -94,6 +94,50 @@ graph LR
 
 ---
 
+### 1.4 ขั้นตอนการสมัครรับข้อมูลปฏิทินด้วย .ics Feed (.ics Feed Subscription Flow)
+แผนผังแสดงการดึงข้อมูลจากภายนอก (Google Calendar, Apple Calendar, Outlook) ผ่าน Token ปลอดภัย โดยจะข้าม Middleware การตรวจสอบสิทธิ์แบบดั้งเดิมของเว็บแอปเพื่อเปิดให้เข้าถึงไฟล์ปฏิทินได้:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor App as โปรแกรมปฏิทิน (Google/Apple/Outlook)
+    participant Server as เซิร์ฟเวอร์ (/api/calendar/feed/[token])
+    participant DB as ฐานข้อมูล (PostgreSQL)
+
+    App->>Server: คำขอดึงข้อมูล (.ics file) พร้อม Feed Token
+    Server->>DB: ค้นหาและตรวจสอบความมีอยู่ของ Token ในตาราง calendar_feed_tokens
+    DB-->>Server: คืนค่า userId ของผู้เรียนที่เป็นเจ้าของ Token (ถ้าพบ)
+    
+    alt ไม่พบ Token ในระบบ
+        Server-->>App: คืนค่าสถานะ 404 (Not Found / Invalid Token)
+    else พบ Token
+        Server->>DB: ดึงข้อมูลกิจกรรมและปฏิทินที่ userId นั้นมีสิทธิ์เข้าถึง (Access Predicate filter)
+        DB-->>Server: รายการกิจกรรมหลัก + รายการปฏิทินเสริม (calendarEntries)
+        Server->>Server: แปลงรายการเป็นรูปแบบ RFC 5545 (iCalendar)
+        Server->>DB: บันทึกเวลาใช้งานล่าสุด (Update last_used_at)
+        Server-->>App: ส่งคืนไฟล์ปฏิทิน .ics (text/calendar)
+    end
+```
+
+---
+
+### 1.5 ขั้นตอนการเปิดแบบประเมินอีกครั้งและการคืนคะแนน (Form Re-opening & Points Clawback Flow)
+เมื่อแอดมินกดยืนยันให้เปิดทำแบบประเมินซ้ำ คะแนนที่บันทึกและแจกจ่ายไปแล้วจะถูกดึงคืนอย่างปลอดภัยผ่าน Transaction เพื่อป้องกันคะแนนผิดพลาด:
+
+```mermaid
+flowchart TD
+    Start["แอดมินกดยืนยัน 'เปิดแบบประเมินอีกครั้ง'"] --> BeginTx["เริ่ม Transaction ในฐานข้อมูล (DB Transaction)"]
+    BeginTx --> FindForm["ค้นหาและดึงรายละเอียดของฟอร์ม (assigned event/points)"]
+    FindForm --> ClawbackHouse["1. หักลบคะแนนสะสมของแต่ละบ้านในตาราง houses (อิงจาก ledger)"]
+    ClawbackHouse --> DeleteScoreHistory["2. ลบประวัติคะแนนที่เกี่ยวข้องกับ formId นี้ใน score_history"]
+    DeleteScoreHistory --> ResetFormStatus["3. อัปเดตตาราง forms: ตั้งค่า isAwarded = false และเปิดสวิตช์ isActive"]
+    ResetFormStatus --> CommitTx["ยืนยันความสำเร็จและบันทึก Transaction (Commit)"]
+    CommitTx --> InvalidateCache["ล้างแคชระบบคะแนนบ้าน (Leaderboard Cache Invalidation)"]
+    InvalidateCache --> End["ฟอร์มเปิดใช้งานอีกครั้งและลบคะแนนเก่าเรียบร้อย"]
+```
+
+---
+
 ## 2. ความสัมพันธ์ระดับสถาปัตยกรรม (Module Interactions)
 * **`auth.ts` -> `proxy.ts`**: Middleware กรองคำร้องขอและสิทธิ์ตั้งแต่ชั้นนอกสุดของระบบ โดยบทบาท SMO จะได้รับการคัดกรองให้เข้าชมได้เฉพาะหน้า `/admin/scanner` เท่านั้น
 * **`scanner.service.ts` -> `audit.service.ts`**: เมื่อการยืนยันตัวตนสำเร็จ ระบบจะสั่งบันทึกการทำงานของแอดมินลงในบันทึกที่แก้ไขไม่ได้โดยอัตโนมัติ

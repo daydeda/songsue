@@ -10,49 +10,53 @@ import {
   ShieldCheck,
   Megaphone,
   ShoppingBag,
+  Building2,
   User
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { isScannerOnlyRole } from "@/lib/admin-access";
+import { isScannerOnlyAny } from "@/lib/admin-access";
 
 const NAV = [
   { href: "/admin/dashboard", key: "overview",             icon: LayoutDashboard },
   { href: "/admin/events",    key: "manageEvents",         icon: Calendar },
   { href: "/admin/scanner",   key: "qrScanner",            icon: QrCode },
   { href: "/admin/students",  key: "adminStudentsDirectory",icon: Users },
+  { href: "/admin/clubs",     key: "manageClubs",          icon: Building2 },
   { href: "/admin/audit-logs",key: "auditTrails",          icon: ShieldCheck },
   { href: "/admin/announcement",key: "manageAnnouncement", icon: Megaphone },
   { href: "/admin/shop",      key: "manageShop",           icon: ShoppingBag },
 ] as const;
 
-export function AdminNav({ role }: { role?: string | null }) {
+export function AdminNav({ roles }: { roles: string[] }) {
   const pathname = usePathname();
   const { t } = useLanguage();
 
+  // A user may hold several roles; show an item if ANY of their roles is allowed to
+  // see it (union of permissions). Matches the page + API gates and admin-access.
+  const has = (allowed: string[]) => roles.some((r) => allowed.includes(r));
+  const scannerOnly = isScannerOnlyAny(roles);
+  const canSeeStudents = has(["super_admin", "admin", "registration"]); // organizer barred
+  const canSeeAudit = has(["super_admin", "admin"]);                    // organizer + registration barred
+  const canManage = has(["super_admin", "admin"]);                      // announcement + shop
+  const canSeeClubs = has(["super_admin", "admin"]);                    // club identity management
+
   const filteredNav = NAV.filter(item => {
-    // Scanner-only roles (smo, club_president, major_president) see the QR Scanner
-    // plus the Events page (attendance-view only). Uses the shared predicate so
-    // this can't drift from proxy/admin-access.
-    if (isScannerOnlyRole(role)) {
-      return item.href === "/admin/scanner" || item.href === "/admin/events";
+    // Scanner-only users (smo, club/major president, no full-admin role) see just the
+    // QR Scanner plus the Events page (attendance-view only). Shared predicate so this
+    // can't drift from proxy/admin-access. club_president additionally sees Clubs, but
+    // scoped read-only to their own club's roster (see admin/clubs/page.tsx + its APIs).
+    if (scannerOnly) {
+      return (
+        item.href === "/admin/scanner" ||
+        item.href === "/admin/events" ||
+        (item.href === "/admin/clubs" && roles.includes("club_president"))
+      );
     }
-    // Organizer cannot see Students list or Audit Logs
-    if (role === "organizer") {
-      if (item.href === "/admin/students" || item.href === "/admin/audit-logs") {
-        return false;
-      }
-    }
-    // Registration cannot see Audit Logs
-    if (role === "registration") {
-      if (item.href === "/admin/audit-logs") {
-        return false;
-      }
-    }
-    // Announcement editor + shop are super_admin/admin only (matches page + API gates)
-    if ((item.href === "/admin/announcement" || item.href === "/admin/shop") && role !== "super_admin" && role !== "admin") {
-      return false;
-    }
-    return true;
+    if (item.href === "/admin/students") return canSeeStudents;
+    if (item.href === "/admin/clubs") return canSeeClubs;
+    if (item.href === "/admin/audit-logs") return canSeeAudit;
+    if (item.href === "/admin/announcement" || item.href === "/admin/shop") return canManage;
+    return true; // dashboard, events, scanner — every full-admin role
   });
 
   return (

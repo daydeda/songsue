@@ -1,9 +1,43 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { users, attendance } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { users, attendance, clubMembers } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { ClubsService } from "@/modules/clubs/clubs.service";
+
+// Every role the system recognizes, highest-privilege first. Used both to derive
+// the primary `role` from a roles[] set and (via roleEnum) to validate incoming
+// role assignments so a crafted request can't write an unknown/arbitrary role.
+const ROLE_PRIORITY = [
+  "super_admin",
+  "admin",
+  "registration",
+  "organizer",
+  "smo",
+  "anusmo",
+  "club_president",
+  "major_president",
+  "staff",
+  "professor",
+  "officer",
+  "student",
+] as const;
+const roleEnum = z.enum(ROLE_PRIORITY);
+
+// Only the privilege-bearing role fields are validated here; the other editable
+// fields (name, prefix, …) are read from the body as-is below. Both optional and
+// nullable so a partial update that doesn't touch roles still passes.
+const userRoleSchema = z.object({
+  role: roleEnum.optional().nullable(),
+  roles: z.array(roleEnum).optional().nullable(),
+  // Which clubs this user presides over (club_president identity — see
+  // EventScopeService). Only meaningful alongside a club_president role; the
+  // admin students page only sends this when the club_president checkbox is
+  // shown, but any caller may send [] to clear all presidencies for this user.
+  clubIds: z.array(z.string().uuid()).optional(),
+});
 
 // PATCH: Update user information or role
 export async function PATCH(
@@ -17,17 +51,29 @@ export async function PATCH(
     }
 
     const { id: userId } = await params;
-    const body = await req.json();
+
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    // Validate the privilege-bearing role fields against the known role set before
+    // writing them; everything else is read from the body as-is.
+    const parsedRoles = userRoleSchema.safeParse(body);
+    if (!parsedRoles.success) {
+      return NextResponse.json({ error: "Invalid role assignment" }, { status: 400 });
+    }
 
     // Fields that can be updated by admin
     const { name, prefix, major, houseId, studentId, nickname } = body;
-    let { role, roles } = body;
+    let { role, roles } = parsedRoles.data;
+    const { clubIds } = parsedRoles.data;
 
-    const ROLE_PRIORITY = ["super_admin", "admin", "registration", "organizer", "smo", "anusmo", "club_president", "major_president", "staff", "professor", "officer", "student"];
     if (roles && Array.isArray(roles)) {
       // Find the primary role based on priority
-      const primary = ROLE_PRIORITY.find(r => roles.includes(r));
-      role = primary || roles[0] || "student";
+      const roleSet = roles;
+      const primary = ROLE_PRIORITY.find((r) => roleSet.includes(r));
+      role = primary || roleSet[0] || "student";
     } else if (role) {
       // If only single role is provided, make sure roles array contains it
       roles = [role];
@@ -69,6 +115,24 @@ export async function PATCH(
     if (studentId !== undefined && studentId !== targetUser.studentId) changes.push("studentId");
     if (nickname !== undefined && nickname !== targetUser.nickname) changes.push("nickname");
 
+    // Club presidencies: diff against the CURRENT set so the audit note only
+    // fires on a real change. The actual club_members write happens inside the
+    // SAME transaction as the users update (via ClubsService.setUserClubPresidencies(tx)
+    // below) so a failure can't leave a committed audit entry describing a
+    // presidency change that never actually landed.
+    let oldClubIds: string[] = [];
+    if (clubIds !== undefined) {
+      const currentPresidencies = await db
+        .select({ clubId: clubMembers.clubId })
+        .from(clubMembers)
+        .where(and(eq(clubMembers.userId, userId), eq(clubMembers.role, "president")));
+      oldClubIds = currentPresidencies.map((c) => c.clubId).sort();
+      const newClubIds = [...clubIds].sort();
+      if (JSON.stringify(newClubIds) !== JSON.stringify(oldClubIds)) {
+        changes.push(`clubs: [${oldClubIds.join(", ")}] → [${newClubIds.join(", ")}]`);
+      }
+    }
+
     await db.transaction(async (tx) => {
       await tx.update(users)
         .set({
@@ -83,6 +147,10 @@ export async function PATCH(
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
+
+      if (clubIds !== undefined) {
+        await ClubsService.setUserClubPresidencies(userId, clubIds, tx);
+      }
 
       if (changes.length > 0) {
         await AuditService.logActionInternal(tx, {

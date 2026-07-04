@@ -1,16 +1,40 @@
 import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
+import Credentials from "next-auth/providers/credentials"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { headers } from "next/headers"
 import { db } from "@/db"
 import { accounts, sessions, users, verificationTokens } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { AuditService } from "@/modules/audit/audit.service"
+import { isSiteMoved } from "@/lib/site-moved"
+import { isRemoteDatabase } from "@/db/guard"
 
-// Comma-separated list in the SUPER_ADMIN_EMAILS env var; falls back to the
-// original hardcoded owner address so existing deployments keep working until
-// the env var is set everywhere.
-const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS ?? "daydedaa@gmail.com")
+// Fail fast at runtime if AUTH_URL is missing in production: with trustHost:true an
+// unset AUTH_URL lets Auth.js derive the OAuth callback host from the request Host
+// header (host-header injection / callback redirection). Skipped during `next build`
+// (NEXT_PHASE), where runtime env vars aren't provided yet.
+//
+// Also skipped on the retired "we've moved" deploy: that deployment intentionally has
+// no AUTH_URL/DB env, and the edge proxy imports this module on EVERY request — so a
+// throw here at module-load crashed the whole site with a bare 500 (no Content-Type),
+// which browsers download instead of render, and the moved notice never got to run.
+if (
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build" &&
+  !isSiteMoved() &&
+  !process.env.AUTH_URL
+) {
+  throw new Error(
+    "AUTH_URL must be set in production (trustHost:true relies on it; otherwise the OAuth callback host comes from the Host header)."
+  )
+}
+
+// Comma-separated list in the SUPER_ADMIN_EMAILS env var. No hardcoded fallback: a
+// personal address baked into source is a config landmine (and a non-@cmu.ac.th
+// account). Existing super_admins already hold the role in the DB; set this env var
+// (Portainer) to keep auto-promoting official accounts on sign-in.
+const SUPER_ADMIN_EMAILS = (process.env.SUPER_ADMIN_EMAILS ?? "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
@@ -117,6 +141,73 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // interactive selection makes each sign-in plant a fresh, matching cookie.
       authorization: { params: { prompt: "select_account" } },
     }),
+    ...(process.env.NODE_ENV === "development" && process.env.ENABLE_DEV_LOGIN === "true"
+      ? [
+          Credentials({
+            name: "Dev Bypass Login",
+            credentials: {
+              email: { label: "Email", type: "email" },
+              name: { label: "Name", type: "text" },
+              role: { label: "Role", type: "text" },
+            },
+            async authorize(credentials) {
+              const dbUrl = process.env.DATABASE_URL ?? "";
+              if (isRemoteDatabase(dbUrl)) {
+                console.warn(
+                  "⛔ Refusing Dev Bypass Login: DATABASE_URL looks like a remote/production database."
+                );
+                return null;
+              }
+
+              const role = credentials?.role as string || "super_admin";
+              const DEV_ROLE_ALLOWLIST = ["student", "smo", "club_president", "admin", "super_admin"];
+              if (!DEV_ROLE_ALLOWLIST.includes(role)) {
+                console.warn(`⛔ Refusing Dev Bypass Login: Role "${role}" is not in the allowlist.`);
+                return null;
+              }
+
+              const email = (credentials?.email as string || "dev-superadmin@localhost.test").toLowerCase();
+              const name = credentials?.name as string || "Dev User";
+
+              let user = await db.query.users.findFirst({
+                where: (u, { eq }) => eq(u.email, email),
+              });
+
+              if (!user) {
+                const newUserId = crypto.randomUUID();
+                await db.insert(users).values({
+                  id: newUserId,
+                  name,
+                  email,
+                  role,
+                  roles: [role],
+                  houseId: "red",
+                  profileCompleted: true,
+                  qrToken: crypto.randomUUID(),
+                });
+                user = await db.query.users.findFirst({
+                  where: (u, { eq }) => eq(u.email, email),
+                });
+              }
+
+              return {
+                id: user!.id,
+                name: user!.name ?? null,
+                email: user!.email,
+                role: role,
+                roles: [role],
+                profileCompleted: user!.profileCompleted ?? false,
+                houseId: user!.houseId ?? null,
+                imageTransform: (user!.imageTransform as { scale: number; x: number; y: number } | null) ?? null,
+                qrToken: user!.qrToken ?? null,
+                studentId: user!.studentId ?? null,
+                image: user!.image ?? null,
+                isDevBypass: true,
+              };
+            },
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     // FE-01: Restrict login to @cmu.ac.th email domain only
@@ -149,20 +240,52 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // On sign-in: hydrate the token with all user data from DB
       if (user) {
         token.id = user.id;
-        const dbUser = await fetchUserDataFromDb(user.id as string);
-        if (dbUser) await applyDbUserToToken(token, dbUser, user.id as string);
+        const isBypass = (user as { isDevBypass?: boolean }).isDevBypass;
+        if (isBypass) {
+          token.isDevBypass = true;
+          token.role = user.role;
+          token.roles = user.roles;
+          const dbUser = await fetchUserDataFromDb(user.id as string);
+          if (dbUser) {
+            token.name = dbUser.name;
+            token.image = dbUser.image;
+            token.email = dbUser.email;
+            token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.houseId = dbUser.houseId ?? null;
+            token.imageTransform = dbUser.imageTransform ?? null;
+            token.qrToken = dbUser.qrToken;
+            token.studentId = dbUser.studentId ?? null;
+          }
+        } else {
+          const dbUser = await fetchUserDataFromDb(user.id as string);
+          if (dbUser) await applyDbUserToToken(token, dbUser, user.id as string);
+        }
         token.lastDbRefresh = Date.now();
         return token;
       }
 
       const userId = (token.id || token.sub) as string;
+      const isBypass = token.isDevBypass;
 
       // On explicit update trigger (e.g. user just completed their profile): force
       // an immediate DB refresh. Persists because we're in the jwt callback.
       if (trigger === "update" && userId) {
         token.updateTime = Date.now();
         const dbUser = await fetchUserDataFromDb(userId);
-        if (dbUser) await applyDbUserToToken(token, dbUser, userId);
+        if (dbUser) {
+          if (isBypass) {
+            token.name = dbUser.name;
+            token.image = dbUser.image;
+            token.email = dbUser.email;
+            token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.houseId = dbUser.houseId ?? null;
+            token.imageTransform = dbUser.imageTransform ?? null;
+            token.qrToken = dbUser.qrToken;
+            token.studentId = dbUser.studentId ?? null;
+          } else {
+            await applyDbUserToToken(token, dbUser, userId);
+          }
+        }
         token.lastDbRefresh = Date.now();
         return token;
       }
@@ -184,7 +307,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (userId && (profileIncomplete || periodicDue)) {
         const dbUser = await fetchUserDataFromDb(userId);
-        if (dbUser) await applyDbUserToToken(token, dbUser, userId);
+        if (dbUser) {
+          if (isBypass) {
+            token.name = dbUser.name;
+            token.image = dbUser.image;
+            token.email = dbUser.email;
+            token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.houseId = dbUser.houseId ?? null;
+            token.imageTransform = dbUser.imageTransform ?? null;
+            token.qrToken = dbUser.qrToken;
+            token.studentId = dbUser.studentId ?? null;
+          } else {
+            await applyDbUserToToken(token, dbUser, userId);
+          }
+        }
         token.lastDbRefresh = Date.now();
       }
 
@@ -240,10 +376,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         let ipAddress = "unknown";
         try {
           const h = await headers();
-          ipAddress =
-            h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-            h.get("x-real-ip") ||
-            "unknown";
+          // Prefer the un-spoofable X-Real-IP (nginx overwrites it); fall back to
+          // the LAST X-Forwarded-For hop (the real IP nginx appends), never the
+          // client-supplied leftmost entry. Mirrors getClientIp in audit.service.ts.
+          const realIp = h.get("x-real-ip")?.trim();
+          const xffHops = h.get("x-forwarded-for")?.split(",").map((s) => s.trim()).filter(Boolean);
+          ipAddress = realIp || xffHops?.[xffHops.length - 1] || "unknown";
         } catch {
           // headers() can throw outside a request scope; keep "unknown"
         }

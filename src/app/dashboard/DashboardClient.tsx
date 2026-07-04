@@ -29,6 +29,7 @@ import {
   User,
   RefreshCw,
   Trophy,
+  Sparkles,
   ArrowRight,
   Settings,
   X,
@@ -38,7 +39,11 @@ import {
   ChevronRight,
   ClipboardCheck,
   LayoutGrid,
-  List
+  List,
+  Users,
+  DoorOpen,
+  Share2,
+  Check
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -68,12 +73,20 @@ type Event = {
   endTime: string;
   registrationOpenTime?: string | null;
   registrationCloseTime?: string | null;
-  quota?: number;
+  quota?: number | null;
+  // Live headcount: distinct students currently holding a seat for this event.
+  // Shown as "registeredCount / quota" so students see how full an event is.
+  registeredCount?: number;
+  // Whether the event accepts walk-ins (unregistered students scanned in at the
+  // door), and the optional extra walk-in seat sub-cap on top of `quota`.
+  walkInsEnabled?: boolean;
+  quotaWalkIn?: number | null;
   isRegistered?: boolean;
   attendanceStatus?: string | null;
   imageUrl?: string;
   imageUrls?: string[] | null;
   pointsAwarded?: number;
+  individualPointsAwarded?: number;
   // Pre-test (K_pre) gate. Present when the event has a pre-test form; `status`
   // is "open" (student must complete it), "submitted" (already done), or
   // "upcoming"/"closed"/"awarded" (can't be submitted, so not forced).
@@ -409,23 +422,58 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // Fullscreen poster viewer — carries the whole poster list + which one was tapped
   // so the user can keep swiping at full size.
   const [previewImage, setPreviewImage] = useState<{ posters: string[]; index: number } | null>(null);
-  const [previewEvent, setPreviewEvent] = useState<Event | null>(null);
+  // The open event-preview modal, tracked by id rather than the event object so the
+  // URL stays the single source of truth (and a /dashboard?event=<id> deep-link can
+  // seed it before the events list has loaded). previewEvent is derived from this id
+  // below. Seeded once from the address bar via a lazy initializer — SSR-guarded, and
+  // safe against hydration mismatch because the events list is empty on first render,
+  // so the modal renders closed on both server and client regardless of the id.
+  const [previewEventId, setPreviewEventId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("event")
+  );
 
-  // Deep-link from the calendar: /dashboard?event=<id> opens that event's preview.
-  // Read once events have loaded so the matching row exists, then strip the param
-  // (replaceState, not router.replace — avoids a refetch) so back/refresh is clean.
-  const deepLinkedEvent = useRef(false);
-  useEffect(() => {
-    if (deepLinkedEvent.current || events.length === 0) return;
-    const id = new URLSearchParams(window.location.search).get("event");
-    if (!id) return;
-    const match = events.find((e) => e.id === id);
-    if (match) {
-      setPreviewEvent(match);
-      deepLinkedEvent.current = true;
-      window.history.replaceState(null, "", window.location.pathname);
+  // Whether the in-modal "Copy link" button just copied, so we can flash a
+  // "Copied!" confirmation for a moment.
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // The event preview modal is shareable: its open/closed state is mirrored in the
+  // URL as /dashboard?event=<id>, so a student (or an organizer) can copy the
+  // address bar — or hit the in-modal "Copy link" — and send a direct link to one
+  // event. openPreview pushes a history entry so the phone/browser Back button
+  // closes the modal instead of leaving the dashboard; closePreview unwinds it.
+  const openPreview = (e: Event) => {
+    setLinkCopied(false);
+    setPreviewEventId(e.id);
+    const current = new URLSearchParams(window.location.search).get("event");
+    if (current !== e.id) {
+      window.history.pushState({ event: e.id }, "", `${window.location.pathname}?event=${encodeURIComponent(e.id)}`);
     }
-  }, [events]);
+  };
+  const closePreview = () => {
+    setLinkCopied(false);
+    if (window.history.state?.event) {
+      // We pushed this entry when opening — pop it so Back history stays clean.
+      // The popstate handler below clears previewEventId once the param is gone.
+      window.history.back();
+    } else {
+      // Landed straight on a shared ?event= link (no pushed entry of our own) —
+      // strip the param in place instead of navigating off the site.
+      window.history.replaceState(null, "", window.location.pathname);
+      setPreviewEventId(null);
+    }
+  };
+
+  // Drive the modal from Back/Forward: when the URL's ?event= changes or clears via
+  // history navigation, mirror it into previewEventId. setState here is fine — it
+  // runs inside an event-listener callback, not synchronously in the effect body.
+  useEffect(() => {
+    const onPop = () => {
+      setLinkCopied(false);
+      setPreviewEventId(new URLSearchParams(window.location.search).get("event"));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const HOUSE_MAP: Record<string, { name: string, color: string }> = {
     red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red
@@ -475,66 +523,84 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       return;
     }
     setRegisteringId(eventId);
-    const method = registered ? "DELETE" : "POST";
-    const res = await fetch(`/api/events/${eventId}/register`, { method });
-    if (res.ok) {
-      // POST returns the event's fresh pre-test state (DELETE does not). Using the
-      // server value avoids the stale cached status on an un-register → re-register,
-      // where the events list would still read "submitted" until the next poll.
-      const data = await res.json().catch(() => ({}));
-      const freshPreTest = data?.preTest as { formId: string; title: string; status: string } | null | undefined;
-      const targetEvent = events.find(e => e.id === eventId);
-      setEvents((evts) =>
-        evts.map((e) => (e.id === eventId
-          ? { ...e, isRegistered: !registered, ...(freshPreTest !== undefined ? { preTest: freshPreTest } : {}) }
-          : e))
-      );
-      const eventTitle = targetEvent ? targetEvent.title : "";
-      if (!registered) {
-        // If this event has an open pre-test the student hasn't completed, push
-        // them straight into it instead of the generic success modal.
-        const pre = freshPreTest ?? targetEvent?.preTest;
-        if (pre && pre.status === "open") {
-          setPreTestModal({ show: true, eventId, formId: pre.formId, eventTitle });
-          setRegisteringId(null);
-          return;
+    try {
+      const method = registered ? "DELETE" : "POST";
+      const res = await fetch(`/api/events/${eventId}/register`, { method });
+      if (res.ok) {
+        // POST returns the event's fresh pre-test state (DELETE does not). Using the
+        // server value avoids the stale cached status on an un-register → re-register,
+        // where the events list would still read "submitted" until the next poll.
+        const data = await res.json().catch(() => ({}));
+        const freshPreTest = data?.preTest as { formId: string; title: string; status: string } | null | undefined;
+        const targetEvent = events.find(e => e.id === eventId);
+        setEvents((evts) =>
+          evts.map((e) => (e.id === eventId
+            ? { ...e, isRegistered: !registered, ...(freshPreTest !== undefined ? { preTest: freshPreTest } : {}) }
+            : e))
+        );
+        const eventTitle = targetEvent ? targetEvent.title : "";
+        if (!registered) {
+          // If this event has an open pre-test the student hasn't completed, push
+          // them straight into it instead of the generic success modal.
+          const pre = freshPreTest ?? targetEvent?.preTest;
+          if (pre && pre.status === "open") {
+            // finally still clears registeringId on this early return.
+            setPreTestModal({ show: true, eventId, formId: pre.formId, eventTitle });
+            return;
+          }
+          setSuccessModal({
+            show: true,
+            title: lang === "th" ? "ลงทะเบียนสำเร็จ!" : lang === "cn" ? "注册成功！" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း အောင်မြင်သည်!" : "Registration Complete!",
+            message: lang === "th"
+              ? `คุณได้ลงทะเบียนเข้าร่วมกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
+              : lang === "cn"
+              ? `您已成功注册活动 "${eventTitle}"`
+              : lang === "mm"
+              ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် အောင်မြင်စွာ မှတ်ပုံတင်ပြီးပါပြီ`
+              : `You have successfully registered for the event "${eventTitle}".`,
+            type: "success"
+          });
+        } else {
+          setSuccessModal({
+            show: true,
+            title: lang === "th" ? "ยกเลิกการลงทะเบียนสำเร็จ" : lang === "cn" ? "取消注册成功" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း ပယ်ဖျက်ပြီးပါပြီ" : "Registration Cancelled",
+            message: lang === "th"
+              ? `คุณได้ยกเลิกการลงทะเบียนสำหรับกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
+              : lang === "cn"
+              ? `您已成功取消活动 "${eventTitle}" 的注册`
+              : lang === "mm"
+              ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် မှတ်ပုံတင်ခြင်းကို အောင်မြင်စွာ ပယ်ဖျက်ပြီးပါပြီ`
+              : `You have successfully cancelled your registration for the event "${eventTitle}".`,
+            type: "info"
+          });
         }
-        setSuccessModal({
-          show: true,
-          title: lang === "th" ? "ลงทะเบียนสำเร็จ!" : lang === "cn" ? "注册成功！" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း အောင်မြင်သည်!" : "Registration Complete!",
-          message: lang === "th"
-            ? `คุณได้ลงทะเบียนเข้าร่วมกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
-            : lang === "cn"
-            ? `您已成功注册活动 "${eventTitle}"`
-            : lang === "mm"
-            ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် အောင်မြင်စွာ မှတ်ပုံတင်ပြီးပါပြီ`
-            : `You have successfully registered for the event "${eventTitle}".`,
-          type: "success"
-        });
       } else {
-        setSuccessModal({
+        const errorData = await res.json().catch(() => ({}));
+        const errorMsg = errorData.error || t.registrationFailed;
+        setErrorModal({
           show: true,
-          title: lang === "th" ? "ยกเลิกการลงทะเบียนสำเร็จ" : lang === "cn" ? "取消注册成功" : lang === "mm" ? "မှတ်ပုံတင်ခြင်း ပယ်ဖျက်ပြီးပါပြီ" : "Registration Cancelled",
-          message: lang === "th"
-            ? `คุณได้ยกเลิกการลงทะเบียนสำหรับกิจกรรม "${eventTitle}" เรียบร้อยแล้ว`
-            : lang === "cn"
-            ? `您已成功取消活动 "${eventTitle}" 的注册`
-            : lang === "mm"
-            ? `သင်သည် "${eventTitle}" လှုပ်ရှားမှုအတွက် မှတ်ပုံတင်ခြင်းကို အောင်မြင်စွာ ပယ်ဖျက်ပြီးပါပြီ`
-            : `You have successfully cancelled your registration for the event "${eventTitle}".`,
-          type: "info"
+          title: t.registrationFailed,
+          message: errorMsg
         });
       }
-    } else {
-      const errorData = await res.json();
-      const errorMsg = errorData.error || t.registrationFailed;
+    } catch {
+      // Network/parse failure — surface an error instead of leaving the button
+      // spinning forever on an unhandled rejection.
       setErrorModal({
         show: true,
         title: t.registrationFailed,
-        message: errorMsg
+        message: lang === "th"
+          ? "เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่อีกครั้ง"
+          : lang === "cn"
+          ? "网络连接出错，请重试。"
+          : lang === "mm"
+          ? "ချိတ်ဆက်မှု အမှားအယွင်း ဖြစ်ပွားသည်။ ထပ်စမ်းကြည့်ပါ။"
+          : "A network error occurred. Please try again."
       });
+    } finally {
+      // ALWAYS clear the spinner, whether we succeeded, failed, or threw.
+      setRegisteringId(null);
     }
-    setRegisteringId(null);
   };
 
   // Entry point for the register/cancel button. A cancel (registered === true)
@@ -571,8 +637,13 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const houseId = user?.houseId ?? null;
   const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
 
+  // The event whose preview modal is open, derived from the URL-backed id. Resolves
+  // once the events list has loaded; if the id isn't found (bad/stale link) the modal
+  // simply stays closed.
+  const previewEvent = previewEventId ? (events.find((e) => e.id === previewEventId) ?? null) : null;
+
   const now = new Date();
-  
+
   // Events that are either happening now or in the future
   const upcoming = events.filter((e) => new Date(e.endTime) >= now);
   const past = events.filter((e) => new Date(e.endTime) < now);
@@ -626,6 +697,78 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     { key: "attended", label: t.statAttended, value: attendedEvents.length, icon: CheckCircle2 },
     { key: "points", label: t.statPoints, value: pointsEarned, icon: Trophy },
   ];
+
+  // Registration window row — shown when either open or close time is set.
+  // Colour shifts to muted once the window has closed so it doesn't distract.
+  const regWindowRow = (ev: Event) => {
+    const openAt = ev.registrationOpenTime ? new Date(ev.registrationOpenTime) : null;
+    const closeAt = ev.registrationCloseTime ? new Date(ev.registrationCloseTime) : null;
+    if (!openAt && !closeAt) return null;
+
+    const dateOpts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' };
+    const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' };
+    const fmtDT = (d: Date) => `${d.toLocaleDateString('en-GB', dateOpts)} ${d.toLocaleTimeString('en-GB', timeOpts)}`;
+
+    const closed = !!closeAt && new Date() > closeAt;
+    const iconBg = closed ? "rgba(0,0,0,0.04)" : "rgba(245,158,11,0.08)";
+    const iconColor = closed ? "var(--text-muted)" : "#f59e0b";
+
+    let text: string;
+    if (openAt && closeAt) {
+      text = `${fmtDT(openAt)} – ${fmtDT(closeAt)}`;
+    } else if (openAt) {
+      text = `${t.regOpens}: ${fmtDT(openAt)}`;
+    } else {
+      text = `${t.regCloses}: ${fmtDT(closeAt!)}`;
+    }
+
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 10, background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", color: iconColor, flexShrink: 0 }}>
+          <CalendarClock size={16} />
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4 }}>
+          <span style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.regWindowLabel}: </span>
+          <span style={{ color: closed ? "var(--text-muted)" : "var(--text-secondary)" }}>{text}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // Quota + walk-in availability rows, shared by the event card and the preview
+  // modal. Quota is hidden when unset (null = unlimited); the walk-in line always
+  // shows so a student can tell at a glance whether the door accepts walk-ins.
+  const quotaWalkInRows = (ev: Event) => {
+    const allowed = !!ev.walkInsEnabled;
+    const registered = ev.registeredCount ?? 0;
+    // "Full" only means something when a quota is set. When full, colour the count
+    // red so a student can see at a glance the seats are gone.
+    const isFull = ev.quota != null && registered >= ev.quota;
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
+            <Users size={16} />
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            <span style={{ fontWeight: 800, color: isFull ? "#ef4444" : "var(--text-primary)" }}>
+              {ev.quota != null ? `${registered} / ${ev.quota}` : registered}
+            </span>
+            <span style={{ color: "var(--text-muted)", fontWeight: 600 }}> {t.registered}</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: allowed ? "rgba(16,185,129,0.08)" : "rgba(0,0,0,0.04)", display: "flex", alignItems: "center", justifyContent: "center", color: allowed ? "#10b981" : "var(--text-muted)", flexShrink: 0 }}>
+            <DoorOpen size={16} />
+          </div>
+          <div style={{ fontSize: 13, color: allowed ? "#10b981" : "var(--text-muted)", fontWeight: 700 }}>
+            {allowed ? t.walkInsAllowedLabel : t.walkInsDisabledLabel}
+            {allowed && ev.quotaWalkIn != null ? ` (${ev.quotaWalkIn})` : ""}
+          </div>
+        </div>
+      </>
+    );
+  };
 
   return (
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
@@ -811,7 +954,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                               <button
                                 key={e.id}
                                 type="button"
-                                onClick={() => setPreviewEvent(e)}
+                                onClick={() => openPreview(e)}
                                 className="timeline-row"
                                 style={{
                                   display: "flex", alignItems: "center", gap: 16, width: "100%", textAlign: "left",
@@ -931,33 +1074,52 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                            </span>
                          </div>
 
-                         {/* Points Badge */}
-                         {e.pointsAwarded !== undefined && (
-                           <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
-                             <div style={{ 
-                               background: "rgba(0, 0, 0, 0.7)", 
-                               backdropFilter: "blur(8px)", 
-                               color: "#fff", 
-                               padding: "6px 12px", 
-                               borderRadius: 14, 
-                               fontSize: 11, 
-                               fontWeight: 900, 
-                               display: "inline-flex", 
-                               alignItems: "center", 
-                               gap: 6, 
+                         {/* Points Badges — house winner bonus + (when set) the individual points the student earns just by checking in */}
+                         <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                           {e.pointsAwarded !== undefined && (
+                             <div style={{
+                               background: "rgba(0, 0, 0, 0.7)",
+                               backdropFilter: "blur(8px)",
+                               color: "#fff",
+                               padding: "6px 12px",
+                               borderRadius: 14,
+                               fontSize: 11,
+                               fontWeight: 900,
+                               display: "inline-flex",
+                               alignItems: "center",
+                               gap: 6,
                                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                                border: "1px solid rgba(255, 255, 255, 0.1)"
                              }}>
                                <Trophy size={12} style={{ color: "#fbbf24" }} />
                                <span>{e.pointsAwarded} PTS</span>
                              </div>
-                           </div>
-                         )}
+                           )}
+                           {(e.individualPointsAwarded ?? 0) > 0 && (
+                             <div style={{
+                               background: "rgba(0, 0, 0, 0.7)",
+                               backdropFilter: "blur(8px)",
+                               color: "#fff",
+                               padding: "6px 12px",
+                               borderRadius: 14,
+                               fontSize: 11,
+                               fontWeight: 900,
+                               display: "inline-flex",
+                               alignItems: "center",
+                               gap: 6,
+                               boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                               border: "1px solid rgba(255, 255, 255, 0.1)"
+                             }} title={t.dashIndividualPtsHint}>
+                               <Sparkles size={12} style={{ color: "var(--accent-primary)" }} />
+                               <span>+{e.individualPointsAwarded} {t.dashIndividualPtsYou}</span>
+                             </div>
+                           )}
+                         </div>
                       </div>
 
                       {/* Content Area */}
-                      <div 
-                        onClick={() => setPreviewEvent(e)}
+                      <div
+                        onClick={() => openPreview(e)}
                         style={{ padding: 24, flex: 1, display: "flex", flexDirection: "column", cursor: "pointer" }}
                       >
                         <h3 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", letterSpacing: "-0.03em", marginBottom: 16, overflowWrap: "break-word", wordBreak: "break-word" }}>{e.title}</h3>
@@ -984,18 +1146,20 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             </div>
                             {e.location || "CAMT Building"}
                           </div>
+                          {quotaWalkInRows(e)}
+                          {regWindowRow(e)}
                         </div>
 
-                        <div 
-                          style={{ 
-                            fontSize: 14, 
-                            color: "var(--text-secondary)", 
-                            lineHeight: 1.6, 
-                            marginBottom: 24, 
-                            display: "-webkit-box", 
-                            WebkitLineClamp: 3, 
-                            WebkitBoxOrient: "vertical", 
-                            overflow: "hidden" 
+                        <div
+                          style={{
+                            fontSize: 14,
+                            color: "var(--text-secondary)",
+                            lineHeight: 1.6,
+                            marginBottom: 24,
+                            display: "-webkit-box",
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden"
                           }}
                           dangerouslySetInnerHTML={{ __html: parseRichText(e.description || "") }}
                         />
@@ -1004,7 +1168,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              setPreviewEvent(e);
+                              openPreview(e);
                             }}
                             style={{
                               border: "none",
@@ -1329,7 +1493,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
           inset: 0,
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(12px)",
-          zIndex: 1350,
+          zIndex: 2050,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1381,7 +1545,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
           inset: 0,
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(12px)",
-          zIndex: 1350,
+          zIndex: 2050,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1446,7 +1610,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
           inset: 0,
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(12px)",
-          zIndex: 1350,
+          zIndex: 2050,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1528,7 +1692,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
           inset: 0,
           background: "rgba(0,0,0,0.6)",
           backdropFilter: "blur(12px)",
-          zIndex: 1350,
+          zIndex: 2050,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1709,6 +1873,32 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
         const previewPosters = getPosters(liveEvent);
 
+        // Copy a direct, shareable link to this event to the clipboard. Falls back
+        // to a hidden-textarea copy for in-app webviews where navigator.clipboard
+        // is unavailable (insecure context / restricted permissions).
+        const copyShareLink = async () => {
+          const url = `${window.location.origin}${window.location.pathname}?event=${encodeURIComponent(liveEvent.id)}`;
+          try {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(url);
+            } else {
+              throw new Error("clipboard unavailable");
+            }
+          } catch {
+            const ta = document.createElement("textarea");
+            ta.value = url;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try { document.execCommand("copy"); } catch {}
+            document.body.removeChild(ta);
+          }
+          setLinkCopied(true);
+          setTimeout(() => setLinkCopied(false), 2000);
+        };
+
         return (
           <div 
             style={{
@@ -1722,7 +1912,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               justifyContent: "center",
               padding: "16px",
             }}
-            onClick={() => setPreviewEvent(null)}
+            onClick={closePreview}
           >
             <div 
               style={{
@@ -1743,7 +1933,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               {/* Close Button */}
               <button 
                 type="button"
-                onClick={() => setPreviewEvent(null)}
+                onClick={closePreview}
                 style={{
                   position: "absolute",
                   top: "16px",
@@ -1840,28 +2030,47 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                       </span>
                     </div>
 
-                    {/* Points Badge */}
-                    {liveEvent.pointsAwarded !== undefined && (
-                      <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2 }}>
-                        <div style={{ 
-                          background: "rgba(0, 0, 0, 0.7)", 
-                          backdropFilter: "blur(8px)", 
-                          color: "#fff", 
-                          padding: "6px 12px", 
-                          borderRadius: 12, 
-                          fontSize: 11, 
-                          fontWeight: 900, 
-                          display: "inline-flex", 
-                          alignItems: "center", 
-                          gap: 6, 
+                    {/* Points Badges — house winner bonus + (when set) the individual points the student earns just by checking in */}
+                    <div style={{ position: "absolute", bottom: 16, left: 16, zIndex: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {liveEvent.pointsAwarded !== undefined && (
+                        <div style={{
+                          background: "rgba(0, 0, 0, 0.7)",
+                          backdropFilter: "blur(8px)",
+                          color: "#fff",
+                          padding: "6px 12px",
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 900,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
                           boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                           border: "1px solid rgba(255, 255, 255, 0.1)"
                         }}>
                           <Trophy size={12} style={{ color: "#fbbf24" }} />
                           <span>{liveEvent.pointsAwarded} PTS</span>
                         </div>
-                      </div>
-                    )}
+                      )}
+                      {(liveEvent.individualPointsAwarded ?? 0) > 0 && (
+                        <div style={{
+                          background: "rgba(0, 0, 0, 0.7)",
+                          backdropFilter: "blur(8px)",
+                          color: "#fff",
+                          padding: "6px 12px",
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 900,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                          border: "1px solid rgba(255, 255, 255, 0.1)"
+                        }} title={t.dashIndividualPtsHint}>
+                          <Sparkles size={12} style={{ color: "var(--accent-primary)" }} />
+                          <span>+{liveEvent.individualPointsAwarded} {t.dashIndividualPtsYou}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : null}
 
@@ -1907,6 +2116,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                         {liveEvent.location || "CAMT Building"}
                       </div>
                     </div>
+
+                    {quotaWalkInRows(liveEvent)}
+                    {regWindowRow(liveEvent)}
                   </div>
 
                   {/* Description Divider */}
@@ -1927,18 +2139,47 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               </div>
 
               {/* Action Button Footer */}
-              <div style={{ 
-                padding: "20px 24px", 
-                borderTop: "1px solid var(--border-subtle)", 
+              <div style={{
+                padding: "20px 24px",
+                borderTop: "1px solid var(--border-subtle)",
                 background: "var(--bg-surface)",
                 display: "flex",
                 justifyContent: "flex-end",
                 gap: "12px",
-                alignItems: "center"
+                alignItems: "center",
+                flexWrap: "wrap"
               }}>
+                {/* Copy a direct link to this event so it can be shared. Pushed to
+                    the left (marginRight:auto) away from Close/Register. */}
                 <button
                   type="button"
-                  onClick={() => setPreviewEvent(null)}
+                  onClick={copyShareLink}
+                  style={{
+                    marginRight: "auto",
+                    padding: "0 18px",
+                    height: 48,
+                    borderRadius: 16,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: linkCopied ? "#10b981" : "var(--text-primary)",
+                    background: "var(--bg-elevated)",
+                    border: `1px solid ${linkCopied ? "#10b981" : "var(--border-subtle)"}`,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    transition: "all 0.2s"
+                  }}
+                >
+                  {linkCopied ? <Check size={16} /> : <Share2 size={16} />}
+                  {linkCopied
+                    ? (lang === "th" ? "คัดลอกแล้ว!" : lang === "cn" ? "已复制！" : lang === "mm" ? "ကူးယူပြီး!" : "Copied!")
+                    : (lang === "th" ? "คัดลอกลิงก์" : lang === "cn" ? "复制链接" : lang === "mm" ? "လင့်ခ်ကူးယူ" : "Copy link")}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={closePreview}
                   style={{
                     padding: "0 20px",
                     height: 48,

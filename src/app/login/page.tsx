@@ -32,5 +32,5 @@ export default async function LoginPage({
   // friendly, actionable banner instead of silently showing the landing page.
   const { error } = await searchParams;
 
-  return <LandingUI userCount={31} authError={error ?? null} />;
+  return <LandingUI userCount={31} authError={error ?? null} enableDevLogin={process.env.ENABLE_DEV_LOGIN === "true"} />;
 }

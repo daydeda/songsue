@@ -4,6 +4,7 @@ import { attendance, events, users, forms, formSubmissions, eventSessions } from
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getFormAvailability } from "@/lib/form-access";
+import { isFirstYearStudent } from "@/lib/event-access";
 
 // POST /api/events/[id]/register — One-click registration (FE-05)
 export async function POST(
@@ -104,6 +105,17 @@ export async function POST(
     }
     if (isIntl && !effectiveIntl) {
       return NextResponse.json({ error: "This event is for Thai students only" }, { status: 403 });
+    }
+
+    // First-year-only restriction (mirrors the event-list filter). Admin-type
+    // roles bypass; everyone else must belong to the current first-year intake
+    // (student-id prefix, derived from the date in event-access.ts).
+    if (
+      event.firstYearOnly &&
+      !adminRoles.includes(userRole) &&
+      !isFirstYearStudent(studentId)
+    ) {
+      return NextResponse.json({ error: "This event is for first-year students only" }, { status: 403 });
     }
 
     // (Removed strict end time check to allow late registration if event is still visible)
@@ -251,50 +263,71 @@ export async function DELETE(
     const { id: eventId } = await params;
     const userId = session.user.id!;
 
-    // Validate registration and check status/time
-    const record = await db.query.attendance.findFirst({
+    // Validate registration and check status/time. Read ALL of the student's rows
+    // for this event (a multi-day 'once' event has one row per session): a single
+    // arbitrary findFirst here could return a still-'registered' day while another
+    // day is already 'attended', pass the guard below, and then the broad DELETE
+    // would wipe that real check-in. So detect attendance across ANY row.
+    const records = await db.query.attendance.findMany({
       where: and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)),
-      with: { event: true }
+      columns: { status: true },
+      with: { event: true },
     });
 
-    if (!record) {
+    if (records.length === 0) {
       return NextResponse.json({ error: "Registration not found" }, { status: 404 });
     }
 
-    // Rule 1: Cannot un-register if already attended
-    if (record.status === 'attended') {
+    const event = records[0].event;
+
+    // Rule 1: Cannot un-register if already checked in on ANY session.
+    if (records.some((r) => r.status === 'attended')) {
       return NextResponse.json({ error: "Cannot cancel registration after check-in" }, { status: 403 });
     }
 
     // Rule 2: Cannot un-register if event is past
-    if (record.event && new Date() > new Date(record.event.endTime)) {
+    if (event && new Date() > new Date(event.endTime)) {
       return NextResponse.json({ error: "Cannot cancel registration for past events" }, { status: 403 });
     }
 
     // Rule 3: Cannot un-register once the registration window has closed. The
     // close time locks the headcount in both directions — no new sign-ups (POST)
     // and no cancellations — so organizers can rely on a stable list once it passes.
-    if (record.event?.registrationCloseTime && new Date() > new Date(record.event.registrationCloseTime)) {
+    if (event?.registrationCloseTime && new Date() > new Date(event.registrationCloseTime)) {
       return NextResponse.json({ error: "Cannot cancel registration after the registration window has closed" }, { status: 403 });
     }
 
+    // Delete only NON-attended rows. The guard above already guarantees no row is
+    // 'attended', but scope the DELETE defensively (IS DISTINCT FROM also covers a
+    // NULL status) so a real check-in can never be removed by an un-register.
     await db
       .delete(attendance)
-      .where(and(eq(attendance.eventId, eventId), eq(attendance.studentId, userId)));
+      .where(and(
+        eq(attendance.eventId, eventId),
+        eq(attendance.studentId, userId),
+        sql`${attendance.status} IS DISTINCT FROM 'attended'`,
+      ));
 
     // Wipe the student's pre-test (K_pre) submission(s) for this event so that
     // re-registering forces them to retake it. GET /api/events derives the
     // forced-pre-test "open" state purely from whether a submission exists, so
-    // clearing the row here is all that's needed to re-trigger the gate. Only
-    // pre-tests that haven't been finalized (isAwarded) are cleared — once points
-    // are distributed the submission is a permanent record (non-destructive rule).
-    // K_post/A/S are never touched: they require attendance, which un-registering
-    // precludes.
+    // clearing the row here is all that's needed to re-trigger the gate.
+    //
+    // SECURITY: never clear a pre-test that AWARDED individual points. Individual
+    // points are permanent (award-individual-points.ts never claws them back) and
+    // the (form_id, student_id) unique row is the ONLY re-award guard — deleting it
+    // would let a student farm unlimited points via register → submit K_pre (+N) →
+    // unregister → re-register → re-submit. So a points-granting pre-test keeps its
+    // submission (no forced retake on re-register); only not-yet-finalized
+    // (isAwarded=false) AND zero-individual-point pre-tests are cleared. K_post/A/S
+    // are never touched: they require attendance, which un-registering precludes.
     const preForms = await db.query.forms.findMany({
       where: and(eq(forms.eventId, eventId), eq(forms.formType, "K_pre")),
-      columns: { id: true, isAwarded: true },
+      columns: { id: true, isAwarded: true, individualPointsAwarded: true },
     });
-    const clearableFormIds = preForms.filter((f) => !f.isAwarded).map((f) => f.id);
+    const clearableFormIds = preForms
+      .filter((f) => !f.isAwarded && (f.individualPointsAwarded ?? 0) === 0)
+      .map((f) => f.id);
     if (clearableFormIds.length > 0) {
       await db
         .delete(formSubmissions)

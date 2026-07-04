@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { Calendar, History, Trophy, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock, Save, AlertTriangle, Paperclip } from "lucide-react";
+import { compressImageFile } from "@/lib/compress-image";
+import { Calendar, History, Trophy, Sparkles, ArrowRight, ArrowLeft, X, Star, CheckCircle2, ClipboardList, Lock, Save, AlertTriangle, Paperclip } from "lucide-react";
 import { StudentNav } from "@/components/layout/StudentNav";
 import Link from "next/link";
 import {
@@ -34,6 +35,7 @@ interface EventFormStatus {
   sortOrder: number;
   formStatus: "available" | "submitted" | "closed" | "upcoming";
   formPoints: number;
+  formIndividualPoints: number;
   opensAt: string | null;
   closesAt: string | null;
 }
@@ -78,6 +80,9 @@ export default function HistoryPage() {
   const dateLocale = lang === "th" ? "th-TH" : lang === "cn" ? "zh-CN" : lang === "mm" ? "my-MM" : "en-GB";
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // Set when the history fetch fails, so we show an error instead of the
+  // misleading "No history yet" empty state.
+  const [historyError, setHistoryError] = useState(false);
 
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [activeForm, setActiveForm] = useState<ActiveForm | null>(null);
@@ -130,8 +135,12 @@ export default function HistoryPage() {
 
   const fetchHistory = () => {
     setLoading(true);
+    setHistoryError(false);
     fetch("/api/profile/history")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("failed");
+        return r.json();
+      })
       .then((d) => {
         if (Array.isArray(d)) {
           const sorted = [...d].sort((a, b) => {
@@ -142,6 +151,7 @@ export default function HistoryPage() {
           setHistory(sorted);
         }
       })
+      .catch(() => setHistoryError(true))
       .finally(() => setLoading(false));
   };
 
@@ -171,6 +181,26 @@ export default function HistoryPage() {
       if (!formObj) {
         setGeneralError(t.evaluationNotFound);
         setFormLoading(false);
+        return;
+      }
+
+      // Already-submitted gate (server truth). The GET returns hasSubmitted for
+      // this (form, student) pair; the modal can't re-fill a submitted form
+      // (the POST hard-rejects with a 23505), so don't present a blank one.
+      // This guards both a stale-cached "available" button and a deep-link that
+      // arrives after the form was completed.
+      if (formObj.hasSubmitted) {
+        setShowStudentForm(false);
+        setWarningMessage(
+          lang === "th"
+            ? "คุณได้ส่งแบบฟอร์มนี้ไปแล้ว ไม่สามารถส่งซ้ำได้"
+            : lang === "cn"
+            ? "您已提交此表单，无法重复提交。"
+            : lang === "mm"
+            ? "ဤဖောင်ကို သင်တင်သွင်းပြီးဖြစ်သည်။ ထပ်မံတင်သွင်း၍ မရပါ။"
+            : "You've already submitted this form — it can't be submitted again."
+        );
+        setShowWarningModal(true);
         return;
       }
 
@@ -242,6 +272,13 @@ export default function HistoryPage() {
     if (!formId || !eventId) return;
     const form = history.find((h) => h.eventId === eventId)?.forms.find((f) => f.id === formId);
     if (!form) return;
+    // Only auto-open a form that's actually fillable. A deep-link can outlive the
+    // submission (e.g. a stale FormsDueBanner/pre-test link), and we must not
+    // present an already-submitted/closed form as a fresh, blank one.
+    if (form.formStatus !== "available") {
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
     autoOpenedRef.current = true;
     // Defer out of the effect body (mirrors fetchHistory) so opening the form —
     // which sets state — doesn't run synchronously inside the effect.
@@ -259,14 +296,19 @@ export default function HistoryPage() {
     setFileErrors((e) => { const u = { ...e }; delete u[qId]; return u; });
     setFileUploading((s) => ({ ...s, [qId]: true }));
     try {
+      // Downscale images in the browser so a raw multi-MB phone photo doesn't hit
+      // the reverse proxy's body cap (a 413 before the app). PDFs pass through
+      // untouched — they can't be canvas-compressed, so a large PDF may still 413.
+      const upload = await compressImageFile(file, { maxDim: 1600 });
       const body = new FormData();
-      body.append("file", file);
+      body.append("file", upload);
       const res = await fetch("/api/forms/upload", { method: "POST", body });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
+        const tooBig = res.status === 413;
         setFileErrors((e) => ({
           ...e,
-          [qId]: data.error || (lang === "th" ? "อัปโหลดไฟล์ไม่สำเร็จ" : lang === "cn" ? "文件上传失败" : lang === "mm" ? "ဖိုင်တင်ခြင်း မအောင်မြင်ပါ" : "File upload failed."),
+          [qId]: (tooBig ? null : data?.error) || (lang === "th" ? (tooBig ? "ไฟล์ใหญ่เกินไป" : "อัปโหลดไฟล์ไม่สำเร็จ") : lang === "cn" ? (tooBig ? "文件太大" : "文件上传失败") : lang === "mm" ? (tooBig ? "ဖိုင်အရွယ်အစား ကြီးလွန်းသည်" : "ဖိုင်တင်ခြင်း မအောင်မြင်ပါ") : (tooBig ? "File is too large." : "File upload failed.")),
         }));
         return;
       }
@@ -436,6 +478,19 @@ export default function HistoryPage() {
           <div style={{ display: "flex", justifyContent: "center", padding: 80 }}>
             <div className="spinner" style={{ width: 32, height: 32 }} />
           </div>
+        ) : historyError ? (
+          <div style={{ padding: "100px 40px", textAlign: "center", background: "var(--bg-surface)", borderRadius: 40, border: "2px dashed var(--border-subtle)" }}>
+            <AlertTriangle size={48} style={{ color: "#ef4444", display: "block", margin: "0 auto 20px auto", opacity: 0.5 }} />
+            <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>
+              {lang === "th" ? "โหลดประวัติไม่สำเร็จ" : lang === "cn" ? "无法加载历史记录" : lang === "mm" ? "မှတ်တမ်း ဖွင့်၍မရပါ" : "Couldn't load your history"}
+            </h3>
+            <p style={{ color: "var(--text-muted)", marginBottom: 24 }}>
+              {lang === "th" ? "กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง" : lang === "cn" ? "请检查您的网络连接并重试。" : lang === "mm" ? "အင်တာနက်ချိတ်ဆက်မှုကို စစ်ဆေးပြီး ထပ်စမ်းကြည့်ပါ။" : "Please check your connection and try again."}
+            </p>
+            <button onClick={() => fetchHistory()} className="btn btn-primary">
+              {lang === "th" ? "ลองอีกครั้ง" : lang === "cn" ? "重试" : lang === "mm" ? "ထပ်စမ်းကြည့်ပါ" : "Try again"}
+            </button>
+          </div>
         ) : history.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {history.map((h) => (
@@ -604,7 +659,20 @@ export default function HistoryPage() {
                               {FORM_TYPE_LABELS[form.formType] || form.formType}
                             </span>
                             <span style={{ minWidth: 0, whiteSpace: "normal", overflowWrap: "break-word", wordBreak: "break-word" }}>{form.title}</span>
-                            <span style={{ opacity: 0.85, flexShrink: 0 }}>(+{form.formPoints} PTS)</span>
+                            {/* Two separate rewards: house contest points (to the
+                                winning house) vs individual points (to you on submit). */}
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                              {form.formPoints > 0 && (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, opacity: 0.9, background: "rgba(255,255,255,0.18)", padding: "1px 7px", borderRadius: 6 }}>
+                                  <Trophy size={11} style={{ flexShrink: 0 }} /> +{form.formPoints} {t.histHousePts}
+                                </span>
+                              )}
+                              {form.formIndividualPoints > 0 && (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, opacity: 0.9, background: "rgba(255,255,255,0.18)", padding: "1px 7px", borderRadius: 6 }}>
+                                  <Sparkles size={11} style={{ flexShrink: 0 }} /> +{form.formIndividualPoints} {t.histYouPts}
+                                </span>
+                              )}
+                            </span>
                           </button>
                         )}
                         {form.formStatus === "submitted" && (

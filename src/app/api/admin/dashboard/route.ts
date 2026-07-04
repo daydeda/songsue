@@ -141,6 +141,8 @@ export async function GET(req: Request) {
           name: houses.name,
           color: houses.color,
           points: houses.points,
+          faculty: houses.faculty,
+          colorGroup: houses.colorGroup,
           members: count(users.id),
         })
         .from(houses)
@@ -217,6 +219,8 @@ export async function GET(req: Request) {
         name: h.name,
         color: h.color,
         points: h.points ?? 0,
+        faculty: h.faculty,
+        colorGroup: h.colorGroup,
         members: Number(h.members) ?? 0,
       })),
     });

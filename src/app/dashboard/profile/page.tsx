@@ -11,7 +11,17 @@ import {
 import { useLanguage } from "@/lib/LanguageContext";
 import { useRouter } from "next/navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
- 
+import { FACULTIES, majorsForFaculty } from "@/lib/faculties";
+
+// Rich CAMT major labels; other faculties show their bare code.
+const MAJOR_LABELS: Record<string, string> = {
+  ANI: "ANI - Animation and Visual Effect",
+  DG: "DG - Digital Game",
+  DII: "DII - Digital Industry Integration",
+  MMIT: "MMIT - Modern Management and Information Technology",
+  SE: "SE - Software Engineering",
+};
+
 type EmergencyContact = { name: string; relationship: string; phone: string };
  
 export default function ProfilePage() {
@@ -42,6 +52,7 @@ export default function ProfilePage() {
     name: "",
     nickname: "",
     phone: "",
+    faculty: "CAMT",
     major: "",
     religion: "",
     contactChannels: "",
@@ -71,6 +82,7 @@ export default function ProfilePage() {
             name: user.name || "",
             nickname: user.nickname || "",
             phone: user.phone || "",
+            faculty: user.faculty || "CAMT",
             major: user.major || "",
             religion: user.religion || "",
             contactChannels: user.contactChannels || "",
@@ -513,26 +525,50 @@ export default function ProfilePage() {
                 </div>
                 <div className="field col-span-8">
                   <label className="label">
-                    {t.major} {isProfileCompleted && "(Locked)"}
+                    {t.faculty} {isProfileCompleted && "(Locked)"}
                   </label>
                   <select
                     className="input"
                     disabled={isProfileCompleted}
-                    value={formData.major}
-                    onChange={(e) => set("major", e.target.value)}
+                    value={formData.faculty}
+                    onChange={(e) => {
+                      const fac = e.target.value;
+                      const majors = majorsForFaculty(fac);
+                      setFormData((p) => ({ ...p, faculty: fac, major: majors[0] ?? "" }));
+                    }}
                     style={{
                       background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
                       cursor: isProfileCompleted ? "not-allowed" : undefined,
                       opacity: isProfileCompleted ? 0.7 : undefined,
                     }}
                   >
-                    <option value="ANI">ANI - Animation and Visual Effect</option>
-                    <option value="DG">DG - Digital Game</option>
-                    <option value="DII">DII - Digital Industry Integration</option>
-                    <option value="MMIT">MMIT - Modern Management and Information Technology</option>
-                    <option value="SE">SE - Software Engineering</option>
+                    {FACULTIES.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
                   </select>
                 </div>
+                {majorsForFaculty(formData.faculty).length > 0 && (
+                  <div className="field col-span-8">
+                    <label className="label">
+                      {t.major} {isProfileCompleted && "(Locked)"}
+                    </label>
+                    <select
+                      className="input"
+                      disabled={isProfileCompleted}
+                      value={formData.major}
+                      onChange={(e) => set("major", e.target.value)}
+                      style={{
+                        background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
+                        cursor: isProfileCompleted ? "not-allowed" : undefined,
+                        opacity: isProfileCompleted ? 0.7 : undefined,
+                      }}
+                    >
+                      {majorsForFaculty(formData.faculty).map((m) => (
+                        <option key={m} value={m}>{MAJOR_LABELS[m] ?? m}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="field col-span-6">
                   <label className="label">
                     {t.phone} {isProfileCompleted ? "(Locked)" : <span style={{ color: "#ef4444" }}>*</span>}

@@ -1,9 +1,10 @@
 import { db } from "@/db";
 import { attendance, users, houses, scoreHistory, eventSessions, forms, formSubmissions } from "@/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 import { AuditService } from "../audit/audit.service";
+import { HousesService } from "../houses/houses.service";
 import { canGiveIndividualScore } from "@/lib/admin-access";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
@@ -288,7 +289,11 @@ export class ScannerService {
           return { status: "already_checked_in", student: baseStudentInfo };
         }
         const preTestWarning = await this.getPreTestWarning(eventId, student.id);
-        return { status: "success", student: studentWithMedical, preTestWarning };
+        return {
+          status: "success",
+          student: await this.withAssignedHouse(student, studentWithMedical),
+          preTestWarning,
+        };
       }
 
       // Scan only — staff sees medical alert before deciding to confirm
@@ -439,11 +444,66 @@ export class ScannerService {
       }
 
       const preTestWarning = await this.getPreTestWarning(eventId, student.id);
-      return { status: "success_walk_in", student: studentWithMedical, preTestWarning };
+      return {
+        status: "success_walk_in",
+        student: await this.withAssignedHouse(student, studentWithMedical),
+        preTestWarning,
+      };
     }
 
     // Walk-in scan only — staff sees medical alert before deciding to confirm
     return { status: "pending_confirmation", isWalkIn: true, student: studentWithMedical };
+  }
+
+  /**
+   * Assigns a house at FIRST CHECK-IN (houses are no longer given at onboarding).
+   * If the student already has one, returns it unchanged. Otherwise picks the
+   * least-populated colour house WITHIN the student's faculty and persists it
+   * race-safely (the WHERE house_id IS NULL guard means a concurrent scan can't
+   * double-assign). Returns the house fields to surface in the scan result.
+   */
+  private static async ensureHouseAssigned(
+    student: ResolvedStudent
+  ): Promise<{ name: string; id: string | null; color: string }> {
+    if (student.houseId && student.house) {
+      return {
+        name: student.house.name,
+        id: student.house.id,
+        color: student.house.color ?? "#6366f1",
+      };
+    }
+
+    const houseId = await HousesService.pickBalancedHouseIdForFaculty(student.faculty);
+    if (houseId) {
+      await db
+        .update(users)
+        .set({ houseId, updatedAt: new Date() })
+        .where(and(eq(users.id, student.id), isNull(users.houseId)));
+    }
+
+    // Re-read so a concurrent scan that won the race is reflected too.
+    const fresh = await db.query.users.findFirst({
+      where: eq(users.id, student.id),
+      columns: { houseId: true },
+      with: { house: true },
+    });
+    const house = fresh?.house;
+    return {
+      name: house?.name ?? "UNASSIGNED",
+      id: house?.id ?? null,
+      color: house?.color ?? "#6366f1",
+    };
+  }
+
+  /**
+   * Returns a copy of the scan-result student info with its house fields set to
+   * the student's (possibly just-assigned) house. Used on confirmed check-ins.
+   */
+  private static async withAssignedHouse<
+    T extends { house: string; houseId?: string | null; houseColor: string }
+  >(student: ResolvedStudent, info: T): Promise<T> {
+    const h = await this.ensureHouseAssigned(student);
+    return { ...info, house: h.name, houseId: h.id, houseColor: h.color };
   }
 
   /**

@@ -81,6 +81,7 @@ export class UsersService {
         nickname,
         role: "staff",
         roles: ["staff"],
+        faculty: "CAMT",
         houseId,
         profileCompleted: true,
         updatedAt: new Date(),

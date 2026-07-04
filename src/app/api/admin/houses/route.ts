@@ -1,6 +1,5 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { houses } from "@/db/schema";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -11,13 +10,18 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Returns all 16 (faculty × colour) houses so the admin can target a specific
+    // faculty's colour house for point adjustments. Ordered for a stable UI.
     const list = await db.query.houses.findMany({
       columns: {
         id: true,
         name: true,
         color: true,
         points: true,
-      }
+        faculty: true,
+        colorGroup: true,
+      },
+      orderBy: (houses, { asc }) => [asc(houses.faculty), asc(houses.colorGroup)],
     });
 
     return NextResponse.json(list);

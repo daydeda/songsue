@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { HousesService } from "@/modules/houses/houses.service";
+import { FACULTY_IDS } from "@/lib/faculties";
 
 // Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
 // Validate the shape instead of accepting z.any() — the onboarding form always
@@ -22,6 +22,7 @@ const profileSchema = z.object({
   name: z.string().min(1),
   nickname: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
+  faculty: z.enum(FACULTY_IDS as [string, ...string[]]).optional().nullable(),
   major: z.string().optional().nullable(),
   prefix: z.string().optional().nullable(),
   religion: z.string().optional().nullable(),
@@ -88,17 +89,14 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: "Profile already completed" }, { status: 400 });
     }
 
-    // 2. BALANCED HOUSE ASSIGNMENT (FE-03)
-    // Assign to the house with the fewest members (shared helper, also used by
-    // the staff onboarding bypass so both stay balanced together).
-    const targetHouseId = await HousesService.pickBalancedHouseId();
-
-    // 3. Update User
+    // 2. Update User. NOTE: house is NO LONGER assigned here — a student is sorted
+    // into one of their faculty's colour houses at their FIRST CHECK-IN
+    // (ScannerService.ensureHouseAssigned). Onboarding only records their faculty.
     const [updated] = await db
       .update(users)
       .set({
         ...data,
-        houseId: targetHouseId,
+        faculty: data.faculty ?? "CAMT",
         profileCompleted: true,
         updatedAt: new Date(),
       })
@@ -147,6 +145,9 @@ export async function PATCH(req: Request) {
     const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
     if (!isAdmin) {
       delete data.studentId;
+      // Faculty is set once at onboarding and gates which house a student lands in
+      // at check-in. Lock it for non-admins so a raw PATCH can't switch faculties.
+      delete data.faculty;
     }
 
     const [updated] = await db

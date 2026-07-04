@@ -6,6 +6,17 @@ import { useState } from "react";
 import { Camera, Check, Loader2, LogOut, User, Menu, X, AlertTriangle, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { FACULTIES, majorsForFaculty } from "@/lib/faculties";
+
+// Rich CAMT major labels; other faculties show their bare code (or no Major
+// dropdown at all until their major lists are provided).
+const MAJOR_LABELS: Record<string, string> = {
+  ANI: "ANI – Animation and Visual Effect",
+  DG: "DG – Digital Game",
+  DII: "DII – Digital Industry Integration",
+  MMIT: "MMIT – Modern Management and Information Technology",
+  SE: "SE – Software Engineering",
+};
 
 type EmergencyContact = { name: string; relationship: string; phone: string };
 
@@ -85,6 +96,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
     prefix: "นาย",
     name: "",
     nickname: "",
+    faculty: "CAMT",
     major: "SE",
     religion: "",
     phone: "",
@@ -411,17 +423,38 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
             </div>
           </div>
 
-          {/* Major */}
+          {/* Faculty */}
           <div className="field">
-            <label className={lbl}>{t.major}</label>
-            <select className={inp} value={formData.major} onChange={(e) => set("major", e.target.value)} style={{ minHeight: 48 }}>
-              <option value="ANI">ANI – Animation and Visual Effect</option>
-              <option value="DG">DG – Digital Game</option>
-              <option value="DII">DII – Digital Industry Integration</option>
-              <option value="MMIT">MMIT – Modern Management and Information Technology</option>
-              <option value="SE">SE – Software Engineering</option>
+            <label className={lbl}>{t.faculty}</label>
+            <select
+              className={inp}
+              value={formData.faculty}
+              onChange={(e) => {
+                const fac = e.target.value;
+                const majors = majorsForFaculty(fac);
+                // Switching faculty resets the major to that faculty's first
+                // option (or empty when the faculty has no major sub-selection).
+                setFormData((p) => ({ ...p, faculty: fac, major: majors[0] ?? "" }));
+              }}
+              style={{ minHeight: 48 }}
+            >
+              {FACULTIES.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
             </select>
           </div>
+
+          {/* Major (only for faculties that have a major list) */}
+          {majorsForFaculty(formData.faculty).length > 0 && (
+            <div className="field">
+              <label className={lbl}>{t.major}</label>
+              <select className={inp} value={formData.major} onChange={(e) => set("major", e.target.value)} style={{ minHeight: 48 }}>
+                {majorsForFaculty(formData.faculty).map((m) => (
+                  <option key={m} value={m}>{MAJOR_LABELS[m] ?? m}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Religion */}
           <div className="field">

@@ -9,13 +9,17 @@ import { db } from "./index";
 import { houses, users } from "./schema";
 import { eq } from "drizzle-orm";
 import { assertDestructiveAllowed } from "./guard";
+import { ALL_HOUSE_ROWS } from "../lib/faculties";
 
-const HOUSES = [
-  { id: "red",    name: "Mom",   color: "#ef4444" }, // Red
-  { id: "green",  name: "To",      color: "#94a3b8" }, // White → silver/pewter (stays visible on the light theme)
-  { id: "yellow", name: "Luang",  color: "#3b82f6" }, // Blue
-  { id: "blue",   name: "Makon", color: "#22c55e" }, // Green
-];
+// All 16 (faculty × colour) houses. CAMT keeps the bare colour ids ('red'…) so
+// existing house_id foreign keys never move; other faculties use '<fac>-<colour>'.
+const HOUSES = ALL_HOUSE_ROWS.map(({ id, faculty, color }) => ({
+  id,
+  name: color.name,
+  color: color.color,
+  faculty,
+  colorGroup: color.id,
+}));
 
 const SUPER_ADMINS = [
   { email: "smocamt.official@gmail.com", name: "SMO CAMT Official" },
@@ -29,12 +33,20 @@ async function seed() {
   for (const house of HOUSES) {
     await db
       .insert(houses)
-      .values({ id: house.id, name: house.name, color: house.color, points: 0 })
+      .values({
+        id: house.id,
+        name: house.name,
+        color: house.color,
+        points: 0,
+        faculty: house.faculty,
+        colorGroup: house.colorGroup,
+      })
       .onConflictDoUpdate({
         target: houses.id,
-        set: { name: house.name, color: house.color }
+        // Never overwrite points on re-seed; only keep display/grouping in sync.
+        set: { name: house.name, color: house.color, faculty: house.faculty, colorGroup: house.colorGroup }
       });
-    console.log(`  ✅ House: ${house.name}`);
+    console.log(`  ✅ House: ${house.faculty} / ${house.name}`);
   }
 
   console.log("🌱 Seeding super admins...");

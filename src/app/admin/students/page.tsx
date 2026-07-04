@@ -213,7 +213,7 @@ export default function AdminStudentsDirectory() {
   const [sensitiveData, setSensitiveData] = useState<Student | null>(null);
   const [loadingSensitive, setLoadingSensitive] = useState(false);
 
-  const [houses, setHouses] = useState<{ id: string; name: string }[]>([]);
+  const [houses, setHouses] = useState<{ id: string; name: string; faculty?: string; colorGroup?: string }[]>([]);
   const [houseFilter, setHouseFilter] = useState<string>("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -266,21 +266,31 @@ export default function AdminStudentsDirectory() {
     return fields.some(isMeaningful) || user.faintingHistory === true;
   };
 
+  // Per-faculty houses share colour names, so translate by colour group and
+  // prefix the faculty (e.g. "MASSCOM · Mom"). Looks the house up in the fetched
+  // list to recover faculty/colorGroup for ids that only arrive as a bare id.
   const getHouseName = (id: string, defaultName: string) => {
-    if (id === "red") return t.houseMom || "Mom";
-    if (id === "green") return t.houseTo || "To";
-    if (id === "yellow") return t.houseLuang || "Luang";
-    if (id === "blue") return t.houseMakara || "Makon";
-    return defaultName;
+    const h = houses.find(x => x.id === id);
+    const cg = h?.colorGroup || id;
+    const color =
+      cg === "red" ? (t.houseMom || "Mom")
+      : cg === "green" ? (t.houseTo || "To")
+      : cg === "yellow" ? (t.houseLuang || "Luang")
+      : cg === "blue" ? (t.houseMakara || "Makon")
+      : defaultName;
+    return h?.faculty ? `${h.faculty} · ${color}` : color;
   };
 
   const houseOptions = [
     { value: "all", label: t.allHouses },
-    ...houses.map(h => ({
+    ...houses.map(h => {
+      const cg = h.colorGroup || h.id;
+      return {
       value: h.id,
       label: getHouseName(h.id, h.name),
-      color: h.id === "red" ? "#ef4444" : h.id === "blue" ? "#3b82f6" : h.id === "green" ? "#10b981" : h.id === "yellow" ? "#f59e0b" : "var(--accent-primary)"
-    }))
+      color: cg === "red" ? "#ef4444" : cg === "blue" ? "#3b82f6" : cg === "green" ? "#10b981" : cg === "yellow" ? "#f59e0b" : "var(--accent-primary)"
+    };
+    })
   ];
 
   const roleOptions = [
@@ -319,11 +329,14 @@ export default function AdminStudentsDirectory() {
 
   const editHouseOptions = [
     { value: "", label: t.unassignedLabel, icon: <X size={16} className="text-muted" /> },
-    ...houses.map(h => ({
+    ...houses.map(h => {
+      const cg = h.colorGroup || h.id;
+      return {
       value: h.id,
       label: getHouseName(h.id, h.name),
-      color: h.id === "red" ? "#ef4444" : h.id === "blue" ? "#3b82f6" : h.id === "green" ? "#10b981" : h.id === "yellow" ? "#f59e0b" : "var(--accent-primary)"
-    }))
+      color: cg === "red" ? "#ef4444" : cg === "blue" ? "#3b82f6" : cg === "green" ? "#10b981" : cg === "yellow" ? "#f59e0b" : "var(--accent-primary)"
+    };
+    })
   ];
 
   const filtered = students.filter(

@@ -3,11 +3,22 @@ import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
 
 export const houses = pgTable("houses", {
-  id: text("id").primaryKey(), // e.g. 'red', 'blue', 'green', 'yellow'
+  // Per-faculty house id, e.g. 'red' (legacy CAMT) or 'masscom-red'. The legacy
+  // CAMT rows keep their colour ids so existing house_id foreign keys never move.
+  id: text("id").primaryKey(),
   name: text("name").notNull(),
   color: text("color").default("#6366f1"), // Hex color for display
   points: integer("points").notNull().default(0),
-});
+  // Which faculty owns this house: 'CAMT' | 'MASSCOM' | 'ARCH' | 'ARTS'.
+  faculty: text("faculty").notNull().default("CAMT"),
+  // Rollup key shared across faculties: 'red' | 'green' | 'yellow' | 'blue'.
+  // The public leaderboard sums points by colorGroup so same-colour houses across
+  // faculties read as one house.
+  colorGroup: text("color_group").notNull().default("red"),
+}, (table) => ([
+  index("idx_houses_color_group").on(table.colorGroup),
+  index("idx_houses_faculty").on(table.faculty),
+]));
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Auth.js / OAuth provider ID
@@ -25,7 +36,8 @@ export const users = pgTable("users", {
   // Profile specifics
   studentId: text("student_id").unique(),
   nickname: text("nickname"),
-  major: text("major"), // ANI, DG, DII, MMIT, SE
+  faculty: text("faculty"), // 'CAMT' | 'MASSCOM' | 'ARCH' | 'ARTS' (null treated as CAMT)
+  major: text("major"), // faculty-specific major code (e.g. CAMT: ANI, DG, DII, MMIT, SE)
   imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }
   religion: text("religion"),
   phone: text("phone").unique(),

@@ -1,7 +1,8 @@
 import { db } from "@/db";
 import { houses, scoreHistory, users } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { AuditService } from "../audit/audit.service";
+import { COLORS, DEFAULT_FACULTY, normalizeFaculty } from "@/lib/faculties";
 
 export class HousesService {
   /**
@@ -25,6 +26,27 @@ export class HousesService {
   }
 
   /**
+   * Picks the colour house a student should join WITHIN their faculty: the
+   * faculty house (one of 4 colours) with the fewest members right now. Ties
+   * resolve to the first such house by query order. Called at first check-in
+   * (ScannerService.ensureHouseAssigned), since houses are no longer assigned at
+   * onboarding.
+   *
+   * `faculty` is normalised to CAMT when null/unknown for back-compat. Returns
+   * the house id, or null if that faculty has no houses seeded yet.
+   */
+  static async pickBalancedHouseIdForFaculty(faculty: string | null | undefined): Promise<string | null> {
+    const fac = normalizeFaculty(faculty);
+    const housesList = await db.query.houses.findMany({
+      where: eq(houses.faculty, fac),
+      with: { users: { columns: { id: true } } },
+    });
+    if (housesList.length === 0) return null;
+    const sorted = [...housesList].sort((a, b) => a.users.length - b.users.length);
+    return sorted[0].id;
+  }
+
+  /**
    * Picks the house a new STAFF member should join for balanced staff
    * distribution: the house with the fewest `staff`-role members right now,
    * counting ONLY staff (students are ignored). Ties resolve to the first such
@@ -34,16 +56,23 @@ export class HousesService {
    * Returns the house id, or null if no houses exist yet (caller leaves houseId
    * unset rather than crashing).
    */
-  static async pickBalancedHouseIdForStaff(): Promise<string | null> {
-    const housesList = await db.query.houses.findMany({ columns: { id: true } });
+  static async pickBalancedHouseIdForStaff(faculty: string | null | undefined = DEFAULT_FACULTY): Promise<string | null> {
+    const fac = normalizeFaculty(faculty);
+    // Scope to the staff member's faculty so staff land in one of their own
+    // faculty's 4 colour houses (not spread across all 16).
+    const housesList = await db.query.houses.findMany({
+      where: eq(houses.faculty, fac),
+      columns: { id: true },
+    });
     if (housesList.length === 0) return null;
+    const houseIds = housesList.map((h) => h.id);
 
-    // Count only staff-role members per house. Houses with zero staff don't
-    // appear in these rows, so default them to 0 when ranking below.
+    // Count only staff-role members per house, within this faculty. Houses with
+    // zero staff don't appear in these rows, so default them to 0 when ranking.
     const staffCounts = await db
       .select({ houseId: users.houseId, count: sql<number>`count(*)::int` })
       .from(users)
-      .where(eq(users.role, "staff"))
+      .where(and(eq(users.role, "staff"), inArray(users.houseId, houseIds)))
       .groupBy(users.houseId);
 
     const countByHouse = new Map(staffCounts.map((r) => [r.houseId, r.count]));
@@ -104,10 +133,37 @@ export class HousesService {
   }
 
   /**
-   * Fetch leaderboard rankings
+   * Public leaderboard: the 4 colour houses with points ROLLED UP across
+   * faculties (CAMT red + MASSCOM red + … = one "red" total), sorted high→low.
+   * The returned `id` is the colour group ('red'/'green'/'yellow'/'blue'), which
+   * the house pages slug-map and link to exactly like the old per-colour rows.
    */
   static async getLeaderboard() {
+    const rows = await db
+      .select({
+        colorGroup: houses.colorGroup,
+        points: sql<number>`sum(${houses.points})::int`,
+      })
+      .from(houses)
+      .groupBy(houses.colorGroup);
+
+    const pointsByColor = new Map(rows.map((r) => [r.colorGroup, r.points]));
+    return COLORS.map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color,
+      points: pointsByColor.get(c.id) ?? 0,
+    })).sort((a, b) => b.points - a.points);
+  }
+
+  /**
+   * Per-faculty breakdown for a single colour group — the four (or fewer)
+   * faculty houses that make up one rolled-up colour, with their individual
+   * points. Used by the colour house detail view.
+   */
+  static async getFacultyBreakdown(colorGroup: string) {
     return await db.query.houses.findMany({
+      where: eq(houses.colorGroup, colorGroup),
       orderBy: (houses, { desc }) => [desc(houses.points)],
     });
   }

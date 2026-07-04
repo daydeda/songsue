@@ -25,7 +25,7 @@ type DashboardStats = {
     | { type: "checkin"; studentName: string; studentNickname: string; eventTitle: string; timestamp: string }
     | { type: "score"; houseId?: string; houseName: string; houseColor: string; delta: number; reason: string; timestamp: string }
   )[];
-  houses: { id: string; name: string; points: number; members: number }[];
+  houses: { id: string; name: string; points: number; members: number; faculty?: string; colorGroup?: string }[];
 };
 
 const HOUSE_GRADIENT: Record<string, string> = {
@@ -47,6 +47,14 @@ export default function AdminDashboardOverview() {
     if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
     if (key === "blue" || key === "makara") return t.houseMakara || "Makon";
     return defaultName;
+  };
+
+  // Per-faculty houses share colour names ("Mom"…), so prefix the faculty to keep
+  // the 16 leaderboard rows unambiguous (e.g. "MASSCOM · Mom"). Translation keys
+  // off colorGroup since faculty house ids are like "masscom-red".
+  const houseLabel = (h: { id: string; name: string; faculty?: string; colorGroup?: string }) => {
+    const color = getTranslatedHouseName(h.colorGroup || h.id, h.name);
+    return h.faculty ? `${h.faculty} · ${color}` : color;
   };
 
   const translateActivityReason = (reason: string) => {
@@ -184,7 +192,7 @@ export default function AdminDashboardOverview() {
     setExporting(false);
   };
 
-  const [selectedHouse, setSelectedHouse] = useState<{ id: string; name: string } | null>(null);
+  const [selectedHouse, setSelectedHouse] = useState<{ id: string; label: string } | null>(null);
   const [scoreForm, setScoreForm] = useState({ delta: "", reason: "" });
   const [submittingScore, setSubmittingScore] = useState(false);
 
@@ -250,7 +258,7 @@ export default function AdminDashboardOverview() {
           }}>
             <div style={{ marginBottom: 24 }}>
               <h3 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>
-                Award Points to {selectedHouse.id === 'red' ? t.houseMom : selectedHouse.id === 'green' ? t.houseTo : selectedHouse.id === 'yellow' ? t.houseLuang : selectedHouse.id === 'blue' ? t.houseMakara : selectedHouse.name}
+                Award Points to {selectedHouse.label}
               </h3>
               <p style={{ color: "var(--text-secondary)", fontSize: 15 }}>Enter the amount of points to add (positive) or subtract (negative).</p>
             </div>
@@ -405,7 +413,7 @@ export default function AdminDashboardOverview() {
                 >
                   <div style={{
                     height: 6,
-                    background: HOUSE_GRADIENT[house.id] || "var(--accent-primary)"
+                    background: HOUSE_GRADIENT[house.colorGroup || house.id] || "var(--accent-primary)"
                   }} />
 
                   <div style={{ padding: 24 }}>
@@ -415,7 +423,7 @@ export default function AdminDashboardOverview() {
                     </div>
 
                     <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>
-                      {house.id === 'red' ? t.houseMom : house.id === 'green' ? t.houseTo : house.id === 'yellow' ? t.houseLuang : house.id === 'blue' ? t.houseMakara : house.name}
+                      {houseLabel(house)}
                     </h3>
 
                     <div style={{ display: "flex", alignItems: "baseline", gap: 4, position: "relative" }}>
@@ -431,7 +439,7 @@ export default function AdminDashboardOverview() {
 
                       {/* Give Score Button Inline */}
                       <button
-                        onClick={() => setSelectedHouse({ id: house.id, name: house.name })}
+                        onClick={() => setSelectedHouse({ id: house.id, label: houseLabel(house) })}
                         style={{
                           width: 36,
                           height: 36,
@@ -448,7 +456,7 @@ export default function AdminDashboardOverview() {
                           flexShrink: 0
                         }}
                         title="Give points"
-                        aria-label={`Award points to ${house.id === 'red' ? t.houseMom : house.id === 'green' ? t.houseTo : house.id === 'yellow' ? t.houseLuang : house.id === 'blue' ? t.houseMakara : house.name}`}
+                        aria-label={`Award points to ${houseLabel(house)}`}
                       >
                         <Plus size={18} />
                       </button>
@@ -458,7 +466,7 @@ export default function AdminDashboardOverview() {
                       <div style={{
                         width: `${(house.points / (sortedHouses[0].points || 1)) * 100}%`,
                         height: "100%",
-                        background: HOUSE_GRADIENT[house.id] || "var(--accent-primary)",
+                        background: HOUSE_GRADIENT[house.colorGroup || house.id] || "var(--accent-primary)",
                         transition: "width 1s ease-out"
                       }} />
                     </div>

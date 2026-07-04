@@ -685,6 +685,58 @@ async function migrate() {
   `;
   console.log("  ✅ calendar_feed_tokens table");
 
+  // 44. Single-faculty (CAMT) → 4-faculty house model. The column + index DDL
+  // (houses.faculty, houses.color_group, users.faculty + the two indexes) is
+  // applied by drizzle's own migration history (drizzle/0007_redundant_maverick.sql).
+  // This runner adds the schema columns idempotently too, so db:migrate alone is
+  // sufficient, then does the data migration. NON-DESTRUCTIVE throughout: no
+  // DROP/DELETE; score_history is untouched; only the per-user house pointer is reset.
+  await sql`ALTER TABLE houses ADD COLUMN IF NOT EXISTS faculty text NOT NULL DEFAULT 'CAMT'`;
+  await sql`ALTER TABLE houses ADD COLUMN IF NOT EXISTS color_group text NOT NULL DEFAULT 'red'`;
+  await sql`ALTER TABLE users  ADD COLUMN IF NOT EXISTS faculty text`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_houses_color_group ON houses (color_group)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_houses_faculty ON houses (faculty)`;
+  console.log("  ✅ houses.faculty + houses.color_group + users.faculty (+ indexes)");
+
+  // 45. Backfill the 4 EXISTING CAMT house rows. Their ids ('red'/'green'/
+  // 'yellow'/'blue') MUST stay unchanged — users.house_id and score_history.house_id
+  // already reference them. Set faculty='CAMT' and color_group = id.
+  await sql`
+    UPDATE houses
+    SET faculty = 'CAMT', color_group = id
+    WHERE id IN ('red', 'green', 'yellow', 'blue')
+  `;
+  console.log("  ✅ backfilled 4 legacy CAMT houses (faculty + color_group)");
+
+  // 46. Insert the 12 new faculty houses (MASSCOM/ARCH/ARTS × red/green/yellow/blue).
+  // ids/names/colours mirror src/lib/faculties.ts (ALL_HOUSE_ROWS / houseRowId / COLORS).
+  // ON CONFLICT (id) DO NOTHING makes re-runs a no-op and never clobbers points.
+  await sql`
+    INSERT INTO houses (id, name, color, points, faculty, color_group) VALUES
+      ('masscom-red',    'Mom',   '#ef4444', 0, 'MASSCOM', 'red'),
+      ('masscom-green',  'To',    '#94a3b8', 0, 'MASSCOM', 'green'),
+      ('masscom-yellow', 'Luang', '#3b82f6', 0, 'MASSCOM', 'yellow'),
+      ('masscom-blue',   'Makon', '#22c55e', 0, 'MASSCOM', 'blue'),
+      ('arch-red',       'Mom',   '#ef4444', 0, 'ARCH',    'red'),
+      ('arch-green',     'To',    '#94a3b8', 0, 'ARCH',    'green'),
+      ('arch-yellow',    'Luang', '#3b82f6', 0, 'ARCH',    'yellow'),
+      ('arch-blue',      'Makon', '#22c55e', 0, 'ARCH',    'blue'),
+      ('arts-red',       'Mom',   '#ef4444', 0, 'ARTS',    'red'),
+      ('arts-green',     'To',    '#94a3b8', 0, 'ARTS',    'green'),
+      ('arts-yellow',    'Luang', '#3b82f6', 0, 'ARTS',    'yellow'),
+      ('arts-blue',      'Makon', '#22c55e', 0, 'ARTS',    'blue')
+    ON CONFLICT (id) DO NOTHING
+  `;
+  console.log("  ✅ inserted 12 new faculty houses (ON CONFLICT DO NOTHING)");
+
+  // 47. Backfill users.faculty for legacy rows (all existing students are CAMT),
+  // then reset the per-user current-house pointer so everyone re-derives their
+  // (now faculty-scoped) house at next check-in. The reset is intentional and
+  // non-destructive: house point history in score_history is preserved.
+  await sql`UPDATE users SET faculty = 'CAMT' WHERE faculty IS NULL`;
+  await sql`UPDATE users SET house_id = NULL`;
+  console.log("  ✅ backfilled users.faculty + reset users.house_id (re-derived at next check-in)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

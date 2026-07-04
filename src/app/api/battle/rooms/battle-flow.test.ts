@@ -41,7 +41,9 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
         id text PRIMARY KEY,
         name text NOT NULL,
         color text DEFAULT '#6366f1',
-        points integer DEFAULT 0 NOT NULL
+        points integer DEFAULT 0 NOT NULL,
+        faculty text DEFAULT 'CAMT' NOT NULL,
+        color_group text DEFAULT 'red' NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS users (
@@ -58,6 +60,7 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
         qr_token text UNIQUE,
         student_id text UNIQUE,
         nickname text,
+        faculty text,
         major text,
         image_transform jsonb,
         religion text,

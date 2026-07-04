@@ -28,6 +28,7 @@ describe("OX Game Stats and Finalization", () => {
         qr_token text UNIQUE,
         student_id text UNIQUE,
         nickname text,
+        faculty text,
         major text,
         image_transform jsonb,
         religion text,

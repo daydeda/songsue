@@ -36,6 +36,10 @@ type Student = {
     relationship: string;
     phone: string;
   }> | null;
+  // Clubs this user presides over (club_president identity — see
+  // EventScopeService). Only fetched/shown when the club_president checkbox is
+  // checked in the edit modal.
+  clubIds?: string[];
 };
 
 type DropdownOption = {
@@ -216,6 +220,7 @@ export default function AdminStudentsDirectory() {
   const [sensitiveError, setSensitiveError] = useState<string | null>(null);
 
   const [houses, setHouses] = useState<{ id: string; name: string }[]>([]);
+  const [clubs, setClubs] = useState<{ id: string; name: string; isArchived: boolean }[]>([]);
   const [houseFilter, setHouseFilter] = useState<string>("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [majorFilter, setMajorFilter] = useState<string>("all");
@@ -247,6 +252,10 @@ export default function AdminStudentsDirectory() {
     fetch("/api/admin/houses")
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setHouses(d); });
+
+    fetch("/api/admin/clubs")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setClubs(d); });
   };
 
   useEffect(() => {
@@ -663,7 +672,18 @@ export default function AdminStudentsDirectory() {
                             <button
                               className="btn btn-ghost"
                               style={{ padding: 8, borderRadius: 10, color: "var(--text-secondary)" }}
-                              onClick={() => setEditingStudent(s)}
+                              onClick={() => {
+                                setEditingStudent(s);
+                                // Pre-check the club picker with this user's current
+                                // presidencies (not included in the student list fetch).
+                                fetch(`/api/admin/clubs?presidentUserId=${s.id}`)
+                                  .then((r) => r.json())
+                                  .then((d) => {
+                                    if (!Array.isArray(d)) return;
+                                    const clubIds = d.filter((c) => c.isPresident).map((c) => c.id);
+                                    setEditingStudent((prev) => (prev && prev.id === s.id ? { ...prev, clubIds } : prev));
+                                  });
+                              }}
                               title="Edit User"
                             >
                               <Edit2 size={16} />
@@ -1063,7 +1083,11 @@ export default function AdminStudentsDirectory() {
                       setEditingStudent({
                         ...editingStudent,
                         roles: finalRoles,
-                        role: finalRoles[0] || "student"
+                        role: finalRoles[0] || "student",
+                        // Unchecking club_president clears their club picks too —
+                        // otherwise a stale clubIds value would still get PATCHed
+                        // and re-grant presidencies to a non-president.
+                        ...(opt.value === "club_president" && isChecked ? { clubIds: [] } : {}),
                       });
                     };
 
@@ -1100,6 +1124,65 @@ export default function AdminStudentsDirectory() {
                   })}
                 </div>
               </div>
+
+              {(editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])).includes("club_president") && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, display: "block" }}>
+                    Presides Over (Clubs)
+                  </label>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                    gap: 10,
+                    padding: 12,
+                    background: "var(--bg-elevated)",
+                    borderRadius: 16,
+                    border: "1px solid var(--border-subtle)"
+                  }}>
+                    {clubs.filter((c) => !c.isArchived).length === 0 && (
+                      <span style={{ fontSize: 13, color: "var(--text-muted)" }}>No clubs created yet — add one under Admin &gt; Clubs.</span>
+                    )}
+                    {clubs.filter((c) => !c.isArchived).map((club) => {
+                      const currentClubIds = editingStudent.clubIds || [];
+                      const isChecked = currentClubIds.includes(club.id);
+                      const handleToggle = () => {
+                        if (!editingStudent) return;
+                        const updated = isChecked
+                          ? currentClubIds.filter((id) => id !== club.id)
+                          : [...currentClubIds, club.id];
+                        setEditingStudent({ ...editingStudent, clubIds: updated });
+                      };
+                      return (
+                        <label
+                          key={club.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 12px",
+                            borderRadius: 10,
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                            background: isChecked ? "var(--bg-surface)" : "transparent",
+                            border: isChecked ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                            boxShadow: isChecked ? "0 2px 8px rgba(0,0,0,0.05)" : "none"
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={handleToggle}
+                            style={{ accentColor: "var(--accent-primary)", cursor: "pointer" }}
+                          />
+                          <span style={{ fontSize: 13, fontWeight: 700, color: isChecked ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                            {club.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.major}</label>

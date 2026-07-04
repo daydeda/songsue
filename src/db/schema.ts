@@ -1,5 +1,5 @@
 import { pgTable, text, timestamp, uuid, integer, boolean, jsonb, bigserial, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
 import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields";
 import type { ShopDeliveryTier } from "@/lib/shop-delivery";
@@ -10,6 +10,37 @@ export const houses = pgTable("houses", {
   color: text("color").default("#6366f1"), // Hex color for display
   points: integer("points").notNull().default(0),
 });
+
+// Clubs are a DYNAMIC entity (created/renamed/retired over time by staff), unlike
+// the fixed small set of houses — hence a uuid PK rather than a slug id. A club is
+// never hard-deleted: archive it via isArchived so any events it already owns and
+// its membership history survive. The partial unique index below keeps two ACTIVE
+// clubs from sharing a name while letting a new club reuse an archived club's name.
+export const clubs = pgTable("clubs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ([
+  uniqueIndex("clubs_active_name_unique").on(table.name).where(sql`${table.isArchived} = false`),
+]));
+
+// Many-to-many membership: a user may preside over / belong to multiple clubs, and
+// a club has multiple members. `role` ('president' | 'member') is reserved now — the
+// current feature only writes 'president' rows, but keeping the column lays the
+// groundwork for a future per-club member-roster feature without a second migration.
+export const clubMembers = pgTable("club_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clubId: uuid("club_id").notNull().references(() => clubs.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("member"), // 'president' | 'member'
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ([
+  uniqueIndex("club_members_club_user_unique").on(table.clubId, table.userId),
+  index("club_members_user_idx").on(table.userId),
+  index("club_members_club_idx").on(table.clubId),
+]));
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Auth.js / OAuth provider ID
@@ -167,6 +198,17 @@ export const events = pgTable("events", {
   // majors (ANI, DG, DII, MMIT, SE). Combined with allowedRoles as AND — a user
   // must satisfy both. Admin roles always bypass.
   allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  // President ownership scope (SEPARATE from managedByRoles, which only answers "is
+  // a president role involved at all"). These answer "president of WHICH club/major":
+  //   ownerClubIds — club UUIDs (as strings) that own this event; a club_president
+  //     manages it only if they preside over one of these clubs.
+  //   ownerMajors  — major strings (ANI/DG/DII/MMIT/SE) that own this event; a
+  //     major_president manages it only if their users.major is listed.
+  // Both nullable: null/[] means NO owner assigned yet, which the scoping logic
+  // treats as "hidden from all presidents until staff assigns one" (staff/admin
+  // always bypass). Mirrors the allowedMajors jsonb string[] pattern above.
+  ownerClubIds: jsonb("owner_club_ids").$type<string[]>(),
+  ownerMajors: jsonb("owner_majors").$type<string[]>(),
   // When true, only FIRST-YEAR students may see/register for this event — derived
   // from the student-id prefix (CMU Buddhist-era admission year, e.g. ids starting
   // with "69" for the 2026 intake). The current first-year prefix is computed at
@@ -286,12 +328,28 @@ export const housesRelations = relations(houses, ({ many }) => ({
   scoreHistory: many(scoreHistory),
 }));
 
+export const clubsRelations = relations(clubs, ({ many }) => ({
+  members: many(clubMembers),
+}));
+
+export const clubMembersRelations = relations(clubMembers, ({ one }) => ({
+  club: one(clubs, {
+    fields: [clubMembers.clubId],
+    references: [clubs.id],
+  }),
+  user: one(users, {
+    fields: [clubMembers.userId],
+    references: [users.id],
+  }),
+}));
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   house: one(houses, {
     fields: [users.houseId],
     references: [houses.id],
   }),
   attendances: many(attendance),
+  clubMembers: many(clubMembers),
   auditLogsAsActor: many(auditLogs, { relationName: "actor" }),
   auditLogsAsTarget: many(auditLogs, { relationName: "target" }),
   gameRoomsAsHost: many(gameRooms, { relationName: "gameHost" }),

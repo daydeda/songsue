@@ -48,6 +48,8 @@ interface AdminEvent {
   allowedMajors: string[] | null;
   firstYearOnly: boolean;
   managedByRoles: string[] | null;
+  ownerClubIds: string[] | null;
+  ownerMajors: string[] | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
   attendeeCount?: number;
@@ -304,14 +306,17 @@ const EMPTY_FORM = {
   allowedMajors: [] as string[], // empty = all majors allowed
   firstYearOnly: false, // true = only the current first-year intake may join
   managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
+  ownerClubIds: [] as string[], // WHICH club(s) own this event, when managedByRoles includes club_president
+  ownerMajors: [] as string[], // WHICH major(s) own this event, when managedByRoles includes major_president
 };
 
 export default function AdminEventsPage() {
   const { t, lang } = useLanguage();
   const { data: session } = useSession();
   // The admin area also admits registration/organizer (see admin/layout.tsx),
-  // but attendee exports — which include PDPA-sensitive medical & emergency
-  // contact data — are restricted to super_admin/admin only.
+  // but seeing medical detail in the exported file / student modal — which
+  // includes PDPA-sensitive medical & emergency contact data — is restricted to
+  // super_admin/admin only.
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
   // Scanner-only roles (smo, club_president, major_president) reach this page to
@@ -321,10 +326,32 @@ export default function AdminEventsPage() {
   const isAttendanceOnly = !myRoles.some((r) =>
     ["super_admin", "admin", "registration", "organizer"].includes(r)
   );
+  // The Export Excel button: staff export the full (role-gated) file; the
+  // scanner-only student-leader roles may also export, but the server
+  // (api/admin/events/[id]/export) hands them a THIN file with no phone,
+  // meds-check, medical, or emergency-contact columns — they must ask an
+  // admin/super_admin for that detail. isAttendanceOnly is exactly that
+  // thin-roster set on this page (only staff + thin-roster ever reach here).
+  const canSeeExportButton = canExportAttendance || isAttendanceOnly;
+  // Club/major presidents may edit their OWN event's details (title, description,
+  // schedule, location, quota, etc.) — GET /api/admin/events already scopes their
+  // list to only events they own (see EventScopeService), so any event a president
+  // sees here is theirs to edit. They still may NOT touch role/major access,
+  // Managed By, or points — those stay staff-only (see canEditRestrictedFields
+  // below and the matching server-side strip in PUT /api/admin/events/[id]).
+  const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
+  const canEditEventDetails = !isAttendanceOnly || isPresidentRole;
+  // Role/major access control, Managed By (president/owner), and points are
+  // admin/registration/organizer only — even for a president editing their own event.
+  const canEditRestrictedFields = !isAttendanceOnly;
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
+  // For the "Managed By" owner pickers below — which club(s) can be assigned as
+  // an event's ownerClubIds. Fetched once; only staff (who can reach this page)
+  // are allowed to call /api/admin/clubs anyway.
+  const [clubs, setClubs] = useState<{ id: string; name: string; isArchived: boolean }[]>([]);
   // Multi-day / multi-session support. registrationMode is intentionally NOT
   // pre-selected (null) — a plain single-day event needs no choice. Picking
   // "once" (register once, attend any/all days) or "per_session" (each day
@@ -1112,6 +1139,15 @@ export default function AdminEventsPage() {
   // friendly, pauses when the tab is hidden).
   usePolling(fetchEvents, 15000);
 
+  // Clubs for the "Managed By" owner picker — fetched once, not polled (the
+  // Clubs admin page is where staff manage the list itself).
+  useEffect(() => {
+    fetch("/api/admin/clubs")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setClubs(d); })
+      .catch(() => {});
+  }, []);
+
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 
   // ---- Sessions / days editor helpers ----
@@ -1479,7 +1515,9 @@ export default function AdminEventsPage() {
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
       firstYearOnly: evt.firstYearOnly || false,
-      managedByRoles: evt.managedByRoles || []
+      managedByRoles: evt.managedByRoles || [],
+      ownerClubIds: evt.ownerClubIds || [],
+      ownerMajors: evt.ownerMajors || []
     });
     // Only pre-select a mode (which reveals the Days editor) when the event is
     // genuinely multi-day or per-session. A plain single-session "once" event
@@ -1701,9 +1739,11 @@ export default function AdminEventsPage() {
   }, {} as Record<string, AttendanceUnit[]>), [attendanceUnits]);
 
   // Export the event's attendees as .xlsx. The file is built server-side at
-  // /api/admin/events/[id]/export, which re-checks the super_admin/admin role
-  // (the button is also gated via canExportAttendance) and audit-logs the PII
-  // pull. We just trigger the download; the browser sends the session cookie.
+  // /api/admin/events/[id]/export, which re-checks the role (staff vs.
+  // thin-roster — the button is also gated via canSeeExportButton), scopes
+  // president roles to events they manage, strips sensitive columns for
+  // thin-roster roles, and audit-logs the pull. We just trigger the download;
+  // the browser sends the session cookie.
   const exportAttendanceXlsx = () => {
     if (!activeEventId) return;
     // Carry the selected day through to the server so the spreadsheet matches the
@@ -1884,19 +1924,23 @@ export default function AdminEventsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventPointsLabel}</label>
-                    <div style={{ position: "relative" }}>
+                    <div style={{ position: "relative", opacity: canEditRestrictedFields ? 1 : 0.5 }}>
                       <Trophy size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#fbbf24" }} />
-                      <input className="input" type="number" min={0} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
+                      <input className="input" type="number" min={0} disabled={!canEditRestrictedFields} value={formData.pointsAwarded} onChange={(e) => set("pointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventHousePointsHint}</p>
+                    <p style={{ fontSize: 11, color: canEditRestrictedFields ? "var(--text-muted)" : "#f59e0b", fontWeight: canEditRestrictedFields ? 400 : 700, marginTop: 6 }}>
+                      {canEditRestrictedFields ? t.eventHousePointsHint : t.eventStaffOnlyFieldHint}
+                    </p>
                   </div>
                   <div className="field">
                     <label className="label">{t.eventIndividualPointsLabel}</label>
-                    <div style={{ position: "relative" }}>
+                    <div style={{ position: "relative", opacity: canEditRestrictedFields ? 1 : 0.5 }}>
                       <Sparkles size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
-                      <input className="input" type="number" min={0} value={formData.individualPointsAwarded} onChange={(e) => set("individualPointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
+                      <input className="input" type="number" min={0} disabled={!canEditRestrictedFields} value={formData.individualPointsAwarded} onChange={(e) => set("individualPointsAwarded", Number(e.target.value))} style={{ paddingLeft: 44 }} />
                     </div>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t.eventIndividualPointsHint}</p>
+                    <p style={{ fontSize: 11, color: canEditRestrictedFields ? "var(--text-muted)" : "#f59e0b", fontWeight: canEditRestrictedFields ? 400 : 700, marginTop: 6 }}>
+                      {canEditRestrictedFields ? t.eventIndividualPointsHint : t.eventStaffOnlyFieldHint}
+                    </p>
                   </div>
                 </div>
 
@@ -2500,8 +2544,8 @@ export default function AdminEventsPage() {
               {/* Right Column: Poster & Description */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-                {/* Role Access Control */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                {/* Role Access Control — admin/registration/organizer only */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Users size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามบทบาท)" : "Role-Based Access Control"}
@@ -2511,6 +2555,9 @@ export default function AdminEventsPage() {
                       ? "เลือกบทบาทที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกบทบาท"
                       : "Select which roles can see & join this event. Leave all unchecked = visible to everyone."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {ALL_PARTICIPANT_ROLES.map((role) => {
                       const isSelected = formData.allowedRoles.includes(role);
@@ -2621,8 +2668,9 @@ export default function AdminEventsPage() {
                 </div>
 
                 {/* Major Access Control — limits which student majors may join.
-                    Combined with the role filter as AND. Empty = all majors. */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                    Combined with the role filter as AND. Empty = all majors.
+                    admin/registration/organizer only. */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Users size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามสาขา)" : "Major-Based Access Control"}
@@ -2632,6 +2680,9 @@ export default function AdminEventsPage() {
                       ? "เลือกสาขาที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกสาขา"
                       : "Select which majors can see & join this event. Leave all unchecked = open to every major."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {ALL_MAJORS.map((major) => {
                       const isSelected = formData.allowedMajors.includes(major);
@@ -2707,8 +2758,10 @@ export default function AdminEventsPage() {
 
                 {/* Managed By — which president role(s) MANAGE this event (see it in
                     their admin list, view attendance, scan, export). Independent of
-                    the role/major access above, which only controls who can JOIN. */}
-                <div className="field" style={{ marginBottom: 0 }}>
+                    the role/major access above, which only controls who can JOIN.
+                    admin/registration/organizer only — a president must never be
+                    able to reassign who manages/owns their own event. */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <ShieldCheck size={16} style={{ color: "var(--accent-primary)" }} />
                     {lang === "th" ? "ผู้ดูแลกิจกรรม (ประธาน)" : "Managed By (President)"}
@@ -2718,6 +2771,9 @@ export default function AdminEventsPage() {
                       ? "เลือกประธานที่ดูแลกิจกรรมนี้ (เห็นในรายการ ดูการเช็คอิน สแกน ส่งออก) — ไม่กระทบสิทธิ์การเข้าร่วมของนักศึกษา"
                       : "Choose which president(s) manage this event (view it, see attendance, scan, export). Does NOT affect which students can join."}
                   </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {(["club_president", "major_president"] as const).map((role) => {
                       const isSelected = formData.managedByRoles.includes(role);
@@ -2787,6 +2843,103 @@ export default function AdminEventsPage() {
                         : `✓ ${lang === "th" ? "ดูแลโดย: " : "Managed by: "}${formData.managedByRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
                     </div>
                   </div>
+
+                  {/* Owner club(s)/major(s) — WHICH club_president/major_president may
+                      actually manage this event (see EventScopeService). Without an
+                      owner assigned here, the event stays hidden from every president
+                      even though managedByRoles marks it as president-managed. */}
+                  {formData.managedByRoles.includes("club_president") && (
+                    <div style={{ marginTop: 14 }}>
+                      <label className="label" style={{ fontSize: 12 }}>
+                        {lang === "th" ? "ชมรมที่เป็นเจ้าของกิจกรรม" : "Owning club(s)"}
+                      </label>
+                      {clubs.filter((c) => !c.isArchived).length === 0 ? (
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                          {lang === "th" ? "ยังไม่มีชมรม — สร้างได้ที่ Admin > Clubs" : "No clubs yet — create one under Admin > Clubs."}
+                        </p>
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                          {clubs.filter((c) => !c.isArchived).map((club) => {
+                            const isSelected = formData.ownerClubIds.includes(club.id);
+                            return (
+                              <div
+                                key={club.id}
+                                onClick={() => {
+                                  const current = formData.ownerClubIds;
+                                  const next = isSelected
+                                    ? current.filter((id) => id !== club.id)
+                                    : [...current, club.id];
+                                  setFormData({ ...formData, ownerClubIds: next });
+                                }}
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: 10,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  background: isSelected ? "rgba(245,158,11,0.15)" : "var(--bg-elevated)",
+                                  color: isSelected ? "#f59e0b" : "var(--text-secondary)",
+                                  border: `1px solid ${isSelected ? "rgba(245,158,11,0.4)" : "var(--border-subtle)"}`,
+                                }}
+                              >
+                                {club.name}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {formData.ownerClubIds.length === 0 && (
+                        <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginTop: 6 }}>
+                          {lang === "th"
+                            ? "⚠ ยังไม่ได้กำหนดชมรม — จะไม่แสดงกับประธานชมรมคนใดจนกว่าจะเลือก"
+                            : "⚠ No club assigned yet — hidden from every club president until you pick one."}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {formData.managedByRoles.includes("major_president") && (
+                    <div style={{ marginTop: 14 }}>
+                      <label className="label" style={{ fontSize: 12 }}>
+                        {lang === "th" ? "สาขาที่เป็นเจ้าของกิจกรรม" : "Owning major(s)"}
+                      </label>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                        {ALL_MAJORS.map((major) => {
+                          const isSelected = formData.ownerMajors.includes(major);
+                          return (
+                            <div
+                              key={major}
+                              onClick={() => {
+                                const current = formData.ownerMajors;
+                                const next = isSelected
+                                  ? current.filter((m) => m !== major)
+                                  : [...current, major];
+                                setFormData({ ...formData, ownerMajors: next });
+                              }}
+                              style={{
+                                padding: "6px 12px",
+                                borderRadius: 10,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                background: isSelected ? "rgba(6,182,212,0.15)" : "var(--bg-elevated)",
+                                color: isSelected ? "#06b6d4" : "var(--text-secondary)",
+                                border: `1px solid ${isSelected ? "rgba(6,182,212,0.4)" : "var(--border-subtle)"}`,
+                              }}
+                            >
+                              {major}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {formData.ownerMajors.length === 0 && (
+                        <p style={{ fontSize: 11, color: "#06b6d4", fontWeight: 700, marginTop: 6 }}>
+                          {lang === "th"
+                            ? "⚠ ยังไม่ได้กำหนดสาขา — จะไม่แสดงกับประธานสาขาคนใดจนกว่าจะเลือก"
+                            : "⚠ No major assigned yet — hidden from every major president until you pick one."}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="field">
@@ -3338,8 +3491,9 @@ export default function AdminEventsPage() {
                         </button>
                         )}
                      </div>
-                     {!isAttendanceOnly && (
+                     {(canEditEventDetails || !isAttendanceOnly) && (
                      <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+                       {canEditEventDetails && (
                        <button
                          className="btn btn-ghost"
                          style={{ flex: 1, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(0,0,0,0.03)", fontSize: 13 }}
@@ -3347,6 +3501,8 @@ export default function AdminEventsPage() {
                        >
                          <Edit2 size={13} /> {t.eventEditBtnLabel || "Edit"}
                        </button>
+                       )}
+                       {!isAttendanceOnly && (
                        <button
                          id={`delete-event-${evt.id}-btn`}
                          className="btn btn-danger"
@@ -3356,6 +3512,7 @@ export default function AdminEventsPage() {
                        >
                          {deletingId === evt.id ? <div className="spinner w-4 h-4 border-2" /> : <Trash2 size={13} />} {t.eventDeleteBtnLabel || "Delete"}
                        </button>
+                       )}
                      </div>
                      )}
                    </div>
@@ -4698,10 +4855,14 @@ export default function AdminEventsPage() {
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {canExportAttendance && !loadingAttendance && attendance.length > 0 && (
+                {canSeeExportButton && !loadingAttendance && attendance.length > 0 && (
                   <button
                     onClick={exportAttendanceXlsx}
-                    title="Export all attendees of this event to Excel (.xlsx)"
+                    title={
+                      canExportAttendance
+                        ? "Export all attendees of this event to Excel (.xlsx)"
+                        : "Export attendees to Excel (.xlsx) — name, ID, and check-in only. Ask an admin for phone, medical, or emergency-contact detail."
+                    }
                     style={{
                       display: "flex",
                       alignItems: "center",

@@ -27,8 +27,12 @@ export const SCANNER_HREF = "/admin/scanner";
 // attendance roster — every other control there is hidden (see admin/events
 // page) and the attendance API returns a thin roster with no phone/emergency/
 // medical signal (see api/admin/events/[id]/attendance). "/admin" is allowed
-// because its page just redirects to the scanner.
-export const SCANNER_ONLY_PAGES = ["/admin", SCANNER_HREF, "/admin/events"] as const;
+// because its page just redirects to the scanner. "/admin/clubs" is allowed too,
+// but only club_president gets real data there — the page renders read-only and
+// scoped to just the club(s) they preside over (see GET /api/admin/clubs and
+// .../[id]/members); smo/major_president reaching this path get an empty/401
+// response since they preside over nothing.
+export const SCANNER_ONLY_PAGES = ["/admin", SCANNER_HREF, "/admin/events", "/admin/clubs"] as const;
 
 // May a scanner-only role reach this exact (page) path? Used by the proxy to
 // confine these roles. Exact-match only — no /admin/events/* sub-pages exist.

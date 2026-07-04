@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { canEnterAdminAny, canGiveIndividualScoreAny, effectiveRoles } from "@/lib/admin-access";
 import { ScannerService } from "@/modules/events/scanner.service";
 import { EventsService } from "@/modules/events/events.service";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { events } from "@/db/schema";
@@ -61,16 +62,18 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { qrToken, eventId, sessionId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
 
-    // President roles may only scan events they manage (managedByRoles), mirroring
-    // the /api/admin/events list + attendance/report scoping. Staff and smo unscoped.
+    // President roles may only scan events they OWN (ownerClubIds/ownerMajors),
+    // mirroring the /api/admin/events list + attendance/report scoping. Staff and
+    // smo unscoped.
     const isStaff = roles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
     const presidentTags = roles.filter((r) => ["club_president", "major_president"].includes(r));
     if (!isStaff && presidentTags.length > 0) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
-        columns: { managedByRoles: true },
+        columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const managed = (ev?.managedByRoles ?? []).some((r) => presidentTags.includes(r));
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, roles);
+      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

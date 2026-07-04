@@ -48,11 +48,11 @@
 
 | # | คอขวด | ผลกระทบ | Story |
 |---|---|---|---|
-| P1 | ไม่มี WebRTC timeout + fallback ไม่ mark active → เกมไม่เริ่มเมื่อ P2P ล้มเหลว | ติดหน้า connecting ไม่จำกัดเวลา | [US-PERF-21a](../user-stories/US-PERF-21a.md) 🔴 |
-| P2 | Host รอ 5 วิกว่าจะรู้ว่า guest เข้า + สถานะ active มาช้าตามรอบ poll | join→กระดาน ~7–11 วิ | [US-PERF-21b](../user-stories/US-PERF-21b.md) 🔴 |
-| P3 | Handshake เสียเวลารอ tick ของ signal poll หลายรอบ | +2–3 วิ ใน handshake | [US-PERF-21c](../user-stories/US-PERF-21c.md) 🟠 |
-| P4 | เดินหมาก fallback ช้าสุด 5 วิ/ตา | เกมหน่วงเมื่อ P2P ไม่ผ่าน | [US-PERF-21d](../user-stories/US-PERF-21d.md) 🟠 |
-| P5 | Query เกินจำเป็นใน /state, /move, /signal | ต้นทุน DB ต่อ poll สูงเกินเหตุ | [US-PERF-21e](../user-stories/US-PERF-21e.md) 🟠 |
+| P1 | ไม่มี WebRTC timeout + fallback ไม่ mark active → เกมไม่เริ่มเมื่อ P2P ล้มเหลว | ติดหน้า connecting ไม่จำกัดเวลา | [US-PERF-21a](../user-stories/archives/US-PERF-21a.md) 🔴 |
+| P2 | Host รอ 5 วิกว่าจะรู้ว่า guest เข้า + สถานะ active มาช้าตามรอบ poll | join→กระดาน ~7–11 วิ | [US-PERF-21b](../user-stories/archives/US-PERF-21b.md) 🔴 |
+| P3 | Handshake เสียเวลารอ tick ของ signal poll หลายรอบ | +2–3 วิ ใน handshake | [US-PERF-21c](../user-stories/archives/US-PERF-21c.md) 🟠 |
+| P4 | เดินหมาก fallback ช้าสุด 5 วิ/ตา | เกมหน่วงเมื่อ P2P ไม่ผ่าน | [US-PERF-21d](../user-stories/archives/US-PERF-21d.md) 🟠 |
+| P5 | Query เกินจำเป็นใน /state, /move, /signal | ต้นทุน DB ต่อ poll สูงเกินเหตุ | [US-PERF-21e](../user-stories/archives/US-PERF-21e.md) 🟠 |
 
 **เป้าหมายรวมของ epic:** join→เห็นกระดาน ≤ 4 วิ (WebRTC สำเร็จ) / ≤ 12 วิ (fallback, มีเพดานแน่นอน), หมากคู่แข่งแสดงผล ≤ 2.5 วิในโหมด fallback, จำนวน DB query ต่อ poll ลดลง โดยรวม request budget ไม่แย่กว่ากติกา free-tier เดิมของ US-FIX-20g
 

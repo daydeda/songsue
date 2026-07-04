@@ -4,6 +4,7 @@
 
 | วันที่ | เวอร์ชันเอกสาร | รายละเอียดการแก้ไข | ผู้รับผิดชอบ |
 | :--- | :--- | :--- | :--- |
+| 2026-07-04 | v2.6 | ย้ายชุดเอกสาร User Stories หมวดประสิทธิภาพ (US-PERF-21a ถึง US-PERF-21e) ไปจัดเก็บใน archives หลังยืนยันการทำระบบเสร็จสิ้น และอัปเดตลิงก์ดัชนีโครงการ | Antigravity AI |
 | 2026-07-02 | v2.5 | อัปเดตสถานะและ Acceptance Criteria ของ User Stories กลุ่ม US-FIX (US-FIX-20a ถึง US-FIX-20i) เป็น Implemented ตามพฤติกรรมการทำงานจริงของ Source Code | Antigravity AI |
 | 2026-07-02 | v2.4 | จัดทำเอกสารสรุปความคืบหน้าการพัฒนาหลังการรวมสาขา (Merge origin/main into report) ใน updates/2026-07-02.md ครอบคลุมระบบปฏิทินแบบทำซ้ำ, ระบบแจ้งเตือนกิจกรรมแบบ Live, การแก้ไขการแสดงผลกล้อง Scanner, ตัวกรองข้อมูลระดับการศึกษาและปีการศึกษา และระบบเกม P2P Battle (OX Game Engine + Drizzle setup) | Antigravity AI |
 | 2026-06-25 | v2.3 | ปรับปรุงระบบเอกสารการออกแบบและพัฒนา (docs/software และ docs/features) ให้สอดคล้องกับระบบจริง, จัดทำคู่มือ Drizzle ORM, และพัฒนาสคริปต์ run-local.ps1 เพื่อใช้รันระบบและตรวจสอบไลบรารีบน Local | Antigravity AI |

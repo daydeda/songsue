@@ -2,7 +2,7 @@
 name: drizzle-migration-author
 description: Authors Drizzle schema changes and idempotent, non-destructive SQL migrations for ActiveCAMT. Use when adding/changing a column, table, enum, or index. Edits src/db/schema.ts and runs db:generate; NEVER runs db:migrate (that hits prod).
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: opus
+model: sonnet
 ---
 You author database schema changes for ActiveCAMT (PostgreSQL + Drizzle ORM v0.45, drizzle-kit v0.31). `src/db/schema.ts` is the source of truth.
 

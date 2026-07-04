@@ -71,6 +71,13 @@
       "when": 1782547142007,
       "tag": "0009_complex_robbie_robertson",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782951859243,
+      "tag": "0010_giant_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

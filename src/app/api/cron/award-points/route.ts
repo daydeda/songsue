@@ -1,4 +1,5 @@
 import { checkAndAwardPastEventPoints, checkAndAwardClosedForms } from "@/lib/award-points";
+import { cleanupOldGameRooms } from "@/lib/games/stats-helper";
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "crypto";
 
@@ -26,7 +27,12 @@ export async function GET(req: Request) {
   try {
     await checkAndAwardPastEventPoints();
     await checkAndAwardClosedForms();
-    return NextResponse.json({ success: true, timestamp: new Date().toISOString() });
+    const cleanupResult = await cleanupOldGameRooms();
+    return NextResponse.json({ 
+      success: true, 
+      cleanup: cleanupResult,
+      timestamp: new Date().toISOString() 
+    });
   } catch (error) {
     console.error("Cron award-points error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

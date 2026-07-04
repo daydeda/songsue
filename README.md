@@ -108,6 +108,16 @@ npm run db:seed
 npm run db:studio
 ```
 
+### 3.5 สคริปต์รันและทดสอบระบบบนเครื่อง Local (PowerShell Local Runner)
+สำหรับผู้พัฒนาที่ใช้ระบบปฏิบัติการ Windows สามารถเรียกใช้งานสคริปต์ทดสอบและติดตั้งสิ่งจำเป็นแบบอัตโนมัติได้ผ่านคำสั่ง:
+```powershell
+.\run-local.ps1
+```
+คุณลักษณะเด่นของสคริปต์ `run-local.ps1`:
+* **Auto Library Checks:** ตรวจสอบและติดตั้ง npm dependencies (รวมถึง `dotenv` และ `tsx`) ที่จำเป็นสำหรับการเชื่อมต่อและรันงานบน Local แบบอัตโนมัติ
+* **Auto-generated Config:** สร้างและตั้งค่าไฟล์ `.env` พร้อมสุ่มรหัสความปลอดภัย (`AUTH_SECRET`, `POSTGRES_PASSWORD`) และสลับค่าพอร์ตให้ตรงกับ localhost ทันที
+* **Flexible Launch Options:** เลือกรันเฉพาะฐานข้อมูลใน Docker, รันเฉพาะเว็บแอป Next.js, หรือรันแบบ Hybrid (ฐานข้อมูลใน Docker + เว็บเซิร์ฟเวอร์ด้านนอกผ่าน Node เพื่อความรวดเร็วในการ Hot-Reload) รวมถึงมีหน้าต่างควบคุม Drizzle Tools ครบถ้วน
+
 ### 4. รันเซิร์ฟเวอร์พัฒนา (Start Development Server)
 ```bash
 npm run dev

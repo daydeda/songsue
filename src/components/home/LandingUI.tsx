@@ -11,12 +11,16 @@ import { signIn } from "next-auth/react";
 export function LandingUI({
   userCount: initialUserCount = 31,
   authError = null,
+  enableDevLogin = false,
 }: {
   userCount?: number;
   authError?: string | null;
+  enableDevLogin?: boolean;
 }) {
   const { t, lang } = useLanguage();
   const [userCount, setUserCount] = useState(initialUserCount);
+  const [devEmail, setDevEmail] = useState("dev-superadmin@localhost.test");
+  const [devRole, setDevRole] = useState("super_admin");
 
   useEffect(() => {
     fetch("/api/users/count")
@@ -208,6 +212,111 @@ export function LandingUI({
                 </svg>
                 {t.signInBtn}
               </button>
+
+              {false && process.env.NODE_ENV === "development" && (
+                <div 
+                  style={{
+                    marginTop: "16px",
+                    padding: "20px",
+                    background: "rgba(255, 107, 0, 0.04)",
+                    border: "1.5px dashed rgba(255, 107, 0, 0.3)",
+                    borderRadius: "20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "16px"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Zap size={16} color="var(--accent-primary)" style={{ animation: "pulse 2s infinite" }} />
+                    <span style={{ fontSize: "14px", fontWeight: 800, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Dev Bypass Login
+                    </span>
+                  </div>
+
+                  {enableDevLogin ? (
+                    <>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-secondary)" }}>Test Role</label>
+                        <select
+                          value={devRole}
+                          onChange={(e) => {
+                            const r = e.target.value;
+                            setDevRole(r);
+                            if (r === "super_admin") {
+                              setDevEmail("dev-superadmin@localhost.test");
+                            } else if (r === "admin") {
+                              setDevEmail("dev-admin@localhost.test");
+                            } else {
+                              setDevEmail(`dev-${r}@localhost.test`);
+                            }
+                          }}
+                          style={{
+                            padding: "10px 12px",
+                            background: "white",
+                            border: "1px solid rgba(0,0,0,0.1)",
+                            borderRadius: "10px",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                            color: "var(--text-primary)",
+                            outline: "none"
+                          }}
+                        >
+                          <option value="super_admin">Super Admin (dev-superadmin@localhost.test)</option>
+                          <option value="admin">Admin (dev-admin@localhost.test)</option>
+                          <option value="smo">SMO Student Union (dev-smo@localhost.test)</option>
+                          <option value="club_president">Club President (dev-club_president@localhost.test)</option>
+                          <option value="student">Regular Student (dev-student@localhost.test)</option>
+                        </select>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-secondary)" }}>Email Address</label>
+                        <input
+                          type="email"
+                          value={devEmail}
+                          onChange={(e) => setDevEmail(e.target.value)}
+                          style={{
+                            padding: "10px 12px",
+                            background: "white",
+                            border: "1px solid rgba(0,0,0,0.1)",
+                            borderRadius: "10px",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                            color: "var(--text-primary)",
+                            outline: "none"
+                          }}
+                        />
+                      </div>
+
+                      <button
+                        onClick={() => signIn("credentials", { email: devEmail, name: `Dev ${devRole}`, role: devRole, callbackUrl: "/dashboard" })}
+                        style={{
+                          width: "100%",
+                          padding: "12px",
+                          background: "var(--accent-primary)",
+                          color: "white",
+                          borderRadius: "12px",
+                          fontSize: "14px",
+                          fontWeight: 700,
+                          border: "none",
+                          cursor: "pointer",
+                          boxShadow: "0 10px 20px -5px rgba(255, 107, 0, 0.3)",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        Bypass Sign In
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", background: "rgba(220, 38, 38, 0.05)", border: "1px solid rgba(220, 38, 38, 0.2)", borderRadius: "12px", padding: "12px" }}>
+                      <AlertTriangle size={16} color="rgb(220, 38, 38)" style={{ marginTop: "2px", flexShrink: 0 }} />
+                      <span style={{ fontSize: "12px", fontWeight: 500, color: "rgb(220, 38, 38)", lineHeight: 1.4 }}>
+                        Dev Bypass Login is disabled. Enable it by setting <strong>ENABLE_DEV_LOGIN=true</strong> in your <strong>.env</strong> file.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center gap-3 justify-center group cursor-default">
                 <ShieldCheck size={20} className="text-gray-400 group-hover:text-green-500 transition-colors" />

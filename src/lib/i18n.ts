@@ -480,6 +480,8 @@ export const translations = {
     fbSFormAddLabel: "+ Add",
     fbSFormLoadingPeople: "Loading people…",
     fbSFormNoOneAssigned: "No one assigned yet — only super-admins/admins can see and fill this form.",
+    // P2P Battle
+    battleP2pPrivacyNote: "P2P play connects you directly with your opponent — your device's network address (IP) is exchanged with the other player to establish the connection.",
   },
   th: {
     welcome: "ยินดีต้อนรับสู่ ActiveCAMT",
@@ -959,6 +961,8 @@ export const translations = {
     fbSFormAddLabel: "+ เพิ่ม",
     fbSFormLoadingPeople: "กำลังโหลดรายชื่อ…",
     fbSFormNoOneAssigned: "ยังไม่มีผู้ถูกกำหนด — เฉพาะผู้ดูแลระบบสูงสุด/แอดมินเท่านั้นที่สามารถดูและกรอกแบบฟอร์มนี้ได้",
+    // P2P Battle
+    battleP2pPrivacyNote: "การเล่นแบบ P2P จะเชื่อมต่อคุณกับคู่แข่งโดยตรง ระบบจึงมีการแลกเปลี่ยนที่อยู่เครือข่าย (IP) ของอุปกรณ์ระหว่างผู้เล่นทั้งสองฝั่งเพื่อสร้างการเชื่อมต่อ",
   },
   mm: {
     welcome: "ActiveCAMT မှ ကြိုဆိုပါတယ်",
@@ -1438,6 +1442,8 @@ export const translations = {
     fbSFormAddLabel: "+ ထည့်ရန်",
     fbSFormLoadingPeople: "လူများ ဖွင့်နေသည်…",
     fbSFormNoOneAssigned: "မည်သူမှ မသတ်မှတ်ရသေး — ဆူပါအက်ဒမင်/အက်ဒမင်များသာ ဤဖောင်ကို မြင်ရပြီး ဖြည့်နိုင်သည်။",
+    // P2P Battle
+    battleP2pPrivacyNote: "P2P ကစားခြင်းသည် သင့်ကို ပြိုင်ဘက်နှင့် တိုက်ရိုက်ချိတ်ဆက်ပေးသည် — ချိတ်ဆက်မှုတည်ဆောက်ရန် သင့်စက်၏ ကွန်ရက်လိပ်စာ (IP) ကို တစ်ဖက်ကစားသမားနှင့် ဖလှယ်ပါသည်။",
   },
   cn: {
     welcome: "欢迎来到 ActiveCAMT",
@@ -1917,5 +1923,7 @@ export const translations = {
     fbSFormAddLabel: "+ 添加",
     fbSFormLoadingPeople: "正在加载人员…",
     fbSFormNoOneAssigned: "暂未指定任何人 — 仅超级管理员/管理员可查看并填写此表单。",
+    // P2P Battle
+    battleP2pPrivacyNote: "P2P 对战会将您与对手直接连接——为建立连接，您设备的网络地址（IP）会与对方玩家交换。",
   },
 };

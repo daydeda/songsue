@@ -35,12 +35,12 @@ gantt
 
 | ID | Story / Task | Owner | Estimate | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **[US-OPT-19a](../user-stories/US-OPT-19a.md)** | **แยกข้อมูลกิจกรรมเป็นแบบ Static และ Per-user**<br>- เพิ่มระบบแคชครอบข้อมูลกิจกรรมกลางด้วย `unstable_cache` | Developer | 10 hrs | [ ] |
-| **[US-OPT-19b](../user-stories/US-OPT-19b.md)** | **เก็บข้อมูลสาขา (major) ของผู้ใช้ใน Session**<br>- ลดทอนการเขียนคิวรี่หาข้อมูลผู้ใช้ในหน้า API ร้องขอทั่วไป | Developer | 6 hrs | [ ] |
-| **[US-OPT-19c](../user-stories/US-OPT-19c.md)** | **ตัดฟังก์ชัน checkAndAwardClosedForms ออกจาก API บอร์ดบ้าน**<br>- ย้ายภาระงานตรวจสอบฟอร์มปิดไปยัง Cron Job ทุก 5 นาที | Developer | 6 hrs | [ ] |
-| **[US-OPT-19d](../user-stories/US-OPT-19d.md)** | **ทำแคชให้ประกาศแดชบอร์ด (Announcement Caching)**<br>- นำเอาตัวควบคุม Pre-fetch ฝั่งเซิร์ฟเวอร์มาใช้ตัด Polling | Developer | 8 hrs | [ ] |
-| **[US-OPT-19e](../user-stories/US-OPT-19e.md)** | **จัดการ Cache-Control Headers ให้ครบทุก API Route**<br>- ตรวจเช็กและป้อนค่า header ให้เหมาะสมกับระดับความเป็นส่วนตัวข้อมูล | Developer | 8 hrs | [ ] |
-| **[US-OPT-19f](../user-stories/US-OPT-19f.md)** | **วัดผล Lighthouse Score และตรวจสอบความเสถียร**<br>- บันทึกเปรียบเทียบค่าความเร็ว ก่อนทำ และ หลังทำระบบแคช | Developer | 8 hrs | [ ] |
+| **[US-OPT-19a](../user-stories/archives/US-OPT-19a.md)** | **แยกข้อมูลกิจกรรมเป็นแบบ Static และ Per-user**<br>- เพิ่มระบบแคชครอบข้อมูลกิจกรรมกลางด้วย `unstable_cache` | Developer | 10 hrs | [ ] |
+| **[US-OPT-19b](../user-stories/archives/US-OPT-19b.md)** | **เก็บข้อมูลสาขา (major) ของผู้ใช้ใน Session**<br>- ลดทอนการเขียนคิวรี่หาข้อมูลผู้ใช้ในหน้า API ร้องขอทั่วไป | Developer | 6 hrs | [ ] |
+| **[US-OPT-19c](../user-stories/archives/US-OPT-19c.md)** | **ตัดฟังก์ชัน checkAndAwardClosedForms ออกจาก API บอร์ดบ้าน**<br>- ย้ายภาระงานตรวจสอบฟอร์มปิดไปยัง Cron Job ทุก 5 นาที | Developer | 6 hrs | [ ] |
+| **[US-OPT-19d](../user-stories/archives/US-OPT-19d.md)** | **ทำแคชให้ประกาศแดชบอร์ด (Announcement Caching)**<br>- นำเอาตัวควบคุม Pre-fetch ฝั่งเซิร์ฟเวอร์มาใช้ตัด Polling | Developer | 8 hrs | [ ] |
+| **[US-OPT-19e](../user-stories/archives/US-OPT-19e.md)** | **จัดการ Cache-Control Headers ให้ครบทุก API Route**<br>- ตรวจเช็กและป้อนค่า header ให้เหมาะสมกับระดับความเป็นส่วนตัวข้อมูล | Developer | 8 hrs | [ ] |
+| **[US-OPT-19f](../user-stories/archives/US-OPT-19f.md)** | **วัดผล Lighthouse Score และตรวจสอบความเสถียร**<br>- บันทึกเปรียบเทียบค่าความเร็ว ก่อนทำ และ หลังทำระบบแคช | Developer | 8 hrs | [ ] |
 
 ---
 

@@ -10,11 +10,13 @@
  * To proceed against such a database, set CONFIRM=yes, e.g.
  *   CONFIRM=yes npm run db:reset
  */
+export function isRemoteDatabase(url: string): boolean {
+  return /supabase\.(co|com)|amazonaws\.com|:6543|render\.com|neon\.tech/.test(url);
+}
+
 export function assertDestructiveAllowed(action: string): void {
   const url = process.env.DATABASE_URL ?? "";
-  const looksRemote =
-    /supabase\.(co|com)|amazonaws\.com|:6543|render\.com|neon\.tech/.test(url) ||
-    process.env.NODE_ENV === "production";
+  const looksRemote = isRemoteDatabase(url) || process.env.NODE_ENV === "production";
 
   if (looksRemote && process.env.CONFIRM !== "yes") {
     console.error(

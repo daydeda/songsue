@@ -213,7 +213,7 @@ export function LandingUI({
                 {t.signInBtn}
               </button>
 
-              {process.env.NODE_ENV === "development" && (
+              {false && process.env.NODE_ENV === "development" && (
                 <div 
                   style={{
                     marginTop: "16px",

@@ -57,7 +57,7 @@ const primaryLinks = user ? [
   { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
   { href: "/dashboard/history", label: t.eventHistory, icon: History },
   { href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },
-  { href: "/battle", label: lang === "th" ? "เกม P2P" : "P2P Battle", icon: Gamepad2 },
+  // { href: "/battle", label: lang === "th" ? "เกม P2P" : "P2P Battle", icon: Gamepad2 },
 ] : [
   { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
   { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },

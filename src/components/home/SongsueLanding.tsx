@@ -10,7 +10,7 @@ import {
   type Variants,
 } from "framer-motion";
 import { signIn } from "next-auth/react";
-import { Aperture, ChevronDown, Film, Lock } from "lucide-react";
+import { Aperture, AlertTriangle, ChevronDown, Film, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { songsueCopy, type SongsueCopy } from "./songsue-copy";
 
@@ -294,8 +294,17 @@ const sectionBodyStyle: CSSProperties = {
   lineHeight: 1.75,
 };
 
-export function SongsueLanding() {
-  const { lang, setLang } = useLanguage();
+export function SongsueLanding({
+  variant = "home",
+  authError = null,
+}: {
+  /** "login" always shows a working sign-in button (no registration countdown gate)
+   *  and swaps the CTA copy for a returning-user welcome, since this variant is the
+   *  auth entry/error-recovery surface, not the pre-launch registration pitch. */
+  variant?: "home" | "login";
+  authError?: string | null;
+} = {}) {
+  const { lang, setLang, t } = useLanguage();
   const storyLang: "th" | "en" = lang === "th" ? "th" : "en";
   const copy = songsueCopy[storyLang];
   const prefersReducedMotion = useReducedMotion();
@@ -424,14 +433,36 @@ export function SongsueLanding() {
           }}
         >
           <div className="flex flex-col gap-3">
-            <span style={kickerStyle}>{copy.cta.kicker}</span>
+            <span style={kickerStyle}>{variant === "login" ? copy.hero.kicker : copy.cta.kicker}</span>
             <h2 style={{ fontSize: "clamp(28px, 4.5vw, 40px)", fontWeight: 900, color: "rgba(255,255,255,0.96)", letterSpacing: "-0.02em" }}>
-              {copy.cta.title}
+              {variant === "login" ? t.welcome : copy.cta.title}
             </h2>
-            <p style={{ fontSize: 15, color: "rgba(255,255,255,0.6)", lineHeight: 1.6 }}>{copy.cta.body}</p>
+            <p style={{ fontSize: 15, color: "rgba(255,255,255,0.6)", lineHeight: 1.6 }}>
+              {variant === "login" ? t.accessDashboard : copy.cta.body}
+            </p>
           </div>
 
-          {countdown.isOpen ? (
+          {authError && (
+            <div
+              role="alert"
+              className="flex flex-col gap-2 w-full text-left"
+              style={{
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.35)",
+                borderRadius: 16,
+                padding: "16px 18px",
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} style={{ flexShrink: 0, color: "#f87171" }} />
+                <span style={{ fontSize: 15, fontWeight: 800, color: "#f87171" }}>{t.signInErrorTitle}</span>
+              </div>
+              <p style={{ fontSize: 13.5, color: "rgba(255,255,255,0.7)", lineHeight: 1.55, margin: 0 }}>{t.signInErrorBody}</p>
+              <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.45)", lineHeight: 1.55, margin: 0 }}>{t.signInErrorHint}</p>
+            </div>
+          )}
+
+          {variant === "login" || countdown.isOpen ? (
             <button
               onClick={() => signIn("google", { callbackUrl: "/" })}
               className="btn btn-primary btn-full touch-target"
@@ -444,7 +475,7 @@ export function SongsueLanding() {
               }}
             >
               <GoogleIcon />
-              {copy.cta.unlockedLabel}
+              {variant === "login" ? t.signInBtn : copy.cta.unlockedLabel}
             </button>
           ) : (
             <div className="flex flex-col items-center gap-4 w-full">
@@ -473,8 +504,6 @@ export function SongsueLanding() {
               </button>
             </div>
           )}
-
-          <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.4)", lineHeight: 1.5, textAlign: "center" }}>{copy.cta.footnote}</p>
         </div>
       </motion.section>
     </div>

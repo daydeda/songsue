@@ -18,7 +18,6 @@ export type SongsueCopy = {
     lockedLabel: string;
     unlockedLabel: string;
     dateNote: string;
-    footnote: string;
   };
   langToggleLabel: string;
 };
@@ -63,7 +62,6 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
       lockedLabel: "เปิดลงทะเบียนในอีก",
       unlockedLabel: "ลงทะเบียนด้วย Google",
       dateNote: "เปิดลงทะเบียน 24 กรกฎาคม 2569",
-      footnote: "ใช้บัญชี Google ของมหาวิทยาลัยเชียงใหม่ (@cmu.ac.th) ในการเข้าสู่ระบบ",
     },
     langToggleLabel: "EN",
   },
@@ -102,7 +100,6 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
       lockedLabel: "Registration opens in",
       unlockedLabel: "Register with Google",
       dateNote: "Registration opens July 24, 2026",
-      footnote: "Sign in with your Chiang Mai University (@cmu.ac.th) Google account.",
     },
     langToggleLabel: "TH",
   },

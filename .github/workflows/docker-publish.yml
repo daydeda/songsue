@@ -1,9 +1,13 @@
 name: Build and publish Docker image
 
-# Builds the production image from the Dockerfile and pushes it to GHCR so the
-# Portainer stack on dev2.camt.cmu.ac.th can pull it. Runs on every push to main
-# and can be triggered manually. After it succeeds, in Portainer: update the
-# stack with "Pull latest image version" to roll out the new build.
+# Builds an image from this repo's Dockerfile and pushes it to GHCR under this
+# repo's OWN tag. This repo (songsue) is a downstream dev fork of
+# daydeda/smocamt-website (see `upstream` remote) — it must never publish to
+# ghcr.io/daydeda/smocamt-website, since that tag is what the REAL production
+# Portainer stack (dev2.camt.cmu.ac.th) pulls from. This workflow previously
+# pushed to that same tag, which meant any push to this repo's main could
+# silently overwrite the real production image with unreleased/stale code.
+# Runs on every push to main and can be triggered manually.
 
 on:
   push:
@@ -15,7 +19,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/daydeda/smocamt-website
+  IMAGE: ghcr.io/daydeda/songsue
 
 jobs:
   build-and-push:
@@ -45,17 +49,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Auto-deploy: tell Portainer to re-pull the new image and redeploy the
-      # stack. Runs only once PORTAINER_WEBHOOK_URL is set as a repo secret (until
-      # then this step no-ops, so the build never fails for a missing webhook).
-      # Get the URL from the stack: Portainer → stack → Webhooks (GitOps updates).
-      - name: Trigger Portainer redeploy
-        env:
-          WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK_URL }}
-        run: |
-          if [ -z "$WEBHOOK" ]; then
-            echo "PORTAINER_WEBHOOK_URL secret not set — skipping auto-redeploy."
-            exit 0
-          fi
-          echo "Triggering Portainer redeploy…"
-          curl -fsS -X POST "$WEBHOOK"
+      # No Portainer auto-deploy step here on purpose: this repo doesn't own the
+      # production stack, so its CI must never be able to trigger a redeploy of
+      # it. If a standalone songsue deployment is needed later, wire a redeploy
+      # step to that deployment's own webhook — not the smocamt-website one.

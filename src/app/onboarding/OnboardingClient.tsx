@@ -7,7 +7,7 @@ import { Camera, Check, Loader2, LogOut, User, Menu, X, AlertTriangle, Lock } fr
 import { useLanguage } from "@/lib/LanguageContext";
 import { compressImageFile } from "@/lib/compress-image";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { FACULTIES, majorsForFaculty } from "@/lib/faculties";
+import { majorsForFaculty } from "@/lib/faculties";
 
 // Rich CAMT major labels; other faculties show their bare code (or no Major
 // dropdown at all until their major lists are provided).
@@ -446,21 +446,6 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
               <input className={inp} placeholder={t.nickname} value={formData.nickname} onChange={(e) => set("nickname", e.target.value)} style={errStyle(validationTriggered && !formData.nickname.trim())} />
               <ErrMsg show={validationTriggered && !formData.nickname.trim()} msg={isTh ? "กรุณากรอกชื่อเล่น" : "This field is required"} />
             </div>
-          </div>
-
-          {/* Faculty */}
-          <div className="field">
-            <label className={lbl}>{t.faculty}</label>
-            <select
-              className={inp}
-              value={formData.faculty}
-              onChange={(e) => set("faculty", e.target.value)}
-              style={{ minHeight: 48 }}
-            >
-              {FACULTIES.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
           </div>
 
           {/* Major (only for faculties that have a major list) */}

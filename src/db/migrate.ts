@@ -1062,13 +1062,21 @@ async function migrate() {
   `;
   console.log("  ✅ inserted 12 new faculty houses (ON CONFLICT DO NOTHING)");
 
-  // 65. Backfill users.faculty for legacy rows (all existing students are CAMT),
-  // then reset the per-user current-house pointer so everyone re-derives their
-  // (now faculty-scoped) house at next check-in. The reset is intentional and
-  // non-destructive: house point history in score_history is preserved.
+  // 65. Backfill users.faculty for legacy rows (all existing students are CAMT).
+  //
+  // ⚠️ This step ORIGINALLY also ran `UPDATE users SET house_id = NULL` — a
+  // one-time reset intended for the four-faculty-houses cutover. That line is
+  // GONE. It ran unconditionally on every deploy (this script has no
+  // migrations-tracking table; every `db:migrate`/`db:migrate:container` run
+  // replays every step from the top), so it wiped EVERY user's house on every
+  // single deploy — the four-faculty model was reverted in step 66 below, but
+  // nothing ever removed the reset, so it kept firing forever after. That's
+  // the "my house changed after a redeploy" bug (fixed 2026-07-06; see
+  // scripts/restore-houses-from-supabase.mjs for the one-time recovery of
+  // pre-reset assignments). DO NOT reintroduce an unconditional house_id
+  // reset here — it will immediately reproduce that bug on the next deploy.
   await sql`UPDATE users SET faculty = 'CAMT' WHERE faculty IS NULL`;
-  await sql`UPDATE users SET house_id = NULL`;
-  console.log("  ✅ backfilled users.faculty + reset users.house_id (re-derived at next check-in)");
+  console.log("  ✅ backfilled users.faculty");
 
   // 66. Revert the four-faculty-houses model (steps 62-65). ActiveCAMT is
   // CAMT-only — MASSCOM/ARCH/ARTS were prep work for a separate project

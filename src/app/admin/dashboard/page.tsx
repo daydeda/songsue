@@ -49,13 +49,8 @@ export default function AdminDashboardOverview() {
     return defaultName;
   };
 
-  // Per-faculty houses share colour names ("Mom"…), so prefix the faculty to keep
-  // the 16 leaderboard rows unambiguous (e.g. "MASSCOM · Mom"). Translation keys
-  // off colorGroup since faculty house ids are like "masscom-red".
-  const houseLabel = (h: { id: string; name: string; faculty?: string; colorGroup?: string }) => {
-    const color = getTranslatedHouseName(h.colorGroup || h.id, h.name);
-    return h.faculty ? `${h.faculty} · ${color}` : color;
-  };
+  const houseLabel = (h: { id: string; name: string; faculty?: string; colorGroup?: string }) =>
+    getTranslatedHouseName(h.colorGroup || h.id, h.name);
 
   const translateActivityReason = (reason: string) => {
     if (!reason) return "";

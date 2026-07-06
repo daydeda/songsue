@@ -1070,6 +1070,30 @@ async function migrate() {
   await sql`UPDATE users SET house_id = NULL`;
   console.log("  ✅ backfilled users.faculty + reset users.house_id (re-derived at next check-in)");
 
+  // 66. Revert the four-faculty-houses model (steps 62-65). ActiveCAMT is
+  // CAMT-only — MASSCOM/ARCH/ARTS were prep work for a separate project
+  // (Songsue) that landed here by mistake. src/lib/faculties.ts is already
+  // reverted to CAMT-only in code; this removes the 12 orphan faculty house
+  // rows step 64 inserted. NON-DESTRUCTIVE guard: only deletes a house row if
+  // nothing references it — users.house_id has no cascade (a real reference
+  // would abort the statement) and score_history.house_id CASCADEs on delete
+  // (a real reference would silently wipe that house's point history), so
+  // both are checked before any row is removed. Should always remove all 12
+  // rows in practice, since every user's faculty has been 'CAMT' since step
+  // 64 and the app never assigns a non-CAMT house.
+  const deletedHouses = await sql`
+    DELETE FROM houses h
+    WHERE h.faculty <> 'CAMT'
+      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.house_id = h.id)
+      AND NOT EXISTS (SELECT 1 FROM score_history sh WHERE sh.house_id = h.id)
+    RETURNING h.id
+  `;
+  console.log(`  ✅ removed ${deletedHouses.length} orphan faculty house row(s)`);
+  const remaining = await sql`SELECT id FROM houses WHERE faculty <> 'CAMT'`;
+  if (remaining.length > 0) {
+    console.warn(`  ⚠️ ${remaining.length} non-CAMT house row(s) still referenced by data, left in place:`, remaining.map((r) => r.id).join(", "));
+  }
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

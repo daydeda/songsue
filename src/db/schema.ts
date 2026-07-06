@@ -5,17 +5,16 @@ import type { ShopCustomField, ShopCustomValue } from "@/lib/shop-custom-fields"
 import type { ShopDeliveryTier } from "@/lib/shop-delivery";
 
 export const houses = pgTable("houses", {
-  // Per-faculty house id, e.g. 'red' (legacy CAMT) or 'masscom-red'. The legacy
-  // CAMT rows keep their colour ids so existing house_id foreign keys never move.
+  // House id, e.g. 'red'. ActiveCAMT is CAMT-only (see src/lib/faculties.ts) so
+  // this is always a bare colour id.
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   color: text("color").default("#6366f1"), // Hex color for display
   points: integer("points").notNull().default(0),
-  // Which faculty owns this house: 'CAMT' | 'MASSCOM' | 'ARCH' | 'ARTS'.
+  // Always 'CAMT'. Kept (rather than dropped) from a since-reverted multi-faculty
+  // migration meant for a separate project — see drizzle/0022_revert_four_faculty_houses.sql.
   faculty: text("faculty").notNull().default("CAMT"),
-  // Rollup key shared across faculties: 'red' | 'green' | 'yellow' | 'blue'.
-  // The public leaderboard sums points by colorGroup so same-colour houses across
-  // faculties read as one house.
+  // Same as `id` while faculty is single-valued; kept for the same reason as `faculty`.
   colorGroup: text("color_group").notNull().default("red"),
 }, (table) => ([
   index("idx_houses_color_group").on(table.colorGroup),
@@ -69,8 +68,8 @@ export const users = pgTable("users", {
   // Profile specifics
   studentId: text("student_id").unique(),
   nickname: text("nickname"),
-  faculty: text("faculty"), // 'CAMT' | 'MASSCOM' | 'ARCH' | 'ARTS' (null treated as CAMT)
-  major: text("major"), // faculty-specific major code (e.g. CAMT: ANI, DG, DII, MMIT, SE)
+  faculty: text("faculty"), // always 'CAMT' (null treated as CAMT too) — see src/lib/faculties.ts
+  major: text("major"), // major code, e.g. ANI, DG, DII, MMIT, SE
   imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }
   religion: text("religion"),
   phone: text("phone").unique(),

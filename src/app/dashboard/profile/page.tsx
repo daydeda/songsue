@@ -12,7 +12,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { compressImageFile } from "@/lib/compress-image";
 import { useRouter } from "next/navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { FACULTIES, majorsForFaculty } from "@/lib/faculties";
+import { majorsForFaculty } from "@/lib/faculties";
 
 // Rich CAMT major labels; other faculties show their bare code.
 const MAJOR_LABELS: Record<string, string> = {
@@ -578,26 +578,6 @@ export default function ProfilePage() {
                       {t.back === "กลับ" ? "กรุณากรอกชื่อเล่น" : "This field is required"}
                     </span>
                   )}
-                </div>
-                <div className="field col-span-8">
-                  <label className="label">
-                    {t.faculty} {isProfileCompleted && "(Locked)"}
-                  </label>
-                  <select
-                    className="input"
-                    disabled={isProfileCompleted}
-                    value={formData.faculty}
-                    onChange={(e) => set("faculty", e.target.value)}
-                    style={{
-                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
-                      cursor: isProfileCompleted ? "not-allowed" : undefined,
-                      opacity: isProfileCompleted ? 0.7 : undefined,
-                    }}
-                  >
-                    {FACULTIES.map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
                 </div>
                 {currentMajorOptions.length > 0 && (
                   <div className="field col-span-8">

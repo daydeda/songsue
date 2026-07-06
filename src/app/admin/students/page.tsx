@@ -282,19 +282,14 @@ export default function AdminStudentsDirectory() {
     return fields.some(isMeaningful) || user.faintingHistory === true;
   };
 
-  // Per-faculty houses share colour names, so translate by colour group and
-  // prefix the faculty (e.g. "MASSCOM · Mom"). Looks the house up in the fetched
-  // list to recover faculty/colorGroup for ids that only arrive as a bare id.
   const getHouseName = (id: string, defaultName: string) => {
     const h = houses.find(x => x.id === id);
     const cg = h?.colorGroup || id;
-    const color =
-      cg === "red" ? (t.houseMom || "Mom")
+    return cg === "red" ? (t.houseMom || "Mom")
       : cg === "green" ? (t.houseTo || "To")
       : cg === "yellow" ? (t.houseLuang || "Luang")
       : cg === "blue" ? (t.houseMakara || "Makon")
       : defaultName;
-    return h?.faculty ? `${h.faculty} · ${color}` : color;
   };
 
   const houseOptions = [

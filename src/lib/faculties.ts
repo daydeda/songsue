@@ -1,11 +1,11 @@
-// The 4 collaborating faculties and the 4 shared colour houses.
-//
-// Houses are now per-faculty (4 faculties × 4 colours = 16 rows in the houses
-// table), but the public leaderboard rolls points up by COLOUR — so a CAMT red
-// house and a MASSCOM red house read as a single "red" house. See
-// HousesService.getLeaderboard / pickBalancedHouseIdForFaculty.
+// ActiveCAMT is CAMT-only — the multi-faculty (MASSCOM/ARCH/ARTS) model was
+// prep work for a separate project (Songsue) that landed here by mistake and
+// has been reverted. This module keeps the `faculty`-shaped plumbing (houses.
+// faculty, houses.color_group, users.faculty columns) so the DB doesn't need a
+// column drop, but only CAMT is a valid faculty now — 4 colour houses, no
+// per-faculty split.
 
-export type FacultyId = "CAMT" | "MASSCOM" | "ARCH" | "ARTS";
+export type FacultyId = "CAMT";
 export type ColorId = "red" | "green" | "yellow" | "blue";
 
 export interface Faculty {
@@ -18,12 +18,6 @@ export interface Faculty {
 
 export const FACULTIES: Faculty[] = [
   { id: "CAMT", name: "CAMT", majors: ["ANI", "DG", "DII", "MMIT", "SE"] },
-  // Real major lists for the other faculties are pending — until provided, Major
-  // is optional for these faculties (no sub-selection shown). Add codes here to
-  // turn on the Major dropdown for that faculty.
-  { id: "MASSCOM", name: "MassComm", majors: [] },
-  { id: "ARCH", name: "Architecture", majors: [] },
-  { id: "ARTS", name: "Fine Arts", majors: [] },
 ];
 
 export const FACULTY_IDS: FacultyId[] = FACULTIES.map((f) => f.id);
@@ -56,21 +50,21 @@ export const COLORS: HouseColor[] = [
 
 export const COLOR_IDS: ColorId[] = COLORS.map((c) => c.id);
 
-/** Stable per-faculty house id. CAMT keeps the bare colour id so legacy house_id
- *  foreign keys (users.house_id, score_history.house_id) never have to move. */
-export const houseRowId = (faculty: FacultyId, color: ColorId): string =>
-  faculty === "CAMT" ? color : `${faculty.toLowerCase()}-${color}`;
+/** House id for a colour. CAMT keeps the bare colour id ('red'…) so existing
+ *  house_id foreign keys (users.house_id, score_history.house_id) never move. */
+export const houseRowId = (_faculty: FacultyId, color: ColorId): string => color;
 
-/** The colour group ('red'…) a house id belongs to. Works for both the bare
- *  CAMT ids ('red') and the '<faculty>-<colour>' ids ('masscom-red'). Returns
- *  null for an unrecognised id. */
+/** The colour group a house id belongs to. Also tolerates leftover
+ *  '<faculty>-<colour>' ids (e.g. 'masscom-red') from the reverted multi-faculty
+ *  migration, in case any haven't been cleaned up from the DB yet. Returns null
+ *  for an unrecognised id. */
 export const colorGroupOfHouseId = (houseId: string | null | undefined): ColorId | null => {
   if (!houseId) return null;
   const tail = houseId.includes("-") ? houseId.slice(houseId.lastIndexOf("-") + 1) : houseId;
   return (COLOR_IDS as string[]).includes(tail) ? (tail as ColorId) : null;
 };
 
-/** All 16 (faculty, colour) house rows, in a stable order. */
+/** All (faculty, colour) house rows, in a stable order — just the 4 CAMT houses. */
 export const ALL_HOUSE_ROWS: { id: string; faculty: FacultyId; color: HouseColor }[] =
   FACULTY_IDS.flatMap((faculty) =>
     COLORS.map((color) => ({ id: houseRowId(faculty, color.id), faculty, color })),

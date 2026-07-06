@@ -10,8 +10,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Returns all 16 (faculty × colour) houses so the admin can target a specific
-    // faculty's colour house for point adjustments. Ordered for a stable UI.
+    // Returns the 4 CAMT colour houses for point adjustments. Ordered for a stable UI.
     const list = await db.query.houses.findMany({
       columns: {
         id: true,

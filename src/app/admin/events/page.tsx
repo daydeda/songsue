@@ -273,6 +273,9 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
 // Student majors that an event's registration can be restricted to. Includes
 // postgraduate majors (KIM, DTM) added for Master's/Ph.D. targeting.
 const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
+// KIM (Master's) and DTM (Ph.D.) are the postgraduate majors — used to power
+// the "Master & Ph.D Degree" attendance roster filter.
+const POSTGRAD_MAJORS: string[] = ["KIM", "DTM"];
 const MAJOR_LABELS: Record<string, string> = {
   ANI: "ANI - Animation & Visual Effects",
   DG: "DG - Digital Game",
@@ -380,6 +383,7 @@ export default function AdminEventsPage() {
   const [filterMedical, setFilterMedical] = useState(false);
   const [filterNotCheckedIn, setFilterNotCheckedIn] = useState(false);
   const [filterStudentsOnly, setFilterStudentsOnly] = useState(false);
+  const [filterPostgrad, setFilterPostgrad] = useState(false);
   const [filterThai, setFilterThai] = useState(true);
   const [filterInternational, setFilterInternational] = useState(true);
   const [yearFilter, setYearFilter] = useState<Set<number>>(new Set()); // empty = all years
@@ -1557,6 +1561,7 @@ export default function AdminEventsPage() {
     setFilterMedical(false);
     setFilterNotCheckedIn(false);
     setFilterStudentsOnly(false);
+    setFilterPostgrad(false);
     setFilterThai(true);
     setFilterInternational(true);
     setSelectedSessionId(null);
@@ -1600,6 +1605,9 @@ export default function AdminEventsPage() {
     if (filterStudentsOnly && !isRegularStudent(m.user)) {
       return false;
     }
+    if (filterPostgrad && !POSTGRAD_MAJORS.includes(m.user?.major || "")) {
+      return false;
+    }
 
     const studentId = m.user?.studentId || "";
     const cleanId = studentId.trim();
@@ -1633,7 +1641,7 @@ export default function AdminEventsPage() {
 
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hasMedicalSignal is pure over its `user` arg (no state/props); listing it would recreate each render and defeat the memo
-  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterThai, filterInternational, yearFilter]);
+  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterPostgrad, filterThai, filterInternational, yearFilter]);
 
   // Header tallies honor the selected day (but not the other roster filters) so
   // "X / Y checked in" matches whichever day is being viewed.
@@ -5040,6 +5048,27 @@ export default function AdminEventsPage() {
                     {filterStudentsOnly ? "Showing: Students Only" : "Filter: Students Only"}
                   </button>
 
+                  <button
+                    onClick={() => setFilterPostgrad(!filterPostgrad)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 99,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "all 0.2s",
+                      border: filterPostgrad ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                      background: filterPostgrad ? "var(--accent-glow)" : "var(--bg-surface)",
+                      color: filterPostgrad ? "var(--accent-primary)" : "var(--text-secondary)"
+                    }}
+                  >
+                    <GraduationCap size={16} />
+                    {filterPostgrad ? "Showing: Master & Ph.D Degree" : "Filter: Master & Ph.D Degree"}
+                  </button>
+
                   {([1, 2, 3, 4, 5] as const).map((yr) => {
                     const active = yearFilter.has(yr);
                     return (
@@ -5118,7 +5147,7 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || !filterThai || !filterInternational || selectedSessionId || yearFilter.size > 0) && (
+                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || filterPostgrad || !filterThai || !filterInternational || selectedSessionId || yearFilter.size > 0) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
                     Filtered: Showing {attendanceUnits.length} of {tallyUnits.length} records

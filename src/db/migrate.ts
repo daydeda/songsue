@@ -1102,6 +1102,49 @@ async function migrate() {
     console.warn(`  ⚠️ ${remaining.length} non-CAMT house row(s) still referenced by data, left in place:`, remaining.map((r) => r.id).join(", "));
   }
 
+  // 67. No-show strike-out: users.no_show_count / users.registration_blocked.
+  // Students who pre-register for an event but never check in accumulate
+  // strikes; at 3 strikes registrationBlocked flips true, blocking new
+  // pre-registration until a staff member resets it. Additive, NOT NULL with
+  // a default so existing rows backfill to 0/false automatically — no data
+  // transformation, no drop. Idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS no_show_count integer NOT NULL DEFAULT 0
+  `;
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS registration_blocked boolean NOT NULL DEFAULT false
+  `;
+  console.log("  ✅ users.no_show_count + users.registration_blocked");
+
+  // 68. no_show_appeals — lets a registration-blocked student (see step 67)
+  // submit an appeal message instead of only ever waiting on a manual staff
+  // reset (see /api/admin/students/[id]/strikes/reset). no_show_count_at_appeal
+  // snapshots users.no_show_count at submission time so an admin reviewing later
+  // still sees the context even if the count has since changed. The partial
+  // unique index blocks a user from having more than one 'pending' appeal open
+  // at once (spam guard) — once it's approved/rejected they can submit again if
+  // blocked again. New table + CREATE INDEX IF NOT EXISTS ⇒ additive, idempotent,
+  // non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS no_show_appeals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      message text NOT NULL,
+      no_show_count_at_appeal integer NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      reviewed_by text,
+      reviewed_at timestamptz,
+      review_note text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS no_show_appeals_user_idx ON no_show_appeals (user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS no_show_appeals_status_idx ON no_show_appeals (status)`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS no_show_appeals_one_pending_per_user ON no_show_appeals (user_id) WHERE status = 'pending'`;
+  console.log("  ✅ no_show_appeals table + user/status indexes + one-pending-per-user partial unique index");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

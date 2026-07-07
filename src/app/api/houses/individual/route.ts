@@ -36,7 +36,7 @@ const getIndividualStandings = unstable_cache(
       offset: (page - 1) * limit,
     }),
   ["individual-standings"],
-  { revalidate: 15 },
+  { revalidate: 15, tags: ["individual-standings"] },
 );
 
 export async function GET(req: Request) {

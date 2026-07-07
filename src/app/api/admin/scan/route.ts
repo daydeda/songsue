@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { captureException } from "@/lib/logger";
+import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 // Scanning must stay responsive during the event even under load.
@@ -157,6 +158,14 @@ export async function POST(req: Request) {
         },
         { status: 403 }
       );
+    }
+
+    // "success"/"success_walk_in" cover both a confirmed check-in (which may award
+    // per-attendee points) and the "score" action — bust the cached leaderboard so
+    // it reflects the change on the next poll instead of waiting out the cache TTL.
+    // "pending_confirmation" hasn't mutated anything yet, so it's excluded.
+    if (result.status === "success" || result.status === "success_walk_in") {
+      revalidateLeaderboards();
     }
 
     // Success outcomes (success, success_walk_in, pending_confirmation)

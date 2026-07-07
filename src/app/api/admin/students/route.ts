@@ -34,6 +34,8 @@ export async function GET() {
         profileCompleted: true,
         role: true,
         roles: true,
+        noShowCount: true,
+        registrationBlocked: true,
       },
       with: { house: true },
     });

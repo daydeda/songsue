@@ -9,8 +9,9 @@ import {
   X, ShieldCheck, User as UserIcon,
   Activity, GraduationCap, ChevronDown,
   Edit2, Trash2, Check, Home, Shield,
-  BookOpen, Briefcase, Award
+  BookOpen, Briefcase, Award, AlertTriangle, RotateCcw
 } from "lucide-react";
+import { NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 
 type Student = {
   id: string;
@@ -25,6 +26,8 @@ type Student = {
   profileCompleted?: boolean;
   role?: string;
   roles?: string[];
+  noShowCount?: number;
+  registrationBlocked?: boolean;
   chronicDiseases?: string | null;
   medicalHistory?: string | null;
   drugAllergies?: string | null;
@@ -218,6 +221,7 @@ export default function AdminStudentsDirectory() {
   const [sensitiveData, setSensitiveData] = useState<Student | null>(null);
   const [loadingSensitive, setLoadingSensitive] = useState(false);
   const [sensitiveError, setSensitiveError] = useState<string | null>(null);
+  const [resettingStrikesId, setResettingStrikesId] = useState<string | null>(null);
 
   const [houses, setHouses] = useState<{ id: string; name: string; faculty?: string; colorGroup?: string }[]>([]);
   const [clubs, setClubs] = useState<{ id: string; name: string; isArchived: boolean }[]>([]);
@@ -441,6 +445,24 @@ export default function AdminStudentsDirectory() {
       setSensitiveError("Failed to load health records.");
     } finally {
       setLoadingSensitive(false);
+    }
+  };
+
+  // Clears a student's no-show strikes/block (super_admin/admin only, see
+  // canEditOrDelete below — narrower RESET_STRIKES_ROLES enforced server-side
+  // at /api/admin/students/[id]/strikes/reset). Does not refund deducted
+  // points; that penalty already stands as served.
+  const resetStrikes = async (s: Student) => {
+    if (!confirm(`Reset ${s.name}'s no-show strikes (${s.noShowCount ?? 0}/3)${s.registrationBlocked ? " and unblock registration" : ""}?`)) return;
+    setResettingStrikesId(s.id);
+    try {
+      const res = await fetch(`/api/admin/students/${s.id}/strikes/reset`, { method: "POST" });
+      if (res.ok) refreshData();
+      else alert("Failed to reset strikes. Check permissions.");
+    } catch {
+      alert("Failed to reset strikes.");
+    } finally {
+      setResettingStrikesId(null);
     }
   };
 
@@ -673,6 +695,17 @@ export default function AdminStudentsDirectory() {
                             <span style={{ fontWeight: 800, fontSize: 12, textTransform: "uppercase" }}>Pending</span>
                           </div>
                         )}
+                        {(s.noShowCount ?? 0) > 0 && (
+                          <div
+                            style={{ display: "flex", alignItems: "center", gap: 6, color: (s.registrationBlocked || (s.noShowCount ?? 0) >= NO_SHOW_STRIKE_THRESHOLD - 1) ? "#ef4444" : "#f59e0b", marginTop: 6 }}
+                            title={s.registrationBlocked ? "Pre-registration blocked due to repeated no-shows" : "Has recorded no-show strike(s)"}
+                          >
+                            <AlertTriangle size={14} />
+                            <span style={{ fontWeight: 800, fontSize: 11, textTransform: "uppercase" }}>
+                              No-show {s.noShowCount}/{NO_SHOW_STRIKE_THRESHOLD}{s.registrationBlocked ? " · Blocked" : ""}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td style={{ textAlign: "right", paddingRight: 32 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
@@ -751,6 +784,26 @@ export default function AdminStudentsDirectory() {
                                 <ShieldAlert size={13} /> Medical Log
                               </button>
                             </>
+                          )}
+                          {canEditOrDelete && (s.noShowCount ?? 0) > 0 && (
+                            <button
+                              className="btn btn-sm"
+                              style={{
+                                borderRadius: 10,
+                                background: "rgba(245,158,11,0.08)",
+                                border: "1px solid rgba(245,158,11,0.15)",
+                                fontWeight: 700,
+                                color: "#f59e0b",
+                                fontSize: 12,
+                                gap: 6,
+                                opacity: resettingStrikesId === s.id ? 0.6 : 1,
+                              }}
+                              disabled={resettingStrikesId === s.id}
+                              onClick={() => resetStrikes(s)}
+                              title="Reset no-show strikes and unblock registration"
+                            >
+                              <RotateCcw size={13} /> Reset Strikes
+                            </button>
                           )}
                         </div>
                       </td>

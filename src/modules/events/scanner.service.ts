@@ -196,10 +196,8 @@ export class ScannerService {
         // Atomic UPDATE: locks the row, increments, and returns the new value in
         // one round-trip. T2 blocks here until T1 commits, then reads the
         // already-incremented value — no separate SELECT FOR UPDATE needed.
-        // Capture the TRUE pre-update balance under a row lock first: deriving it as
-        // (newPoints - parsedScore) is wrong whenever GREATEST clamps a deduction to
-        // 0 (it would report a "from" value that never existed), which also skews the
-        // milestone math and the audit line below.
+        // Capture the TRUE pre-update balance under a row lock first, so the "from"
+        // value in the audit line below and the milestone math are accurate.
         const [prevRow] = await tx
           .select({ points: users.points })
           .from(users)
@@ -209,8 +207,11 @@ export class ScannerService {
 
         const [result] = await tx
           .update(users)
-          // GREATEST floors at 0 so a deduction can never push a student into a negative balance.
-          .set({ points: sql`GREATEST(0, COALESCE(${users.points}, 0) + ${parsedScore})` })
+          // No floor — a deduction may push a student negative, matching houses.points
+          // (which has never floored at 0). Milestone math below only fires on an
+          // upward crossing, so a negative balance can't accidentally claw back a
+          // house bonus.
+          .set({ points: sql`COALESCE(${users.points}, 0) + ${parsedScore}` })
           .where(eq(users.id, student.id))
           .returning({ newPoints: users.points });
 

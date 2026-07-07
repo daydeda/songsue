@@ -10,6 +10,7 @@ import {
   Lock, FileText, AlertTriangle, MessageSquare, GraduationCap
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 import { parseRichText } from "@/lib/rich-text";
 import { currentFirstYearPrefix, yearOfStudy } from "@/lib/event-access";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -337,6 +338,11 @@ export default function AdminEventsPage() {
   // admin/super_admin for that detail. isAttendanceOnly is exactly that
   // thin-roster set on this page (only staff + thin-roster ever reach here).
   const canSeeExportButton = canExportAttendance || isAttendanceOnly;
+  // No-show strike-out (US-STRI-15): organizers confirm no-shows for their own
+  // ended events, same as canExportAttendance's staff set plus organizer —
+  // narrower than "reset strikes", which is admin/super_admin only (see
+  // /api/admin/students/[id]/strikes/reset).
+  const canApplyStrikes = myRoles.includes("super_admin") || myRoles.includes("admin") || myRoles.includes("organizer");
   // Club/major presidents may edit their OWN event's details (title, description,
   // schedule, location, quota, etc.) — GET /api/admin/events already scopes their
   // list to only events they own (see EventScopeService), so any event a president
@@ -383,6 +389,16 @@ export default function AdminEventsPage() {
   const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
   const [filterNotCheckedIn, setFilterNotCheckedIn] = useState(false);
+  // No-show strike-out confirm flow: preview the roster, let the organizer
+  // confirm, then apply. Kept separate from the attendance roster state above
+  // since it's its own modal/request lifecycle.
+  const [showStrikesModal, setShowStrikesModal] = useState(false);
+  const [strikesPreview, setStrikesPreview] = useState<{ id: string; name: string; nickname: string | null; studentId: string | null; noShowCount: number }[]>([]);
+  const [strikesLoading, setStrikesLoading] = useState(false);
+  const [strikesSubmitting, setStrikesSubmitting] = useState(false);
+  const [strikesResult, setStrikesResult] = useState<{ struck: number; blocked: number; pointsDeducted: number } | null>(null);
+  // Editable per-application penalty, bounded server-side by NO_SHOW_PENALTY_MIN/MAX.
+  const [strikesPoints, setStrikesPoints] = useState(NO_SHOW_PENALTY_POINTS);
   const [filterStudentsOnly, setFilterStudentsOnly] = useState(false);
   const [filterMaster, setFilterMaster] = useState(false);
   const [filterPhd, setFilterPhd] = useState(false);
@@ -1769,6 +1785,53 @@ export default function AdminEventsPage() {
     document.body.appendChild(a);
     a.click();
     a.remove();
+  };
+
+  // No-show strike-out: fetch the preview roster (students still 'registered'
+  // with no 'attended' row anywhere in the event) before the organizer commits
+  // to striking them. Read-only — /api/admin/events/[id]/apply-strikes GET.
+  const openStrikesModal = async () => {
+    if (!activeEventId) return;
+    setShowStrikesModal(true);
+    setStrikesResult(null);
+    setStrikesPoints(NO_SHOW_PENALTY_POINTS);
+    setStrikesLoading(true);
+    try {
+      const res = await fetch(`/api/admin/events/${activeEventId}/apply-strikes`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to load no-show preview");
+      setStrikesPreview(data.students || []);
+    } catch (e) {
+      setStrikesPreview([]);
+      setErrorModal({ show: true, title: "Couldn't load no-shows", message: e instanceof Error ? e.message : "Please try again." });
+      setShowStrikesModal(false);
+    } finally {
+      setStrikesLoading(false);
+    }
+  };
+
+  // Organizer-confirmed POST — strikes every current no-show for this event.
+  // Idempotent server-side, but we also refresh the roster afterward so the
+  // "Not Checked In" filter/summary reflect the new no_show status immediately.
+  const confirmApplyStrikes = async () => {
+    if (!activeEventId) return;
+    setStrikesSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/events/${activeEventId}/apply-strikes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points: strikesPoints }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to apply strikes");
+      setStrikesResult(data);
+      setStrikesPreview([]);
+      viewAttendance(activeEventId);
+    } catch (e) {
+      setErrorModal({ show: true, title: "Couldn't apply strikes", message: e instanceof Error ? e.message : "Please try again." });
+    } finally {
+      setStrikesSubmitting(false);
+    }
   };
 
   // Meds-check badge — PDPA-gated to super_admin/admin (canExportAttendance),
@@ -4898,6 +4961,31 @@ export default function AdminEventsPage() {
                     {lang === "th" ? "ส่งออก Excel" : "Export Excel"}
                   </button>
                 )}
+                {canApplyStrikes && !loadingAttendance && attendance.length > 0 && events.find(e => e.id === activeEventId) && new Date() > new Date(events.find(e => e.id === activeEventId)!.endTime) && (
+                  <button
+                    onClick={openStrikesModal}
+                    title="Deduct points and record a strike for every student who registered but never checked in"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      borderRadius: 99,
+                      height: 48,
+                      paddingInline: 20,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#fff",
+                      background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                      border: "1px solid #dc2626",
+                      boxShadow: "0 8px 20px rgba(239,68,68,0.35)",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    <AlertTriangle size={18} />
+                    {lang === "th" ? "ลงโทษผู้ไม่มา" : "Strike No-shows"}
+                  </button>
+                )}
                 <button
                   className="btn btn-ghost"
                   style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }}
@@ -5406,6 +5494,159 @@ export default function AdminEventsPage() {
             {/* Modal Footer */}
             <div style={{ padding: "20px 40px", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", background: "var(--bg-elevated)" }}>
               <button className="btn btn-primary" onClick={() => setShowAttendance(false)}>Done Tracking</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* No-show Strikes Confirm Modal */}
+      {showStrikesModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 2300,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            className="animate-fade-in-up"
+            style={{
+              background: "var(--bg-elevated)",
+              borderRadius: 20,
+              border: "1px solid var(--border-medium)",
+              width: "100%",
+              maxWidth: 520,
+              maxHeight: "80vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: "24px 28px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 12, background: "rgba(239,68,68,0.12)",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <AlertTriangle size={22} color="#ef4444" />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 900, color: "var(--text-primary)" }}>
+                  {lang === "th" ? "ยืนยันการลงโทษผู้ไม่มา" : "Confirm no-show strikes"}
+                </h3>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
+                  {lang === "th"
+                    ? `บันทึกการลงโทษ 1 ครั้งต่อคน (ครบ ${NO_SHOW_STRIKE_THRESHOLD} ครั้งจะถูกระงับการลงทะเบียน)`
+                    : `Records 1 strike per student (registration auto-blocks at ${NO_SHOW_STRIKE_THRESHOLD} strikes).`}
+                </p>
+              </div>
+            </div>
+
+            {!strikesResult && (
+              <div style={{ padding: "0 28px 4px", display: "flex", alignItems: "center", gap: 10 }}>
+                <label htmlFor="strikes-points-input" style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                  {lang === "th" ? "หักคะแนนต่อคน" : "Points to deduct per student"}
+                </label>
+                <input
+                  id="strikes-points-input"
+                  type="number"
+                  min={NO_SHOW_PENALTY_MIN}
+                  max={NO_SHOW_PENALTY_MAX}
+                  value={strikesPoints}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v)) setStrikesPoints(v);
+                  }}
+                  onBlur={() => setStrikesPoints((v) => Math.min(NO_SHOW_PENALTY_MAX, Math.max(NO_SHOW_PENALTY_MIN, Math.round(v) || NO_SHOW_PENALTY_POINTS)))}
+                  style={{
+                    width: 72, height: 34, borderRadius: 8, border: "1px solid var(--border-medium)",
+                    background: "var(--bg-surface)", color: "var(--text-primary)", fontWeight: 700,
+                    textAlign: "center", fontSize: 14,
+                  }}
+                />
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  {NO_SHOW_PENALTY_MIN}–{NO_SHOW_PENALTY_MAX}
+                </span>
+              </div>
+            )}
+
+            <div style={{ padding: "0 28px", flex: 1, overflowY: "auto" }}>
+              {strikesLoading ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: 14 }}>
+                  {lang === "th" ? "กำลังโหลด..." : "Loading…"}
+                </div>
+              ) : strikesResult ? (
+                <div style={{ padding: "8px 0 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#10b981", fontWeight: 800, fontSize: 15 }}>
+                    <CheckCircle2 size={18} />
+                    {lang === "th" ? "ดำเนินการเสร็จสิ้น" : "Strikes applied"}
+                  </div>
+                  <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                    {lang === "th"
+                      ? `ลงโทษ ${strikesResult.struck} คน · หักคะแนนรวม ${strikesResult.pointsDeducted} · ระงับการลงทะเบียน ${strikesResult.blocked} คน`
+                      : `Struck ${strikesResult.struck} student(s) · deducted ${strikesResult.pointsDeducted} total points · newly blocked ${strikesResult.blocked} student(s)`}
+                  </p>
+                </div>
+              ) : strikesPreview.length === 0 ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: 14 }}>
+                  {lang === "th" ? "ไม่มีผู้ไม่มาที่ต้องลงโทษ" : "No no-shows to strike for this event."}
+                </div>
+              ) : (
+                <div style={{ padding: "4px 0 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {lang === "th" ? `${strikesPreview.length} คนที่ลงทะเบียนแต่ไม่มาเช็คอิน` : `${strikesPreview.length} registered, never checked in`}
+                  </p>
+                  {strikesPreview.map((s) => (
+                    <div
+                      key={s.id}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "10px 12px", borderRadius: 10, background: "var(--bg-surface)",
+                        border: "1px solid var(--border-subtle)",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{s.name}{s.nickname ? ` (${s.nickname})` : ""}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{s.studentId || "—"}</div>
+                      </div>
+                      {s.noShowCount > 0 && (
+                        <span style={{
+                          fontSize: 11, fontWeight: 800, color: "#ef4444", background: "rgba(239,68,68,0.12)",
+                          borderRadius: 99, padding: "3px 10px", flexShrink: 0,
+                        }}>
+                          {s.noShowCount + 1}/{NO_SHOW_STRIKE_THRESHOLD}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid var(--border-subtle)" }}>
+              <button
+                className="btn btn-ghost"
+                style={{ borderRadius: 12, height: 42, paddingInline: 18, fontWeight: 700 }}
+                onClick={() => { setShowStrikesModal(false); setStrikesResult(null); setStrikesPreview([]); }}
+              >
+                {strikesResult ? (lang === "th" ? "ปิด" : "Close") : t.cancel}
+              </button>
+              {!strikesResult && strikesPreview.length > 0 && (
+                <button
+                  className="btn btn-primary"
+                  style={{ borderRadius: 12, height: 42, paddingInline: 18, fontWeight: 700, background: "linear-gradient(135deg, #ef4444, #dc2626)", border: "1px solid #dc2626" }}
+                  disabled={strikesSubmitting}
+                  onClick={confirmApplyStrikes}
+                >
+                  {strikesSubmitting
+                    ? (lang === "th" ? "กำลังลงโทษ..." : "Applying…")
+                    : (lang === "th" ? `ลงโทษ ${strikesPreview.length} คน` : `Strike ${strikesPreview.length} student(s)`)}
+                </button>
+              )}
             </div>
           </div>
         </div>

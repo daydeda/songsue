@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { events, attendance, scoreHistory, houses, forms } from "@/db/schema";
 import { eq, and, lte, sql } from "drizzle-orm";
+import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
 
 // Arbitrary constant key for the Postgres advisory lock that serialises award
 // runs across all serverless instances. Any fixed integer works.
@@ -195,6 +196,10 @@ export async function checkAndAwardPastEventPoints() {
         }
       }
     });
+
+    // Bust the cached leaderboard so a just-awarded event-winner bonus shows up on
+    // the next poll instead of waiting out the cache TTL.
+    revalidateLeaderboards();
   } catch (error) {
     console.error("Failed to automatically check and award past event points:", error);
   }
@@ -350,6 +355,10 @@ export async function checkAndAwardClosedForms() {
         }
       }
     });
+
+    // Bust the cached leaderboard so a just-awarded form-contest payout shows up on
+    // the next poll instead of waiting out the cache TTL.
+    revalidateLeaderboards();
   } catch (error) {
     console.error("Failed to automatically check and award closed form points:", error);
   }

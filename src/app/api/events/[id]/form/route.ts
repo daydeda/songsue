@@ -12,6 +12,7 @@ import {
   type AnswerMap,
 } from "@/lib/form-schema";
 import { canAccessSkillForm, getFormAvailability } from "@/lib/form-access";
+import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
 
 // A "file" answer must be an app-minted storage key ("<uuid>.<ext>"); mirrors the
 // pattern in /api/forms/file and /api/forms/upload so a forged value is rejected.
@@ -253,6 +254,12 @@ export async function POST(
         return NextResponse.json({ error: "You have already completed this form." }, { status: 409 });
       }
       throw e;
+    }
+
+    // Bust the cached leaderboard so an individual-points award shows up on the
+    // next poll instead of waiting out the cache TTL.
+    if (individualPoints > 0) {
+      revalidateLeaderboards();
     }
 
     const { score, maxScore, hasGraded } = computeScore(normalizeForm(formObj.questions), answers as AnswerMap);

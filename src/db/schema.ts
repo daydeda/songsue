@@ -63,6 +63,11 @@ export const users = pgTable("users", {
   roles: jsonb("roles").$type<string[]>().default(["student"]),
   houseId: text("house_id").references(() => houses.id),
   points: integer("points").notNull().default(0),
+  // No-show strike-out: counts confirmed no-show strikes (registered but never
+  // checked in). At 3 strikes, registrationBlocked flips to true, preventing
+  // new event pre-registration until a staff member resets it.
+  noShowCount: integer("no_show_count").notNull().default(0),
+  registrationBlocked: boolean("registration_blocked").notNull().default(false),
   // QR Token for secure check-in (FE-13)
   qrToken: text("qr_token").unique(),
   // Profile specifics
@@ -853,6 +858,47 @@ export const gameStatsRelations = relations(gameStats, ({ one }) => ({
   user: one(users, {
     fields: [gameStats.userId],
     references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// NO-SHOW APPEALS
+// A blocked student (users.registrationBlocked, see src/lib/strikes.ts) can
+// submit ONE pending appeal at a time asking staff to reconsider, instead of
+// only ever waiting on a manual staff reset (see .../strikes/reset/route.ts).
+// noShowCountAtAppeal snapshots the strike count at submission time so an
+// admin reviewing later sees the context even if the count has since changed
+// (e.g. more strikes applied, or another appeal/reset already touched it).
+// ============================================================================
+export const noShowAppeals = pgTable("no_show_appeals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
+  noShowCountAtAppeal: integer("no_show_count_at_appeal").notNull(),
+  // 'pending' | 'approved' | 'rejected'
+  status: text("status").notNull().default("pending"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ([
+  index("no_show_appeals_user_idx").on(table.userId),
+  index("no_show_appeals_status_idx").on(table.status),
+  // Prevents spam: a user may have only one pending appeal open at once. Once it
+  // is approved/rejected they're free to submit a new one if blocked again.
+  uniqueIndex("no_show_appeals_one_pending_per_user").on(table.userId).where(sql`${table.status} = 'pending'`),
+]));
+
+export const noShowAppealsRelations = relations(noShowAppeals, ({ one }) => ({
+  user: one(users, {
+    fields: [noShowAppeals.userId],
+    references: [users.id],
+    relationName: "appealStudent",
+  }),
+  reviewer: one(users, {
+    fields: [noShowAppeals.reviewedBy],
+    references: [users.id],
+    relationName: "appealReviewer",
   }),
 }));
 

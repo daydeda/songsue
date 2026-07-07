@@ -3,11 +3,11 @@ import { db } from "@/db";
 import { forms } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
 import { ASSIGNABLE_ROLES } from "@/lib/form-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { revertFormAward } from "@/lib/award-points";
+import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
 
 const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 
@@ -341,11 +341,7 @@ export async function PATCH(
     // A revert changed house totals — bust the cached leaderboard so it reflects
     // the clawback on the next poll instead of waiting out the 15s window.
     if (reopening) {
-      try {
-        revalidateTag("house-standings", { expire: 0 });
-      } catch {
-        // Best-effort: the cache TTL is the backstop, never fail the write on this.
-      }
+      revalidateLeaderboards();
     }
 
     return NextResponse.json({ success: true, form: result });

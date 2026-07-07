@@ -26,11 +26,24 @@ export async function POST(
     // can be stale (auth.ts only eagerly refreshes while profileCompleted is false).
     const profile = await db.query.users.findFirst({
       where: eq(users.id, userId),
-      columns: { profileCompleted: true, major: true },
+      columns: { profileCompleted: true, major: true, registrationBlocked: true, noShowCount: true },
     });
     if (!profile?.profileCompleted) {
       return NextResponse.json(
         { error: "Please complete your profile before registering for events" },
+        { status: 403 }
+      );
+    }
+
+    // No-show strike-out (US-STRI-15b): pre-registration is refused once a
+    // student accumulates too many no-shows, until staff resets their strikes.
+    if (profile.registrationBlocked) {
+      return NextResponse.json(
+        {
+          error: "Your event pre-registration is temporarily blocked due to repeated no-shows. If you believe this is a mistake, contact staff to appeal.",
+          registrationBlocked: true,
+          noShowCount: profile.noShowCount,
+        },
         { status: 403 }
       );
     }

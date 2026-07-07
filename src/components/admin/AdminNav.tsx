@@ -11,7 +11,8 @@ import {
   Megaphone,
   ShoppingBag,
   Building2,
-  User
+  User,
+  MessageSquareWarning
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { isScannerOnlyAny } from "@/lib/admin-access";
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/admin/events",    key: "manageEvents",         icon: Calendar },
   { href: "/admin/scanner",   key: "qrScanner",            icon: QrCode },
   { href: "/admin/students",  key: "adminStudentsDirectory",icon: Users },
+  { href: "/admin/appeals",   key: "manageAppeals",        icon: MessageSquareWarning },
   { href: "/admin/clubs",     key: "manageClubs",          icon: Building2 },
   { href: "/admin/audit-logs",key: "auditTrails",          icon: ShieldCheck },
   { href: "/admin/announcement",key: "manageAnnouncement", icon: Megaphone },
@@ -56,6 +58,9 @@ export function AdminNav({ roles }: { roles: string[] }) {
     if (item.href === "/admin/clubs") return canSeeClubs;
     if (item.href === "/admin/audit-logs") return canSeeAudit;
     if (item.href === "/admin/announcement" || item.href === "/admin/shop") return canManage;
+    // Resolving an appeal resets strikes — same super_admin/admin-only scope as
+    // RESET_STRIKES_ROLES in src/lib/strikes.ts.
+    if (item.href === "/admin/appeals") return canManage;
     return true; // dashboard, events, scanner — every full-admin role
   });
 

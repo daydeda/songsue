@@ -33,6 +33,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# pg_dump for the scheduled backup service (scripts/backup-db.mjs, see the `backup`
+# service in docker-stack.yml). Falls back to the generic package name if
+# postgresql16-client isn't in this Alpine release's repos.
+RUN apk add --no-cache postgresql16-client || apk add --no-cache postgresql-client
+
 # Set the correct permission for prerender cache and uploads.
 # .uploads-private holds PDPA form docs + payment slips when running without
 # Supabase Storage; it must exist and be writable by the nextjs user, and is

@@ -136,11 +136,46 @@ Manual fallback (e.g. webhook misconfigured): *Stacks → activecamt → Editor 
 Update the stack → enable "Pull latest image version" → Update*.
 
 ## Backups (your responsibility now)
-Self-hosted Postgres has no managed backups. Periodically, from the `db` container
-console: `pg_dump -U activecamtuser activecamtdb > /tmp/backup.sql` and copy it off the
-server (e.g. `docker cp` is unavailable without host access — instead pipe to a
-download, or run `pg_dump` from the web container to an off-site target). Schedule
-this before each migration at minimum.
+Self-hosted Postgres has no managed backups. This is handled by an automated `backup`
+service in `docker-stack.yml` (added 2026-07-07): it runs `scripts/backup-db.mjs` once a
+day, which does `pg_dump` → gzip → upload to a Google Drive folder in your own Google
+account (via OAuth) → deletes the local copy (never touches a volume, so it costs zero
+server disk) → prunes Drive backups older than `BACKUP_RETENTION_DAYS` (default 30).
+$0 cost assuming your Google account's own storage covers it.
+
+Uses OAuth-as-yourself rather than a service account: service accounts have zero Drive
+storage quota of their own, so they can only own files inside a **Shared Drive** — not
+every Google/Workspace plan has that feature. Authorizing as your own account uploads
+against your normal My Drive quota instead, no Shared Drive required.
+
+**One-time setup** (do this once, then it's hands-off):
+1. In any Google Cloud project (free, no billing required for this): **APIs & Services →
+   Library** → enable the **Google Drive API**.
+2. **APIs & Services → Credentials → + CREATE CREDENTIALS → OAuth client ID**.
+   Application type: **Desktop app**. Name it anything. Copy the **Client ID** and
+   **Client Secret** it gives you.
+3. In Google Drive, create (or pick) a normal folder for backups — no sharing step
+   needed, it's your own account. Copy its id from the URL
+   (`drive.google.com/drive/folders/<FOLDER_ID>`).
+4. On your own machine (not the server), run the one-time helper — **in your own
+   terminal, not through an AI assistant/chat**, since it prints a live credential:
+   ```sh
+   GDRIVE_OAUTH_CLIENT_ID=... GDRIVE_OAUTH_CLIENT_SECRET=... node scripts/gdrive-get-refresh-token.mjs
+   ```
+   It opens your browser to a Google consent screen; approve it, then it prints a
+   **refresh token** in the terminal.
+5. Set these four Portainer stack env vars: `GDRIVE_OAUTH_CLIENT_ID`,
+   `GDRIVE_OAUTH_CLIENT_SECRET`, `GDRIVE_OAUTH_REFRESH_TOKEN` (from step 4), and
+   `GDRIVE_FOLDER_ID` (from step 3).
+6. Redeploy the stack — the `backup` service picks up the new env vars and starts
+   dumping daily. Check its container logs (Portainer → Containers →
+   `activecamt_backup` → Logs) for `[backup-db] done`.
+
+**Manual fallback** (e.g. before a risky migration, don't want to wait for the daily
+schedule): from the `activecamt_web` (or `activecamt_backup`) container console,
+`node scripts/backup-db.mjs` runs one immediately using the same env vars. Or, without
+Drive access at all: `pg_dump -U activecamtuser activecamtdb > /tmp/backup.sql` from the
+`db` container console, then copy it off the server by hand.
 
 ## Rollback
 Until DNS points at CAMT (step 9), the live site is still Vercel+Supabase —

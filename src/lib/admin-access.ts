@@ -31,8 +31,11 @@ export const SCANNER_HREF = "/admin/scanner";
 // but only club_president gets real data there — the page renders read-only and
 // scoped to just the club(s) they preside over (see GET /api/admin/clubs and
 // .../[id]/members); smo/major_president reaching this path get an empty/401
-// response since they preside over nothing.
-export const SCANNER_ONLY_PAGES = ["/admin", SCANNER_HREF, "/admin/events", "/admin/clubs"] as const;
+// response since they preside over nothing. "/admin/appeals" is allowed too: smo
+// gets a read-only view (VIEW_APPEALS_ROLES, src/lib/strikes.ts) while
+// club_president/major_president may also approve/reject appeals for events they
+// own (RESOLVE_APPEALS_ROLES, scoped via EventScopeService).
+export const SCANNER_ONLY_PAGES = ["/admin", SCANNER_HREF, "/admin/events", "/admin/clubs", "/admin/appeals"] as const;
 
 // May a scanner-only role reach this exact (page) path? Used by the proxy to
 // confine these roles. Exact-match only — no /admin/events/* sub-pages exist.

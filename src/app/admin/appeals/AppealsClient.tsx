@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { MessageSquareWarning, CheckCircle2, XCircle, Loader2, Clock, UserCheck, CalendarX2 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
+import { effectiveRoles } from "@/lib/admin-access";
+import { NO_SHOW_STRIKE_THRESHOLD, RESOLVE_APPEALS_ROLES } from "@/lib/strikes";
 
 type Appeal = {
   id: string;
@@ -32,6 +34,12 @@ const PAGE_SIZE = 10;
 
 export function AppealsClient() {
   const { t } = useLanguage();
+  const { data: session } = useSession();
+  // smo can view this queue (VIEW_APPEALS_ROLES) but not resolve appeals; the
+  // server independently re-checks RESOLVE_APPEALS_ROLES + event ownership on
+  // PATCH — this is UI-only, not the source of truth.
+  const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
+  const canResolve = myRoles.some((r) => (RESOLVE_APPEALS_ROLES as readonly string[]).includes(r));
   const [appeals, setAppeals] = useState<Appeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("pending");
@@ -192,7 +200,7 @@ export function AppealsClient() {
                   </p>
                 )}
 
-                {a.status === "pending" && (
+                {a.status === "pending" && canResolve && (
                   <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                     <button
                       onClick={() => openResolveModal(a, "reject")}

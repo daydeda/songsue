@@ -2,8 +2,9 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { attendance, noShowAppeals, users } from "@/db/schema";
 import { effectiveRoles } from "@/lib/admin-access";
-import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
+import { NO_SHOW_STRIKE_THRESHOLD, RESOLVE_APPEALS_ROLES } from "@/lib/strikes";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -24,11 +25,16 @@ class AlreadyResolvedError extends Error {}
 // in one transaction. This deliberately does NOT touch any other strike the
 // student has from a different event (US-STRI-15c: per-event appeals, not the
 // blanket "reset to 0/3" the account-wide appeal used to do).
+//
+// Gated by RESOLVE_APPEALS_ROLES (src/lib/strikes.ts) — smo can view the queue
+// (VIEW_APPEALS_ROLES, GET /api/admin/appeals) but not resolve. club_president/
+// major_president are further scoped to appeals whose event they own, via the
+// same EventScopeService used by apply-strikes.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    if (!session?.user || !myRoles.some((r) => (RESET_STRIKES_ROLES as readonly string[]).includes(r))) {
+    if (!session?.user || !myRoles.some((r) => (RESOLVE_APPEALS_ROLES as readonly string[]).includes(r))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -38,10 +44,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const appeal = await db.query.noShowAppeals.findFirst({
       where: eq(noShowAppeals.id, id),
       columns: { id: true, userId: true, eventId: true, status: true, noShowCountAtAppeal: true },
+      with: { event: { columns: { ownerClubIds: true, ownerMajors: true } } },
     });
     if (!appeal) {
       return NextResponse.json({ error: "Appeal not found" }, { status: 404 });
     }
+
+    const isStaff = myRoles.some((r) => ["super_admin", "admin"].includes(r));
+    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    if (!isStaff && presidentTags.length > 0) {
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+      if (!appeal.event || !EventScopeService.isEventManagedByScope(appeal.event, scope)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
     if (appeal.status !== "pending") {
       return NextResponse.json({ error: "This appeal has already been resolved" }, { status: 409 });
     }

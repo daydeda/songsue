@@ -57,6 +57,8 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
         roles jsonb DEFAULT '["student"]'::jsonb,
         house_id text,
         points integer DEFAULT 0 NOT NULL,
+        no_show_count integer DEFAULT 0 NOT NULL,
+        registration_blocked boolean DEFAULT false NOT NULL,
         qr_token text UNIQUE,
         student_id text UNIQUE,
         nickname text,

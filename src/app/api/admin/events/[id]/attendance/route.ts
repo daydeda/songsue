@@ -27,11 +27,14 @@ const FULL_USER_COLUMNS = {
   faintingHistory: true,
   emergencyMedication: true,
   emergencyContacts: true,
+  noShowCount: true,
 } as const;
 
 // Thin-roster roles (smo / club_president / major_president) only ever receive
 // identity + check-in (see sanitize step), so don't even fetch phone, emergency
 // contacts, or medical detail. A strict subset of FULL_USER_COLUMNS.
+// noShowCount is the exception — it's a strike tally, not PDPA-sensitive, so
+// every role that reaches this roster gets it (powers the no-show filter).
 const THIN_USER_COLUMNS = {
   id: true,
   name: true,
@@ -40,6 +43,7 @@ const THIN_USER_COLUMNS = {
   major: true,
   role: true,
   roles: true,
+  noShowCount: true,
 } as const;
 
 export async function GET(
@@ -164,6 +168,7 @@ export async function GET(
           role: u.role,
           roles: u.roles,
           house: u.house,
+          noShowCount: u.noShowCount,
         };
         return { ...row, medsCheckOption: null, user: thinUser };
       }
@@ -180,6 +185,7 @@ export async function GET(
         house: u.house,
         hasMedicalInfo,
         medicalCategories,
+        noShowCount: u.noShowCount,
       };
       return { ...row, medsCheckOption: null, user: safeUser };
     });

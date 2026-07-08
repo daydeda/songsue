@@ -13,10 +13,11 @@ export const NO_SHOW_PENALTY_MAX = 50;
 export const NO_SHOW_STRIKE_THRESHOLD = 3;
 
 // Roles allowed to confirm/apply no-show strikes for an event (organizers run
-// their own events; registration is scanner/roster-facing, not punitive).
-// smo is unscoped like staff; club_president/major_president are additionally
-// scoped to events they own (see EventScopeService in apply-strikes/route.ts).
-export const APPLY_STRIKES_ROLES = ["super_admin", "admin", "organizer", "smo", "club_president", "major_president"] as const;
+// their own events; registration is unscoped staff, like admin). smo may VIEW
+// the roster/appeals queue but does not apply or resolve strikes.
+// club_president/major_president are additionally scoped to events they own
+// (see EventScopeService in apply-strikes/route.ts).
+export const APPLY_STRIKES_ROLES = ["super_admin", "admin", "organizer", "registration", "club_president", "major_president"] as const;
 
 // Roles allowed to reset a student's strikes/block ACCOUNT-WIDE (see
 // /api/admin/students/[id]/strikes/reset) — narrower than apply, since a blanket
@@ -28,11 +29,11 @@ export const RESET_STRIKES_ROLES = ["super_admin", "admin"] as const;
 // Roles allowed to VIEW the no-show appeals queue (/admin/appeals). Includes
 // everyone in RESOLVE_APPEALS_ROLES plus smo, who may see appeal context for
 // students they scan but cannot approve/reject (see RESOLVE_APPEALS_ROLES).
-export const VIEW_APPEALS_ROLES = ["super_admin", "admin", "smo", "club_president", "major_president"] as const;
+export const VIEW_APPEALS_ROLES = ["super_admin", "admin", "registration", "smo", "club_president", "major_president"] as const;
 
 // Roles allowed to approve/reject a no-show appeal. club_president/major_president
 // are further scoped server-side to appeals whose event they own (via
 // EventScopeService, mirroring apply-strikes) — see PATCH
 // /api/admin/appeals/[id]. smo can view the queue (VIEW_APPEALS_ROLES) but not
 // resolve appeals, since resolving reverses a strike and touches noShowCount.
-export const RESOLVE_APPEALS_ROLES = ["super_admin", "admin", "club_president", "major_president"] as const;
+export const RESOLVE_APPEALS_ROLES = ["super_admin", "admin", "registration", "club_president", "major_president"] as const;

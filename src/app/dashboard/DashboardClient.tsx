@@ -44,7 +44,8 @@ import {
   Users,
   DoorOpen,
   Share2,
-  Check
+  Check,
+  CalendarX2
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -425,10 +426,18 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // state, polled alongside events/houses so the badge and the blocked notice
   // stay live if staff apply or reset strikes while the dashboard is open.
   const [strikes, setStrikes] = useState<{ noShowCount: number; registrationBlocked: boolean } | null>(null);
-  // The student's own latest no-show appeal (US-STRI-15c), so the blocked banner
-  // can show "pending review" / the outcome instead of re-offering the form.
-  const [appeal, setAppeal] = useState<{ id: string; status: "pending" | "approved" | "rejected"; message: string; reviewNote: string | null; createdAt: string } | null>(null);
-  const [appealModal, setAppealModal] = useState(false);
+  // Which events caused the strikes currently on the account (US-STRI-15c),
+  // each carrying its OWN appeal (if any) — appeals are per-event, not one
+  // blanket appeal for the account, so a student with 2 strikes can appeal
+  // just one of them and leave the other untouched.
+  type NoShowEvent = {
+    id: string;
+    title: string;
+    endTime: string;
+    appeal: { id: string; status: "pending" | "approved" | "rejected"; message: string; reviewNote: string | null; createdAt: string } | null;
+  };
+  const [noShowEvents, setNoShowEvents] = useState<NoShowEvent[]>([]);
+  const [appealModal, setAppealModal] = useState<{ eventId: string; eventTitle: string } | null>(null);
   const [appealMessage, setAppealMessage] = useState("");
   const [submittingAppeal, setSubmittingAppeal] = useState(false);
   // Fullscreen poster viewer — carries the whole poster list + which one was tapped
@@ -525,7 +534,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const fetchAppeal = (signal?: AbortSignal) =>
     fetch("/api/appeals", { signal })
       .then((r) => r.json())
-      .then((d) => setAppeal(d?.appeal ?? null))
+      .then((d) => {
+        setNoShowEvents(Array.isArray(d?.noShowEvents) ? d.noShowEvents : []);
+      })
       .catch(() => {});
 
   // Live check-in / score toasts. The student's primary scan surface is the
@@ -546,12 +557,13 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   usePolling((signal) => Promise.all([fetchEvents(signal), fetchHouses(signal), fetchAnnouncement(signal), fetchStrikes(signal), fetchAppeal(signal)]), 60000);
 
   const submitAppeal = async () => {
+    if (!appealModal) return;
     setSubmittingAppeal(true);
     try {
       const res = await fetch("/api/appeals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: appealMessage.trim() }),
+        body: JSON.stringify({ eventId: appealModal.eventId, message: appealMessage.trim() }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -562,7 +574,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         });
         return;
       }
-      setAppealModal(false);
+      setAppealModal(null);
       setAppealMessage("");
       fetchAppeal();
     } catch {
@@ -901,6 +913,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                 padding: 20,
                 background: isDanger ? "rgba(239,68,68,0.06)" : "rgba(245,158,11,0.06)",
                 border: `1px solid ${isDanger ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)"}`,
+                minWidth: 0,
               }}
             >
               <div style={{
@@ -912,7 +925,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               }}>
                 <AlertTriangle size={22} />
               </div>
-              <div>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontWeight: 800, fontSize: 15, color: isDanger ? "#ef4444" : "#f59e0b" }}>
                   {lang === "th"
                     ? `ไม่มาเช็คอิน: ${strikes.noShowCount}/${NO_SHOW_STRIKE_THRESHOLD}`
@@ -933,26 +946,49 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                         ? `${NO_SHOW_STRIKE_THRESHOLD} ကြိမ်ပြည့်လျှင် ကြိုတင်စာရင်းသွင်းခြင်းကို ယာယီပိတ်ပါမည်။`
                         : `Registering but not checking in ${NO_SHOW_STRIKE_THRESHOLD} times will temporarily block your pre-registration.`)}
                 </p>
-                {strikes.registrationBlocked && (
-                  appeal && appeal.status === "pending" ? (
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#f59e0b", marginTop: 8 }}>{t.appealPendingNotice}</p>
-                  ) : (
-                    <>
-                      {appeal && appeal.status === "rejected" && (
-                        <p style={{ fontSize: 13, color: "#ef4444", marginTop: 8, fontWeight: 700 }}>
-                          {t.appealRejectedNotice}
-                          {appeal.reviewNote ? ` ${t.appealStaffNoteLabel} ${appeal.reviewNote}` : ""}
-                        </p>
-                      )}
-                      <button
-                        onClick={() => setAppealModal(true)}
-                        className="btn btn-primary"
-                        style={{ marginTop: 10, fontSize: 13, fontWeight: 700, padding: "8px 16px", borderRadius: 10 }}
+                {/* Which event(s) triggered these strikes — each gets its OWN appeal
+                    action (US-STRI-15c: per-event appeals). A student with 2 strikes
+                    can appeal just one and leave the other untouched. */}
+                {noShowEvents.length > 0 && (
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {t.noShowStrikeEventsLabel}
+                    </p>
+                    {noShowEvents.map((e) => (
+                      <div
+                        key={e.id}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                          background: "var(--bg-surface)", borderRadius: 10, padding: "8px 12px",
+                          minWidth: 0,
+                        }}
                       >
-                        {t.appealButtonLabel}
-                      </button>
-                    </>
-                  )
+                        <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1 }}>
+                          <CalendarX2 size={13} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{e.title}</span>
+                        </span>
+                        {e.appeal?.status === "pending" ? (
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b", flexShrink: 0 }}>{t.appealStatusPendingBadge}</span>
+                        ) : (
+                          <button
+                            onClick={() => setAppealModal({ eventId: e.id, eventTitle: e.title })}
+                            className="btn btn-primary btn-sm"
+                            style={{ fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 8, flexShrink: 0 }}
+                          >
+                            {t.appealButtonLabel}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {noShowEvents
+                      .filter((e) => e.appeal?.status === "rejected")
+                      .map((e) => (
+                        <p key={`${e.id}-rejected`} style={{ fontSize: 12, color: "#ef4444", fontWeight: 700 }}>
+                          {t.appealRejectedNotice} ({e.title})
+                          {e.appeal?.reviewNote ? ` ${t.appealStaffNoteLabel} ${e.appeal.reviewNote}` : ""}
+                        </p>
+                      ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -964,13 +1000,16 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         {appealModal && (
           <div
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-            onClick={() => !submittingAppeal && setAppealModal(false)}
+            onClick={() => !submittingAppeal && setAppealModal(null)}
           >
             <div
               style={{ background: "var(--bg-surface)", borderRadius: "var(--radius-lg)", padding: 24, maxWidth: 480, width: "100%" }}
               onClick={(e) => e.stopPropagation()}
             >
               <p style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{t.appealModalTitle}</p>
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 6, overflowWrap: "anywhere" }}>
+                {t.appealModalEventLabel} {appealModal.eventTitle}
+              </p>
               <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>{t.appealModalDescription}</p>
               <textarea
                 value={appealMessage}
@@ -992,7 +1031,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               />
               <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
                 <button
-                  onClick={() => setAppealModal(false)}
+                  onClick={() => setAppealModal(null)}
                   disabled={submittingAppeal}
                   className="btn btn-ghost"
                   style={{ flex: 1 }}

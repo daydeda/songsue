@@ -863,16 +863,23 @@ export const gameStatsRelations = relations(gameStats, ({ one }) => ({
 
 // ============================================================================
 // NO-SHOW APPEALS
-// A blocked student (users.registrationBlocked, see src/lib/strikes.ts) can
-// submit ONE pending appeal at a time asking staff to reconsider, instead of
-// only ever waiting on a manual staff reset (see .../strikes/reset/route.ts).
+// A student appeals ONE specific no-show event at a time (eventId), instead of
+// only ever waiting on a manual staff reset (see .../strikes/reset/route.ts) or
+// filing one blanket appeal that would clear every strike on the account.
+// Approving an appeal only undoes THAT event's strike — decrements
+// users.noShowCount by 1 and flips that event's attendance row(s) from
+// 'no_show' to 'excused' (see api/admin/appeals/[id]/route.ts) — leaving any
+// other, separately-earned strikes untouched. A student can therefore have
+// several pending appeals open at once, one per no-show event.
 // noShowCountAtAppeal snapshots the strike count at submission time so an
-// admin reviewing later sees the context even if the count has since changed
-// (e.g. more strikes applied, or another appeal/reset already touched it).
+// admin reviewing later sees the context even if the count has since changed.
+// eventId is nullable only so the column addition stays additive/non-destructive
+// against any pre-existing rows; every new appeal is required to set it.
 // ============================================================================
 export const noShowAppeals = pgTable("no_show_appeals", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
   message: text("message").notNull(),
   noShowCountAtAppeal: integer("no_show_count_at_appeal").notNull(),
   // 'pending' | 'approved' | 'rejected'
@@ -884,9 +891,12 @@ export const noShowAppeals = pgTable("no_show_appeals", {
 }, (table) => ([
   index("no_show_appeals_user_idx").on(table.userId),
   index("no_show_appeals_status_idx").on(table.status),
-  // Prevents spam: a user may have only one pending appeal open at once. Once it
-  // is approved/rejected they're free to submit a new one if blocked again.
-  uniqueIndex("no_show_appeals_one_pending_per_user").on(table.userId).where(sql`${table.status} = 'pending'`),
+  index("no_show_appeals_event_idx").on(table.eventId),
+  // Prevents spam: a user may have only one pending appeal per EVENT open at
+  // once (not one per account — a student with 2 strikes may appeal both
+  // events concurrently). Once an appeal is approved/rejected they're free to
+  // submit a new one for that same event if struck again.
+  uniqueIndex("no_show_appeals_one_pending_per_user_event").on(table.userId, table.eventId).where(sql`${table.status} = 'pending'`),
 ]));
 
 export const noShowAppealsRelations = relations(noShowAppeals, ({ one }) => ({
@@ -894,6 +904,10 @@ export const noShowAppealsRelations = relations(noShowAppeals, ({ one }) => ({
     fields: [noShowAppeals.userId],
     references: [users.id],
     relationName: "appealStudent",
+  }),
+  event: one(events, {
+    fields: [noShowAppeals.eventId],
+    references: [events.id],
   }),
   reviewer: one(users, {
     fields: [noShowAppeals.reviewedBy],

@@ -9,6 +9,7 @@ import { effectiveRoles } from "@/lib/admin-access";
 import { deductIndividualPoints } from "@/lib/award-individual-points";
 import { APPLY_STRIKES_ROLES, NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // Students holding a 'registered' attendance row for this event with NO
 // 'attended' row anywhere in the event — i.e. they signed up and never checked
@@ -37,13 +38,24 @@ async function loadEventAndGate(eventId: string, session: Session | null) {
 
   const event = await db.query.events.findFirst({
     where: eq(events.id, eventId),
-    columns: { id: true, title: true, endTime: true },
+    columns: { id: true, title: true, endTime: true, ownerClubIds: true, ownerMajors: true },
   });
   if (!event) {
     return { error: NextResponse.json({ error: "Event not found" }, { status: 404 }) };
   }
   if (new Date() < new Date(event.endTime)) {
     return { error: NextResponse.json({ error: "Cannot apply strikes before the event has ended" }, { status: 403 }) };
+  }
+
+  // Club/major presidents may only strike no-shows for events they OWN (mirrors
+  // the scoping in api/admin/events/[id]/attendance). Staff and smo are unscoped.
+  const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+  const isStaffOrSmo = myRoles.some((r) => ["super_admin", "admin", "organizer", "smo"].includes(r));
+  if (!isStaffOrSmo && presidentTags.length > 0) {
+    const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+    if (!EventScopeService.isEventManagedByScope(event, scope)) {
+      return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    }
   }
 
   return { event };

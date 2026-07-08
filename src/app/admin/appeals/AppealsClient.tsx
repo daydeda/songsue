@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageSquareWarning, CheckCircle2, XCircle, Loader2, Clock, UserCheck } from "lucide-react";
+import { MessageSquareWarning, CheckCircle2, XCircle, Loader2, Clock, UserCheck, CalendarX2 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 
@@ -13,6 +13,7 @@ type Appeal = {
   reviewNote: string | null;
   reviewedAt: string | null;
   createdAt: string;
+  event: { id: string; title: string; endTime: string } | null;
   user: {
     id: string;
     name: string;
@@ -164,6 +165,15 @@ export function AppealsClient() {
                   </span>
                 </div>
 
+                {a.event && (
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 10 }}>
+                    <CalendarX2 size={13} style={{ marginTop: 1, flexShrink: 0 }} />
+                    <span style={{ overflowWrap: "anywhere" }}>
+                      {t.adminAppealsEventLabel} {a.event.title}
+                    </span>
+                  </p>
+                )}
+
                 <p style={{ fontSize: 14, color: "var(--text-secondary)", background: "var(--bg-base)", padding: "10px 12px", borderRadius: 8, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                   {a.message}
                 </p>
@@ -253,11 +263,14 @@ export function AppealsClient() {
             <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
               {resolveModal.action === "approve" ? t.adminAppealsApproveConfirmTitle : t.adminAppealsRejectModalTitle}
             </h2>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14, overflowWrap: "anywhere" }}>
               {resolveModal.action === "approve"
                 ? t.adminAppealsApproveConfirmMessage
                     .replace("{name}", resolveModal.appeal.user.name)
-                    .replace("{max}", String(NO_SHOW_STRIKE_THRESHOLD))
+                    .replace("{event}", resolveModal.appeal.event?.title ?? "")
+                    .replace("{before}", String(resolveModal.appeal.user.noShowCount))
+                    .replace("{after}", String(Math.max(0, resolveModal.appeal.user.noShowCount - 1)))
+                    .replaceAll("{max}", String(NO_SHOW_STRIKE_THRESHOLD))
                 : t.adminAppealsRejectModalDescription.replace("{name}", resolveModal.appeal.user.name)}
             </p>
             {resolveModal.action === "reject" && (

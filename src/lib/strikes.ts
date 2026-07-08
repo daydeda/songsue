@@ -14,7 +14,9 @@ export const NO_SHOW_STRIKE_THRESHOLD = 3;
 
 // Roles allowed to confirm/apply no-show strikes for an event (organizers run
 // their own events; registration is scanner/roster-facing, not punitive).
-export const APPLY_STRIKES_ROLES = ["super_admin", "admin", "organizer"] as const;
+// smo is unscoped like staff; club_president/major_president are additionally
+// scoped to events they own (see EventScopeService in apply-strikes/route.ts).
+export const APPLY_STRIKES_ROLES = ["super_admin", "admin", "organizer", "smo", "club_president", "major_president"] as const;
 
 // Roles allowed to reset a student's strikes/block — narrower than apply, since a
 // reset erases the deterrent and should be a deliberate staff decision.

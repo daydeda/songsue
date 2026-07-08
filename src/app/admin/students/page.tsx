@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { useSession } from "next-auth/react";
 import { yearOfStudy } from "@/lib/event-access";
+import { effectiveRoles } from "@/lib/admin-access";
 import {
   Search, Users, ShieldAlert, Heart, Phone,
   X, ShieldCheck, User as UserIcon,
@@ -11,7 +12,7 @@ import {
   Edit2, Trash2, Check, Home, Shield,
   BookOpen, Briefcase, Award, AlertTriangle, RotateCcw
 } from "lucide-react";
-import { NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
+import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
 
 type Student = {
   id: string;
@@ -206,9 +207,15 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
 export default function AdminStudentsDirectory() {
   const { data: session } = useSession();
   const userRole = session?.user?.role || "student";
+  const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
 
   const canViewMedicalLog = userRole === "super_admin";
-  const canEditOrDelete = userRole === "super_admin" || userRole === "admin";
+  // UI-only mirror of RESET_STRIKES_ROLES (src/lib/strikes.ts) — the server
+  // route (/api/admin/students/[id]/strikes/reset) independently re-checks it,
+  // this just decides whether to show the edit/delete/reset-strikes buttons.
+  // Uses the full role set (not just the primary role) so a user whose
+  // admin/super_admin grant isn't their primary role still sees the buttons.
+  const canEditOrDelete = myRoles.some((r) => (RESET_STRIKES_ROLES as readonly string[]).includes(r));
 
   const { t, lang } = useLanguage();
   const [students, setStudents] = useState<Student[]>([]);

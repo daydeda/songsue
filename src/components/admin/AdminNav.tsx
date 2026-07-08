@@ -44,13 +44,17 @@ export function AdminNav({ roles }: { roles: string[] }) {
 
   const filteredNav = NAV.filter(item => {
     // Scanner-only users (smo, club/major president, no full-admin role) see just the
-    // QR Scanner plus the Events page (attendance-view only). Shared predicate so this
+    // QR Scanner, Events (attendance-view only) and Appeals. Shared predicate so this
     // can't drift from proxy/admin-access. club_president additionally sees Clubs, but
     // scoped read-only to their own club's roster (see admin/clubs/page.tsx + its APIs).
+    // Appeals itself is view-only for smo and owned-events-only for club/major
+    // president (VIEW_APPEALS_ROLES/RESOLVE_APPEALS_ROLES, src/lib/strikes.ts) — the
+    // page/API enforce that; the nav just decides whether the link shows at all.
     if (scannerOnly) {
       return (
         item.href === "/admin/scanner" ||
         item.href === "/admin/events" ||
+        item.href === "/admin/appeals" ||
         (item.href === "/admin/clubs" && roles.includes("club_president"))
       );
     }
@@ -58,8 +62,8 @@ export function AdminNav({ roles }: { roles: string[] }) {
     if (item.href === "/admin/clubs") return canSeeClubs;
     if (item.href === "/admin/audit-logs") return canSeeAudit;
     if (item.href === "/admin/announcement" || item.href === "/admin/shop") return canManage;
-    // Resolving an appeal resets strikes — same super_admin/admin-only scope as
-    // RESET_STRIKES_ROLES in src/lib/strikes.ts.
+    // Full-admin roles: appeals nav is super_admin/admin-only (organizer/registration
+    // never had VIEW_APPEALS_ROLES) — mirrors the page/API gate in src/lib/strikes.ts.
     if (item.href === "/admin/appeals") return canManage;
     return true; // dashboard, events, scanner — every full-admin role
   });

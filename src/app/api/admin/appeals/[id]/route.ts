@@ -50,7 +50,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "Appeal not found" }, { status: 404 });
     }
 
-    const isStaff = myRoles.some((r) => ["super_admin", "admin"].includes(r));
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r));
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     if (!isStaff && presidentTags.length > 0) {
       const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);

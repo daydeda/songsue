@@ -117,6 +117,10 @@ interface AdminStudent {
   // (e.g. "drugAllergies"), with no values — so they see what kind of condition
   // exists but not the detail.
   medicalCategories?: string[];
+  // Account-wide no-show strike count (not PDPA-sensitive), sent to every
+  // admin-area role that reaches the roster — powers the "Strike History"
+  // filter, visible down to smo/president thin-roster views.
+  noShowCount?: number;
 }
 
 interface AdminAttendance {
@@ -339,13 +343,14 @@ export default function AdminEventsPage() {
   // thin-roster set on this page (only staff + thin-roster ever reach here).
   const canSeeExportButton = canExportAttendance || isAttendanceOnly;
   // No-show strike-out (US-STRI-15): organizers confirm no-shows for their own
-  // ended events. smo is unscoped like staff; club_president/major_president are
+  // ended events; registration is unscoped staff, like admin. smo may view the
+  // roster but does NOT apply strikes. club_president/major_president are
   // additionally scoped server-side to events they own (see EventScopeService in
   // api/admin/events/[id]/apply-strikes) — the GET/POST list here already only
   // ever contains events they're allowed to see. Narrower than "reset strikes",
   // which is admin/super_admin only (see /api/admin/students/[id]/strikes/reset).
   const canApplyStrikes = myRoles.some((r) =>
-    ["super_admin", "admin", "organizer", "smo", "club_president", "major_president"].includes(r)
+    ["super_admin", "admin", "organizer", "registration", "club_president", "major_president"].includes(r)
   );
   // Club/major presidents may edit their OWN event's details (title, description,
   // schedule, location, quota, etc.) — GET /api/admin/events already scopes their
@@ -393,6 +398,13 @@ export default function AdminEventsPage() {
   const [selectedStudent, setSelectedStudent] = useState<AdminStudent | null>(null);
   const [filterMedical, setFilterMedical] = useState(false);
   const [filterNotCheckedIn, setFilterNotCheckedIn] = useState(false);
+  // Two distinct no-show lenses (both visible to smo/president thin-roster
+  // views — a strike count is not PDPA-sensitive): account-wide strike
+  // history (noShowCount > 0, from any past event) vs. a no-show for THIS
+  // event specifically (registered, never checked into any session of it —
+  // mirrors findNoShowStudentIds in api/admin/events/[id]/apply-strikes).
+  const [filterStrikeHistory, setFilterStrikeHistory] = useState(false);
+  const [filterEventNoShow, setFilterEventNoShow] = useState(false);
   // No-show strike-out confirm flow: preview the roster, let the organizer
   // confirm, then apply. Kept separate from the attendance roster state above
   // since it's its own modal/request lifecycle.
@@ -1615,6 +1627,18 @@ export default function AdminEventsPage() {
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const isMultiDayEvent = activeEventSessions.length > 1;
 
+  // Student ids who never checked into ANY session of this event despite
+  // being registered — mirrors findNoShowStudentIds in
+  // api/admin/events/[id]/apply-strikes/route.ts (registered with no
+  // 'attended' row anywhere in the event), so this filter matches exactly who
+  // strikes would apply to.
+  const eventNoShowIds = useMemo(() => {
+    const attended = new Set(attendance.filter((m) => m.status === "attended").map((m) => m.studentId));
+    return new Set(
+      attendance.filter((m) => m.status === "registered" && !attended.has(m.studentId)).map((m) => m.studentId)
+    );
+  }, [attendance]);
+
   const filteredAttendance = useMemo(() => attendance.filter((m) => {
     if (selectedSessionId && m.session?.id !== selectedSessionId) {
       return false;
@@ -1623,6 +1647,12 @@ export default function AdminEventsPage() {
       return false;
     }
     if (filterNotCheckedIn && m.status !== "registered") {
+      return false;
+    }
+    if (filterStrikeHistory && !((m.user?.noShowCount ?? 0) > 0)) {
+      return false;
+    }
+    if (filterEventNoShow && !eventNoShowIds.has(m.studentId)) {
       return false;
     }
     if (filterStudentsOnly && !isRegularStudent(m.user)) {
@@ -1667,7 +1697,7 @@ export default function AdminEventsPage() {
 
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hasMedicalSignal is pure over its `user` arg (no state/props); listing it would recreate each render and defeat the memo
-  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStudentsOnly, filterMaster, filterPhd, filterThai, filterInternational, yearFilter]);
+  }), [attendance, selectedSessionId, filterMedical, filterNotCheckedIn, filterStrikeHistory, filterEventNoShow, eventNoShowIds, filterStudentsOnly, filterMaster, filterPhd, filterThai, filterInternational, yearFilter]);
 
   // Header tallies honor the selected day (but not the other roster filters) so
   // "X / Y checked in" matches whichever day is being viewed.
@@ -5125,6 +5155,51 @@ export default function AdminEventsPage() {
                     {filterNotCheckedIn ? "Showing: Not Checked In Only" : "Filter: Not Checked In Only"}
                   </button>
 
+                  {/* Strike count is not PDPA-sensitive (unlike medical), so both
+                      no-show filters stay visible to attendance-only roles (smo,
+                      club/major president) — not gated behind !isAttendanceOnly. */}
+                  <button
+                    onClick={() => setFilterStrikeHistory(!filterStrikeHistory)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 99,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "all 0.2s",
+                      border: filterStrikeHistory ? "1px solid #ef4444" : "1px solid var(--border-subtle)",
+                      background: filterStrikeHistory ? "rgba(239, 68, 68, 0.1)" : "var(--bg-surface)",
+                      color: filterStrikeHistory ? "#ef4444" : "var(--text-secondary)"
+                    }}
+                  >
+                    <AlertCircle size={16} />
+                    {filterStrikeHistory ? "Showing: Has Strike History" : "Filter: Has Strike History"}
+                  </button>
+
+                  <button
+                    onClick={() => setFilterEventNoShow(!filterEventNoShow)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 99,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "all 0.2s",
+                      border: filterEventNoShow ? "1px solid #ef4444" : "1px solid var(--border-subtle)",
+                      background: filterEventNoShow ? "rgba(239, 68, 68, 0.1)" : "var(--bg-surface)",
+                      color: filterEventNoShow ? "#ef4444" : "var(--text-secondary)"
+                    }}
+                  >
+                    <AlertTriangle size={16} />
+                    {filterEventNoShow ? "Showing: No-Show This Event" : "Filter: No-Show This Event"}
+                  </button>
+
                   <button
                     onClick={() => setFilterStudentsOnly(!filterStudentsOnly)}
                     style={{
@@ -5266,7 +5341,7 @@ export default function AdminEventsPage() {
                     International Students
                   </label>
                 </div>
-                {(filterMedical || filterNotCheckedIn || filterStudentsOnly || filterMaster || filterPhd || !filterThai || !filterInternational || selectedSessionId || yearFilter.size > 0) && (
+                {(filterMedical || filterNotCheckedIn || filterStrikeHistory || filterEventNoShow || filterStudentsOnly || filterMaster || filterPhd || !filterThai || !filterInternational || selectedSessionId || yearFilter.size > 0) && (
                   <p style={{ fontSize: 13, color: "var(--accent-primary)", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                     <Activity size={14} className="animate-pulse" />
                     Filtered: Showing {attendanceUnits.length} of {tallyUnits.length} records

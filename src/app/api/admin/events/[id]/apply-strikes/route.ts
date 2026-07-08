@@ -48,10 +48,11 @@ async function loadEventAndGate(eventId: string, session: Session | null) {
   }
 
   // Club/major presidents may only strike no-shows for events they OWN (mirrors
-  // the scoping in api/admin/events/[id]/attendance). Staff and smo are unscoped.
+  // the scoping in api/admin/events/[id]/attendance). Staff (incl. registration)
+  // are unscoped; smo never reaches here (excluded from APPLY_STRIKES_ROLES above).
   const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-  const isStaffOrSmo = myRoles.some((r) => ["super_admin", "admin", "organizer", "smo"].includes(r));
-  if (!isStaffOrSmo && presidentTags.length > 0) {
+  const isUnscopedStaff = myRoles.some((r) => ["super_admin", "admin", "organizer", "registration"].includes(r));
+  if (!isUnscopedStaff && presidentTags.length > 0) {
     const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
     if (!EventScopeService.isEventManagedByScope(event, scope)) {
       return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };

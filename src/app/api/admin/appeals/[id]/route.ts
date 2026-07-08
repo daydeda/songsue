@@ -1,8 +1,8 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { noShowAppeals, users } from "@/db/schema";
+import { attendance, noShowAppeals, users } from "@/db/schema";
 import { effectiveRoles } from "@/lib/admin-access";
-import { RESET_STRIKES_ROLES } from "@/lib/strikes";
+import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -17,10 +17,13 @@ const resolveSchema = z.object({
 // request between the pre-check and the update (double-click, two admins).
 class AlreadyResolvedError extends Error {}
 
-// PATCH /api/admin/appeals/[id] — approve or reject a student's no-show appeal.
-// Approving both resolves the appeal AND resets the student's strikes (mirrors
-// src/app/api/admin/students/[id]/strikes/reset/route.ts) in one transaction, so
-// an appeal can never be left "approved" while the student stays blocked.
+// PATCH /api/admin/appeals/[id] — approve or reject a student's no-show appeal
+// for ONE event. Approving resolves the appeal, decrements the student's
+// noShowCount by exactly 1 (unblocking if that drops it below the threshold),
+// and flips that event's attendance row(s) from 'no_show' to 'excused' — all
+// in one transaction. This deliberately does NOT touch any other strike the
+// student has from a different event (US-STRI-15c: per-event appeals, not the
+// blanket "reset to 0/3" the account-wide appeal used to do).
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
@@ -34,13 +37,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const appeal = await db.query.noShowAppeals.findFirst({
       where: eq(noShowAppeals.id, id),
-      columns: { id: true, userId: true, status: true, noShowCountAtAppeal: true },
+      columns: { id: true, userId: true, eventId: true, status: true, noShowCountAtAppeal: true },
     });
     if (!appeal) {
       return NextResponse.json({ error: "Appeal not found" }, { status: 404 });
     }
     if (appeal.status !== "pending") {
       return NextResponse.json({ error: "This appeal has already been resolved" }, { status: 409 });
+    }
+    if (data.action === "approve" && !appeal.eventId) {
+      return NextResponse.json({ error: "This appeal isn't linked to an event and can't be auto-resolved" }, { status: 400 });
     }
 
     const newStatus = data.action === "approve" ? "approved" : "rejected";
@@ -49,7 +55,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       // Re-assert 'pending' inside the transaction (not just the pre-check above) so
       // a concurrent PATCH on the same appeal — double-click, or two admins — can't
       // silently overwrite an already-resolved outcome (e.g. a reject clobbering an
-      // approve that already reset the student's strikes).
+      // approve that already decremented the student's strikes).
       const [updated] = await tx
         .update(noShowAppeals)
         .set({
@@ -68,11 +74,31 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       let action = `${data.action === "approve" ? "Approved" : "Rejected"} no-show appeal ${id}`;
 
       if (data.action === "approve") {
+        const [student] = await tx
+          .select({ noShowCount: users.noShowCount })
+          .from(users)
+          .where(eq(users.id, appeal.userId));
+        const newCount = Math.max(0, (student?.noShowCount ?? 0) - 1);
+        const newBlocked = newCount >= NO_SHOW_STRIKE_THRESHOLD;
+
         await tx
           .update(users)
-          .set({ noShowCount: 0, registrationBlocked: false })
+          .set({ noShowCount: newCount, registrationBlocked: newBlocked })
           .where(eq(users.id, appeal.userId));
-        action += `, reset strikes (was ${appeal.noShowCountAtAppeal}/3)`;
+
+        // Clears the event of its no-show mark so it stops counting toward
+        // future strike displays; a multi-session event may have flipped more
+        // than one attendance row when the strike was originally applied.
+        await tx
+          .update(attendance)
+          .set({ status: "excused" })
+          .where(and(
+            eq(attendance.studentId, appeal.userId),
+            eq(attendance.eventId, appeal.eventId!),
+            eq(attendance.status, "no_show"),
+          ));
+
+        action += `, removed 1 strike for event ${appeal.eventId} (was ${student?.noShowCount ?? 0}/${NO_SHOW_STRIKE_THRESHOLD}, now ${newCount}/${NO_SHOW_STRIKE_THRESHOLD})`;
       }
 
       await AuditService.logActionInternal(tx, {

@@ -1145,6 +1145,24 @@ async function migrate() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS no_show_appeals_one_pending_per_user ON no_show_appeals (user_id) WHERE status = 'pending'`;
   console.log("  ✅ no_show_appeals table + user/status indexes + one-pending-per-user partial unique index");
 
+  // 69. no_show_appeals.event_id — appeals become per-EVENT instead of one
+  // blanket appeal per account (see step 68): a student with multiple strikes
+  // can appeal each no-show event separately, and approving one only undoes
+  // that event's strike, not the whole count. Nullable so the ADD COLUMN stays
+  // additive against any pre-existing rows; the app layer requires it on every
+  // new appeal. Replaces the one-pending-per-user unique index with one scoped
+  // to (user_id, event_id) so concurrently-pending appeals for DIFFERENT
+  // events are allowed, just not two for the same event. Additive/idempotent:
+  // ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, DROP INDEX IF EXISTS.
+  await sql`
+    ALTER TABLE no_show_appeals
+    ADD COLUMN IF NOT EXISTS event_id uuid REFERENCES events(id) ON DELETE CASCADE
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS no_show_appeals_event_idx ON no_show_appeals (event_id)`;
+  await sql`DROP INDEX IF EXISTS no_show_appeals_one_pending_per_user`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS no_show_appeals_one_pending_per_user_event ON no_show_appeals (user_id, event_id) WHERE status = 'pending'`;
+  console.log("  ✅ no_show_appeals.event_id + event index; one-pending-per-user-event replaces one-pending-per-user");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

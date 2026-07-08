@@ -339,10 +339,14 @@ export default function AdminEventsPage() {
   // thin-roster set on this page (only staff + thin-roster ever reach here).
   const canSeeExportButton = canExportAttendance || isAttendanceOnly;
   // No-show strike-out (US-STRI-15): organizers confirm no-shows for their own
-  // ended events, same as canExportAttendance's staff set plus organizer —
-  // narrower than "reset strikes", which is admin/super_admin only (see
-  // /api/admin/students/[id]/strikes/reset).
-  const canApplyStrikes = myRoles.includes("super_admin") || myRoles.includes("admin") || myRoles.includes("organizer");
+  // ended events. smo is unscoped like staff; club_president/major_president are
+  // additionally scoped server-side to events they own (see EventScopeService in
+  // api/admin/events/[id]/apply-strikes) — the GET/POST list here already only
+  // ever contains events they're allowed to see. Narrower than "reset strikes",
+  // which is admin/super_admin only (see /api/admin/students/[id]/strikes/reset).
+  const canApplyStrikes = myRoles.some((r) =>
+    ["super_admin", "admin", "organizer", "smo", "club_president", "major_president"].includes(r)
+  );
   // Club/major presidents may edit their OWN event's details (title, description,
   // schedule, location, quota, etc.) — GET /api/admin/events already scopes their
   // list to only events they own (see EventScopeService), so any event a president

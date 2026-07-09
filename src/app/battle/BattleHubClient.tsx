@@ -3,8 +3,9 @@
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Swords, Trophy, History, Play, Users, Medal, Zap, RotateCcw, AlertTriangle } from "lucide-react";
+import { Swords, Trophy, History, Play, Users, Medal, Zap, RotateCcw, AlertTriangle, Flame } from "lucide-react";
 import Link from "next/link";
+import { useLanguage } from "@/lib/LanguageContext";
 
 interface SessionUser {
   id: string;
@@ -54,6 +55,7 @@ interface LeaderboardItem {
 
 export function BattleHubClient({ initialSession }: BattleHubClientProps) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"leaderboard" | "history">("leaderboard");
   const [stats, setStats] = useState<Stats | null>(null);
   const [history, setHistory] = useState<MatchHistoryItem[]>([]);
@@ -70,25 +72,25 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
         setLoading(true);
         // Fetch stats and history
         const statsRes = await fetch("/api/battle/stats/me");
-        if (!statsRes.ok) throw new Error("Failed to load statistics");
+        if (!statsRes.ok) throw new Error(t.battleErrorLoadStats);
         const statsData = await statsRes.json();
         setStats(statsData.stats);
         setHistory(statsData.history);
 
         // Fetch leaderboard
         const lbRes = await fetch("/api/battle/leaderboard?game=ox");
-        if (!lbRes.ok) throw new Error("Failed to load leaderboard");
+        if (!lbRes.ok) throw new Error(t.battleErrorLoadLeaderboard);
         const lbData = await lbRes.json();
         setLeaderboard(lbData.leaderboard);
       } catch (err: unknown) {
         console.error(err);
-        setError(err instanceof Error ? err.message : "An unexpected error occurred");
+        setError(err instanceof Error ? err.message : t.battleErrorUnexpected);
       } finally {
         setLoading(false);
       }
     }
     loadData();
-  }, []);
+  }, [t]);
 
   async function handleCreateRoom() {
     try {
@@ -102,13 +104,13 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to create room");
+        throw new Error(data.error || t.battleErrorCreateRoom);
       }
 
       const room = await res.json();
       router.push(`/battle/room/${room.roomCode}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to create room");
+      setError(err instanceof Error ? err.message : t.battleErrorCreateRoom);
       setCreating(false);
     }
   }
@@ -126,11 +128,11 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
 
   const getHouseName = (houseId: string | null | undefined) => {
     switch (houseId?.toLowerCase()) {
-      case "red": return "Mom (มอม)";
-      case "blue": return "Luang (ลวง)";
-      case "green": return "Makara (มกร)";
-      case "yellow": return "To (โต)";
-      default: return "No House";
+      case "red": return t.houseMom;
+      case "blue": return t.houseLuang;
+      case "green": return t.houseMakara;
+      case "yellow": return t.houseTo;
+      default: return t.battleNoHouse;
     }
   };
 
@@ -145,10 +147,10 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
             <Swords size={36} className="pulse" />
           </div>
           <h1 style={{ fontSize: "2.5rem", fontWeight: 900, marginBottom: 8, letterSpacing: "-0.04em" }}>
-            P2P Battle Arena
+            {t.battleArenaTitle}
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "1.1rem", maxWidth: 600, margin: "0 auto" }}>
-            ท้าทายเพื่อนนักศึกษา CAMT ในเกม OX (Tic-Tac-Toe) แบบเรียลไทม์ผ่านการเชื่อมต่อแบบ Peer-to-Peer โดยตรง
+            {t.battleArenaSubtitle}
           </p>
 
           {error && (
@@ -166,17 +168,17 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
             <div style={{ width: 64, height: 64, borderRadius: "var(--radius-lg)", background: "var(--accent-glow)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", marginBottom: 20 }}>
               <Play size={32} />
             </div>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 10 }}>สร้างห้องประลอง</h2>
+            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 10 }}>{t.battleCreateRoomTitle}</h2>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", marginBottom: 24, flexGrow: 1 }}>
-              สร้างห้องใหม่เพื่อแชร์รหัส 4 หลัก หรือใช้ QR Code ให้เพื่อนของคุณสแกนเข้ามาประลองทันที
+              {t.battleCreateRoomDesc}
             </p>
-            <button 
-              className="btn" 
+            <button
+              className="btn"
               style={{ background: "var(--accent-primary)", color: "#fff", width: "100%", height: 48 }}
               onClick={handleCreateRoom}
               disabled={creating}
             >
-              {creating ? "กำลังสร้างห้อง..." : "สร้างห้องใหม่"}
+              {creating ? t.battleCreatingRoomBtn : t.battleCreateNewRoomBtn}
             </button>
           </div>
 
@@ -185,16 +187,16 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
             <div style={{ width: 64, height: 64, borderRadius: "var(--radius-lg)", background: "rgba(59, 130, 246, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#3b82f6", marginBottom: 20 }}>
               <Users size={32} />
             </div>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 10 }}>เข้าร่วมเกม</h2>
+            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 10 }}>{t.battleJoinGameTitle}</h2>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", marginBottom: 24, flexGrow: 1 }}>
-              สแกน QR Code หรือป้อนรหัสห้อง 4 หลักที่เพื่อนของคุณสร้างไว้เพื่อเข้าเล่นร่วมกัน
+              {t.battleJoinGameDesc}
             </p>
-            <Link 
-              href="/battle/join" 
-              className="btn" 
+            <Link
+              href="/battle/join"
+              className="btn"
               style={{ border: "2px solid #3b82f6", color: "#3b82f6", background: "transparent", width: "100%", height: 48, boxSizing: "border-box" }}
             >
-              กรอกรหัสเข้าร่วม
+              {t.battleEnterJoinCodeBtn}
             </Link>
           </div>
         </div>
@@ -203,38 +205,38 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
         {stats && (
           <div className="glass" style={{ padding: 24, marginBottom: 40, border: "1px solid var(--border-medium)" }}>
             <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
-              <Medal size={20} color="var(--accent-primary)" /> สถิติการประลองของคุณ
+              <Medal size={20} color="var(--accent-primary)" /> {t.battleYourStatsTitle}
             </h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 16 }}>
               {/* Win Card */}
               <div style={{ padding: 16, borderRadius: "var(--radius-md)", background: "rgba(34, 197, 94, 0.05)", border: "1px solid rgba(34, 197, 94, 0.1)", textAlign: "center" }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>ชนะ (Wins)</p>
+                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>{t.battleStatWins}</p>
                 <p style={{ fontSize: 32, fontWeight: 900, color: "#22c55e", marginTop: 4 }}>{stats.wins}</p>
               </div>
 
               {/* Loss Card */}
               <div style={{ padding: 16, borderRadius: "var(--radius-md)", background: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.1)", textAlign: "center" }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>แพ้ (Losses)</p>
+                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>{t.battleStatLosses}</p>
                 <p style={{ fontSize: 32, fontWeight: 900, color: "#ef4444", marginTop: 4 }}>{stats.losses}</p>
               </div>
 
               {/* Draw Card */}
               <div style={{ padding: 16, borderRadius: "var(--radius-md)", background: "rgba(107, 114, 128, 0.05)", border: "1px solid rgba(107, 114, 128, 0.1)", textAlign: "center" }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>เสมอ (Draws)</p>
+                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>{t.battleStatDraws}</p>
                 <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-secondary)", marginTop: 4 }}>{stats.draws}</p>
               </div>
 
               {/* Win Streak Card */}
               <div style={{ padding: 16, borderRadius: "var(--radius-md)", background: "var(--accent-glow)", border: "1px solid var(--border-subtle)", textAlign: "center" }}>
                 <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                  <Zap size={14} color="var(--accent-primary)" /> ชนะต่อเนื่อง
+                  <Zap size={14} color="var(--accent-primary)" /> {t.battleStatWinStreak}
                 </p>
                 <p style={{ fontSize: 32, fontWeight: 900, color: "var(--accent-primary)", marginTop: 4 }}>{stats.winStreak}</p>
               </div>
 
               {/* Best Streak Card */}
               <div style={{ padding: 16, borderRadius: "var(--radius-md)", background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", textAlign: "center" }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>สถิติต่อเนื่องสูงสุด</p>
+                <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 500 }}>{t.battleStatBestStreak}</p>
                 <p style={{ fontSize: 32, fontWeight: 900, marginTop: 4 }}>{stats.bestStreak}</p>
               </div>
             </div>
@@ -245,10 +247,10 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
         {!loading && !stats && (
           <div className="glass" style={{ padding: 24, marginBottom: 40, border: "1px dashed var(--border-medium)", textAlign: "center" }}>
             <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <Medal size={18} color="var(--text-muted)" /> ยังไม่มีสถิติการประลอง
+              <Medal size={18} color="var(--text-muted)" /> {t.battleNoStatsTitle}
             </h3>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-              คุณยังไม่เคยเล่นเกมจนจบเลย — สร้างห้องหรือเข้าร่วมเกมแรกเพื่อเริ่มเก็บสถิติ!
+              {t.battleNoStatsDesc}
             </p>
           </div>
         )}
@@ -273,7 +275,7 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
             }}
           >
             <Trophy size={18} />
-            กระดานผู้นำ OX (Leaderboard)
+            {t.battleTabLeaderboard}
           </button>
           <button 
             onClick={() => setActiveTab("history")}
@@ -293,7 +295,7 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
             }}
           >
             <History size={18} />
-            ประวัติการแข่งของฉัน (History)
+            {t.battleTabHistory}
           </button>
         </div>
 
@@ -301,7 +303,7 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
         {loading ? (
           <div style={{ textAlign: "center", padding: "64px 0" }}>
             <div className="spinner" style={{ margin: "0 auto 16px" }}></div>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>กำลังดึงข้อมูลจากอารีน่า...</p>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>{t.battleLoadingArena}</p>
           </div>
         ) : (
           <div>
@@ -309,19 +311,19 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
               <div className="glass" style={{ overflow: "hidden", padding: 0 }}>
                 {leaderboard.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "48px 16px", color: "var(--text-secondary)" }}>
-                    ยังไม่เริ่มฤดูกาลแข่งขัน หรือไม่มีผู้ใช้บันทึกในขณะนี้
+                    {t.battleLeaderboardEmpty}
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                       <thead>
                         <tr style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border-subtle)" }}>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>อันดับ (Rank)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>ผู้ประลอง (Player)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>บ้าน (House)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>จำนวนครั้งที่ชนะ (Wins)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>ชนะติดต่อกัน (Streak)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>สูงสุด (Best)</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{t.battleThRank}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{t.battleThPlayer}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{t.battleThHouse}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>{t.battleThWins}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>{t.battleThStreak}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>{t.battleThBest}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -364,7 +366,11 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
                                 {item.wins}
                               </td>
                               <td style={{ padding: "16px 24px", fontWeight: 600, textAlign: "center", color: "var(--accent-primary)" }}>
-                                {item.winStreak > 0 ? `🔥 ${item.winStreak}` : "0"}
+                                {item.winStreak > 0 ? (
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "center" }}>
+                                    <Flame size={14} /> {item.winStreak}
+                                  </span>
+                                ) : "0"}
                               </td>
                               <td style={{ padding: "16px 24px", fontWeight: 500, textAlign: "center" }}>
                                 {item.bestStreak}
@@ -383,40 +389,47 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
               <div className="glass" style={{ overflow: "hidden", padding: 0 }}>
                 {history.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "48px 16px", color: "var(--text-secondary)" }}>
-                    คุณยังไม่ได้เล่นแมตช์ใดเสร็จสิ้นเลย ประเดิมเกมแรกสิ!
+                    {t.battleHistoryEmpty}
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                       <thead>
                         <tr style={{ background: "var(--bg-elevated)", borderBottom: "1px solid var(--border-subtle)" }}>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>ห้อง (Room)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>คู่แข่ง (Opponent)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>ผลลัพธ์ (Result)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>วิธีสิ้นสุด (End Reason)</th>
-                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "right" }}>วันที่เล่น (Date)</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{t.battleThRoom}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{t.battleThOpponent}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "center" }}>{t.battleThResult}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{t.battleThEndReason}</th>
+                          <th style={{ padding: "16px 24px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", textAlign: "right" }}>{t.battleThDate}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {history.map((roomItem) => {
                           const isHost = roomItem.hostId === user?.id;
                           const opponent = isHost ? roomItem.guest : roomItem.host;
-                          
-                          let resultText = "Draw";
+
+                          let resultText = t.battleResultDraw;
                           let resultColor = "var(--text-secondary)";
                           let resultBg = "rgba(107, 114, 128, 0.05)";
 
                           if (roomItem.winnerId) {
                             if (roomItem.winnerId === user?.id) {
-                              resultText = "Won";
+                              resultText = t.battleResultWon;
                               resultColor = "#22c55e";
                               resultBg = "rgba(34, 197, 94, 0.05)";
                             } else {
-                              resultText = "Lost";
+                              resultText = t.battleResultLost;
                               resultColor = "#ef4444";
                               resultBg = "rgba(239, 68, 68, 0.05)";
                             }
                           }
+
+                          const finishReasonText =
+                            roomItem.finishReason === "win" ? t.battleReasonWin
+                            : roomItem.finishReason === "draw" ? t.battleReasonDraw
+                            : roomItem.finishReason === "resign" ? t.battleReasonResign
+                            : roomItem.finishReason === "forfeit" ? t.battleReasonForfeit
+                            : t.battleReasonCompleted;
 
                           const formattedDate = new Date(roomItem.updatedAt).toLocaleDateString(undefined, {
                             day: "numeric",
@@ -440,7 +453,7 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
                                     </div>
                                   </div>
                                 ) : (
-                                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Unknown Opponent</span>
+                                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t.battleUnknownOpponent}</span>
                                 )}
                               </td>
                               <td style={{ padding: "16px 24px", textAlign: "center" }}>
@@ -449,7 +462,7 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
                                 </span>
                               </td>
                               <td style={{ padding: "16px 24px", textTransform: "capitalize", fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>
-                                {roomItem.finishReason || "completed"}
+                                {finishReasonText}
                               </td>
                               <td style={{ padding: "16px 24px", textAlign: "right", fontSize: 13, color: "var(--text-muted)" }}>
                                 {formattedDate}

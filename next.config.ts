@@ -33,20 +33,6 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
-  async redirects() {
-    return [
-      {
-        source: "/battle/:path*",
-        destination: "/dashboard",
-        permanent: false,
-      },
-      {
-        source: "/battle",
-        destination: "/dashboard",
-        permanent: false,
-      },
-    ];
-  },
   // Runtime-uploaded images are written to public/uploads, but `next start` only
   // serves files that existed in public/ at build time — so /uploads/<file> 404s
   // in production. This afterFiles rewrite (runs only when no real static file

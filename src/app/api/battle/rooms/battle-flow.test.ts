@@ -9,16 +9,21 @@ const testClient = (globalThis as any).pglite;
 
 // Mock auth() dynamically based on our test variables
 let currentUserId = "user-host";
+// Battle is staged behind BATTLE_ALLOWED_ROLES (smo/anusmo/admin) for prod
+// testing; the session role must clear that gate for the end-to-end flow to
+// reach the room-creation/join/move handlers. Defaults to an allowed role;
+// the access-control test below flips it to an unprivileged role.
+let currentUserRole = "smo";
 vi.mock("@/auth", () => {
   return {
     auth: vi.fn(async () => {
       return {
         user: {
           id: currentUserId,
-          name: currentUserId === "user-host" ? "Host Player" : "Guest Player",
-          email: currentUserId === "user-host" ? "host@example.com" : "guest@example.com",
-          role: "student",
-          roles: ["student"],
+          name: currentUserId === "user-host" ? "Host Player" : currentUserId === "user-guest" ? "Guest Player" : "Student Player",
+          email: currentUserId === "user-host" ? "host@example.com" : currentUserId === "user-guest" ? "guest@example.com" : "student@example.com",
+          role: currentUserRole,
+          roles: [currentUserRole],
         },
       };
     }),
@@ -401,5 +406,22 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
     expect(guestStats!.losses).toBe(1);
     expect(guestStats!.totalGames).toBe(1);
     expect(guestStats!.winStreak).toBe(0);
+  });
+
+  it("should reject room creation from a role outside BATTLE_ALLOWED_ROLES (403)", async () => {
+    currentUserId = "user-student";
+    currentUserRole = "student";
+    try {
+      const createReq = new Request("http://localhost/api/battle/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameType: "ox" }),
+      });
+      const createRes = await createRoom(createReq);
+      expect(createRes.status).toBe(403);
+    } finally {
+      currentUserId = "user-host";
+      currentUserRole = "smo";
+    }
   });
 });

@@ -15,6 +15,12 @@ import { EventScopeService } from "@/modules/events/event-scope.service";
 // 'attended' row anywhere in the event — i.e. they signed up and never checked
 // in on any session. Plain two-query set-difference (not a SQL subquery) to
 // match this codebase's existing straightforward query style.
+//
+// isStaff=false excludes event staff from the registered pool: staff commonly
+// register for an event they're running but are never personally scanned in
+// (they're operating the scanner, not being scanned) — without this filter
+// they'd be wrongly struck as no-shows, which can eventually block their own
+// future registrations via registrationBlocked.
 async function findNoShowStudentIds(eventId: string): Promise<string[]> {
   const attendedRows = await db
     .selectDistinct({ studentId: attendance.studentId })
@@ -25,7 +31,7 @@ async function findNoShowStudentIds(eventId: string): Promise<string[]> {
   const registeredRows = await db
     .selectDistinct({ studentId: attendance.studentId })
     .from(attendance)
-    .where(and(eq(attendance.eventId, eventId), eq(attendance.status, "registered")));
+    .where(and(eq(attendance.eventId, eventId), eq(attendance.status, "registered"), eq(attendance.isStaff, false)));
 
   return registeredRows.map((r) => r.studentId).filter((id) => !attendedIds.has(id));
 }

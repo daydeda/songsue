@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { events, attendance, eventSessions } from "@/db/schema";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -44,6 +44,10 @@ const eventSchema = z.object({
   // left empty it stays hidden from every president until staff assigns an owner.
   ownerClubIds: z.array(z.string().uuid()).optional().nullable(),
   ownerMajors: z.array(z.string()).optional().nullable(),
+  // Specific user IDs assigned as staff for THIS event (as opposed to the
+  // role-based fields above) — exempts their attendance from quota counts and
+  // no-show strikes. See events.staffUserIds in schema.ts.
+  staffUserIds: z.array(z.string()).optional().nullable(),
 }).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
   message: "endTime must be after startTime",
   path: ["endTime"],
@@ -62,6 +66,9 @@ const getAttendeeCounts = unstable_cache(
         count: sql<number>`count(distinct ${attendance.studentId})`,
       })
       .from(attendance)
+      // Staff rows don't count toward the displayed "X registered" headcount —
+      // mirrors the quota exemption in register/route.ts and scanner.service.ts.
+      .where(eq(attendance.isStaff, false))
       .groupBy(attendance.eventId),
   ["admin-events-attendee-counts"],
   { revalidate: 15, tags: ["admin-events-attendee-counts"] },
@@ -193,6 +200,7 @@ export async function POST(req: Request) {
           managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null,
           ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null,
           ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null,
+          staffUserIds: data.staffUserIds && data.staffUserIds.length > 0 ? data.staffUserIds : null,
         })
         .returning();
 

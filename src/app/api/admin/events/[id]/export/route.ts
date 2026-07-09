@@ -205,6 +205,7 @@ export async function GET(
         "Major": u?.major || "",
         "Role": u?.role || "",
         "House": u?.house?.name || "",
+        "Staff": m.isStaff ? "Yes" : "",
         "Status": m.status === "attended" ? "Checked In" : m.status || "",
         "Check-in (Bangkok)": fmtTime(m.checkInTime),
         "Method": m.method || "",
@@ -235,7 +236,7 @@ export async function GET(
     const header = [
       "Name", "Nickname", "Student ID", "Nationality",
       ...(!isThinRoster ? ["Email", "Phone", "Contact Channels"] : []),
-      "Major", "Role", "House", "Status", "Check-in (Bangkok)", "Method",
+      "Major", "Role", "House", "Staff", "Status", "Check-in (Bangkok)", "Method",
       ...(!isThinRoster ? ["Meds Check"] : []),
       ...(canViewMedical
         ? [
@@ -294,8 +295,12 @@ export async function GET(
       const noShow = Math.max(0, preTotal - preAttended);
       const checkedIn = rows.filter((a) => a.status === "attended").length;
       const distinct = new Set(rows.map((a) => a.studentId)).size;
+      const staff = new Set(rows.filter((a) => a.isStaff).map((a) => a.studentId)).size;
+      // "Attendees" for project-evidence purposes: real participants only, staff
+      // who ran the event excluded. distinct always includes staff as a subset.
+      const attendeesOnly = distinct - staff;
       const pct = preTotal > 0 ? (noShow / preTotal) * 100 : 0;
-      return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, pct };
+      return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, staff, attendeesOnly, pct };
     };
 
     // Event-wide ("ALL DAYS") tallies must COUNT EACH STUDENT ONCE, not sum the
@@ -323,8 +328,10 @@ export async function GET(
       const noShow = Math.max(0, preTotal - preAttended);
       const checkedIn = units.filter((u) => u.some((a) => a.status === "attended")).length;
       const distinct = units.length;
+      const staff = units.filter((u) => u.some((a) => a.isStaff)).length;
+      const attendeesOnly = distinct - staff;
       const pct = preTotal > 0 ? (noShow / preTotal) * 100 : 0;
-      return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, pct };
+      return { preTotal, preAttended, walkIns, noShow, checkedIn, distinct, staff, attendeesOnly, pct };
     };
 
     const XLSX = await import("xlsx");
@@ -354,7 +361,7 @@ export async function GET(
     // event-wide total row (the only row when single-day / single-day filtered).
     const summaryHeader = [
       "Day", "Pre-registered", "Attended", "No-shows", "No-show %",
-      "Walk-ins", "Total Checked-in", "Distinct Students",
+      "Walk-ins", "Total Checked-in", "Staff", "Attendees (excl. Staff)",
     ];
     const summaryRowFor = (
       label: string,
@@ -370,7 +377,8 @@ export async function GET(
         "No-show %": `${s.pct.toFixed(1)}%`,
         "Walk-ins": s.walkIns,
         "Total Checked-in": s.checkedIn,
-        "Distinct Students": s.distinct,
+        "Staff": s.staff,
+        "Attendees (excl. Staff)": s.attendeesOnly,
       };
     };
     const summaryRows: Record<string, string | number>[] = [];

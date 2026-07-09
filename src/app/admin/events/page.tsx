@@ -51,6 +51,9 @@ interface AdminEvent {
   managedByRoles: string[] | null;
   ownerClubIds: string[] | null;
   ownerMajors: string[] | null;
+  // Specific user IDs assigned as staff for THIS event (as opposed to global
+  // role) — their attendance is exempt from quota/no-show. See schema.ts.
+  staffUserIds: string[] | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
   attendeeCount?: number;
@@ -132,6 +135,9 @@ interface AdminAttendance {
   status: string;
   scannedBy: string | null;
   medsCheckOption: string | null;
+  // Snapshot at insert time: was this person on the event's staffUserIds list
+  // when they registered/checked in. See attendance.isStaff in schema.ts.
+  isStaff: boolean;
   // Which day/session this row belongs to — present for multi-day events so the
   // roster can be filtered/exported per day (the same person attending Day 1 and
   // Day 2 yields two rows that differ only by this).
@@ -263,6 +269,33 @@ const isRegularStudent = (user: AdminStudent | null | undefined): boolean => {
   return primary === "student";
 };
 
+// Human label for a person's primary (highest-priority) role — used on the
+// Staff roster section so each card shows *which* elevated role they hold,
+// not just that they're not a regular student.
+const PRIMARY_ROLE_LABELS: Record<string, string> = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  registration: "Registration",
+  organizer: "Organizer",
+  smo: "SMO",
+  anusmo: "ANUSMO",
+  club_president: "Club President",
+  major_president: "Major President",
+  staff: "Staff",
+  professor: "Professor",
+  officer: "Officer",
+  student: "Student",
+};
+
+const primaryRoleLabel = (user: AdminStudent | null | undefined): string => {
+  if (!user) return "Staff";
+  const roles = (user.roles && user.roles.length > 0)
+    ? user.roles
+    : (user.role ? [user.role] : ["student"]);
+  const primary = ROLE_PRIORITY.find((r) => roles.includes(r)) ?? "student";
+  return PRIMARY_ROLE_LABELS[primary] || primary;
+};
+
 const ALL_PARTICIPANT_ROLES = ["student", "staff", "smo", "anusmo", "club_president", "major_president"] as const;
 type ParticipantRole = typeof ALL_PARTICIPANT_ROLES[number];
 
@@ -317,6 +350,7 @@ const EMPTY_FORM = {
   managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
   ownerClubIds: [] as string[], // WHICH club(s) own this event, when managedByRoles includes club_president
   ownerMajors: [] as string[], // WHICH major(s) own this event, when managedByRoles includes major_president
+  staffUserIds: [] as string[], // specific people assigned as staff for this event; empty = none
 };
 
 export default function AdminEventsPage() {
@@ -444,6 +478,19 @@ export default function AdminEventsPage() {
   // People directory for the S-form person-picker (loaded on demand)
   const [assigneeUsers, setAssigneeUsers] = useState<{ id: string; name: string | null; studentId: string | null; role: string | null }[]>([]);
   const [assigneeSearch, setAssigneeSearch] = useState("");
+  // Search box for the Event Staff picker — kept separate from assigneeSearch
+  // (the S-form assignee picker's own search box) so the two never share text.
+  const [staffAssigneeSearch, setStaffAssigneeSearch] = useState("");
+
+  // Loads the people directory once (best-effort), shared by the S-form
+  // assignee picker and the Event Staff picker.
+  const ensureAssigneeUsersLoaded = () => {
+    if (assigneeUsers.length > 0) return;
+    fetch("/api/admin/students")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => { if (Array.isArray(d)) setAssigneeUsers(d.map((u) => ({ id: u.id, name: u.name, studentId: u.studentId, role: u.role }))); })
+      .catch(() => {});
+  };
   const [formStats, setFormStats] = useState<Record<string, number> | null>(null);
   const [formSubmissions, setFormSubmissions] = useState<FormBuilderSubmission[]>([]);
   const [formSaving, setFormSaving] = useState(false);
@@ -551,12 +598,7 @@ export default function AdminEventsPage() {
     setAssigneeSearch("");
 
     // Load the people directory once for the S-form person-picker (best-effort).
-    if (assigneeUsers.length === 0) {
-      fetch("/api/admin/students")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((d) => { if (Array.isArray(d)) setAssigneeUsers(d.map((u) => ({ id: u.id, name: u.name, studentId: u.studentId, role: u.role }))); })
-        .catch(() => {});
-    }
+    ensureAssigneeUsersLoaded();
 
     try {
       const res = await fetch(`/api/admin/events/${eventId}/form`);
@@ -1555,8 +1597,11 @@ export default function AdminEventsPage() {
       firstYearOnly: evt.firstYearOnly || false,
       managedByRoles: evt.managedByRoles || [],
       ownerClubIds: evt.ownerClubIds || [],
-      ownerMajors: evt.ownerMajors || []
+      ownerMajors: evt.ownerMajors || [],
+      staffUserIds: evt.staffUserIds || [],
     });
+    // Load the people directory once for the Event Staff picker (best-effort).
+    ensureAssigneeUsersLoaded();
     // Only pre-select a mode (which reveals the Days editor) when the event is
     // genuinely multi-day or per-session. A plain single-session "once" event
     // edits cleanly with the mode left unselected, just like creating one.
@@ -1600,6 +1645,10 @@ export default function AdminEventsPage() {
     setFilterThai(true);
     setFilterInternational(true);
     setSelectedSessionId(null);
+    // Assigned-but-not-yet-registered staff are rendered from this directory
+    // (see groupedAttendance below), so make sure it's loaded even if the
+    // admin opens the roster without first opening the event editor.
+    ensureAssigneeUsersLoaded();
     try {
       const res = await fetch(`/api/admin/events/${eventId}/attendance`);
       const data = await res.json().catch(() => null);
@@ -1630,12 +1679,17 @@ export default function AdminEventsPage() {
   // Student ids who never checked into ANY session of this event despite
   // being registered — mirrors findNoShowStudentIds in
   // api/admin/events/[id]/apply-strikes/route.ts (registered with no
-  // 'attended' row anywhere in the event), so this filter matches exactly who
-  // strikes would apply to.
+  // 'attended' row anywhere in the event, excluding isStaff), so this filter
+  // and the tally below match exactly who strikes would apply to.
   const eventNoShowIds = useMemo(() => {
     const attended = new Set(attendance.filter((m) => m.status === "attended").map((m) => m.studentId));
+    // Includes 'no_show' rows (not just 'registered') so this filter still catches
+    // someone AFTER apply-strikes has already flipped their row — otherwise the
+    // filter goes empty for any event that's already been struck.
     return new Set(
-      attendance.filter((m) => m.status === "registered" && !attended.has(m.studentId)).map((m) => m.studentId)
+      attendance
+        .filter((m) => (m.status === "registered" || m.status === "no_show") && !m.isStaff && !attended.has(m.studentId))
+        .map((m) => m.studentId)
     );
   }, [attendance]);
 
@@ -1728,15 +1782,20 @@ export default function AdminEventsPage() {
   // session was a pre-registration (else walk-in), attended if present on any day.
   // All five tallies derive purely from tallyUnits, so compute them together once
   // per roster change instead of five full passes on every render / 15s poll.
-  const { checkInCount, registeredCount, summaryPreRegistered, summaryAttendedPre, summaryWalkIns } = useMemo(() => ({
+  const { checkInCount, registeredCount, summaryPreRegistered, summaryAttendedPre, summaryWalkIns, summaryPreRegisteredNonStaff, summaryAttendedPreNonStaff } = useMemo(() => ({
     checkInCount: tallyUnits.filter(rows => rows.some(m => m.status === "attended")).length,
     registeredCount: tallyUnits.length,
     summaryPreRegistered: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered")).length,
     summaryAttendedPre: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered") && rows.some(m => m.status === "attended")).length,
     summaryWalkIns: tallyUnits.filter(rows => rows.every(m => m.method === "walk-in")).length,
+    // Staff-excluded variants feed the No-shows tile below, which is directly
+    // tied to the "Strike No-shows" action — it must match who apply-strikes
+    // (isStaff-excluded, see findNoShowStudentIds) will actually strike.
+    summaryPreRegisteredNonStaff: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered" && !m.isStaff)).length,
+    summaryAttendedPreNonStaff: tallyUnits.filter(rows => rows.some(m => m.method === "pre-registered" && !m.isStaff) && rows.some(m => m.status === "attended")).length,
   }), [tallyUnits]);
-  const summaryNoShows = Math.max(0, summaryPreRegistered - summaryAttendedPre);
-  const summaryNoShowPct = summaryPreRegistered > 0 ? Math.round((summaryNoShows / summaryPreRegistered) * 100) : 0;
+  const summaryNoShows = Math.max(0, summaryPreRegisteredNonStaff - summaryAttendedPreNonStaff);
+  const summaryNoShowPct = summaryPreRegisteredNonStaff > 0 ? Math.round((summaryNoShows / summaryPreRegisteredNonStaff) * 100) : 0;
   // Shared by the attendance modal's action bar (export/strike buttons),
   // computed once instead of re-deriving events.find(...) inline per button.
   const activeEvent = events.find((e) => e.id === activeEventId);
@@ -1801,12 +1860,93 @@ export default function AdminEventsPage() {
     return order.map((k) => byStudent.get(k)!);
   }, [filteredAttendance, selectedSessionId]);
 
-  const groupedAttendance = useMemo(() => attendanceUnits.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
-    const houseId = curr.primary.user?.house?.id || "Unassigned";
-    if (!acc[houseId]) acc[houseId] = [];
-    acc[houseId].push(curr);
-    return acc;
-  }, {} as Record<string, AttendanceUnit[]>), [attendanceUnits]);
+  // Fallback signal: who operated the scanner for at least one check-in on
+  // this event (attendance.scannedBy, set by the scanner API to the
+  // operator's own user id — see scanner.service.ts). Catches an ad-hoc
+  // helper who wasn't pre-assigned to event.staffUserIds but ended up
+  // running the scanner anyway. Built from the full, unfiltered attendance
+  // list so a person who scanned on Day 1 still shows as staff on Day 2.
+  const eventStaffIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of attendance) {
+      if (a.scannedBy) ids.add(a.scannedBy);
+    }
+    return ids;
+  }, [attendance]);
+
+  // The event whose roster is open — source of the explicit staffUserIds
+  // assignment list (attendance rows only carry a per-row isStaff snapshot,
+  // not the current live list, so unregistered assignees have to come from
+  // here instead).
+  const activeEventStaffUserIds = useMemo(
+    () => events.find((e) => e.id === activeEventId)?.staffUserIds ?? [],
+    [events, activeEventId]
+  );
+
+  // Staff = anyone whose row is flagged isStaff (they were on the event's
+  // explicit staffUserIds list when they registered/checked in — the
+  // authoritative, pre-assigned signal), OR who shows up in the scannedBy
+  // fallback above, PLUS anyone currently on staffUserIds who hasn't
+  // registered/checked in at all yet (no attendance row exists for them, so
+  // they'd otherwise be invisible here despite being explicitly assigned —
+  // that's the whole point of assigning staff ahead of time). Split into
+  // their own section, ahead of the house-grouped regular students.
+  const groupedAttendance = useMemo(() => {
+    const staff: AttendanceUnit[] = [];
+    const students: AttendanceUnit[] = [];
+    const registeredIds = new Set<string>();
+    for (const unit of attendanceUnits) {
+      registeredIds.add(unit.primary.studentId);
+      const isStaff = unit.primary.isStaff || (!!unit.primary.user?.id && eventStaffIds.has(unit.primary.user.id));
+      (isStaff ? staff : students).push(unit);
+    }
+    for (const uid of activeEventStaffUserIds) {
+      if (registeredIds.has(uid)) continue;
+      const person = assigneeUsers.find((u) => u.id === uid);
+      const placeholder: AdminAttendance = {
+        id: `unregistered-staff-${uid}`,
+        eventId: activeEventId || "",
+        studentId: uid,
+        checkInTime: null,
+        method: null,
+        status: "not_registered",
+        scannedBy: null,
+        medsCheckOption: null,
+        isStaff: true,
+        user: {
+          id: uid,
+          name: person?.name || "Unknown",
+          nickname: null,
+          studentId: person?.studentId || null,
+          email: "",
+          phone: null,
+          major: null,
+          role: person?.role || null,
+          roles: person?.role ? [person.role] : null,
+          religion: null,
+          contactChannels: null,
+          chronicDiseases: null,
+          medicalHistory: null,
+          drugAllergies: null,
+          foodAllergies: null,
+          dietaryRestrictions: null,
+          faintingHistory: null,
+          emergencyMedication: null,
+          emergencyContacts: [],
+          houseId: null,
+          house: null,
+        },
+      };
+      staff.push({ key: uid, primary: placeholder, rows: [placeholder] });
+    }
+    const houses = students.reduce((acc: Record<string, AttendanceUnit[]>, curr) => {
+      const houseId = curr.primary.user?.house?.id || "Unassigned";
+      if (!acc[houseId]) acc[houseId] = [];
+      acc[houseId].push(curr);
+      return acc;
+    }, {} as Record<string, AttendanceUnit[]>);
+    return { staff, houses };
+  }, [attendanceUnits, eventStaffIds, activeEventStaffUserIds, assigneeUsers, activeEventId]);
 
   // Export the event's attendees as .xlsx. The file is built server-side at
   // /api/admin/events/[id]/export, which re-checks the role (staff vs.
@@ -1899,6 +2039,136 @@ export default function AdminEventsPage() {
     );
   };
 
+  // One roster card, shared by the Staff section and each house group so the
+  // two sections stay visually identical apart from the role badge (staff
+  // only — house-grouped students already carry their house color).
+  const renderAttendanceCard = (unit: AttendanceUnit) => {
+    const m = unit.primary;
+    // A person attending >1 session collapses into one card with a Day 1 → Day N
+    // breakdown (only in the "All days" view). Single-row units render exactly as before.
+    const multiDay = unit.rows.length > 1;
+    const attendedDays = unit.rows.filter((r) => r.status === "attended").length;
+    const assignedStaff = m.isStaff;
+    const staffMember = assignedStaff || (!!m.user?.id && eventStaffIds.has(m.user.id));
+    const unregistered = m.status === "not_registered";
+    return (
+      <div key={unit.key} className="attendance-card" style={{
+        padding: "18px",
+        background: "var(--bg-surface)",
+        borderRadius: 20,
+        border: "1px solid var(--border-subtle)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
+      }}>
+        {/* Header: identity on the left, actions + status on the right. */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)", overflowWrap: "anywhere" }}>{m.user?.name}</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+              <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{m.user?.studentId || "No ID"}</p>
+              {staffMember && (
+                <span title={`${assignedStaff ? "Assigned as event staff" : "Checked attendees in for this event"} · base role: ${primaryRoleLabel(m.user)}`} style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "2px 8px", borderRadius: 99, fontSize: 10, fontWeight: 800,
+                  textTransform: "uppercase", letterSpacing: "0.03em",
+                  background: "rgba(99, 102, 241, 0.12)", color: "#6366f1", border: "1px solid rgba(99, 102, 241, 0.25)",
+                }}>
+                  <ShieldCheck size={10} />
+                  {primaryRoleLabel(m.user)}
+                </span>
+              )}
+              {!multiDay && (
+                <>
+                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Clock size={12} className="text-muted" />
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                      {m.checkInTime ? new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : "-"}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            {!unregistered && hasMedicalSignal(m.user) && (
+              <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
+                <Activity size={20} />
+              </div>
+            )}
+            {!unregistered && (
+              <button
+                className="btn btn-ghost"
+                style={{ padding: 8, borderRadius: 10 }}
+                onClick={() => setSelectedStudent(m.user || null)}
+              >
+                <Info size={18} />
+              </button>
+            )}
+            {multiDay ? (
+              <div style={{ minWidth: 50, height: 32, padding: "0 10px", borderRadius: 16, background: attendedDays > 0 ? "rgba(16,185,129,0.1)" : "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, color: attendedDays > 0 ? "#10b981" : "var(--accent-primary)", fontSize: 13, fontWeight: 800, border: attendedDays > 0 ? "none" : "1px dashed var(--accent-primary)" }} title={`${attendedDays} / ${unit.rows.length} ${lang === "th" ? "วันเช็คอินแล้ว" : "days checked in"}`}>
+                <CheckCircle2 size={14} />
+                {attendedDays}/{unit.rows.length}
+              </div>
+            ) : m.status === "attended" ? (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }} title="Checked In">
+                <CheckCircle2 size={16} />
+              </div>
+            ) : unregistered ? (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", border: "1px dashed var(--border-medium)" }} title="Assigned as staff — hasn't registered or checked in yet">
+                <User size={14} />
+              </div>
+            ) : (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", border: "1px dashed var(--accent-primary)" }} title="Registered (Not Checked In)">
+                <Clock size={14} className="animate-pulse" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Body. The meds-check badge reveals who went through the
+            medication check (i.e. who has a medical condition), so
+            renderMedsBadge restricts it to super_admin/admin. */}
+        {multiDay ? (
+          // One contained row per session this person took part in:
+          // day label, that day's check-in time / registered state,
+          // and (for admins) that day's meds-check badge.
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {unit.rows.map((r) => {
+              const dayLabel = r.session?.title?.trim() || `${lang === "th" ? "วันที่" : lang === "cn" ? "第" : lang === "mm" ? "နေ့" : "Day"} ${(r.session?.sortOrder ?? 0) + 1}`;
+              const checked = r.status === "attended";
+              return (
+                <div key={r.id} style={{ padding: "10px 12px", borderRadius: 14, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      fontSize: 12, fontWeight: 800, color: "var(--text-secondary)",
+                    }}>
+                      <Calendar size={12} />
+                      {dayLabel}
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: checked ? "#10b981" : "var(--accent-primary)", flexShrink: 0 }}>
+                      {checked ? <CheckCircle2 size={13} /> : <Clock size={13} className="animate-pulse" />}
+                      {checked
+                        ? (r.checkInTime ? new Date(r.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : (lang === "th" ? "เช็คอินแล้ว" : lang === "cn" ? "已签到" : lang === "mm" ? "ချက်အင်ပြီး" : "Checked in"))
+                        : (lang === "th" ? "ลงทะเบียน" : lang === "cn" ? "已登记" : lang === "mm" ? "စာရင်းသွင်း" : "Registered")}
+                    </span>
+                  </div>
+                  {renderMedsBadge(r.medsCheckOption, r.id)}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          renderMedsBadge(m.medsCheckOption)
+        )}
+      </div>
+    );
+  };
+
   const filteredEvents = useMemo(() => Array.isArray(events) ? events.filter(evt => {
     const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (evt.location && evt.location.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -1947,6 +2217,7 @@ export default function AdminEventsPage() {
                 // a valid session; it stays in sync with start/end below.
                 setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]);
                 setShowForm(true);
+                ensureAssigneeUsersLoaded();
               }
             }}
           >
@@ -3059,6 +3330,86 @@ export default function AdminEventsPage() {
                   )}
                 </div>
 
+                {/* Event Staff — specific PEOPLE (any role, including plain
+                    students) assigned to staff THIS event. Separate from
+                    Managed By above (which is role-based, president-only):
+                    this is a per-person list that exempts their own
+                    registration/check-in from the event's quota and no-show
+                    strikes (see events.staffUserIds in schema.ts). Staff-only
+                    field, like Managed By. */}
+                <div className="field" style={{ opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <ShieldCheck size={16} style={{ color: "#6366f1" }} />
+                    {lang === "th" ? "ทีมงานของกิจกรรมนี้" : "Event Staff"}
+                  </label>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
+                    {lang === "th"
+                      ? "เลือกคนที่ช่วยดูแลกิจกรรมนี้โดยเฉพาะ (ไม่นับรวมในโควตาผู้เข้าร่วม และไม่ถูกตัดคะแนนขาดงาน)"
+                      : "Pick specific people staffing this event. Their registration/check-in won't count against the participant quota and they're exempt from no-show strikes."}
+                  </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
+                  {formData.staffUserIds.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                      {formData.staffUserIds.map((uid) => {
+                        const u = assigneeUsers.find((x) => x.id === uid);
+                        return (
+                          <span key={uid} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, fontSize: 12, fontWeight: 800, background: "rgba(99,102,241,0.1)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.25)" }}>
+                            {u ? (u.name || u.studentId || uid) : uid}
+                            <button type="button" disabled={!canEditRestrictedFields} onClick={() => setFormData({ ...formData, staffUserIds: formData.staffUserIds.filter((x) => x !== uid) })} style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontWeight: 900, fontSize: 13, lineHeight: 1 }}>✕</button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ width: "100%", height: 42, borderRadius: 12, padding: "0 14px" }}
+                    placeholder={lang === "th" ? "ค้นหาด้วยชื่อหรือรหัสนักศึกษา…" : "Search people by name or student ID…"}
+                    value={staffAssigneeSearch}
+                    onChange={(e) => setStaffAssigneeSearch(e.target.value)}
+                    disabled={!canEditRestrictedFields}
+                  />
+                  {staffAssigneeSearch.trim().length > 0 && (
+                    <div style={{ marginTop: 8, maxHeight: 200, overflowY: "auto", border: "1px solid var(--border-subtle)", borderRadius: 12, background: "var(--bg-surface)" }}>
+                      {assigneeUsers
+                        .filter((u) => {
+                          const q = staffAssigneeSearch.trim().toLowerCase();
+                          return (u.name || "").toLowerCase().includes(q) || (u.studentId || "").toLowerCase().includes(q);
+                        })
+                        .slice(0, 30)
+                        .map((u) => {
+                          const on = formData.staffUserIds.includes(u.id);
+                          return (
+                            <button
+                              key={u.id}
+                              type="button"
+                              disabled={!canEditRestrictedFields}
+                              onClick={() => setFormData({
+                                ...formData,
+                                staffUserIds: on ? formData.staffUserIds.filter((x) => x !== u.id) : [...formData.staffUserIds, u.id],
+                              })}
+                              style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(99,102,241,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
+                            >
+                              <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}</span></span>
+                              <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#6366f1" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
+                            </button>
+                          );
+                        })}
+                      {assigneeUsers.length === 0 && (
+                        <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>{lang === "th" ? "กำลังโหลดรายชื่อ…" : "Loading people…"}</p>
+                      )}
+                    </div>
+                  )}
+                  {formData.staffUserIds.length === 0 && (
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginTop: 10 }}>
+                      {lang === "th" ? "ยังไม่ได้กำหนดทีมงาน" : "No one assigned as staff yet."}
+                    </p>
+                  )}
+                </div>
+
                 <div className="field">
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {t.eventPosterLabel}
@@ -3277,7 +3628,10 @@ export default function AdminEventsPage() {
             <p style={{ color: "var(--text-muted)", marginTop: 8 }}>{lang === "th" ? "ลองปรับตัวกรองหรือสร้างกิจกรรมใหม่เพื่อเริ่มต้น" : lang === "cn" ? "尝试调整您的筛选条件或创建一个新活动以开始。" : lang === "mm" ? "စတင်ရန် စစ်ထုတ်မှုများကို ချိန်ညှိပါ သို့မဟုတ် ပွဲအသစ်တစ်ခု ဖန်တီးပါ။" : "Try adjusting your filters or create a new event to get started."}</p>
           </div>
           {!isAttendanceOnly && (
-            <button className="btn btn-primary" onClick={() => { setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]); setShowForm(true); }}>+ {t.addEventBtn}</button>
+            <button className="btn btn-primary" onClick={() => {
+              setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]); setShowForm(true);
+              ensureAssigneeUsersLoaded();
+            }}>+ {t.addEventBtn}</button>
           )}
         </div>
       ) : (
@@ -5084,7 +5438,7 @@ export default function AdminEventsPage() {
                   display: "grid",
                   gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
                   gap: 12,
-                  padding: "12px 20px 0",
+                  padding: "12px 20px 8px",
                 }}
               >
                 {attendanceSummaryTiles.map((tile) => (
@@ -5418,7 +5772,7 @@ export default function AdminEventsPage() {
               </div>
             ) : (
               <div className="attendance-modal-list custom-scrollbar">
-                {attendance.length === 0 ? (
+                {attendance.length === 0 && groupedAttendance.staff.length === 0 ? (
                   <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
                     <div style={{
                       width: 100,
@@ -5440,7 +5794,7 @@ export default function AdminEventsPage() {
                       </p>
                     </div>
                   </div>
-                ) : filteredAttendance.length === 0 ? (
+                ) : filteredAttendance.length === 0 && groupedAttendance.staff.length === 0 ? (
                   <div style={{ padding: "80px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
                     <div style={{
                       width: 100,
@@ -5474,7 +5828,37 @@ export default function AdminEventsPage() {
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-                    {Object.entries(groupedAttendance).map(([house, members]: [string, AttendanceUnit[]]) => (
+                    {groupedAttendance.staff.length > 0 && (
+                      <div key="staff">
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: 20,
+                          padding: "12px 20px",
+                          background: "rgba(99, 102, 241, 0.08)",
+                          borderRadius: 16,
+                          border: "1px solid rgba(99, 102, 241, 0.2)"
+                        }}>
+                          <div>
+                            <h4 style={{ fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 12, color: "#6366f1" }}>
+                              <ShieldCheck size={18} />
+                              Staff
+                            </h4>
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginTop: 2, marginLeft: 30 }}>
+                              Assigned event staff, plus anyone who checked other attendees in
+                            </p>
+                          </div>
+                          <span className="badge" style={{ padding: "6px 16px", borderRadius: 99, background: "var(--bg-surface)", fontWeight: 800, color: "var(--text-secondary)" }}>
+                            {groupedAttendance.staff.length} Members
+                          </span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
+                          {groupedAttendance.staff.map((unit) => renderAttendanceCard(unit))}
+                        </div>
+                      </div>
+                    )}
+                    {Object.entries(groupedAttendance.houses).map(([house, members]: [string, AttendanceUnit[]]) => (
                       <div key={house}>
                         <div style={{
                           display: "flex",
@@ -5501,113 +5885,7 @@ export default function AdminEventsPage() {
                           </span>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
-                          {members.map((unit) => {
-                            const m = unit.primary;
-                            // A person attending >1 session collapses into one card
-                            // with a Day 1 → Day N breakdown (only in the "All days"
-                            // view). Single-row units render exactly as before.
-                            const multiDay = unit.rows.length > 1;
-                            const attendedDays = unit.rows.filter((r) => r.status === "attended").length;
-                            return (
-                            <div key={unit.key} className="attendance-card" style={{
-                              padding: "18px",
-                              background: "var(--bg-surface)",
-                              borderRadius: 20,
-                              border: "1px solid var(--border-subtle)",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 14,
-                              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                              boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
-                            }}>
-                              {/* Header: identity on the left, actions + status on the right. */}
-                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)", overflowWrap: "anywhere" }}>{m.user?.name}</p>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
-                                    <p style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{m.user?.studentId || "No ID"}</p>
-                                    {!multiDay && (
-                                      <>
-                                        <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--border-medium)" }} />
-                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                          <Clock size={12} className="text-muted" />
-                                          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
-                                            {m.checkInTime ? new Date(m.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : "-"}
-                                          </p>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                                  {hasMedicalSignal(m.user) && (
-                                    <div style={{ color: "#ef4444", animation: "pulse-glow 2s infinite" }} title="Medical Condition">
-                                      <Activity size={20} />
-                                    </div>
-                                  )}
-                                  <button
-                                    className="btn btn-ghost"
-                                    style={{ padding: 8, borderRadius: 10 }}
-                                    onClick={() => setSelectedStudent(m.user || null)}
-                                  >
-                                    <Info size={18} />
-                                  </button>
-                                  {multiDay ? (
-                                    <div style={{ minWidth: 50, height: 32, padding: "0 10px", borderRadius: 16, background: attendedDays > 0 ? "rgba(16,185,129,0.1)" : "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, color: attendedDays > 0 ? "#10b981" : "var(--accent-primary)", fontSize: 13, fontWeight: 800, border: attendedDays > 0 ? "none" : "1px dashed var(--accent-primary)" }} title={`${attendedDays} / ${unit.rows.length} ${lang === "th" ? "วันเช็คอินแล้ว" : "days checked in"}`}>
-                                      <CheckCircle2 size={14} />
-                                      {attendedDays}/{unit.rows.length}
-                                    </div>
-                                  ) : m.status === "attended" ? (
-                                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981" }} title="Checked In">
-                                      <CheckCircle2 size={16} />
-                                    </div>
-                                  ) : (
-                                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", border: "1px dashed var(--accent-primary)" }} title="Registered (Not Checked In)">
-                                      <Clock size={14} className="animate-pulse" />
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Body. The meds-check badge reveals who went through the
-                                  medication check (i.e. who has a medical condition), so
-                                  renderMedsBadge restricts it to super_admin/admin. */}
-                              {multiDay ? (
-                                // One contained row per session this person took part in:
-                                // day label, that day's check-in time / registered state,
-                                // and (for admins) that day's meds-check badge.
-                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                  {unit.rows.map((r) => {
-                                    const dayLabel = r.session?.title?.trim() || `${lang === "th" ? "วันที่" : lang === "cn" ? "第" : lang === "mm" ? "နေ့" : "Day"} ${(r.session?.sortOrder ?? 0) + 1}`;
-                                    const checked = r.status === "attended";
-                                    return (
-                                      <div key={r.id} style={{ padding: "10px 12px", borderRadius: 14, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}>
-                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                          <span style={{
-                                            display: "inline-flex", alignItems: "center", gap: 5,
-                                            fontSize: 12, fontWeight: 800, color: "var(--text-secondary)",
-                                          }}>
-                                            <Calendar size={12} />
-                                            {dayLabel}
-                                          </span>
-                                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: checked ? "#10b981" : "var(--accent-primary)", flexShrink: 0 }}>
-                                            {checked ? <CheckCircle2 size={13} /> : <Clock size={13} className="animate-pulse" />}
-                                            {checked
-                                              ? (r.checkInTime ? new Date(r.checkInTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }) : (lang === "th" ? "เช็คอินแล้ว" : lang === "cn" ? "已签到" : lang === "mm" ? "ချက်အင်ပြီး" : "Checked in"))
-                                              : (lang === "th" ? "ลงทะเบียน" : lang === "cn" ? "已登记" : lang === "mm" ? "စာရင်းသွင်း" : "Registered")}
-                                          </span>
-                                        </div>
-                                        {renderMedsBadge(r.medsCheckOption, r.id)}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                renderMedsBadge(m.medsCheckOption)
-                              )}
-                            </div>
-                            );
-                          })}
+                          {members.map((unit) => renderAttendanceCard(unit))}
                         </div>
                       </div>
                     ))}

@@ -1163,6 +1163,19 @@ async function migrate() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS no_show_appeals_one_pending_per_user_event ON no_show_appeals (user_id, event_id) WHERE status = 'pending'`;
   console.log("  ✅ no_show_appeals.event_id + event index; one-pending-per-user-event replaces one-pending-per-user");
 
+  // 70. events.staff_user_ids — explicit per-event staff roster (see schema.ts
+  // comment). Nullable, no default: additive/idempotent via ADD COLUMN IF NOT
+  // EXISTS on a populated table.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS staff_user_ids jsonb`;
+  console.log("  ✅ events.staff_user_ids");
+
+  // 71. attendance.is_staff — snapshot of staff status at check-in/registration
+  // time (see schema.ts comment), used to exempt staff from quota/no-show
+  // logic. NOT NULL DEFAULT false backfills existing rows to false in the same
+  // statement — additive/idempotent/non-destructive via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_staff boolean NOT NULL DEFAULT false`;
+  console.log("  ✅ attendance.is_staff");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

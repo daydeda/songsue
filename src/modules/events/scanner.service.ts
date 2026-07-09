@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { attendance, users, houses, scoreHistory, eventSessions, forms, formSubmissions } from "@/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { UsersService } from "../users/users.service";
 import { EventsService } from "./events.service";
 import { AuditService } from "../audit/audit.service";
@@ -80,6 +80,12 @@ export class ScannerService {
     // The session must exist AND belong to this event — blocks a hand-crafted
     // cross-event sessionId from recording attendance against the wrong day.
     if (!session) return { status: "not_found", student: null, error: "Session not found for this event." };
+
+    // Explicitly assigned event staff (event.staffUserIds — set by an admin,
+    // NOT derived from global role) are exempt from quota on every insert path
+    // below, and their attendance rows are flagged so they're excluded from
+    // no-show strikes and quota/headcount recounts elsewhere.
+    const isEventStaff = Array.isArray(event.staffUserIds) && event.staffUserIds.includes(student.id);
 
     // Human-readable day label for audit logs (e.g. "Day 1"). Sessions are ordered
     // by sortOrder; the title overrides when set.
@@ -277,8 +283,13 @@ export class ScannerService {
       }
 
       if (action === "confirm") {
-        // Atomic update: WHERE status='registered' ensures only one concurrent
-        // confirm wins. The losing request gets 0 rows back → already_checked_in.
+        // Atomic update: WHERE status IN ('registered','no_show') ensures only one
+        // concurrent confirm wins (0 rows back → already_checked_in), while still
+        // letting a late arrival check in — apply-strikes flips unattended rows to
+        // 'no_show', and without 'no_show' here that flip would permanently lock the
+        // student out of confirming (surfaced as a misleading "already checked in").
+        // The prior strike's point deduction/noShowCount is NOT reversed by this —
+        // that's a separate, deliberate call an organizer can review manually.
         const updated = await db.transaction(async (tx) => {
           const rows = await tx
             .update(attendance)
@@ -288,7 +299,7 @@ export class ScannerService {
               scannedBy: actorId,
               medsCheckOption: medsCheckOption || null,
             })
-            .where(and(eq(attendance.id, record.id), eq(attendance.status, "registered")))
+            .where(and(eq(attendance.id, record.id), inArray(attendance.status, ["registered", "no_show"])))
             .returning({ id: attendance.id });
 
           if (rows.length > 0) {
@@ -359,6 +370,7 @@ export class ScannerService {
                 status: "attended",
                 checkInTime: new Date(),
                 medsCheckOption: medsCheckOption || null,
+                isStaff: isEventStaff,
               })
               .onConflictDoNothing()
               .returning({ id: attendance.id });
@@ -414,7 +426,9 @@ export class ScannerService {
       const sessionWalkIn = session.quotaWalkIn ?? event.quotaWalkIn ?? null;
       try {
         await db.transaction(async (tx) => {
-          if (event.quota !== null || sessionWalkIn !== null) {
+          // Staff walking themselves in are exempt from both quota checks below
+          // (they're working the event, not taking a participant's seat).
+          if (!isEventStaff && (event.quota !== null || sessionWalkIn !== null)) {
             // Lock the SESSION row so concurrent walk-in confirms for the same day
             // serialize here, then recount within the session — quota is per-day,
             // closing the TOCTOU window without blocking other sessions.
@@ -428,11 +442,12 @@ export class ScannerService {
               // Walk-ins are ADDITIVE capacity on top of the per-session seat quota:
               // the day's room cap is quota + sessionWalkIn. The walk-in sub-limit
               // below still caps how many of those extra slots walk-ins take.
+              // Staff-flagged rows never count toward this either.
               const totalCap = event.quota + (sessionWalkIn ?? 0);
               const [{ n }] = await tx
                 .select({ n: sql<number>`count(*)` })
                 .from(attendance)
-                .where(and(eq(attendance.sessionId, sessionId), eq(attendance.status, "attended")));
+                .where(and(eq(attendance.sessionId, sessionId), eq(attendance.status, "attended"), eq(attendance.isStaff, false)));
 
               if (Number(n) >= totalCap) throw new QuotaFullError();
             }
@@ -445,7 +460,8 @@ export class ScannerService {
                   and(
                     eq(attendance.sessionId, sessionId),
                     eq(attendance.status, "attended"),
-                    eq(attendance.method, "walk-in")
+                    eq(attendance.method, "walk-in"),
+                    eq(attendance.isStaff, false)
                   )
                 );
 
@@ -466,6 +482,7 @@ export class ScannerService {
               status: "attended",
               checkInTime: new Date(),
               medsCheckOption: medsCheckOption || null,
+              isStaff: isEventStaff,
             })
             .onConflictDoNothing()
             .returning({ id: attendance.id });

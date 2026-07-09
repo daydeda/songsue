@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { captureException } from "@/lib/logger";
+import { effectiveRoles } from "@/lib/admin-access";
+import { canAccessBattle } from "@/lib/battle-access";
 
 // POST /api/battle/rooms/[code]/active - Mark room as active (WebRTC connected)
 export async function POST(
@@ -14,6 +16,10 @@ export async function POST(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!canAccessBattle(effectiveRoles(session.user.role, session.user.roles))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { code } = await params;

@@ -22,6 +22,7 @@ Gamepad2
 import { useLanguage } from "@/lib/LanguageContext";
 import { houseSlug } from "@/lib/houses";
 import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
+import { canAccessBattle } from "@/lib/battle-access";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useState, useRef, useEffect } from "react";
 
@@ -57,7 +58,6 @@ const primaryLinks = user ? [
   { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
   { href: "/dashboard/history", label: t.eventHistory, icon: History },
   { href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },
-  // { href: "/battle", label: lang === "th" ? "เกม P2P" : "P2P Battle", icon: Gamepad2 },
 ] : [
   { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
   { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
@@ -71,12 +71,17 @@ const secondaryLinks = user ? [
 { href: "/dashboard/profile", label: t.editProfile, icon: Settings },
 ] : [];
 
+// Standalone icon affordance — not a core destination tab, not an account action,
+// so it gets its own slot next to the language switcher instead of competing for
+// space in either list (see nav-right / mobile-controls below).
+const battleLabel = lang === "th" ? "เกม P2P" : "P2P Battle";
+
 return (
 <>
 <nav className="student-nav">
 <div className="nav-content">
 
-{/* Mobile Left: Hamburger and Profile Icon */}
+{/* Mobile Left: Hamburger, Battle shortcut, and Profile Icon */}
 <div className="mobile-controls">
 <button
 className="mobile-toggle touch-target"
@@ -294,6 +299,23 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 </div>
 </nav>
 
+{/* Battle shortcut: a floating action button, not a nav item — it's a side
+    activity, not a core destination, so it shouldn't compete with the tab
+    bar or the account menu for space. Fixed bottom-right on every viewport.
+    Staged rollout: SMO/ANUSMO/Admin only while battle is tested on prod —
+    hiding it for everyone else avoids a dead-end into the /dashboard bounce
+    the proxy/layout gates already enforce. */}
+{user && canAccessBattle(effectiveRoles(user.role, user.roles)) && (
+<Link
+href="/battle"
+className={`battle-fab ${pathname.startsWith("/battle") ? "active" : ""}`}
+aria-label={battleLabel}
+title={battleLabel}
+>
+<Gamepad2 size={22} />
+</Link>
+)}
+
 {/* Mobile Sidebar (Drawer sliding from Left) */}
 <div 
   className={`mobile-sidebar-overlay ${isMobileMenuOpen ? "open" : ""}`} 
@@ -506,6 +528,47 @@ border: none;
 padding: 0;
 cursor: pointer;
 display: block;
+}
+:global(.battle-fab) {
+position: fixed;
+right: 20px;
+bottom: 20px;
+width: 52px;
+height: 52px;
+border-radius: 50%;
+background: var(--accent-primary);
+color: white;
+display: flex;
+align-items: center;
+justify-content: center;
+text-decoration: none;
+box-shadow: 0 6px 20px rgba(255, 107, 0, 0.35), 0 2px 6px rgba(0,0,0,0.15);
+z-index: 998;
+transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+:global(.battle-fab:hover) {
+transform: translateY(-2px) scale(1.05);
+box-shadow: 0 10px 26px rgba(255, 107, 0, 0.45), 0 3px 8px rgba(0,0,0,0.18);
+}
+:global(.battle-fab.active) {
+background: var(--text-primary);
+box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+}
+:global(.battle-fab::after) {
+content: '';
+position: absolute;
+inset: -4px;
+border-radius: 50%;
+border: 2px solid rgba(255, 107, 0, 0.35);
+animation: fab-pulse 2.2s ease-out infinite;
+}
+:global(.battle-fab.active::after) {
+display: none;
+}
+@keyframes fab-pulse {
+0% { transform: scale(0.9); opacity: 0.8; }
+70% { transform: scale(1.3); opacity: 0; }
+100% { opacity: 0; }
 }
 
 /* Dropdown style */

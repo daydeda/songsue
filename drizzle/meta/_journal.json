@@ -78,6 +78,13 @@
       "when": 1782951859243,
       "tag": "0010_giant_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783598240279,
+      "tag": "0011_amazing_smiling_tiger",
+      "breakpoints": true
     }
   ]
 }

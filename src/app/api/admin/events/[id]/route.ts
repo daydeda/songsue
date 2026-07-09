@@ -42,6 +42,9 @@ const eventUpdateSchema = z.object({
   // WHICH club(s)/major(s) own this event — see EventScopeService.
   ownerClubIds: z.array(z.string().uuid()).optional().nullable(),
   ownerMajors: z.array(z.string()).optional().nullable(),
+  // Specific user IDs assigned as staff for THIS event — see events.staffUserIds
+  // in schema.ts. Staff-only, like managedByRoles below.
+  staffUserIds: z.array(z.string()).optional().nullable(),
 }).refine(
   // Only enforce when BOTH ends are supplied — this is a partial update.
   (d) => {
@@ -93,6 +96,7 @@ export async function PUT(
       data.managedByRoles = undefined;
       data.ownerClubIds = undefined;
       data.ownerMajors = undefined;
+      data.staffUserIds = undefined;
     }
 
     // When posters are provided, normalize them and keep the imageUrl cover in
@@ -151,6 +155,9 @@ export async function PUT(
             }),
             ...(data.ownerMajors !== undefined && {
               ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null
+            }),
+            ...(data.staffUserIds !== undefined && {
+              staffUserIds: data.staffUserIds && data.staffUserIds.length > 0 ? data.staffUserIds : null
             }),
             updatedAt: new Date(),
           })

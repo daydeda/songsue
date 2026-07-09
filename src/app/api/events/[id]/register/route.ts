@@ -57,6 +57,11 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Explicitly assigned event staff (event.staffUserIds — set by an admin,
+    // NOT derived from global role) are exempt from every quota below: they're
+    // registering to work the event, not to take a participant's seat.
+    const isEventStaff = Array.isArray(event.staffUserIds) && event.staffUserIds.includes(userId);
+
     // Role-based access control (mirrors the event-list filter so students can't
     // POST directly to a role-restricted event they can't see). null/[] = open to
     // all; admin-type roles always pass.
@@ -163,45 +168,50 @@ export async function POST(
           .limit(1);
         if (!firstSession) throw new Error(`${QUOTA_FULL}:This event has no sessions yet`);
 
-        // Overall quota. Count DISTINCT students, not attendance rows: a multi-day
-        // 'once' event creates an extra attended row per day for the same person, so
-        // count(*) would inflate the seat count. Quota = number of people holding a seat.
-        if (event.quota !== null && event.quota > 0) {
-          const [{ value: currentCount }] = await tx
-            .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
-            .from(attendance)
-            .where(eq(attendance.eventId, eventId));
-          if (Number(currentCount) >= event.quota) throw new Error(`${QUOTA_FULL}:Event is full`);
-        }
+        if (!isEventStaff) {
+          // Overall quota. Count DISTINCT students, not attendance rows: a multi-day
+          // 'once' event creates an extra attended row per day for the same person, so
+          // count(*) would inflate the seat count. Quota = number of people holding a seat.
+          // Staff rows (isStaff=true) never count toward anyone's quota either.
+          if (event.quota !== null && event.quota > 0) {
+            const [{ value: currentCount }] = await tx
+              .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
+              .from(attendance)
+              .where(and(eq(attendance.eventId, eventId), eq(attendance.isStaff, false)));
+            if (Number(currentCount) >= event.quota) throw new Error(`${QUOTA_FULL}:Event is full`);
+          }
 
-        // Cohort quota: Thai students
-        if (isThai && event.quotaThai !== null && event.quotaThai > 0) {
-          const [{ value: currentThaiCount }] = await tx
-            .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
-            .from(attendance)
-            .innerJoin(users, eq(attendance.studentId, users.id))
-            .where(
-              and(
-                eq(attendance.eventId, eventId),
-                sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) IN ('0', '1', '2', '3', '4')`
-              )
-            );
-          if (Number(currentThaiCount) >= event.quotaThai) throw new Error(`${QUOTA_FULL}:Thai student quota is full`);
-        }
+          // Cohort quota: Thai students
+          if (isThai && event.quotaThai !== null && event.quotaThai > 0) {
+            const [{ value: currentThaiCount }] = await tx
+              .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
+              .from(attendance)
+              .innerJoin(users, eq(attendance.studentId, users.id))
+              .where(
+                and(
+                  eq(attendance.eventId, eventId),
+                  eq(attendance.isStaff, false),
+                  sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) IN ('0', '1', '2', '3', '4')`
+                )
+              );
+            if (Number(currentThaiCount) >= event.quotaThai) throw new Error(`${QUOTA_FULL}:Thai student quota is full`);
+          }
 
-        // Cohort quota: International students
-        if (isIntl && event.quotaInternational !== null && event.quotaInternational > 0) {
-          const [{ value: currentIntlCount }] = await tx
-            .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
-            .from(attendance)
-            .innerJoin(users, eq(attendance.studentId, users.id))
-            .where(
-              and(
-                eq(attendance.eventId, eventId),
-                sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) = '5'`
-              )
-            );
-          if (Number(currentIntlCount) >= event.quotaInternational) throw new Error(`${QUOTA_FULL}:International student quota is full`);
+          // Cohort quota: International students
+          if (isIntl && event.quotaInternational !== null && event.quotaInternational > 0) {
+            const [{ value: currentIntlCount }] = await tx
+              .select({ value: sql<number>`count(distinct ${attendance.studentId})` })
+              .from(attendance)
+              .innerJoin(users, eq(attendance.studentId, users.id))
+              .where(
+                and(
+                  eq(attendance.eventId, eventId),
+                  eq(attendance.isStaff, false),
+                  sql`substr(${users.studentId}, length(${users.studentId}) - 2, 1) = '5'`
+                )
+              );
+            if (Number(currentIntlCount) >= event.quotaInternational) throw new Error(`${QUOTA_FULL}:International student quota is full`);
+          }
         }
 
         // Register. ON CONFLICT DO NOTHING covers a duplicate-click race against the
@@ -217,6 +227,7 @@ export async function POST(
             method: "pre-registered",
             status: "registered",
             checkInTime: null,
+            isStaff: isEventStaff,
           })
           .onConflictDoNothing()
           .returning({ id: attendance.id });

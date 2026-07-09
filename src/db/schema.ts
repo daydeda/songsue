@@ -225,6 +225,13 @@ export const events = pgTable("events", {
   // always bypass). Mirrors the allowedMajors jsonb string[] pattern above.
   ownerClubIds: jsonb("owner_club_ids").$type<string[]>(),
   ownerMajors: jsonb("owner_majors").$type<string[]>(),
+  // Explicit event-staff roster: user ids assigned to staff THIS event (distinct
+  // from managedByRoles/ownerClubIds/ownerMajors, which answer "who MANAGES the
+  // event configuration" — this answers "who is working it on the ground", e.g.
+  // scanning/checking people in). Nullable/no default, matching the
+  // allowedRoles/managedByRoles/ownerClubIds/ownerMajors jsonb string[] pattern.
+  // null/[] = no explicit staff assigned.
+  staffUserIds: jsonb("staff_user_ids").$type<string[]>(),
   // When true, only FIRST-YEAR students may see/register for this event — derived
   // from the student-id prefix (CMU Buddhist-era admission year, e.g. ids starting
   // with "69" for the 2026 intake). The current first-year prefix is computed at
@@ -271,6 +278,12 @@ export const attendance = pgTable("attendance", {
   status: text("status").default("registered"), // 'registered', 'attended'
   scannedBy: text("scanned_by").references(() => users.id, { onDelete: "set null" }),
   medsCheckOption: text("meds_check_option"),
+  // Snapshot (at insert time) of whether this student was on the event's
+  // staffUserIds list when they registered/checked in — used to exempt staff
+  // from quota counts and no-show strikes. Deliberately NOT re-derived later if
+  // events.staffUserIds subsequently changes (historical accuracy for
+  // already-recorded attendance rows).
+  isStaff: boolean("is_staff").notNull().default(false),
 }, (table) => ([
   // One row per student per SESSION. For a single-session 'once' event this is
   // behaviourally identical to the old (event_id, student_id) uniqueness.

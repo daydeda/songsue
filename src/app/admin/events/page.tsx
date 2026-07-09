@@ -1737,6 +1737,12 @@ export default function AdminEventsPage() {
   }), [tallyUnits]);
   const summaryNoShows = Math.max(0, summaryPreRegistered - summaryAttendedPre);
   const summaryNoShowPct = summaryPreRegistered > 0 ? Math.round((summaryNoShows / summaryPreRegistered) * 100) : 0;
+  // Shared by the attendance modal's action bar (export/strike buttons),
+  // computed once instead of re-deriving events.find(...) inline per button.
+  const activeEvent = events.find((e) => e.id === activeEventId);
+  const showExportButton = canSeeExportButton && !loadingAttendance && attendance.length > 0;
+  const showStrikeButton = canApplyStrikes && !loadingAttendance && attendance.length > 0
+    && !!activeEvent && new Date() > new Date(activeEvent.endTime);
   const attendanceSummaryTiles = [
     {
       key: "checkedIn",
@@ -3711,6 +3717,40 @@ export default function AdminEventsPage() {
           letter-spacing: -0.04em;
           margin: 0;
         }
+        .attendance-modal-close-btn {
+          border-radius: 50%;
+          width: 40px;
+          height: 40px;
+          padding: 0;
+          font-size: 20px;
+          flex-shrink: 0;
+        }
+        .attendance-modal-actions-bar {
+          padding: 12px 20px;
+          background: var(--bg-elevated);
+          border-bottom: 1px solid var(--border-subtle);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          flex-shrink: 0;
+        }
+        .attendance-action-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          flex: 1 1 0;
+          min-width: 0;
+          border-radius: 99px;
+          height: 40px;
+          padding-inline: 12px;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+          white-space: nowrap;
+        }
         .attendance-modal-filter-bar {
           padding: 12px 20px;
           background: var(--bg-elevated);
@@ -3732,6 +3772,21 @@ export default function AdminEventsPage() {
           }
           .attendance-modal-header h2 {
             font-size: 32px;
+          }
+          .attendance-modal-close-btn {
+            width: 48px;
+            height: 48px;
+          }
+          .attendance-modal-actions-bar {
+            padding: 16px 40px;
+            gap: 10px;
+          }
+          .attendance-action-btn {
+            flex: 0 0 auto;
+            height: 48px;
+            padding-inline: 20px;
+            font-size: 14px;
+            gap: 8px;
           }
           .attendance-modal-filter-bar {
             padding: 16px 40px;
@@ -4941,7 +4996,11 @@ export default function AdminEventsPage() {
       {showAttendance && (
         <div className="attendance-modal-overlay">
           <div className="animate-fade-in-up attendance-modal-container">
-            {/* Modal Header — slim & sticky so the roster gets maximum height. */}
+            {/* Modal Header — slim & sticky so the roster gets maximum height.
+                Export/Strike live in the non-sticky action bar below instead
+                of here, so this bar's height stays fixed on mobile (they used
+                to crowd this row and blow up the sticky header's height,
+                burying the roster below the fold). */}
             <div className="attendance-modal-header">
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -4955,7 +5014,7 @@ export default function AdminEventsPage() {
                     flexShrink: 0,
                   }} />
                   <h2 style={{ fontWeight: 900, letterSpacing: "-0.04em", overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "normal", lineHeight: 1.25, minWidth: 0 }}>
-                    {events.find(e => e.id === activeEventId)?.title || "Attendance List"}
+                    {activeEvent?.title || "Attendance List"}
                   </h2>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, paddingLeft: 20 }}>
@@ -4965,9 +5024,22 @@ export default function AdminEventsPage() {
                   </p>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {canSeeExportButton && !loadingAttendance && attendance.length > 0 && (
+              <button
+                className="btn btn-ghost attendance-modal-close-btn"
+                onClick={() => setShowAttendance(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Action bar — Export / Strike. Not sticky, so it scrolls away
+                with the summary + filters and never competes with the roster
+                for screen height; wraps to its own compact row on mobile. */}
+            {(showExportButton || showStrikeButton) && (
+              <div className="attendance-modal-actions-bar">
+                {showExportButton && (
                   <button
+                    className="attendance-action-btn"
                     onClick={exportAttendanceXlsx}
                     title={
                       canExportAttendance
@@ -4975,60 +5047,34 @@ export default function AdminEventsPage() {
                         : "Export attendees to Excel (.xlsx) — name, ID, and check-in only. Ask an admin for phone, medical, or emergency-contact detail."
                     }
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      borderRadius: 99,
-                      height: 48,
-                      paddingInline: 20,
-                      fontSize: 14,
-                      fontWeight: 700,
                       color: "#fff",
                       background: "linear-gradient(135deg, #10b981, #059669)",
                       border: "1px solid #059669",
                       boxShadow: "0 8px 20px rgba(16,185,129,0.35)",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
                     }}
                   >
-                    <Download size={18} />
+                    <Download size={16} />
                     {lang === "th" ? "ส่งออก Excel" : "Export Excel"}
                   </button>
                 )}
-                {canApplyStrikes && !loadingAttendance && attendance.length > 0 && events.find(e => e.id === activeEventId) && new Date() > new Date(events.find(e => e.id === activeEventId)!.endTime) && (
+                {showStrikeButton && (
                   <button
+                    className="attendance-action-btn"
                     onClick={openStrikesModal}
                     title="Deduct points and record a strike for every student who registered but never checked in"
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      borderRadius: 99,
-                      height: 48,
-                      paddingInline: 20,
-                      fontSize: 14,
-                      fontWeight: 700,
                       color: "#fff",
                       background: "linear-gradient(135deg, #ef4444, #dc2626)",
                       border: "1px solid #dc2626",
                       boxShadow: "0 8px 20px rgba(239,68,68,0.35)",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
                     }}
                   >
-                    <AlertTriangle size={18} />
+                    <AlertTriangle size={16} />
                     {lang === "th" ? "ลงโทษผู้ไม่มา" : "Strike No-shows"}
                   </button>
                 )}
-                <button
-                  className="btn btn-ghost"
-                  style={{ borderRadius: "50%", width: 48, height: 48, padding: 0, fontSize: 20 }}
-                  onClick={() => setShowAttendance(false)}
-                >
-                  <X size={20} />
-                </button>
               </div>
-            </div>
+            )}
 
             {/* Summary tiles — at-a-glance breakdown for the day in view, mirroring
                 the exported report's Summary sheet. */}

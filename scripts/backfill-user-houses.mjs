@@ -1,10 +1,16 @@
 // One-off, idempotent backfill for users left house-less after the four-faculty-
 // houses migration (drizzle/0021, src/db/migrate.ts step 65) intentionally reset
-// EVERY user's house_id to NULL so it would re-derive per-faculty at next check-in
-// (ScannerService.ensureHouseAssigned). That only fires during a QR scan, so until
-// each student's next event check-in their house/color shows blank everywhere
-// (dashboard, profile, leaderboard membership) — this script assigns it right now
-// instead of waiting.
+// EVERY user's house_id to NULL. House assignment now happens at onboarding
+// completion (POST /api/profile) going forward, but that only covers FUTURE
+// onboardings — this script catches everyone who already finished their profile
+// under the old system and is still sitting house-less indefinitely (their house/
+// color shows blank everywhere: dashboard, profile, leaderboard membership).
+//
+// Deliberately scoped to profile_completed = true only: a user who hasn't finished
+// onboarding yet hasn't chosen a faculty, so guessing one here (defaulting to CAMT
+// below) could lock them into the wrong faculty's house before they've actually
+// picked. Those users are left alone — they'll get correctly balanced by the
+// onboarding POST once they submit the form.
 //
 // Mirrors the app's own balancing logic (HousesService.pickBalancedHouseIdForFaculty
 // / pickBalancedHouseIdForStaff): least-populated colour house within the user's
@@ -26,9 +32,10 @@ const sql = postgres(url, { max: 1, prepare: !url.includes(":6543"), idle_timeou
 
 try {
   const pending = await sql`
-    SELECT id, faculty, role, roles FROM users WHERE house_id IS NULL
+    SELECT id, faculty, role, roles FROM users
+    WHERE house_id IS NULL AND profile_completed = true
   `;
-  console.log(`Found ${pending.length} user(s) with no house assigned.`);
+  console.log(`Found ${pending.length} user(s) who completed their profile but have no house assigned.`);
 
   let assigned = 0;
   let skipped = 0;

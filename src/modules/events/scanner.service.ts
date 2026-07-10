@@ -539,11 +539,15 @@ export class ScannerService {
   }
 
   /**
-   * Assigns a house at FIRST CHECK-IN (houses are no longer given at onboarding).
-   * If the student already has one, returns it unchanged. Otherwise picks the
-   * least-populated colour house WITHIN the student's faculty and persists it
-   * race-safely (the WHERE house_id IS NULL guard means a concurrent scan can't
-   * double-assign). Returns the house fields to surface in the scan result.
+   * Fallback safety net, not the primary path: houses are now assigned at
+   * onboarding completion (POST /api/profile), so for the vast majority of
+   * students this is a no-op read. This only does real work for a student who
+   * somehow still has no house at check-in time (e.g. onboarded before that
+   * change, or an admin cleared houseId). If the student already has one,
+   * returns it unchanged. Otherwise picks the least-populated colour house
+   * WITHIN the student's faculty and persists it race-safely (the WHERE
+   * house_id IS NULL guard means a concurrent scan can't double-assign).
+   * Returns the house fields to surface in the scan result.
    */
   private static async ensureHouseAssigned(
     student: ResolvedStudent

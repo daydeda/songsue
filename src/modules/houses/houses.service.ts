@@ -52,16 +52,22 @@ export class HousesService {
   /**
    * Picks the colour house a student should join WITHIN their faculty: the
    * faculty house (one of 4 colours) with the fewest members right now. Ties
-   * resolve to the first such house by query order. Called at first check-in
-   * (ScannerService.ensureHouseAssigned), since houses are no longer assigned at
-   * onboarding.
+   * resolve to the first such house by query order. Called at onboarding
+   * completion (POST /api/profile) under HOUSE_BALANCE_LOCK_KEY, passing that
+   * transaction as `executor` so the count + write are serialized against
+   * concurrent onboardings. ScannerService.ensureHouseAssigned also calls this
+   * (without a tx) as a fallback safety net for any student who still has no
+   * house at check-in time.
    *
    * `faculty` is normalised to CAMT when null/unknown for back-compat. Returns
    * the house id, or null if that faculty has no houses seeded yet.
    */
-  static async pickBalancedHouseIdForFaculty(faculty: string | null | undefined): Promise<string | null> {
+  static async pickBalancedHouseIdForFaculty(
+    faculty: string | null | undefined,
+    executor: DbOrTx = db,
+  ): Promise<string | null> {
     const fac = normalizeFaculty(faculty);
-    const housesList = await db.query.houses.findMany({
+    const housesList = await executor.query.houses.findMany({
       where: eq(houses.faculty, fac),
       with: { users: { columns: { id: true } } },
     });

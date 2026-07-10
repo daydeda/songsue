@@ -1,12 +1,13 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { FACULTY_IDS } from "@/lib/faculties";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
+import { HousesService, HOUSE_BALANCE_LOCK_KEY } from "@/modules/houses/houses.service";
 
 // Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
 // Validate the shape instead of accepting z.any() — the onboarding form always
@@ -109,19 +110,27 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: "Profile already completed" }, { status: 400 });
     }
 
-    // 2. Update User in a transaction so the guard + PDPA audit write commit
-    // atomically. House is NO LONGER assigned here — a student is sorted into one
-    // of their faculty's colour houses at their FIRST CHECK-IN
-    // (ScannerService.ensureHouseAssigned). Onboarding only records their faculty.
-    // No advisory lock needed: unlike the house-balancing paths (which read
-    // "fewest members" then write), this is a plain guarded UPDATE — Postgres row
-    // locking already makes the WHERE profileCompleted=false race-safe on its own.
+    // 2. Update User in a transaction so the guard + PDPA audit write + house
+    // assignment all commit atomically. House is assigned HERE, at onboarding
+    // completion: the least-populated colour house within the student's chosen
+    // faculty, picked under the same advisory lock (HOUSE_BALANCE_LOCK_KEY) the
+    // staff-bypass provisioning uses (UsersService.provisionStaffBypass), so two
+    // students onboarding at once can't both read "house X has fewest" and pile
+    // into it. COALESCE in the SET below preserves any houseId an admin may have
+    // already set manually before onboarding completed. ScannerService.
+    // ensureHouseAssigned remains as a fallback safety net for any pre-existing
+    // student who onboarded before this and still has no house.
     const updated = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${HOUSE_BALANCE_LOCK_KEY})`);
+      const faculty = data.faculty ?? "CAMT";
+      const pickedHouseId = await HousesService.pickBalancedHouseIdForFaculty(faculty, tx);
+
       const [row] = await tx
         .update(users)
         .set({
           ...data,
-          faculty: data.faculty ?? "CAMT",
+          faculty,
+          houseId: sql`COALESCE(${users.houseId}, ${pickedHouseId})`,
           profileCompleted: true,
           updatedAt: new Date(),
         })
@@ -196,8 +205,9 @@ export async function PATCH(req: Request) {
     const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
     if (!isAdmin) {
       delete data.studentId;
-      // Faculty is set once at onboarding and gates which house a student lands in
-      // at check-in. Lock it for non-admins so a raw PATCH can't switch faculties.
+      // Faculty is set once at onboarding and gates which house a student is
+      // balanced into there. Lock it for non-admins so a raw PATCH can't switch
+      // faculties (and retroactively make an already-picked house look wrong).
       delete data.faculty;
     }
 

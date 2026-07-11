@@ -219,10 +219,12 @@ export async function GET(
 
 // Removes a single student's registration/check-in rows for this event (all
 // sessions of a multi-day event, since a wrongly-registered student shouldn't
-// remain on any day). For staff (super_admin/admin/registration/organizer,
-// unscoped) or a president role that OWNS this event (mirrors the GET scope
-// check above) — e.g. a club_president removing a student who registered for
-// their club-restricted event despite not being eligible.
+// remain on any day). Deliberately admin/registration only — NOT organizer and
+// NOT presidents: a president removing a peer's registration is a real bias/
+// conflict-of-interest risk (the "wrong club" justification is easy to fake),
+// and the audit log only catches that after the fact. allowedClubs (see
+// event-access.ts) now prevents wrong-club registration proactively, which was
+// the original motivating case for president self-service removal.
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -230,9 +232,8 @@ export async function DELETE(
   try {
     const session = await auth();
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const isStaffRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
-    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-    if (!session?.user || (!isStaffRole && presidentTags.length === 0)) {
+    const isStaffRole = myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r));
+    if (!session?.user || !isStaffRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -244,16 +245,10 @@ export async function DELETE(
 
     const ev = await db.query.events.findFirst({
       where: eq(events.id, eventId),
-      columns: { id: true, title: true, ownerClubIds: true, ownerMajors: true },
+      columns: { id: true, title: true },
     });
     if (!ev) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
-    }
-    if (!isStaffRole) {
-      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
-      if (!EventScopeService.isEventManagedByScope(ev, scope)) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
     }
 
     const removedRows = await db.transaction(async (tx) => {

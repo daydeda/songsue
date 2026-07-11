@@ -402,6 +402,11 @@ export default function AdminEventsPage() {
   // Role/major access control, Managed By (president/owner), and points are
   // admin/registration/organizer only — even for a president editing their own event.
   const canEditRestrictedFields = !isAttendanceOnly;
+  // Removing a wrongly-registered student is admin/registration only — deliberately
+  // NARROWER than canEditEventDetails (excludes organizer AND presidents). A
+  // president removing a peer's registration is a bias/conflict-of-interest risk;
+  // see the matching server-side gate in api/admin/events/[id]/attendance DELETE.
+  const canRemoveRegistrant = myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r));
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1673,8 +1678,8 @@ export default function AdminEventsPage() {
   };
 
   // Removes a student's registration/check-in for the currently open event
-  // (all sessions, for a multi-day event) — e.g. a president found a student
-  // from another club/major pre-registered for a restricted event.
+  // (all sessions, for a multi-day event) — admin/registration only, see
+  // canRemoveRegistrant above.
   const removeRegistrant = (studentId: string, studentName: string) => {
     if (!activeEventId) return;
     setConfirmModal({
@@ -2267,10 +2272,10 @@ export default function AdminEventsPage() {
                 <Info size={18} />
               </button>
             )}
-            {/* Remove registration: staff (unscoped) or a president managing this
-                event (server re-checks ownership — see DELETE .../attendance).
-                Not for smo (attendance-only, non-president). */}
-            {!unregistered && canEditEventDetails && m.user?.id && (
+            {/* Remove registration: admin/registration only (server re-checks —
+                see DELETE .../attendance). Deliberately excludes organizer,
+                presidents, and smo to avoid peer-bias/conflict-of-interest risk. */}
+            {!unregistered && canRemoveRegistrant && m.user?.id && (
               <button
                 className="btn btn-ghost"
                 style={{ padding: 8, borderRadius: 10, color: "#ef4444" }}

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { effectiveRoles } from "@/lib/admin-access";
+import { ProposeEventSection } from "./ProposeEventSection";
 import {
   Building2, Plus, Pencil, Archive, ArchiveRestore, X, Users, Eye,
   Trash2, AlertCircle, Check,
@@ -41,6 +43,17 @@ export default function ClubsPage() {
   // this flag only controls which buttons render (Members yes, Rename/Archive/
   // Delete no).
   const isClubPresident = userRole === "club_president";
+  // Multi-role checks below use the FULL role set (not just the singular primary
+  // role) — a user holding club_president alongside a higher-priority role (e.g.
+  // smo) would otherwise silently miss gates keyed on their primary role. The
+  // server-side GET /api/admin/clubs already uses effectiveRoles, so the UI
+  // mirrors that rather than inheriting the single-role gap.
+  const userRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
+  const isClubPresidentAny = userRoles.includes("club_president");
+  // "Include archived clubs" is a staff-triage control (dead/renamed clubs) —
+  // irrelevant noise for a club_president, who only ever sees their own club(s)
+  // anyway. Shown only to roles that actually manage the club roster at large.
+  const canFilterArchived = userRoles.some((r) => ["admin", "super_admin", "smo", "registration"].includes(r));
   // Members-modal edit actions (add/remove a plain member) — staff can manage
   // any club, club_president only their own. The server independently
   // re-verifies club_president ownership on every request; this flag is UI-only.
@@ -311,53 +324,57 @@ export default function ClubsPage() {
         </div>
 
         {/* Controls */}
-        <div
-          className="bg-[var(--bg-surface)] p-4 rounded-[32px] border border-[var(--border-subtle)] shadow-2xl shadow-black/5"
-          style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}
-        >
+        {canFilterArchived && (
           <div
-            role="checkbox"
-            aria-checked={includeArchived}
-            tabIndex={0}
-            onClick={() => setIncludeArchived((v) => !v)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setIncludeArchived((v) => !v);
-              }
-            }}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "8px 14px",
-              borderRadius: 12,
-              cursor: "pointer",
-              userSelect: "none",
-              transition: "all 0.2s",
-              background: includeArchived ? "var(--bg-elevated)" : "transparent",
-              border: `1px solid ${includeArchived ? "var(--accent-primary)" : "var(--border-subtle)"}`,
-            }}
+            className="bg-[var(--bg-surface)] p-4 rounded-[32px] border border-[var(--border-subtle)] shadow-2xl shadow-black/5"
+            style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}
           >
-            <div style={{
-              width: 20,
-              height: 20,
-              borderRadius: 6,
-              background: includeArchived ? "var(--accent-primary)" : "transparent",
-              border: `2px solid ${includeArchived ? "var(--accent-primary)" : "var(--border-medium)"}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              transition: "all 0.15s",
-            }}>
-              {includeArchived && <Check size={13} color="white" strokeWidth={3} />}
+            <div
+              role="checkbox"
+              aria-checked={includeArchived}
+              tabIndex={0}
+              onClick={() => setIncludeArchived((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setIncludeArchived((v) => !v);
+                }
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 14px",
+                borderRadius: 12,
+                cursor: "pointer",
+                userSelect: "none",
+                transition: "all 0.2s",
+                background: includeArchived ? "var(--bg-elevated)" : "transparent",
+                border: `1px solid ${includeArchived ? "var(--accent-primary)" : "var(--border-subtle)"}`,
+              }}
+            >
+              <div style={{
+                width: 20,
+                height: 20,
+                borderRadius: 6,
+                background: includeArchived ? "var(--accent-primary)" : "transparent",
+                border: `2px solid ${includeArchived ? "var(--accent-primary)" : "var(--border-medium)"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                transition: "all 0.15s",
+              }}>
+                {includeArchived && <Check size={13} color="white" strokeWidth={3} />}
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 14, color: includeArchived ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                Include archived clubs
+              </span>
             </div>
-            <span style={{ fontWeight: 700, fontSize: 14, color: includeArchived ? "var(--text-primary)" : "var(--text-secondary)" }}>
-              Include archived clubs
-            </span>
           </div>
-        </div>
+        )}
+
+        {isClubPresidentAny && <ProposeEventSection clubs={clubs} />}
 
         {listError && (
           <div

@@ -12,21 +12,38 @@ import {
   ShoppingBag,
   Building2,
   User,
-  MessageSquareWarning
+  MessageSquareWarning,
+  ClipboardList
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { isScannerOnlyAny } from "@/lib/admin-access";
+import { REVIEW_PROPOSAL_ROLES } from "@/lib/event-proposals";
 
-const NAV = [
-  { href: "/admin/dashboard", key: "overview",             icon: LayoutDashboard },
-  { href: "/admin/events",    key: "manageEvents",         icon: Calendar },
-  { href: "/admin/scanner",   key: "qrScanner",            icon: QrCode },
-  { href: "/admin/students",  key: "adminStudentsDirectory",icon: Users },
-  { href: "/admin/appeals",   key: "manageAppeals",        icon: MessageSquareWarning },
-  { href: "/admin/clubs",     key: "manageClubs",          icon: Building2 },
-  { href: "/admin/audit-logs",key: "auditTrails",          icon: ShieldCheck },
-  { href: "/admin/announcement",key: "manageAnnouncement", icon: Megaphone },
-  { href: "/admin/shop",      key: "manageShop",           icon: ShoppingBag },
+// Grouped by topic so the sidebar reads as sections rather than one long list.
+// `titleKey` is null for the ungrouped top item (Overview); every other group
+// gets a small uppercase subheading (i18n'd) and is dropped entirely if none
+// of its items survive the role filter below.
+const NAV_GROUPS = [
+  { titleKey: null, items: [
+      { href: "/admin/dashboard", key: "overview", icon: LayoutDashboard },
+    ] },
+  { titleKey: "navGroupEvents", items: [
+      { href: "/admin/events",    key: "manageEvents",   icon: Calendar },
+      { href: "/admin/scanner",   key: "qrScanner",      icon: QrCode },
+      { href: "/admin/proposals", key: "manageProposals",icon: ClipboardList },
+      { href: "/admin/appeals",   key: "manageAppeals",  icon: MessageSquareWarning },
+    ] },
+  { titleKey: "navGroupCommunity", items: [
+      { href: "/admin/clubs",    key: "manageClubs",           icon: Building2 },
+      { href: "/admin/students", key: "adminStudentsDirectory",icon: Users },
+    ] },
+  { titleKey: "navGroupContent", items: [
+      { href: "/admin/announcement", key: "manageAnnouncement", icon: Megaphone },
+      { href: "/admin/shop",         key: "manageShop",         icon: ShoppingBag },
+    ] },
+  { titleKey: "navGroupSystem", items: [
+      { href: "/admin/audit-logs", key: "auditTrails", icon: ShieldCheck },
+    ] },
 ] as const;
 
 export function AdminNav({ roles }: { roles: string[] }) {
@@ -41,8 +58,9 @@ export function AdminNav({ roles }: { roles: string[] }) {
   const canSeeAudit = has(["super_admin", "admin"]);                    // organizer + registration barred
   const canManage = has(["super_admin", "admin"]);                      // announcement + shop
   const canSeeClubs = has(["super_admin", "admin"]);                    // club identity management
+  const canReviewProposals = has([...REVIEW_PROPOSAL_ROLES]); // event-proposal review queue
 
-  const filteredNav = NAV.filter(item => {
+  const itemAllowed = (item: { href: string }) => {
     // Scanner-only users (smo, club/major president, no full-admin role) see just the
     // QR Scanner, Events (attendance-view only) and Appeals. Shared predicate so this
     // can't drift from proxy/admin-access. club_president additionally sees Clubs, but
@@ -65,41 +83,61 @@ export function AdminNav({ roles }: { roles: string[] }) {
     // Full-admin roles: appeals nav is super_admin/admin-only (organizer/registration
     // never had VIEW_APPEALS_ROLES) — mirrors the page/API gate in src/lib/strikes.ts.
     if (item.href === "/admin/appeals") return canManage;
+    // Proposal review queue: same staff set that may create real events
+    // (REVIEW_PROPOSAL_ROLES, src/lib/event-proposals.ts) — organizer/registration
+    // included, unlike appeals above.
+    if (item.href === "/admin/proposals") return canReviewProposals;
     return true; // dashboard, events, scanner — every full-admin role
-  });
+  };
+
+  const filteredGroups = NAV_GROUPS
+    .map(group => ({ ...group, items: group.items.filter(itemAllowed) }))
+    .filter(group => group.items.length > 0);
 
   return (
     <nav style={{ flex: 1 }}>
       <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>{t.mainMenu}</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {filteredNav.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href;
-          const labelText = t[item.key] || item.key;
-          return (
-            <Link 
-              key={item.href} 
-              href={item.href} 
-              className={`nav-link ${isActive ? "active" : ""}`} 
-              style={{ gap: 12, position: "relative" }}
+      {filteredGroups.map((group, groupIndex) => (
+        <div key={group.titleKey ?? "ungrouped"} style={{ marginTop: groupIndex === 0 ? 0 : 20 }}>
+          {group.titleKey && (
+            <p
+              className="section-title"
+              style={{ paddingLeft: 0, marginBottom: 8, fontSize: 10, opacity: 0.7 }}
             >
-              <Icon size={18} strokeWidth={isActive ? 2.5 : 2} style={{ pointerEvents: "none" }} />
-              <span style={{ fontWeight: isActive ? 700 : 500, pointerEvents: "none" }}>{labelText}</span>
-              {isActive && (
-                <div style={{ 
-                  position: "absolute", 
-                  right: 12, 
-                  width: 6, 
-                  height: 6, 
-                  borderRadius: "50%", 
-                  background: "var(--accent-primary)",
-                  pointerEvents: "none"
-                }} />
-              )}
-            </Link>
-          );
-        })}
-      </div>
+              {t[group.titleKey] || group.titleKey}
+            </p>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href;
+              const labelText = t[item.key] || item.key;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`nav-link ${isActive ? "active" : ""}`}
+                  style={{ gap: 12, position: "relative" }}
+                >
+                  <Icon size={18} strokeWidth={isActive ? 2.5 : 2} style={{ pointerEvents: "none" }} />
+                  <span style={{ fontWeight: isActive ? 700 : 500, pointerEvents: "none" }}>{labelText}</span>
+                  {isActive && (
+                    <div style={{
+                      position: "absolute",
+                      right: 12,
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: "var(--accent-primary)",
+                      pointerEvents: "none"
+                    }} />
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
 
       <div className="divider" style={{ margin: "24px 0", opacity: 0.5 }} />
       <p className="section-title" style={{ paddingLeft: 0, marginBottom: 16 }}>{t.accountLabel}</p>

@@ -90,6 +90,16 @@ export async function POST(
       return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
     }
 
+    // Walk-ins-only events accept no pre-registration at all — staff (and
+    // event staff themselves, who register to WORK the event) still register
+    // normally, everyone else must be scanned in as a walk-in on the day.
+    if (event.walkInsOnly && !isEventStaff && !adminRoles.includes(userRole)) {
+      return NextResponse.json(
+        { error: "This event only accepts walk-in check-ins — there is no pre-registration. Just show up and get scanned in." },
+        { status: 403 }
+      );
+    }
+
     // Validate registration window if set
     if (event.registrationOpenTime && new Date() < new Date(event.registrationOpenTime)) {
       return NextResponse.json({ error: "Registration for this event has not opened yet" }, { status: 403 });

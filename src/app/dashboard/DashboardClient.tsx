@@ -83,6 +83,8 @@ type Event = {
   // Whether the event accepts walk-ins (unregistered students scanned in at the
   // door), and the optional extra walk-in seat sub-cap on top of `quota`.
   walkInsEnabled?: boolean;
+  // Walk-ins-only: no pre-registration accepted, see api/events/[id]/register.
+  walkInsOnly?: boolean;
   quotaWalkIn?: number | null;
   isRegistered?: boolean;
   attendanceStatus?: string | null;
@@ -810,9 +812,12 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const quotaWalkInRows = (ev: Event) => {
     const allowed = !!ev.walkInsEnabled;
     const registered = ev.registeredCount ?? 0;
+    // A quota of 0 means unlimited (mirrors the register route's own
+    // `quota !== null && quota > 0` convention) — treat it exactly like null.
+    const hasQuota = ev.quota != null && ev.quota > 0;
     // "Full" only means something when a quota is set. When full, colour the count
     // red so a student can see at a glance the seats are gone.
-    const isFull = ev.quota != null && registered >= ev.quota;
+    const isFull = hasQuota && registered >= ev.quota!;
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
@@ -821,7 +826,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
           </div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>
             <span style={{ fontWeight: 800, color: isFull ? "#ef4444" : "var(--text-primary)" }}>
-              {ev.quota != null ? `${registered} / ${ev.quota}` : registered}
+              {hasQuota ? `${registered} / ${ev.quota}` : registered}
             </span>
             <span style={{ color: "var(--text-muted)", fontWeight: 600 }}> {t.registered}</span>
           </div>
@@ -831,10 +836,15 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             <DoorOpen size={16} />
           </div>
           <div style={{ fontSize: 13, color: allowed ? "#10b981" : "var(--text-muted)", fontWeight: 700 }}>
-            {allowed ? t.walkInsAllowedLabel : t.walkInsDisabledLabel}
-            {allowed && ev.quotaWalkIn != null ? ` (${ev.quotaWalkIn})` : ""}
+            {ev.walkInsOnly ? t.walkInsOnlyBadge : allowed ? t.walkInsAllowedLabel : t.walkInsDisabledLabel}
+            {allowed && !ev.walkInsOnly && ev.quotaWalkIn != null ? ` (${ev.quotaWalkIn})` : ""}
           </div>
         </div>
+        {ev.walkInsOnly && (
+          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, lineHeight: 1.5, marginTop: -4 }}>
+            {t.walkInsOnlyNotice}
+          </p>
+        )}
       </>
     );
   };
@@ -1427,9 +1437,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
                             const notYetOpen = !e.isRegistered && !!regOpenAt && nowTs < regOpenAt;
                             const regClosed = !e.isRegistered && regWindowClosed;
-                            const windowBlocked = notYetOpen || regClosed;
+                            const walkInsOnlyMode = !e.isRegistered && !!e.walkInsOnly;
+                            const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;
                             const isDisabled = (e.isRegistered && !canCancel) || windowBlocked || registeringId === e.id;
-                            const greyed = regClosed || (e.isRegistered && !canCancel);
+                            const greyed = regClosed || walkInsOnlyMode || (e.isRegistered && !canCancel);
 
                             return (
                               <button
@@ -1465,6 +1476,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                                   <><Clock size={18} /> {t.registrationNotOpen}</>
                                 ) : regClosed ? (
                                   <><AlertCircle size={18} /> {t.registrationClosed}</>
+                                ) : walkInsOnlyMode ? (
+                                  <><DoorOpen size={18} /> {t.walkInsOnlyBadge}</>
                                 ) : (
                                   t.registerNow || "Register Now"
                                 )}
@@ -2095,8 +2108,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
         const notYetOpen = !liveEvent.isRegistered && !!regOpenAt && nowTs < regOpenAt;
         const regClosed = !liveEvent.isRegistered && regWindowClosed;
-        const windowBlocked = notYetOpen || regClosed;
-        const greyed = regClosed || (liveEvent.isRegistered && !canCancel);
+        const walkInsOnlyMode = !liveEvent.isRegistered && !!liveEvent.walkInsOnly;
+        const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;
+        const greyed = regClosed || walkInsOnlyMode || (liveEvent.isRegistered && !canCancel);
         const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
         const previewPosters = getPosters(liveEvent);
 
@@ -2456,6 +2470,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     <><Clock size={18} /> {t.registrationNotOpen}</>
                   ) : regClosed ? (
                     <><AlertCircle size={18} /> {t.registrationClosed}</>
+                  ) : walkInsOnlyMode ? (
+                    <><DoorOpen size={18} /> {t.walkInsOnlyBadge}</>
                   ) : (
                     t.registerNow || "Register Now"
                   )}

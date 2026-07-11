@@ -7,12 +7,13 @@ import {
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
-  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap
+  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap, DoorOpen
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 import { parseRichText } from "@/lib/rich-text";
 import { currentFirstYearPrefix, yearOfStudy } from "@/lib/event-access";
+import { sessionSpansTooLong, splitIntoDailySessions } from "@/lib/event-schema";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
 import {
@@ -40,6 +41,7 @@ interface AdminEvent {
   imageUrl: string | null;
   imageUrls: string[] | null;
   walkInsEnabled: boolean;
+  walkInsOnly: boolean;
   quotaWalkIn: number | null;
   targetThai: boolean;
   targetInternational: boolean;
@@ -339,6 +341,7 @@ const EMPTY_FORM = {
   imageUrl: "",
   imageUrls: [] as string[],
   walkInsEnabled: false,
+  walkInsOnly: false, // true = no pre-registration accepted at all, see api/events/[id]/register
   quotaWalkIn: null as number | null,
   targetThai: true,
   targetInternational: true,
@@ -414,6 +417,12 @@ export default function AdminEventsPage() {
   const [registrationMode, setRegistrationMode] = useState<"once" | "per_session" | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Set when this create-form open was triggered by "Create Event from
+  // Proposal" on /admin/proposals (see the ?fromProposal= effect below) — sent
+  // back as eventSchema's proposalId so POST /api/admin/events can flip the
+  // source proposal to 'approved' in the same transaction. Cleared whenever the
+  // form closes/resets so it's never accidentally sent on an unrelated create.
+  const [sourceProposalId, setSourceProposalId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1228,6 +1237,77 @@ export default function AdminEventsPage() {
       .catch(() => {});
   }, []);
 
+  // "Create Event from Proposal" entry point from /admin/proposals
+  // (router.push(`/admin/events?fromProposal=${id}`)). Reads the query param via
+  // plain window.location rather than useSearchParams(), which would force a
+  // Suspense boundary onto this page for a param nothing here else needs.
+  // Prefills every non-binding field the proposal carried (title/description/
+  // time/registration window/location/quota/poster/walk-ins/audience/first-
+  // year-only/suggested staff) plus a SUGGESTED managedByRoles/ownerClubIds —
+  // staff still explicitly reviews/adjusts every field, especially points/
+  // allowedRoles/allowedMajors, before submitting.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("fromProposal");
+    if (!id) return;
+
+    const toLocal = (iso: string) => {
+      const d = new Date(iso);
+      const offset = d.getTimezoneOffset() * 60000;
+      return new Date(d.getTime() - offset).toISOString().slice(0, 16);
+    };
+
+    fetch(`/api/admin/event-proposals/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((proposal) => {
+        if (!proposal) return;
+        setEditingId(null);
+        setSourceProposalId(proposal.id);
+        setFormData({
+          ...EMPTY_FORM,
+          title: proposal.title,
+          description: proposal.description || "",
+          location: proposal.location || "",
+          quota: proposal.quota || 0,
+          startTime: toLocal(proposal.startTime),
+          endTime: toLocal(proposal.endTime),
+          registrationOpenTime: proposal.registrationOpenTime ? toLocal(proposal.registrationOpenTime) : "",
+          registrationCloseTime: proposal.registrationCloseTime ? toLocal(proposal.registrationCloseTime) : "",
+          imageUrl: proposal.imageUrls?.[0] || proposal.imageUrl || "",
+          imageUrls: proposal.imageUrls || (proposal.imageUrl ? [proposal.imageUrl] : []),
+          walkInsEnabled: proposal.walkInsEnabled || false,
+          walkInsOnly: proposal.walkInsOnly || false,
+          quotaWalkIn: proposal.quotaWalkIn ?? null,
+          targetThai: proposal.targetThai ?? true,
+          targetInternational: proposal.targetInternational ?? true,
+          quotaThai: proposal.quotaThai ?? null,
+          quotaInternational: proposal.quotaInternational ?? null,
+          firstYearOnly: proposal.firstYearOnly || false,
+          staffUserIds: proposal.staffUserIds || [],
+          managedByRoles: ["club_president"],
+          ownerClubIds: [proposal.clubId],
+        });
+        // A proposal's `sessions` (see eventProposals.sessions), when it has 2+
+        // entries, is the COMPLETE per-day breakdown (mirrors this page's own
+        // sessions model) — seed the Days editor with it directly and switch
+        // registrationMode on. Otherwise it's a plain single-day proposal:
+        // fall back to one row mirroring the proposal's own start/end.
+        const suggestedDays: { title: string | null; startTime: string; endTime: string }[] = proposal.sessions || [];
+        if (suggestedDays.length > 1) {
+          setRegistrationMode("once");
+          setSessions(suggestedDays.map((s) => ({ title: s.title || "", startTime: toLocal(s.startTime), endTime: toLocal(s.endTime), quotaWalkIn: null })));
+        } else {
+          setRegistrationMode(null);
+          setSessions([{ title: "", startTime: toLocal(proposal.startTime), endTime: toLocal(proposal.endTime), quotaWalkIn: null }]);
+        }
+        setShowForm(true);
+        ensureAssigneeUsersLoaded();
+      })
+      .catch(() => {});
+    // Deliberately runs once on mount only — this is a one-time deep-link
+    // prefill, not a state to keep re-syncing with the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 
   // ---- Sessions / days editor helpers ----
@@ -1255,6 +1335,17 @@ export default function AdminEventsPage() {
   const removeSessionRow = (idx: number) => {
     // Never leave the event with zero sessions.
     setSessions((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  };
+  // Fixes a single row that spans multiple calendar days (see
+  // sessionSpansTooLong) by replacing it in place with one row per day.
+  const splitSessionRow = (idx: number) => {
+    setSessions((prev) => {
+      const row = prev[idx];
+      const split = splitIntoDailySessions(row.startTime, row.endTime);
+      if (split.length <= 1) return prev;
+      const replacement = split.map((d) => ({ title: "", startTime: d.startTime, endTime: d.endTime, quotaWalkIn: row.quotaWalkIn }));
+      return [...prev.slice(0, idx), ...replacement, ...prev.slice(idx + 1)];
+    });
   };
 
   const lastInjectedRange = useRef<{ start: number, end: number } | null>(null);
@@ -1373,7 +1464,7 @@ export default function AdminEventsPage() {
           img.onload = () => {
             const canvas = document.createElement("canvas");
             const MAX_WIDTH = 1080;
-            const MAX_HEIGHT = 1350;
+            const MAX_HEIGHT = 1080;
             let width = img.width;
             let height = img.height;
             if (width > height) {
@@ -1464,8 +1555,19 @@ export default function AdminEventsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+
+    // Every row in `sessions` becomes one attendance session — and each session
+    // only ever admits one check-in per student (idx_attendance_session_student).
+    // A row spanning >24h (e.g. typing the whole 11/07–13/07 range into the
+    // single default row instead of adding a day per date) would silently
+    // collapse a 3-day event into one check-in for the entire span.
+    if (sessions.some((s) => sessionSpansTooLong(s.startTime, s.endTime))) {
+      setError(t.multiDaySessionWarning);
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
       const url = editingId ? `/api/admin/events/${editingId}` : "/api/admin/events";
@@ -1494,6 +1596,9 @@ export default function AdminEventsPage() {
               endTime: new Date(s.endTime).toISOString(),
               quotaWalkIn: s.quotaWalkIn,
             })),
+          // Only on a fresh create sourced from a proposal (never on an edit) —
+          // flips the proposal to 'approved' in the same transaction server-side.
+          ...(sourceProposalId && !editingId ? { proposalId: sourceProposalId } : {}),
         }),
       });
 
@@ -1503,6 +1608,7 @@ export default function AdminEventsPage() {
         setRegistrationMode(null);
         setSessions([]);
         setEditingId(null);
+        setSourceProposalId(null);
         fetchEvents();
       } else {
         const err = await res.json();
@@ -1570,6 +1676,9 @@ export default function AdminEventsPage() {
       return new Date(d.getTime() - offset).toISOString().slice(0, 16);
     };
 
+    // Editing an existing event is never "from a proposal" — clears any
+    // leftover sourceProposalId from a previous create-from-proposal open.
+    setSourceProposalId(null);
     setFormData({
       title: evt.title,
       description: evt.description || "",
@@ -1587,6 +1696,7 @@ export default function AdminEventsPage() {
         ? evt.imageUrls
         : (evt.imageUrl ? [evt.imageUrl] : []),
       walkInsEnabled: evt.walkInsEnabled || false,
+      walkInsOnly: evt.walkInsOnly || false,
       quotaWalkIn: evt.quotaWalkIn || null,
       targetThai: evt.targetThai !== false,
       targetInternational: evt.targetInternational !== false,
@@ -2207,11 +2317,13 @@ export default function AdminEventsPage() {
                 setShowForm(false);
                 setEditingId(null);
                 setFormData(EMPTY_FORM);
+                setSourceProposalId(null);
                 setRegistrationMode(null);
                 setSessions([]);
               } else {
                 setEditingId(null);
                 setFormData(EMPTY_FORM);
+                setSourceProposalId(null);
                 setRegistrationMode(null);
                 // Seed one empty session row so a single-day event still submits
                 // a valid session; it stays in sync with start/end below.
@@ -2380,6 +2492,39 @@ export default function AdminEventsPage() {
                   </div>
                 </div>
 
+                {/* No mode chosen yet → this range IS the sole session (mirrored
+                    above). Warn here since the Days editor that would normally
+                    catch this is hidden in that state. */}
+                {registrationMode === null && sessionSpansTooLong(formData.startTime, formData.endTime) && (
+                  <div style={{
+                    display: "flex", gap: 10, alignItems: "flex-start",
+                    background: "color-mix(in srgb, #f59e0b 12%, transparent)",
+                    border: "1px solid color-mix(in srgb, #f59e0b 40%, transparent)",
+                    borderRadius: 12, padding: "10px 14px",
+                  }}>
+                    <AlertCircle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
+                      <span style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+                        {t.multiDaySessionWarning}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const split = splitIntoDailySessions(formData.startTime, formData.endTime);
+                          if (split.length > 1) {
+                            setRegistrationMode("once");
+                            setSessions(split.map((d) => ({ title: "", startTime: d.startTime, endTime: d.endTime, quotaWalkIn: null })));
+                          }
+                        }}
+                        className="btn btn-ghost"
+                        style={{ alignSelf: "flex-start", fontSize: 12, padding: "6px 12px", borderRadius: 10 }}
+                      >
+                        {t.splitIntoDays}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="field">
                     <label className="label">{t.eventRegistrationOpenLabel}</label>
@@ -2408,13 +2553,16 @@ export default function AdminEventsPage() {
                     <label className="label">{t.eventQuotaLabel}</label>
                     <div style={{ position: "relative" }}>
                       <Users size={18} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-                      <input className="input" type="number" min={1} value={formData.quota} onChange={(e) => set("quota", Number(e.target.value))} placeholder={t.unlimitedIfZero} style={{ paddingLeft: 44 }} />
+                      <input className="input" type="number" min={1} value={formData.quota || ""} onChange={(e) => set("quota", e.target.value ? Number(e.target.value) : 0)} placeholder={t.unlimitedIfZero} style={{ paddingLeft: 44 }} />
                     </div>
                   </div>
 
                   <div className="field" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
                     <div
                       onClick={() => {
+                        // Locked on while Walk-ins Only is set — that mode implies
+                        // walkInsEnabled, so it can't be turned off independently.
+                        if (formData.walkInsOnly) return;
                         const nextVal = !formData.walkInsEnabled;
                         setFormData({
                           ...formData,
@@ -2435,7 +2583,8 @@ export default function AdminEventsPage() {
                         alignItems: "center",
                         gap: 12,
                         padding: "0 16px",
-                        cursor: "pointer",
+                        cursor: formData.walkInsOnly ? "not-allowed" : "pointer",
+                        opacity: formData.walkInsOnly ? 0.6 : 1,
                         border: formData.walkInsEnabled ? "1px solid var(--accent-primary)" : "1px solid transparent",
                         transition: "all 0.2s"
                       }}
@@ -2461,7 +2610,53 @@ export default function AdminEventsPage() {
                   </div>
                 </div>
 
-                {formData.walkInsEnabled && (
+                {/* Walk-ins Only — no pre-registration accepted at all (see
+                    api/events/[id]/register). Implies Allow Walk-ins. */}
+                <div className="field" style={{ marginTop: 20 }}>
+                  <div
+                    onClick={() => {
+                      const nextVal = !formData.walkInsOnly;
+                      setFormData({
+                        ...formData,
+                        walkInsOnly: nextVal,
+                        ...(nextVal && { walkInsEnabled: true }),
+                      });
+                    }}
+                    style={{
+                      minHeight: 48,
+                      background: "var(--bg-elevated)",
+                      borderRadius: 16,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "12px 16px",
+                      cursor: "pointer",
+                      border: formData.walkInsOnly ? "1px solid var(--accent-primary)" : "1px solid transparent",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <div style={{
+                      width: 24, height: 24, flexShrink: 0, borderRadius: 6,
+                      border: "2px solid var(--border-medium)",
+                      background: formData.walkInsOnly ? "var(--accent-primary)" : "transparent",
+                      borderColor: formData.walkInsOnly ? "var(--accent-primary)" : "var(--border-medium)",
+                      display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s"
+                    }}>
+                      {formData.walkInsOnly && <CheckCircle2 size={16} color="white" />}
+                    </div>
+                    <DoorOpen size={18} style={{ flexShrink: 0, color: formData.walkInsOnly ? "var(--accent-primary)" : "var(--text-muted)" }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: formData.walkInsOnly ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                        {t.walkInsOnlyToggleLabel}
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
+                        {t.walkInsOnlyToggleHint}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {formData.walkInsEnabled && !formData.walkInsOnly && (
                   <div className="field" style={{ marginTop: 20 }}>
                     <label className="label">{t.walkInQuota}</label>
                     <div style={{ position: "relative" }}>
@@ -2746,7 +2941,30 @@ export default function AdminEventsPage() {
                       return (
                         <div
                           key={opt.value}
-                          onClick={() => setRegistrationMode(opt.value)}
+                          onClick={() => {
+                            if (active) {
+                              // Click again to un-select — collapse back to a single
+                              // session row mirroring the main start/end, matching
+                              // the registrationMode === null convention used above.
+                              const first = sessions[0];
+                              setRegistrationMode(null);
+                              setSessions([{ title: first?.title ?? "", startTime: formData.startTime, endTime: formData.endTime, quotaWalkIn: first?.quotaWalkIn ?? null }]);
+                            } else {
+                              setRegistrationMode(opt.value);
+                              // The sole row still mirrors the main start/end. If that
+                              // range itself spans multiple calendar days, split it into
+                              // one row per day right away — otherwise "Day 1" would
+                              // silently cover the whole multi-day range as one session
+                              // (see sessionSpansTooLong).
+                              const first = sessions[0];
+                              if (first?.startTime && first?.endTime) {
+                                const split = splitIntoDailySessions(first.startTime, first.endTime);
+                                if (split.length > 1) {
+                                  setSessions(split.map((d) => ({ title: "", startTime: d.startTime, endTime: d.endTime, quotaWalkIn: first.quotaWalkIn ?? null })));
+                                }
+                              }
+                            }
+                          }}
                           style={{
                             minHeight: 48,
                             background: "var(--bg-elevated)",
@@ -2897,7 +3115,30 @@ export default function AdminEventsPage() {
                             />
                           </div>
                         </div>
-                        {formData.walkInsEnabled && (
+                        {sessionSpansTooLong(s.startTime, s.endTime) && (
+                          <div style={{
+                            display: "flex", gap: 10, alignItems: "flex-start",
+                            background: "color-mix(in srgb, #f59e0b 12%, transparent)",
+                            border: "1px solid color-mix(in srgb, #f59e0b 40%, transparent)",
+                            borderRadius: 12, padding: "10px 14px",
+                          }}>
+                            <AlertCircle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
+                              <span style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+                                {t.multiDaySessionWarning}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => splitSessionRow(idx)}
+                                className="btn btn-ghost"
+                                style={{ alignSelf: "flex-start", fontSize: 12, padding: "6px 12px", borderRadius: 10 }}
+                              >
+                                {t.splitIntoDays}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {formData.walkInsEnabled && !formData.walkInsOnly && (
                           <div className="field" style={{ marginBottom: 0 }}>
                             <label className="label" style={{ fontSize: 12 }}>{t.sessionWalkInQuota}</label>
                             <div style={{ position: "relative" }}>
@@ -3512,7 +3753,7 @@ export default function AdminEventsPage() {
                         {formData.imageUrls.length === 0 && (
                           <>
                             <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, fontWeight: 600 }}>
-                              {lang === "th" ? "แนะนำขนาด 1080x1350px (อัตราส่วน 4:5)" : "Recommended: 1080x1350px (4:5 Ratio)"}
+                              {lang === "th" ? "แนะนำขนาด 1080x1080px (อัตราส่วน 1:1)" : "Recommended: 1080x1080px (1:1 Ratio)"}
                             </p>
                             <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                               {lang === "th" ? "ขนาดไฟล์สูงสุด 10MB (ระบบจะบีบอัดอัตโนมัติ)" : "Max file size: 10MB (Auto-compressed)"}
@@ -3592,7 +3833,7 @@ export default function AdminEventsPage() {
                 {error && <div style={{ color: "#ef4444", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} /> {error}</div>}
               </div>
               <div className="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
-                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => { setShowForm(false); setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([]); }}>{t.discardBtn}</button>
+                <button type="button" className="btn btn-ghost btn-lg w-full sm:w-auto" style={{ borderRadius: 16 }} onClick={() => { setShowForm(false); setEditingId(null); setFormData(EMPTY_FORM); setSourceProposalId(null); setRegistrationMode(null); setSessions([]); }}>{t.discardBtn}</button>
                 <button type="submit" className="btn btn-primary btn-lg w-full sm:w-auto" style={{ borderRadius: 16, minWidth: 200 }} disabled={submitting}>
                   {submitting ? <>{lang === "th" ? "กำลังบันทึก..." : "Saving..."}</> : editingId ? t.updateSystemBtn : t.activateEventBtn}
                 </button>
@@ -3629,7 +3870,7 @@ export default function AdminEventsPage() {
           </div>
           {!isAttendanceOnly && (
             <button className="btn btn-primary" onClick={() => {
-              setEditingId(null); setFormData(EMPTY_FORM); setRegistrationMode(null); setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]); setShowForm(true);
+              setEditingId(null); setFormData(EMPTY_FORM); setSourceProposalId(null); setRegistrationMode(null); setSessions([{ title: "", startTime: "", endTime: "", quotaWalkIn: null }]); setShowForm(true);
               ensureAssigneeUsersLoaded();
             }}>+ {t.addEventBtn}</button>
           )}

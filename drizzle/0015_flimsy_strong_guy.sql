@@ -1,0 +1,1 @@
+ALTER TABLE "event_proposals" ADD COLUMN "sessions" jsonb;

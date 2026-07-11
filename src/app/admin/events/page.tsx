@@ -7,7 +7,7 @@ import {
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
-  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap, DoorOpen
+  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap, DoorOpen, UserX, Building2
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
@@ -425,6 +425,7 @@ export default function AdminEventsPage() {
   const [sourceProposalId, setSourceProposalId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "live" | "upcoming" | "past">("all");
@@ -1669,6 +1670,51 @@ export default function AdminEventsPage() {
     });
   };
 
+  // Removes a student's registration/check-in for the currently open event
+  // (all sessions, for a multi-day event) — e.g. a president found a student
+  // from another club/major pre-registered for a restricted event.
+  const removeRegistrant = (studentId: string, studentName: string) => {
+    if (!activeEventId) return;
+    setConfirmModal({
+      show: true,
+      title: lang === "th" ? "ยกเลิกการลงทะเบียน?" : "Remove registration?",
+      message: lang === "th"
+        ? `การดำเนินการนี้จะลบการลงทะเบียน/เช็คอินของ ${studentName} สำหรับกิจกรรมนี้ทั้งหมด (ทุกวัน)`
+        : `This will remove ${studentName}'s registration and check-in for this event entirely (all days).`,
+      confirmText: lang === "th" ? "ลบการลงทะเบียน" : "Remove Registration",
+      cancelText: lang === "th" ? "ยกเลิก" : "Cancel",
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, show: false }));
+        setRemovingStudentId(studentId);
+        try {
+          const res = await fetch(
+            `/api/admin/events/${activeEventId}/attendance?studentId=${encodeURIComponent(studentId)}`,
+            { method: "DELETE" }
+          );
+          if (res.ok) {
+            setAttendance(prev => prev.filter(a => a.studentId !== studentId));
+          } else {
+            const err = await res.json().catch(() => null);
+            setErrorModal({
+              show: true,
+              title: lang === "th" ? "ลบไม่สำเร็จ" : "Remove Failed",
+              message: (err && err.error) || (lang === "th" ? "ไม่สามารถลบการลงทะเบียนได้" : "Failed to remove registration"),
+            });
+          }
+        } catch (err) {
+          setErrorModal({
+            show: true,
+            title: lang === "th" ? "เกิดข้อผิดพลาด" : "Error Occurred",
+            message: lang === "th" ? "เกิดข้อผิดพลาดบางอย่าง" : "Something went wrong",
+          });
+        } finally {
+          setRemovingStudentId(null);
+        }
+      }
+    });
+  };
+
   const handleEdit = (evt: AdminEvent) => {
     const toLocal = (iso: string) => {
       const d = new Date(iso);
@@ -2216,6 +2262,20 @@ export default function AdminEventsPage() {
                 onClick={() => setSelectedStudent(m.user || null)}
               >
                 <Info size={18} />
+              </button>
+            )}
+            {/* Remove registration: staff (unscoped) or a president managing this
+                event (server re-checks ownership — see DELETE .../attendance).
+                Not for smo (attendance-only, non-president). */}
+            {!unregistered && canEditEventDetails && m.user?.id && (
+              <button
+                className="btn btn-ghost"
+                style={{ padding: 8, borderRadius: 10, color: "#ef4444" }}
+                title={lang === "th" ? "ลบการลงทะเบียน" : "Remove registration"}
+                disabled={removingStudentId === m.user.id}
+                onClick={() => removeRegistrant(m.user!.id, m.user!.name || m.user!.studentId || "this student")}
+              >
+                {removingStudentId === m.user.id ? <div className="spinner w-4 h-4 border-2" /> : <UserX size={18} />}
               </button>
             )}
             {multiDay ? (

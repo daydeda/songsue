@@ -36,20 +36,21 @@ type StudentOption = {
 export default function ClubsPage() {
   const { data: session } = useSession();
   const { t } = useLanguage();
-  const userRole = session?.user?.role || "student";
-  const canManage = userRole === "super_admin" || userRole === "admin";
+  // All role checks below use the FULL role set (not just the singular primary
+  // role) — a user holding club_president alongside a higher-priority role (e.g.
+  // admin, registration, smo) would otherwise silently miss gates keyed on their
+  // primary role (ROLE_PRIORITY in src/auth.ts ranks those above club_president),
+  // since session.user.role only ever reflects the highest-priority one. The
+  // server-side GET /api/admin/clubs mirrors this same full-set check.
+  const userRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
+  const canManage = userRoles.includes("super_admin") || userRoles.includes("admin");
   // club_president gets read-only access to this page, scoped to just their own
   // club(s) — the list/members APIs already filter to that scope server-side, so
   // this flag only controls which buttons render (Members yes, Rename/Archive/
-  // Delete no).
-  const isClubPresident = userRole === "club_president";
-  // Multi-role checks below use the FULL role set (not just the singular primary
-  // role) — a user holding club_president alongside a higher-priority role (e.g.
-  // smo) would otherwise silently miss gates keyed on their primary role. The
-  // server-side GET /api/admin/clubs already uses effectiveRoles, so the UI
-  // mirrors that rather than inheriting the single-role gap.
-  const userRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  const isClubPresidentAny = userRoles.includes("club_president");
+  // Delete no) for a PURE club_president. Someone who also holds an admin-tier
+  // role gets canManage=true too, so canManage||isClubPresident below still
+  // renders full controls for them rather than falling through to read-only.
+  const isClubPresident = userRoles.includes("club_president");
   // "Include archived clubs" is a staff-triage control (dead/renamed clubs) —
   // irrelevant noise for a club_president, who only ever sees their own club(s)
   // anyway. Shown only to roles that actually manage the club roster at large.
@@ -374,7 +375,7 @@ export default function ClubsPage() {
           </div>
         )}
 
-        {isClubPresidentAny && <ProposeEventSection clubs={clubs} />}
+        {isClubPresident && <ProposeEventSection clubs={clubs} />}
 
         {listError && (
           <div

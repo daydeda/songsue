@@ -36,7 +36,14 @@ export async function GET(req: Request) {
 
     const list = await ClubsService.listClubs(includeArchived);
 
-    if (isClubPresident) {
+    // Own-club scoping only applies to a club_president with NO admin-tier role
+    // (e.g. plain club_president, or smo+club_president — see isClubPresident's
+    // comment above). A user who holds an admin-tier role AND club_president
+    // (e.g. admin+club_president, registration+club_president) must get the
+    // full list like any other admin-tier caller — otherwise that broader role
+    // gets silently downgraded to "only your own club" just because
+    // club_president also happens to be in their roles[].
+    if (isClubPresident && !isAdminRole) {
       const ownClubIds = new Set(await ClubsService.getPresidentClubIds(session.user.id!));
       return NextResponse.json(list.filter((club) => ownClubIds.has(club.id)));
     }

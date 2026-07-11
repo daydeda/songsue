@@ -1241,6 +1241,13 @@ async function migrate() {
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS walk_ins_only boolean DEFAULT false`;
   console.log("  ✅ events.walk_ins_only");
 
+  // 75. events.allowed_clubs — club-based participant eligibility (SEPARATE from
+  // owner_club_ids, which controls who MANAGES the event). null/[] = no club
+  // restriction. See api/events/[id]/register and src/lib/event-access.ts.
+  // Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS allowed_clubs jsonb`;
+  console.log("  ✅ events.allowed_clubs");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

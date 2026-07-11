@@ -4,6 +4,7 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { buildViewer } from "@/lib/event-access";
+import { ClubsService } from "@/modules/clubs/clubs.service";
 import {
   getCalendarItemsForGuest,
   getCalendarItemsForViewer,
@@ -27,10 +28,12 @@ export async function GET() {
       where: eq(users.id, session.user.id!),
       columns: { major: true },
     });
+    const clubIds = await ClubsService.getMemberClubIds(session.user.id!);
     const viewer = buildViewer({
       roles: session.user.roles || [session.user.role || "student"],
       studentId: session.user.studentId,
       major: me?.major,
+      clubIds,
     });
 
     const items = await getCalendarItemsForViewer(viewer, session.user.id!);

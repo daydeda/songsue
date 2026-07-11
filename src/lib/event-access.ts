@@ -16,6 +16,8 @@ const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
 export interface EligibilityItem {
   allowedRoles?: string[] | null;
   allowedMajors?: string[] | null;
+  /** Club UUIDs a viewer must belong to (any club_members role) — see events.allowedClubs. */
+  allowedClubs?: string[] | null;
   targetThai?: boolean | null;
   targetInternational?: boolean | null;
   /** When true, only first-year students (current intake prefix) are eligible. */
@@ -31,6 +33,8 @@ export interface Viewer {
   isIntl: boolean;
   /** Whether the viewer's student id belongs to the current first-year intake. */
   isFirstYear: boolean;
+  /** Club UUIDs the viewer belongs to (any club_members role) — see ClubsService.getMemberClubIds. */
+  clubIds: string[];
 }
 
 /**
@@ -112,11 +116,13 @@ export function deriveThaiIntl(studentId: string | null | undefined): {
   return { isThai, isIntl };
 }
 
-/** Build a Viewer from a user's roles, student id, and major. */
+/** Build a Viewer from a user's roles, student id, major, and club memberships. */
 export function buildViewer(opts: {
   roles: string[] | null | undefined;
   studentId: string | null | undefined;
   major: string | null | undefined;
+  /** Club UUIDs the user belongs to (any club_members role) — see ClubsService.getMemberClubIds. */
+  clubIds?: string[] | null;
 }): Viewer {
   const userRoles = opts.roles && opts.roles.length ? opts.roles : ["student"];
   const isAdminRole = userRoles.some((r) => ADMIN_ROLES.includes(r));
@@ -126,7 +132,15 @@ export function buildViewer(opts: {
   );
   const { isThai, isIntl } = deriveThaiIntl(opts.studentId);
   const isFirstYear = isFirstYearStudent(opts.studentId);
-  return { isAdminRole, effectiveRoles, userMajor: opts.major ?? null, isThai, isIntl, isFirstYear };
+  return {
+    isAdminRole,
+    effectiveRoles,
+    userMajor: opts.major ?? null,
+    isThai,
+    isIntl,
+    isFirstYear,
+    clubIds: opts.clubIds ?? [],
+  };
 }
 
 /** Whether an authenticated viewer is eligible to see an item. */
@@ -156,6 +170,13 @@ export function isEligibleFor(item: EligibilityItem, viewer: Viewer): boolean {
     }
   }
 
+  // Club-based access control. Admin roles always bypass. A viewer belonging to
+  // ANY of the listed clubs (member or president — see getMemberClubIds) qualifies.
+  if (!viewer.isAdminRole && item.allowedClubs && item.allowedClubs.length > 0) {
+    const inAllowedClub = viewer.clubIds.some((id) => item.allowedClubs!.includes(id));
+    if (!inAllowedClub) return false;
+  }
+
   // First-year-only restriction. Admin roles always bypass; everyone whose id
   // isn't in the current first-year intake is excluded.
   if (!viewer.isAdminRole && item.firstYearOnly && !viewer.isFirstYear) {
@@ -174,6 +195,8 @@ export function isEligibleForGuest(item: EligibilityItem): boolean {
   // A guest has no student id, so it can never be a first-year intake member.
   if (item.firstYearOnly) return false;
   if (item.allowedMajors && item.allowedMajors.length > 0) return false;
+  // A guest belongs to no club, so any club restriction excludes them.
+  if (item.allowedClubs && item.allowedClubs.length > 0) return false;
   if (item.allowedRoles && item.allowedRoles.length > 0) {
     return item.allowedRoles.includes("student");
   }

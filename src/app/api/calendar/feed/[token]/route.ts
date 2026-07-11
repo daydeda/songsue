@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { calendarFeedTokens, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { buildViewer } from "@/lib/event-access";
+import { ClubsService } from "@/modules/clubs/clubs.service";
 import { getCalendarItemsForViewer } from "@/modules/calendar/calendar.service";
 import { buildVCalendar, type CalItem } from "@/lib/ical";
 
@@ -41,10 +42,12 @@ export async function GET(
     });
     if (!user) return new Response("Not found", { status: 404 });
 
+    const clubIds = await ClubsService.getMemberClubIds(user.id);
     const viewer = buildViewer({
       roles: user.roles ?? (user.role ? [user.role] : ["student"]),
       studentId: user.studentId,
       major: user.major,
+      clubIds,
     });
 
     const items = await getCalendarItemsForViewer(viewer, user.id);

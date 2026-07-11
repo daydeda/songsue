@@ -218,6 +218,15 @@ export const events = pgTable("events", {
   // majors (ANI, DG, DII, MMIT, SE). Combined with allowedRoles as AND — a user
   // must satisfy both. Admin roles always bypass.
   allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  // Club-based access control (participant eligibility, SEPARATE from ownerClubIds
+  // below, which controls who MANAGES the event): which club(s) a student must
+  // belong to (via club_members, ANY role — 'member' or 'president') to see/register
+  // for this event. Club UUIDs (as strings) referencing clubs.id. null or [] means
+  // no club restriction — open to everyone. Combined with allowedRoles/allowedMajors
+  // as AND — a user must satisfy all set restrictions. Admin roles always bypass
+  // (bypass logic lives in application code, not here). Mirrors the allowedMajors
+  // jsonb string[] pattern above.
+  allowedClubs: jsonb("allowed_clubs").$type<string[]>(),
   // President ownership scope (SEPARATE from managedByRoles, which only answers "is
   // a president role involved at all"). These answer "president of WHICH club/major":
   //   ownerClubIds — club UUIDs (as strings) that own this event; a club_president

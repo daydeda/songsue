@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { getFormAvailability } from "@/lib/form-access";
 import { buildViewer, isEligibleFor, isEligibleForGuest } from "@/lib/event-access";
+import { ClubsService } from "@/modules/clubs/clubs.service";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 export const maxDuration = 20;
@@ -78,11 +79,15 @@ export async function GET() {
       columns: { major: true },
     });
 
+    // Club memberships (any role) — powers the allowedClubs eligibility check below.
+    const clubIds = await ClubsService.getMemberClubIds(session.user.id!);
+
     // Single shared visibility predicate (also used by the calendar + .ics feed).
     const viewer = buildViewer({
       roles: userRoles,
       studentId: session.user.studentId,
       major: me?.major,
+      clubIds,
     });
 
     // Fetch the user's attendance up front: a student who has an attendance row

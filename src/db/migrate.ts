@@ -1176,6 +1176,71 @@ async function migrate() {
   await sql`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_staff boolean NOT NULL DEFAULT false`;
   console.log("  ✅ attendance.is_staff");
 
+  // 72. event_proposals — lets a club_president request an event for a club they
+  // preside over without granting them write access to the real `events` table.
+  // Requested title/time/location/quota are non-binding; staff still sets
+  // pointsAwarded/allowedRoles/allowedMajors/managedByRoles/ownerClubIds/
+  // staffUserIds explicitly when creating the real event (mirrors the
+  // field-strip precedent for president-submitted edits in
+  // api/admin/events/[id]/route.ts). Lifecycle mirrors no_show_appeals:
+  // status 'pending'|'approved'|'rejected'|'withdrawn', reviewed_by has NO FK
+  // (matches no_show_appeals.reviewed_by exactly). club_id CASCADEs (deleting a
+  // club deletes its proposal history; the audit log keeps a free-text trail
+  // independent of the row). resulting_event_id is SET NULL so a later
+  // hard-delete of the created event doesn't FK-block the deletion. New table +
+  // CREATE INDEX IF NOT EXISTS ⇒ additive, idempotent, non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS event_proposals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      club_id uuid NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      proposed_by text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title text NOT NULL,
+      description text,
+      start_time timestamptz NOT NULL,
+      end_time timestamptz NOT NULL,
+      location text,
+      quota integer,
+      status text NOT NULL DEFAULT 'pending',
+      reviewed_by text,
+      reviewed_at timestamptz,
+      review_note text,
+      resulting_event_id uuid REFERENCES events(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_club_idx ON event_proposals (club_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_status_idx ON event_proposals (status)`;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_proposed_by_idx ON event_proposals (proposed_by)`;
+  console.log("  ✅ event_proposals table + club/status/proposed_by indexes");
+
+  // 73. event_proposals — the full staff-create-event-parity field set (poster,
+  // registration window, walk-ins, target audience, first-year-only, registration
+  // mode, suggested staff). Mirrors the equivalent `events` columns exactly so a
+  // proposal converts 1:1 into a real event. Additive/idempotent via ADD COLUMN
+  // IF NOT EXISTS — see src/db/schema.ts's eventProposals table for field docs.
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS registration_open_time timestamptz`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS registration_close_time timestamptz`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS image_url text`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS image_urls jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS walk_ins_enabled boolean DEFAULT false`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS walk_ins_only boolean DEFAULT false`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS quota_walk_in integer`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS registration_mode text NOT NULL DEFAULT 'once'`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS sessions jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS target_thai boolean DEFAULT true`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS target_international boolean DEFAULT true`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS quota_thai integer`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS quota_international integer`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS first_year_only boolean DEFAULT false`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS staff_user_ids jsonb`;
+  console.log("  ✅ event_proposals poster/registration-window/walk-ins/audience/staff columns");
+
+  // 74. events.walk_ins_only — walk-ins-only events refuse pre-registration
+  // entirely (see api/events/[id]/register). Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS walk_ins_only boolean DEFAULT false`;
+  console.log("  ✅ events.walk_ins_only");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

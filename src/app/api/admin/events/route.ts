@@ -1,13 +1,14 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { events, attendance, eventSessions } from "@/db/schema";
+import { events, attendance, eventSessions, eventProposals } from "@/db/schema";
+import { effectiveRoles } from "@/lib/admin-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { sessionInputSchema } from "@/lib/event-schema";
+import { sessionInputSchema, bangkokDateKey } from "@/lib/event-schema";
 
 const eventSchema = z.object({
   title: z.string().min(1),
@@ -23,6 +24,9 @@ const eventSchema = z.object({
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
+  // Walk-ins-only: no pre-registration is accepted at all (see the register
+  // route). Implies walkInsEnabled — enforced below, not just trusted from the client.
+  walkInsOnly: z.boolean().optional(),
   quotaWalkIn: z.number().int().min(0).optional().nullable(),
   registrationMode: z.enum(["once", "per_session"]).optional(),
   // Multi-day sessions. Omitted/empty → one default session mirroring the
@@ -48,10 +52,28 @@ const eventSchema = z.object({
   // role-based fields above) — exempts their attendance from quota counts and
   // no-show strikes. See events.staffUserIds in schema.ts.
   staffUserIds: z.array(z.string()).optional().nullable(),
+  // Present when this event is being created FROM a club_president's proposal
+  // (see /api/admin/event-proposals). Purely a linkage marker — staff still
+  // fills in every field above explicitly; this just flips the source proposal
+  // to 'approved' in the same transaction. See the POST handler below.
+  proposalId: z.string().uuid().optional(),
 }).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
   message: "endTime must be after startTime",
   path: ["endTime"],
-});
+}).refine(
+  (d) => {
+    // No explicit sessions → the event's own startTime/endTime becomes the
+    // single default session (see the fallback below). If that crosses into a
+    // different calendar day, it's almost certainly a multi-day event that
+    // needs one session row per day, not a single day-spanning session.
+    if (d.sessions && d.sessions.length > 0) return true;
+    return bangkokDateKey(d.startTime) === bangkokDateKey(d.endTime);
+  },
+  {
+    message: "startTime/endTime spans more than one calendar day with no sessions provided — add one session per day instead of a single multi-day session",
+    path: ["endTime"],
+  },
+);
 
 // Per-event distinct-attendee counts. This GROUP BY over the whole (event-time-
 // growing) attendance table is the costly part of this endpoint, which is polled
@@ -149,7 +171,12 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    // effectiveRoles, not the singular session.user.role — otherwise a staffer
+    // whose PRIMARY role isn't in this admin set (e.g. a registration officer
+    // who is also tagged club_president elsewhere) gets wrongly rejected here,
+    // matching how PUT /api/admin/events/[id] already resolves roles.
+    const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -187,7 +214,10 @@ export async function POST(req: Request) {
           individualPointsAwarded: data.individualPointsAwarded ?? 0,
           imageUrl: cover,
           imageUrls: posters,
-          walkInsEnabled: data.walkInsEnabled ?? false,
+          // walkInsOnly implies walkInsEnabled regardless of what the client sent —
+          // an event that only accepts walk-ins obviously must accept walk-ins.
+          walkInsEnabled: data.walkInsOnly ? true : (data.walkInsEnabled ?? false),
+          walkInsOnly: data.walkInsOnly ?? false,
           quotaWalkIn: data.quotaWalkIn,
           registrationMode: data.registrationMode ?? "once",
           targetThai: data.targetThai ?? true,
@@ -221,6 +251,34 @@ export async function POST(req: Request) {
         action: `Created Event: ${created.title} (${sessionsInput.length} session${sessionsInput.length > 1 ? "s" : ""})`,
         ipAddress: ip,
       });
+
+      // Approving a club_president's proposal is a SIDE EFFECT of staff creating
+      // the real event from it, not a separate mutation — this rides the
+      // already-audited create transaction instead of adding a second
+      // privileged write path. The WHERE status='pending' guard means a
+      // proposal that was concurrently withdrawn/rejected/already-approved is
+      // simply left untouched; event creation still succeeds either way.
+      if (data.proposalId) {
+        const [linked] = await tx
+          .update(eventProposals)
+          .set({
+            status: "approved",
+            reviewedBy: session.user!.id!,
+            reviewedAt: new Date(),
+            resultingEventId: created.id,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(eventProposals.id, data.proposalId), eq(eventProposals.status, "pending")))
+          .returning({ id: eventProposals.id });
+
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user!.id!,
+          action: linked
+            ? `Approved event proposal ${data.proposalId} -> created event ${created.id}`
+            : `Created event ${created.id} from proposal ${data.proposalId} (proposal was no longer pending; left untouched)`,
+          ipAddress: ip,
+        });
+      }
 
       return created;
     });

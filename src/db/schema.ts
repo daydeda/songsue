@@ -187,6 +187,10 @@ export const events = pgTable("events", {
   // legacy events — read them as `imageUrls ?? (imageUrl ? [imageUrl] : [])`.
   imageUrls: jsonb("image_urls").$type<string[]>(),
   walkInsEnabled: boolean("walk_ins_enabled").default(false),
+  // When true, pre-registration is refused entirely (see POST /api/events/[id]/
+  // register) — students may only attend via a walk-in scan at the door.
+  // Implies walkInsEnabled; the UI forces that toggle on together with this one.
+  walkInsOnly: boolean("walk_ins_only").default(false),
   quotaWalkIn: integer("quota_walk_in"),
   // Multi-day / multi-session check-in. 'once' = student registers once at the
   // event level and that registration is attendable at any/all sessions.
@@ -927,5 +931,82 @@ export const noShowAppealsRelations = relations(noShowAppeals, ({ one }) => ({
     references: [users.id],
     relationName: "appealReviewer",
   }),
+}));
+
+// ============================================================================
+// EVENT PROPOSALS (club-president feature)
+// A club president proposes a candidate event; staff review and either approve
+// (creating the real row in `events`) or reject/leave it withdrawn. Requested
+// values (quota, etc.) are non-binding — staff sets pointsAwarded/allowedRoles/
+// allowedMajors/managedByRoles/ownerClubIds/staffUserIds explicitly when
+// creating the real event, mirroring the field-strip precedent for
+// president-submitted edits in api/admin/events/[id]/route.ts.
+// clubId cascades on delete: deleting a club deletes its proposal history (the
+// append-only audit log already keeps a free-text trail independent of the row).
+// reviewedBy intentionally has NO FK — mirrors noShowAppeals.reviewedBy above.
+// resultingEventId is set only as a side effect of POST /api/admin/events{proposalId}
+// approving the proposal; "set null" so a later hard-delete of the created event
+// doesn't FK-block, and the proposal survives as a historical record.
+// ============================================================================
+export const eventProposals = pgTable("event_proposals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clubId: uuid("club_id").notNull().references(() => clubs.id, { onDelete: "cascade" }),
+  proposedBy: text("proposed_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+
+  title: text("title").notNull(),
+  description: text("description"),
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }).notNull(),
+  registrationOpenTime: timestamp("registration_open_time", { withTimezone: true }),
+  registrationCloseTime: timestamp("registration_close_time", { withTimezone: true }),
+  location: text("location"),
+  quota: integer("quota"),
+  imageUrl: text("image_url"),
+  imageUrls: jsonb("image_urls").$type<string[]>(),
+  walkInsEnabled: boolean("walk_ins_enabled").default(false),
+  walkInsOnly: boolean("walk_ins_only").default(false),
+  quotaWalkIn: integer("quota_walk_in"),
+  registrationMode: text("registration_mode").$type<"once" | "per_session">().notNull().default("once"),
+  // Suggested multi-day schedule (mirrors eventSessions, but as plain jsonb —
+  // proposals have no attendance to join against, so a real join table would be
+  // pure overhead). Null/empty = single-day event; the top-level start/end above
+  // cover it. Staff turns these into real eventSessions rows at conversion time.
+  sessions: jsonb("sessions").$type<{ title: string | null; startTime: string; endTime: string }[]>(),
+  targetThai: boolean("target_thai").default(true),
+  targetInternational: boolean("target_international").default(true),
+  quotaThai: integer("quota_thai"),
+  quotaInternational: integer("quota_international"),
+  firstYearOnly: boolean("first_year_only").default(false),
+  // Suggested helpers only — from the proposer's OWN club roster (see
+  // EventProposalsService/GET .../clubs/[id]/members), never the global
+  // student directory. Staff can add/remove freely when creating the event.
+  staffUserIds: jsonb("staff_user_ids").$type<string[]>(),
+  // Requested values only — non-binding. Staff sets pointsAwarded/allowedRoles/
+  // allowedMajors/managedByRoles/ownerClubIds explicitly when creating the real
+  // event, mirroring the field-strip precedent for president-submitted edits in
+  // api/admin/events/[id]/route.ts.
+
+  status: text("status").notNull().default("pending"), // 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  reviewedBy: text("reviewed_by"), // no FK — mirrors noShowAppeals.reviewedBy
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+  // Set only as a side effect of POST /api/admin/events{proposalId}. "set null"
+  // so a later hard-delete of the created event doesn't FK-block, and the
+  // proposal survives as a historical record.
+  resultingEventId: uuid("resulting_event_id").references(() => events.id, { onDelete: "set null" }),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ([
+  index("event_proposals_club_idx").on(table.clubId),
+  index("event_proposals_status_idx").on(table.status),
+  index("event_proposals_proposed_by_idx").on(table.proposedBy),
+]));
+
+export const eventProposalsRelations = relations(eventProposals, ({ one }) => ({
+  club: one(clubs, { fields: [eventProposals.clubId], references: [clubs.id] }),
+  proposer: one(users, { fields: [eventProposals.proposedBy], references: [users.id], relationName: "proposalProposer" }),
+  reviewer: one(users, { fields: [eventProposals.reviewedBy], references: [users.id], relationName: "proposalReviewer" }),
+  resultingEvent: one(events, { fields: [eventProposals.resultingEventId], references: [events.id] }),
 }));
 

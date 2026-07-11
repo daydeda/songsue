@@ -23,6 +23,9 @@ const eventUpdateSchema = z.object({
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
+  // Walk-ins-only: no pre-registration is accepted at all (see the register
+  // route). Implies walkInsEnabled — enforced below, not just trusted from the client.
+  walkInsOnly: z.boolean().optional(),
   quotaWalkIn: z.number().int().min(0).optional().nullable(),
   registrationMode: z.enum(["once", "per_session"]).optional(),
   // When provided, the full desired set of sessions. Existing sessions are
@@ -133,7 +136,11 @@ export async function PUT(
             ...(posters !== undefined
               ? { imageUrls: posters, imageUrl: coverFromPosters }
               : (data.imageUrl !== undefined && { imageUrl: data.imageUrl })),
-            ...(data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled }),
+            // walkInsOnly implies walkInsEnabled regardless of what the client sent.
+            ...(data.walkInsOnly !== undefined && { walkInsOnly: data.walkInsOnly }),
+            ...(data.walkInsOnly
+              ? { walkInsEnabled: true }
+              : (data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled })),
             ...(data.quotaWalkIn !== undefined && { quotaWalkIn: data.quotaWalkIn }),
             ...(data.registrationMode !== undefined && { registrationMode: data.registrationMode }),
             ...(data.targetThai !== undefined && { targetThai: data.targetThai }),

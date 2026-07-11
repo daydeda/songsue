@@ -428,7 +428,10 @@ export class ScannerService {
         await db.transaction(async (tx) => {
           // Staff walking themselves in are exempt from both quota checks below
           // (they're working the event, not taking a participant's seat).
-          if (!isEventStaff && (event.quota !== null || sessionWalkIn !== null)) {
+          // quota === 0 means unlimited (mirrors the register route's own
+          // `quota !== null && quota > 0` convention) — 0 must NOT be treated as
+          // a real cap of zero seats.
+          if (!isEventStaff && ((event.quota !== null && event.quota > 0) || sessionWalkIn !== null)) {
             // Lock the SESSION row so concurrent walk-in confirms for the same day
             // serialize here, then recount within the session — quota is per-day,
             // closing the TOCTOU window without blocking other sessions.
@@ -438,7 +441,7 @@ export class ScannerService {
               .where(eq(eventSessions.id, sessionId))
               .for("update");
 
-            if (event.quota !== null) {
+            if (event.quota !== null && event.quota > 0) {
               // Walk-ins are ADDITIVE capacity on top of the per-session seat quota:
               // the day's room cap is quota + sessionWalkIn. The walk-in sub-limit
               // below still caps how many of those extra slots walk-ins take.

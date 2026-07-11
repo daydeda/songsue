@@ -169,6 +169,19 @@ export class ClubsService {
   }
 
   /**
+   * Club IDs this user currently belongs to, ANY role (member or president).
+   * Used for event registration/visibility eligibility (events.allowedClubs) —
+   * unlike getPresidentClubIds, a plain member counts here too.
+   */
+  static async getMemberClubIds(userId: string): Promise<string[]> {
+    const rows = await db
+      .select({ clubId: clubMembers.clubId })
+      .from(clubMembers)
+      .where(eq(clubMembers.userId, userId));
+    return rows.map((r) => r.clubId);
+  }
+
+  /**
    * Removes a (clubId, userId) membership row entirely, regardless of role.
    */
   static async removeClubMember(clubId: string, userId: string) {

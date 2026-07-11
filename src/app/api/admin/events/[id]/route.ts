@@ -38,6 +38,9 @@ const eventUpdateSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Club-based participant eligibility (SEPARATE from ownerClubIds below, which
+  // controls who MANAGES the event) — see events.allowedClubs in schema.ts.
+  allowedClubs: z.array(z.string().uuid()).optional().nullable(),
   // Restrict the event to the current first-year intake (id-prefix derived).
   firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event — separate from allowedRoles.
@@ -96,6 +99,7 @@ export async function PUT(
       data.individualPointsAwarded = undefined;
       data.allowedRoles = undefined;
       data.allowedMajors = undefined;
+      data.allowedClubs = undefined;
       data.managedByRoles = undefined;
       data.ownerClubIds = undefined;
       data.ownerMajors = undefined;
@@ -152,6 +156,9 @@ export async function PUT(
             }),
             ...(data.allowedMajors !== undefined && {
               allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null
+            }),
+            ...(data.allowedClubs !== undefined && {
+              allowedClubs: data.allowedClubs && data.allowedClubs.length > 0 ? data.allowedClubs : null
             }),
             ...(data.firstYearOnly !== undefined && { firstYearOnly: data.firstYearOnly }),
             ...(data.managedByRoles !== undefined && {

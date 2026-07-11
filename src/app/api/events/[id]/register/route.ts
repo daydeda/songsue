@@ -5,6 +5,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getFormAvailability } from "@/lib/form-access";
 import { isFirstYearStudent } from "@/lib/event-access";
+import { ClubsService } from "@/modules/clubs/clubs.service";
 
 // POST /api/events/[id]/register — One-click registration (FE-05)
 export async function POST(
@@ -88,6 +89,22 @@ export async function POST(
       !(profile.major && allowedMajors.includes(profile.major))
     ) {
       return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
+    }
+
+    // Club-based access control (mirrors the event-list filter). null/[] = open
+    // to all clubs; admin-type roles always pass. Membership is ANY club_members
+    // role (member or president) — see ClubsService.getMemberClubIds.
+    const allowedClubs = event.allowedClubs;
+    if (
+      Array.isArray(allowedClubs) &&
+      allowedClubs.length > 0 &&
+      !adminRoles.includes(userRole)
+    ) {
+      const myClubIds = await ClubsService.getMemberClubIds(userId);
+      const inAllowedClub = myClubIds.some((id) => allowedClubs.includes(id));
+      if (!inAllowedClub) {
+        return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
+      }
     }
 
     // Walk-ins-only events accept no pre-registration at all — staff (and

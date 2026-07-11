@@ -7,7 +7,7 @@ import {
   Sparkles, Filter, MoreVertical, X, ExternalLink,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
-  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap, DoorOpen
+  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap, DoorOpen, UserX, Building2
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
@@ -49,6 +49,7 @@ interface AdminEvent {
   quotaInternational: number | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
+  allowedClubs: string[] | null;
   firstYearOnly: boolean;
   managedByRoles: string[] | null;
   ownerClubIds: string[] | null;
@@ -349,6 +350,7 @@ const EMPTY_FORM = {
   quotaInternational: null as number | null,
   allowedRoles: [] as string[], // empty = all roles allowed
   allowedMajors: [] as string[], // empty = all majors allowed
+  allowedClubs: [] as string[], // empty = no club restriction (open to everyone, subject to other filters)
   firstYearOnly: false, // true = only the current first-year intake may join
   managedByRoles: [] as string[], // president role(s) that manage this event; empty = none
   ownerClubIds: [] as string[], // WHICH club(s) own this event, when managedByRoles includes club_president
@@ -425,6 +427,7 @@ export default function AdminEventsPage() {
   const [sourceProposalId, setSourceProposalId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "live" | "upcoming" | "past">("all");
@@ -1669,6 +1672,51 @@ export default function AdminEventsPage() {
     });
   };
 
+  // Removes a student's registration/check-in for the currently open event
+  // (all sessions, for a multi-day event) — e.g. a president found a student
+  // from another club/major pre-registered for a restricted event.
+  const removeRegistrant = (studentId: string, studentName: string) => {
+    if (!activeEventId) return;
+    setConfirmModal({
+      show: true,
+      title: lang === "th" ? "ยกเลิกการลงทะเบียน?" : "Remove registration?",
+      message: lang === "th"
+        ? `การดำเนินการนี้จะลบการลงทะเบียน/เช็คอินของ ${studentName} สำหรับกิจกรรมนี้ทั้งหมด (ทุกวัน)`
+        : `This will remove ${studentName}'s registration and check-in for this event entirely (all days).`,
+      confirmText: lang === "th" ? "ลบการลงทะเบียน" : "Remove Registration",
+      cancelText: lang === "th" ? "ยกเลิก" : "Cancel",
+      isDanger: true,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, show: false }));
+        setRemovingStudentId(studentId);
+        try {
+          const res = await fetch(
+            `/api/admin/events/${activeEventId}/attendance?studentId=${encodeURIComponent(studentId)}`,
+            { method: "DELETE" }
+          );
+          if (res.ok) {
+            setAttendance(prev => prev.filter(a => a.studentId !== studentId));
+          } else {
+            const err = await res.json().catch(() => null);
+            setErrorModal({
+              show: true,
+              title: lang === "th" ? "ลบไม่สำเร็จ" : "Remove Failed",
+              message: (err && err.error) || (lang === "th" ? "ไม่สามารถลบการลงทะเบียนได้" : "Failed to remove registration"),
+            });
+          }
+        } catch (err) {
+          setErrorModal({
+            show: true,
+            title: lang === "th" ? "เกิดข้อผิดพลาด" : "Error Occurred",
+            message: lang === "th" ? "เกิดข้อผิดพลาดบางอย่าง" : "Something went wrong",
+          });
+        } finally {
+          setRemovingStudentId(null);
+        }
+      }
+    });
+  };
+
   const handleEdit = (evt: AdminEvent) => {
     const toLocal = (iso: string) => {
       const d = new Date(iso);
@@ -1704,6 +1752,7 @@ export default function AdminEventsPage() {
       quotaInternational: evt.quotaInternational || null,
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
+      allowedClubs: evt.allowedClubs || [],
       firstYearOnly: evt.firstYearOnly || false,
       managedByRoles: evt.managedByRoles || [],
       ownerClubIds: evt.ownerClubIds || [],
@@ -2216,6 +2265,20 @@ export default function AdminEventsPage() {
                 onClick={() => setSelectedStudent(m.user || null)}
               >
                 <Info size={18} />
+              </button>
+            )}
+            {/* Remove registration: staff (unscoped) or a president managing this
+                event (server re-checks ownership — see DELETE .../attendance).
+                Not for smo (attendance-only, non-president). */}
+            {!unregistered && canEditEventDetails && m.user?.id && (
+              <button
+                className="btn btn-ghost"
+                style={{ padding: 8, borderRadius: 10, color: "#ef4444" }}
+                title={lang === "th" ? "ลบการลงทะเบียน" : "Remove registration"}
+                disabled={removingStudentId === m.user.id}
+                onClick={() => removeRegistrant(m.user!.id, m.user!.name || m.user!.studentId || "this student")}
+              >
+                {removingStudentId === m.user.id ? <div className="spinner w-4 h-4 border-2" /> : <UserX size={18} />}
               </button>
             )}
             {multiDay ? (
@@ -3397,6 +3460,100 @@ export default function AdminEventsPage() {
                   </div>
                 </div>
 
+                {/* Club Access Control — limits registration to member(s) of specific
+                    club(s) (any club_members role — member or president). Combined
+                    with the role/major filters as AND. Empty = no club restriction.
+                    admin/registration/organizer only. SEPARATE from "Owning club(s)"
+                    below, which controls who MANAGES the event, not who may join. */}
+                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
+                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Building2 size={16} style={{ color: "var(--accent-primary)" }} />
+                    {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามชมรม)" : "Club-Based Access Control"}
+                  </label>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
+                    {lang === "th"
+                      ? "จำกัดให้เฉพาะสมาชิกชมรมที่เลือกเท่านั้นที่เห็น/เข้าร่วมกิจกรรมนี้ได้ หากไม่เลือก = ไม่จำกัดตามชมรม"
+                      : "Restrict this event to members of the selected club(s) (add members under Admin > Clubs). Leave unchecked = no club restriction."}
+                  </p>
+                  {!canEditRestrictedFields && (
+                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
+                  )}
+                  {clubs.filter((c) => !c.isArchived).length === 0 ? (
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                      {lang === "th" ? "ยังไม่มีชมรม — สร้างได้ที่ Admin > Clubs" : "No clubs yet — create one under Admin > Clubs."}
+                    </p>
+                  ) : (
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {clubs.filter((c) => !c.isArchived).map((club) => {
+                        const isSelected = formData.allowedClubs.includes(club.id);
+                        return (
+                          <div
+                            key={club.id}
+                            onClick={() => {
+                              const current = formData.allowedClubs;
+                              const next = isSelected
+                                ? current.filter((id) => id !== club.id)
+                                : [...current, club.id];
+                              setFormData({ ...formData, allowedClubs: next });
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              padding: "10px 16px",
+                              borderRadius: 14,
+                              background: isSelected ? "rgba(139,92,246,0.12)" : "var(--bg-elevated)",
+                              border: `1px solid ${isSelected ? "rgba(139,92,246,0.5)" : "transparent"}`,
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                              minWidth: 80,
+                            }}
+                          >
+                            <div style={{
+                              width: 20,
+                              height: 20,
+                              borderRadius: 6,
+                              background: isSelected ? "#8b5cf6" : "transparent",
+                              border: `2px solid ${isSelected ? "#8b5cf6" : "var(--border-medium)"}`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                              transition: "all 0.15s",
+                            }}>
+                              {isSelected && <CheckCircle2 size={13} color="white" />}
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: isSelected ? "#8b5cf6" : "var(--text-secondary)" }}>
+                              {club.name}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Summary tag */}
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 12px",
+                      borderRadius: 99,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      background: formData.allowedClubs.length === 0
+                        ? "rgba(16,185,129,0.1)"
+                        : "rgba(139,92,246,0.1)",
+                      color: formData.allowedClubs.length === 0 ? "#10b981" : "#8b5cf6",
+                      border: `1px solid ${formData.allowedClubs.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(139,92,246,0.2)"}`,
+                    }}>
+                      {formData.allowedClubs.length === 0
+                        ? (lang === "th" ? "✓ ไม่จำกัดตามชมรม" : "✓ No club restriction")
+                        : `✓ ${lang === "th" ? "จำกัดเฉพาะสมาชิก: " : "Restricted to members of: "}${clubs.filter((c) => formData.allowedClubs.includes(c.id)).map((c) => c.name).join(", ")}`}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Managed By — which president role(s) MANAGE this event (see it in
                     their admin list, view attendance, scan, export). Independent of
                     the role/major access above, which only controls who can JOIN.
@@ -3972,6 +4129,32 @@ export default function AdminEventsPage() {
                           <Users size={10} style={{ flexShrink: 0 }} />
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {evt.allowedMajors.join(" • ")}
+                          </span>
+                        </div>
+                      )}
+                      {evt.allowedClubs && evt.allowedClubs.length > 0 && (
+                        <div className="event-card-tag" style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: "rgba(139,92,246,0.85)",
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          boxShadow: "0 2px 8px rgba(139,92,246,0.3)",
+                          textTransform: "uppercase",
+                        }}>
+                          <Building2 size={10} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {evt.allowedClubs!
+                              .map((id) => clubs.find((c) => c.id === id)?.name || id)
+                              .join(" • ")}
                           </span>
                         </div>
                       )}

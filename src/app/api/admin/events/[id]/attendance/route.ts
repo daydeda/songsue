@@ -216,3 +216,69 @@ export async function GET(
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
+
+// Removes a single student's registration/check-in rows for this event (all
+// sessions of a multi-day event, since a wrongly-registered student shouldn't
+// remain on any day). For staff (super_admin/admin/registration/organizer,
+// unscoped) or a president role that OWNS this event (mirrors the GET scope
+// check above) — e.g. a club_president removing a student who registered for
+// their club-restricted event despite not being eligible.
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
+    const isStaffRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
+    if (!session?.user || (!isStaffRole && presidentTags.length === 0)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id: eventId } = await params;
+    const studentId = new URL(req.url).searchParams.get("studentId");
+    if (!studentId) {
+      return NextResponse.json({ error: "studentId is required" }, { status: 400 });
+    }
+
+    const ev = await db.query.events.findFirst({
+      where: eq(events.id, eventId),
+      columns: { id: true, title: true, ownerClubIds: true, ownerMajors: true },
+    });
+    if (!ev) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+    if (!isStaffRole) {
+      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+      if (!EventScopeService.isEventManagedByScope(ev, scope)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
+    const removedRows = await db.transaction(async (tx) => {
+      const deleted = await tx
+        .delete(attendance)
+        .where(and(eq(attendance.eventId, eventId), eq(attendance.studentId, studentId)))
+        .returning({ id: attendance.id });
+      if (deleted.length > 0) {
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user.id!,
+          targetId: studentId,
+          action: `Removed registration for student ${studentId} from event "${ev.title}" (${eventId}) — ${deleted.length} row(s)`,
+          ipAddress: getClientIp(req),
+        });
+      }
+      return deleted;
+    });
+
+    if (removedRows.length === 0) {
+      return NextResponse.json({ error: "Student is not registered for this event" }, { status: 404 });
+    }
+
+    return NextResponse.json({ removed: removedRows.length });
+  } catch (error) {
+    console.error("Failed to remove registrant:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

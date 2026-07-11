@@ -2279,6 +2279,18 @@ export default function AdminEventsPage() {
     );
   };
 
+  const getEventStatus = (evt: AdminEvent) => {
+    const now = new Date();
+    if (now >= new Date(evt.startTime) && now <= new Date(evt.endTime)) return "live";
+    if (now > new Date(evt.endTime)) return "past";
+    return "upcoming";
+  };
+
+  // Live now first, then upcoming, then past (past sinks to the bottom);
+  // within each bucket sort by date — soonest first for live/upcoming,
+  // most-recently-ended first for past so recent history stays visible.
+  const STATUS_ORDER: Record<string, number> = { live: 0, upcoming: 1, past: 2 };
+
   const filteredEvents = useMemo(() => Array.isArray(events) ? events.filter(evt => {
     const matchesSearch = evt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (evt.location && evt.location.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -2292,14 +2304,14 @@ export default function AdminEventsPage() {
     if (filterStatus === "past") return matchesSearch && isPast;
     if (filterStatus === "upcoming") return matchesSearch && isUpcoming;
     return matchesSearch;
-  }) : [], [events, searchQuery, filterStatus]);
+  }).sort((a, b) => {
+    const statusA = getEventStatus(a);
+    const statusB = getEventStatus(b);
+    if (statusA !== statusB) return STATUS_ORDER[statusA] - STATUS_ORDER[statusB];
 
-  const getEventStatus = (evt: AdminEvent) => {
-    const now = new Date();
-    if (now >= new Date(evt.startTime) && now <= new Date(evt.endTime)) return "live";
-    if (now > new Date(evt.endTime)) return "past";
-    return "upcoming";
-  };
+    if (statusA === "past") return new Date(b.endTime).getTime() - new Date(a.endTime).getTime();
+    return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+  }) : [], [events, searchQuery, filterStatus]);
 
   return (
     <>
@@ -3884,7 +3896,7 @@ export default function AdminEventsPage() {
 
             return (
               <div key={evt.id} className="event-card-premium" style={{
-                background: "var(--bg-surface)",
+                background: isPast ? "var(--bg-elevated)" : "var(--bg-surface)",
                 borderRadius: 32,
                 border: "1px solid var(--border-subtle)",
                 overflow: "hidden",
@@ -3892,7 +3904,9 @@ export default function AdminEventsPage() {
                 flexDirection: "column",
                 transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                 position: "relative",
-                boxShadow: "0 10px 40px rgba(0,0,0,0.04)"
+                boxShadow: "0 10px 40px rgba(0,0,0,0.04)",
+                filter: isPast ? "grayscale(0.85)" : "none",
+                opacity: isPast ? 0.6 : 1
               }}>
                 {/* Card Header (Image/Status) */}
                 <div style={{ height: 220, position: "relative", background: "var(--bg-elevated)", padding: 16 }}>

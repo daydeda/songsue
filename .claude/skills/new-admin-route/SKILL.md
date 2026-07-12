@@ -72,7 +72,7 @@ If the route **reads medical detail** (`chronicDiseases`, `medicalHistory`, `dru
 
 ## Notes & follow-up
 - If this is also a new admin **page/section** (not just an API), the 4 gating layers must move together — `src/proxy.ts`, the admin layout, the "Admin Panel" entry points, and `src/lib/admin-access.ts`. This skill scaffolds the API only; remind the user to update the others.
-- Before shipping, run the `route-gate-auditor` agent (focused route+audit check) and/or `/recheck`. Feature branch only.
+- Before shipping, run the `pdpa-access-guard` agent (its route + audit checklist covers this) and/or `/recheck`. Feature branch only.
 
 ## Output
 The file created, the `ALLOWED` roles chosen and why, whether an audit log was included (and the trigger), lint/build results, and the cross-cutting reminders above.

@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Ship the current changes end-to-end for ActiveCAMT — branch off main, commit, push, open a PR, merge it into main, delete the branch (local + remote), tag the merge with a semver version + description, cut a GitHub release, and record the day's entry in updates/ via the updates-changelog agent. Use when the user says "ship this", "commit + PR + merge", "open a PR and merge", or otherwise wants the full feature-branch → PR → merge → tag → release → cleanup flow in one go. For deploys that touch the DB schema or read a new column, run /safe-deploy first.
+description: Ship the current changes end-to-end for ActiveCAMT — branch off main, commit, push, open a PR, merge it into main, delete the branch (local + remote), tag the merge with a semver version + description, cut a GitHub release, and record the day's entry in updates/. Use when the user says "ship this", "commit + PR + merge", "open a PR and merge", or otherwise wants the full feature-branch → PR → merge → tag → release → cleanup flow in one go. For deploys that touch the DB schema or read a new column, run /safe-deploy first.
 ---
 
 # Ship (ActiveCAMT)
@@ -113,14 +113,33 @@ changelog entry.
      ship (e.g. a hotfix bundled into the next release) — otherwise it's
      mandatory, same as the changelog entry below.
 
-8. **Record the changelog (always — last step).** After the merge lands, launch the
-   **`updates-changelog`** subagent to write/extend the day's entry in `updates/` for
-   what was just shipped (Thai house style: ฝั่งนักศึกษา + ฝั่งทีม). Pass it the merge
-   commit / PR number and a short summary of the change so it can derive details from
-   the diff. This is not optional and not automatic anywhere else — shipping without a
-   changelog entry is incomplete. (It creates a per-day `updates/YYYY-MM-DD.md`, or
-   extends the current period file.) The agent only writes Markdown under `updates/`,
-   so this never touches code or `main` history.
+8. **Record the changelog (always — last step, inline — no subagent).** After the
+   merge lands, write/extend today's entry in `updates/` yourself, in the established
+   Thai house style (ฝั่งนักศึกษา + ฝั่งทีม). This is not optional and not automatic
+   anywhere else — shipping without a changelog entry is incomplete. This step only
+   touches Markdown under `updates/`, never code or `main` history.
+   - **Find the date.** `date +%Y-%m-%d`. Buddhist year for the header = Gregorian
+     year + 543, shown as last two digits (2026 → "69"). Thai month abbreviations:
+     ม.ค. ก.พ. มี.ค. เม.ย. พ.ค. มิ.ย. ก.ค. ส.ค. ก.ย. ต.ค. พ.ย. ธ.ค.
+   - **Read the existing log.** `ls updates/` and read the latest 1–2 files to copy
+     their structure, heading wording, date format, and bullet style exactly.
+   - **Derive content from what actually shipped** — the commit(s)/PR just merged in
+     step 5, not guesswork. Never invent a bullet that doesn't trace to a real change.
+   - **Choose the file.** Default: a new `updates/YYYY-MM-DD.md` for today. Only
+     extend the latest existing file instead if it's an open period range that
+     clearly continues into today — append, never rewrite or delete prior entries.
+   - **Write the entry:** header `# ActiveCAMT — อัปเดต <date> 69`, a one-line
+     "ช่วง: … · สรุปไว้สำหรับลง Discord …" subtitle, then:
+     - `## ฝั่งนักศึกษา (สิ่งที่ user จะเห็น)` — user-facing, plain Thai,
+       benefit-first, no code jargon.
+     - `## ฝั่งทีม (technical changelog)` — grouped technical bullets by area (PDPA,
+       สิทธิ์เข้าถึง, Houses, Registration, Mobile/UI, DB/migration). Always call out
+       anything touching PDPA/medical gating, access control, or migrations.
+     - Closing "สรุปจาก commit …" line, matching the existing files' style.
+     Only include sections that have content. Thai is the primary language; keep
+     English only for proper nouns/technical terms as the existing files do.
+   - Report which file you created or extended, plus a short English gloss of the
+     bullets so the user can sanity-check before sharing.
 
 ## Notes
 - If branch protection blocks `gh pr merge` (required reviews/checks), stop and tell

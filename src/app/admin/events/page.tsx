@@ -1356,8 +1356,6 @@ export default function AdminEventsPage() {
     });
   };
 
-  const lastInjectedRange = useRef<{ start: number, end: number } | null>(null);
-
   const injectMarkup = (prefix: string, suffix: string) => {
     if (!textareaRef.current) return;
     const el = textareaRef.current;
@@ -1368,65 +1366,27 @@ export default function AdminEventsPage() {
     const before = text.substring(0, start);
     const after = text.substring(end);
 
-    if (prefix.startsWith("{{color:") && lastInjectedRange.current) {
-      const { start: lStart, end: lEnd } = lastInjectedRange.current;
-      const lastText = text.substring(lStart, lEnd);
-      if (lastText.startsWith("{{color:") && lastText.endsWith("}}")) {
-        const parts = lastText.split("|");
-        if (parts.length >= 2) {
-          const contentOnly = parts.slice(1).join("|").slice(0, -2);
-          const b = text.substring(0, lStart);
-          const a = text.substring(lEnd);
-          const newTag = prefix + contentOnly + suffix;
-          set("description", b + newTag + a);
-          lastInjectedRange.current = { start: lStart, end: lStart + newTag.length };
-          setTimeout(() => {
-            el.focus();
-            el.setSelectionRange(lStart, lStart + newTag.length);
-          }, 10);
-          return;
-        }
-      }
-    }
-
+    // Color: replace the color of an already-selected {{color:…|…}} block
+    // instead of nesting another one; otherwise wrap the selection in a new
+    // color block. Only ever acts on the CURRENT selection (never a
+    // remembered range from a previous call) — a remembered range can go
+    // stale the moment the user types or moves the cursor, silently editing
+    // the wrong part of the text on the next color pick.
     if (prefix.startsWith("{{color:")) {
-      const lastTagStart = before.lastIndexOf("{{color:");
-      const lastTagEnd = before.lastIndexOf("}}");
-      const nextTagEnd = after.indexOf("}}");
-      const nextTagStart = after.indexOf("{{color:");
-
-      const isInside = (lastTagStart > -1 && (lastTagEnd === -1 || lastTagEnd < lastTagStart));
-      const actualTagStart = lastTagStart;
-      const actualTagEnd = end + nextTagEnd + 2;
-
-      if (isInside && nextTagEnd > -1 && (nextTagStart === -1 || nextTagStart > nextTagEnd)) {
-        const tagFullText = text.substring(actualTagStart, actualTagEnd);
-        const parts = tagFullText.split("|");
-        if (parts.length >= 2) {
-          const contentOnly = parts.slice(1).join("|").slice(0, -2);
-          const b = text.substring(0, actualTagStart);
-          const a = text.substring(actualTagEnd);
-          const newTag = prefix + contentOnly + suffix;
-          set("description", b + newTag + a);
-          lastInjectedRange.current = { start: actualTagStart, end: actualTagStart + newTag.length };
-          setTimeout(() => {
-            el.focus();
-            el.setSelectionRange(actualTagStart, actualTagStart + newTag.length);
-          }, 10);
-          return;
-        }
-      }
+      const m = selected.match(/^\{\{color:[^|]*\|([\s\S]*)\}\}$/);
+      const inner = m ? m[1] : selected || "text";
+      const block = prefix + inner + suffix;
+      set("description", before + block + after);
+      setTimeout(() => {
+        el.focus();
+        el.setSelectionRange(start, start + block.length);
+      }, 10);
+      return;
     }
 
-    let processedSelected = selected;
-    if (prefix.startsWith("{{color:")) {
-      processedSelected = selected.replace(/\{\{color:.*?\|/g, "").replace(/\}\}/g, "");
-    }
-
-    if (prefix !== "" && prefix.startsWith("{{color:") === false && selected.startsWith(prefix) && selected.endsWith(suffix)) {
+    if (prefix !== "" && selected.startsWith(prefix) && selected.endsWith(suffix)) {
       const unwrapped = selected.substring(prefix.length, selected.length - suffix.length);
       set("description", before + unwrapped + after);
-      lastInjectedRange.current = null;
       setTimeout(() => {
         el.focus();
         el.setSelectionRange(start, start + unwrapped.length);
@@ -1436,7 +1396,6 @@ export default function AdminEventsPage() {
 
     if (prefix === "**" && before.endsWith("**") && after.startsWith("**")) {
       set("description", before.slice(0, -2) + selected + after.slice(2));
-      lastInjectedRange.current = null;
       setTimeout(() => {
         el.focus();
         el.setSelectionRange(start - 2, end - 2);
@@ -1444,13 +1403,12 @@ export default function AdminEventsPage() {
       return;
     }
 
-    const content = processedSelected || (prefix === "**" ? "bold text" : "text");
+    const content = selected || (prefix === "**" ? "bold text" : "text");
     const newText = before + prefix + content + suffix + after;
     set("description", newText);
 
     const finalStart = start;
     const finalEnd = start + prefix.length + content.length + suffix.length;
-    lastInjectedRange.current = { start: finalStart, end: finalEnd };
 
     setTimeout(() => {
       el.focus();
@@ -3967,8 +3925,10 @@ export default function AdminEventsPage() {
                       <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("**", "**")}><Edit2 size={14} /></button>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("[", "](https://...)")}><ExternalLink size={14} /></button>
                       <div style={{ position: "relative" }}>
-                        <input type="color" style={{ opacity: 0, position: "absolute", inset: 0, cursor: "pointer" }} onChange={(e) => injectMarkup(`{{color:${e.target.value}|`, "}}")} />
-                        <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }}><Sparkles size={14} /></button>
+                        <input type="color" defaultValue="#ff6b00" style={{ opacity: 0, position: "absolute", inset: 0, cursor: "pointer" }} onChange={(e) => injectMarkup(`{{color:${e.target.value}|`, "}}")} />
+                        <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }}>
+                          <span style={{ width: 14, height: 14, borderRadius: 4, background: "linear-gradient(135deg,#ef4444,#6366f1)", display: "inline-block" }} />
+                        </button>
                       </div>
                     </div>
                   </div>

@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { events, eventSessions, attendance } from "@/db/schema";
-import { count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
@@ -140,6 +140,19 @@ export async function PUT(
     let updated: typeof events.$inferSelect;
     try {
       updated = await db.transaction(async (tx) => {
+        // Grab the pre-update staffUserIds so newly-added staff can be
+        // backfilled onto existing attendance rows below (see after the
+        // events update) — only needed when this call actually touches the
+        // staff list.
+        let previousStaffUserIds: string[] = [];
+        if (data.staffUserIds !== undefined) {
+          const existingEvent = await tx.query.events.findFirst({
+            where: eq(events.id, id),
+            columns: { staffUserIds: true },
+          });
+          previousStaffUserIds = existingEvent?.staffUserIds ?? [];
+        }
+
         const [row] = await tx
           .update(events)
           .set({
@@ -208,6 +221,34 @@ export async function PUT(
 
         if (!row) {
           throw new Error("EVENT_NOT_FOUND");
+        }
+
+        // Backfill attendance.isStaff for newly-assigned staff who already
+        // had an attendance/registration row for this event BEFORE being
+        // added to staffUserIds (e.g. they self-registered as a regular
+        // attendee, then were assigned as staff afterward). Without this,
+        // isStaff stays frozen at its register-time snapshot forever (see
+        // schema.ts comment) and they'd never be exempted from quota/no-show
+        // strikes or show up in the Attendance staff section. Only flips
+        // false -> true (never reverts staff -> non-staff on removal) so
+        // this stays non-destructive and can't be used to retroactively open
+        // up quota by unassigning someone.
+        if (data.staffUserIds !== undefined) {
+          const newlyAddedStaffIds = (data.staffUserIds ?? []).filter(
+            (uid) => !previousStaffUserIds.includes(uid)
+          );
+          if (newlyAddedStaffIds.length > 0) {
+            await tx
+              .update(attendance)
+              .set({ isStaff: true })
+              .where(
+                and(
+                  eq(attendance.eventId, id),
+                  inArray(attendance.studentId, newlyAddedStaffIds),
+                  eq(attendance.isStaff, false)
+                )
+              );
+          }
         }
 
         // Reconcile sessions when the editor sends them. Match by id (update),

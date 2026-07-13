@@ -9,11 +9,7 @@ import { parseRichText } from "@/lib/rich-text";
 import {
   AlertCircle,
   CalendarPlus,
-  Check,
   CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Clock,
   Edit2,
   ExternalLink,
@@ -23,20 +19,19 @@ import {
   MapPin,
   Plus,
   RefreshCw,
-  ShieldCheck,
   Trash2,
   Users,
   X,
 } from "lucide-react";
 
-type Club = { id: string; name: string; isArchived: boolean };
+// A suggested extra day for a multi-day event — mirrors ProposeEventSection's
+// ProposalSessionRow exactly.
+type ProposalSessionRow = { title: string; startTime: string; endTime: string };
 
-// Suggested-access ACL options — mirrors admin/events/page.tsx's own
-// ALL_PARTICIPANT_ROLES/ROLE_LABELS/ALL_MAJORS/MAJOR_LABELS constants exactly
-// (kept as a local literal, like that file, rather than a shared import —
-// these are UI-only label sets, not business logic). Entirely non-binding:
-// staff reviews/adjusts before it ever takes effect (see the fromProposal
-// prefill in admin/events/page.tsx).
+// Suggested-access ACL options — mirrors ProposeEventSection.tsx's identical
+// constants (see that file's own comment on why these are a local literal).
+// No club option here: a major has no club roster to suggest from, unlike
+// ProposeEventSection which already has the club list in scope.
 const ALL_PARTICIPANT_ROLES = ["student", "staff", "smo", "anusmo", "club_president", "major_president"] as const;
 type ParticipantRole = typeof ALL_PARTICIPANT_ROLES[number];
 const ROLE_LABELS: Record<ParticipantRole, string> = {
@@ -49,16 +44,8 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
 };
 const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 
-type ClubMember = { id: string; userId: string; role: string; userName: string | null; studentId: string | null };
-
-// A suggested extra day for a multi-day event — mirrors admin/events/page.tsx's
-// SessionRow, minus `id`/`quotaWalkIn` (these are always brand-new suggestions;
-// staff assigns per-day walk-in quotas at conversion, not the proposer).
-type ProposalSessionRow = { title: string; startTime: string; endTime: string };
-
 type Proposal = {
   id: string;
-  clubId: string;
   title: string;
   description: string | null;
   startTime: string;
@@ -77,20 +64,17 @@ type Proposal = {
   quotaThai: number | null;
   quotaInternational: number | null;
   firstYearOnly: boolean | null;
-  staffUserIds: string[] | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
-  allowedClubs: string[] | null;
   sessions: { title: string | null; startTime: string; endTime: string }[] | null;
   status: "pending" | "approved" | "rejected" | "withdrawn";
   reviewNote: string | null;
   createdAt: string;
-  club: { id: string; name: string };
+  majorCode: string | null;
   proposer: { id: string; name: string; studentId: string | null };
 };
 
 const EMPTY_FORM = {
-  clubId: "",
   title: "",
   description: "",
   startTime: "",
@@ -108,154 +92,27 @@ const EMPTY_FORM = {
   quotaThai: "",
   quotaInternational: "",
   firstYearOnly: false,
-  staffUserIds: [] as string[],
   allowedRoles: [] as string[],
   allowedMajors: [] as string[],
-  allowedClubs: [] as string[],
 };
 
-
-// club_president-only section on the clubs page: submit a request for an
-// event. All requested fields (title/time/audience/poster/staff/etc.) are
-// non-binding suggestions — staff still decides pointsAwarded/allowedRoles/
-// allowedMajors/managedByRoles/ownerClubIds explicitly when creating the real
-// event from an approved proposal (see POST /api/admin/events' proposalId
-// linkage). Own-club-scoped end to end: the clubs prop is already the clubs
-// THIS president presides over (from the page's own scoped GET
-// /api/admin/clubs), the proposals list/withdraw APIs independently
-// re-verify ownership server-side, and the suggested Event Staff picker below
-// only ever reads the SAME club's own member roster (GET
-// /api/admin/clubs/[id]/members) — never the global student directory.
-// Custom club picker — replaces a native <select> so the option list gets the
-// app's own styling (and isn't rendered by the OS, which on iOS/Android looks
-// jarringly different from the rest of the form). Fully touch/keyboard
-// friendly: a full-width trigger button + an absolutely-positioned, internally
-// scrollable panel that never exceeds the trigger's own width, so it never
-// causes horizontal overflow on narrow phone/iPad viewports. Closes on any
-// outside click/tap.
-function ClubDropdown({
-  value,
-  options,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = options.find((o) => o.value === value);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, [open]);
-
-  return (
-    <div ref={ref} style={{ position: "relative", width: "100%" }}>
-      <button
-        type="button"
-        className="input"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        style={{
-          padding: "16px 20px",
-          borderRadius: 16,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          cursor: "pointer",
-          textAlign: "left",
-          borderColor: open ? "var(--accent-primary)" : undefined,
-          boxShadow: open ? "0 0 0 3px var(--accent-glow)" : undefined,
-        }}
-      >
-        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {current ? current.label : placeholder}
-        </span>
-        <ChevronDown
-          size={16}
-          style={{ color: "var(--text-muted)", flexShrink: 0, transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
-        />
-      </button>
-
-      {open && (
-        <div
-          role="listbox"
-          className="animate-fade-in-up custom-scrollbar"
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: "calc(100% + 8px)",
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border-medium)",
-            borderRadius: 16,
-            boxShadow: "0 16px 48px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)",
-            zIndex: 20,
-            maxHeight: 260,
-            overflowY: "auto",
-            padding: 6,
-          }}
-        >
-          {options.map((opt) => {
-            const isSelected = opt.value === value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => { onChange(opt.value); setOpen(false); }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  width: "100%",
-                  minHeight: 44,
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: isSelected ? "rgba(255,107,0,0.1)" : "transparent",
-                  color: isSelected ? "var(--accent-primary)" : "var(--text-secondary)",
-                  fontWeight: isSelected ? 800 : 600,
-                  fontSize: 14,
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
-                {isSelected && <Check size={15} style={{ flexShrink: 0, marginLeft: 8 }} />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Stable per-club accent color, cycling through a fixed qualitative palette
-// by the club's position in `activeClubs` — lets a president who presides
-// over several clubs visually tell proposals apart at a glance (group header
-// dot + matching card border) without relying on reading the club name text.
-const CLUB_ACCENT_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6", "#ef4444", "#14b8a6"];
-
-export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
+// major_president-only section (analogue of ProposeEventSection, which is the
+// club_president equivalent on /admin/clubs — see that file's own header
+// comment for the full rationale). All requested fields are non-binding
+// suggestions; staff still decides pointsAwarded/allowedRoles/managedByRoles/
+// ownerMajors explicitly when creating the real event from an approved
+// proposal (see POST /api/admin/events' proposalId linkage).
+//
+// Deliberately simpler than ProposeEventSection in two ways:
+//   - No club picker: `major` is the signed-in president's own users.major,
+//     fixed for the whole component (a major_president represents exactly one
+//     major — there's no equivalent to "which club" to choose between).
+//   - No Event Staff picker: a club has a member roster to suggest staff from
+//     (GET /api/admin/clubs/[id]/members); a major has no such roster, so
+//     major-scoped proposals never carry staffUserIds — staff assign event
+//     staff themselves at conversion time, same as any unfilled suggestion.
+export function MajorProposeEventSection({ major }: { major: string }) {
   const { t, lang } = useLanguage();
-  const activeClubs = clubs.filter((c) => !c.isArchived);
-  const clubColor = (clubId: string) => {
-    const idx = activeClubs.findIndex((c) => c.id === clubId);
-    return CLUB_ACCENT_COLORS[(idx < 0 ? 0 : idx) % CLUB_ACCENT_COLORS.length];
-  };
 
   const STATUS_BADGE: Record<Proposal["status"], { bg: string; color: string; label: string }> = {
     pending: { bg: "rgba(245,158,11,0.1)", color: "#f59e0b", label: t.adminProposalsFilterPending },
@@ -271,24 +128,20 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  // Set while editing a REJECTED proposal for resubmission (PATCH
-  // action=resubmit) instead of creating a brand new one (POST). null = the
-  // form is either closed or in plain "new proposal" mode.
-  const [editingProposalId, setEditingProposalId] = useState<string | null>(null);
-  // Details view — lets a club_president re-check exactly what they submitted
-  // (full per-day schedule, audience, quotas, etc.) against a proposal card's
-  // summary badges, e.g. to confirm whether a "3 days" badge really reflects
-  // 3 intended days or an extra day added by mistake.
   const [viewingProposal, setViewingProposal] = useState<Proposal | null>(null);
+  // Set while editing a REJECTED proposal for resubmission (PATCH
+  // action=resubmit) instead of creating a brand new one (POST) — mirrors
+  // ProposeEventSection.tsx exactly.
+  const [editingProposalId, setEditingProposalId] = useState<string | null>(null);
 
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setForm((f) => ({ ...f, [key]: val }));
 
   const load = () => {
-    // ?type=club: this page only ever renders club-owned proposals (each card
-    // assumes a non-null `club` relation) — a president who also holds
-    // major_president would otherwise get major-owned rows mixed in here too,
-    // since the unfiltered endpoint returns everything the viewer can see.
-    fetch("/api/admin/event-proposals?type=club")
+    // ?type=major: mirrors ProposeEventSection.tsx's own ?type=club — a
+    // president who also holds club_president would otherwise get club-owned
+    // rows mixed in here too (this page's Proposal type has no `club`
+    // relation to render them).
+    fetch("/api/admin/event-proposals?type=major")
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => { if (Array.isArray(d)) setProposals(d); })
       .catch(() => {})
@@ -302,18 +155,15 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
 
   const openForm = () => {
     setEditingProposalId(null);
-    setForm({ ...EMPTY_FORM, clubId: activeClubs[0]?.id ?? "" });
+    setForm(EMPTY_FORM);
     setFormError(null);
-    setStaffSearch("");
     setRegistrationMode(null);
-    // Seed one empty row so a single-day proposal still mirrors it (see the
-    // main Start/End onChange handlers below) — mirrors admin/events/page.tsx.
     setSessions([{ title: "", startTime: "", endTime: "" }]);
     setShowForm(true);
   };
 
-  // Converts a datetime ISO string (as stored/returned by the API) into the
-  // `datetime-local` input value format (local time, no offset/seconds).
+  // Converts a stored ISO datetime string into the `datetime-local` input
+  // value format (local time, no offset/seconds) — mirrors ProposeEventSection.
   const toDatetimeLocal = (iso: string | null | undefined): string => {
     if (!iso) return "";
     const d = new Date(iso);
@@ -328,7 +178,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
   const openEditResubmit = (p: Proposal) => {
     setEditingProposalId(p.id);
     setForm({
-      clubId: p.clubId,
       title: p.title,
       description: p.description ?? "",
       startTime: toDatetimeLocal(p.startTime),
@@ -346,13 +195,10 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
       quotaThai: p.quotaThai != null ? String(p.quotaThai) : "",
       quotaInternational: p.quotaInternational != null ? String(p.quotaInternational) : "",
       firstYearOnly: p.firstYearOnly ?? false,
-      staffUserIds: p.staffUserIds ?? [],
       allowedRoles: p.allowedRoles ?? [],
       allowedMajors: p.allowedMajors ?? [],
-      allowedClubs: p.allowedClubs ?? [],
     });
     setFormError(null);
-    setStaffSearch("");
     if (p.sessions && p.sessions.length > 1) {
       setRegistrationMode("once");
       setSessions(p.sessions.map((s) => ({ title: s.title ?? "", startTime: toDatetimeLocal(s.startTime), endTime: toDatetimeLocal(s.endTime) })));
@@ -364,22 +210,10 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
     setShowForm(true);
   };
 
-  // ---- Suggested multi-day schedule (optional). registrationMode === null =
-  // single-day event, covered entirely by the Start/End time above — mirrors
-  // the staff create-event form exactly (admin/events/page.tsx's
-  // registrationMode + Days editor): `sessions` always holds ≥1 row while the
-  // form is open (mirroring the main Start/End in single-day mode), and holds
-  // EVERY day — not just the days beyond day 1 — once "Once" is picked. Minus
-  // per-day walk-in quotas, which stay a staff-only decision at conversion
-  // time. ----
+  // ---- Suggested multi-day schedule (optional) — identical to ProposeEventSection. ----
   const [registrationMode, setRegistrationMode] = useState<"once" | null>(null);
   const [sessions, setSessions] = useState<ProposalSessionRow[]>([]);
 
-  // The form scrolls inside a fixed-height modal (see the portal below), not
-  // the full page — so revealing the Days section or adding a row can push
-  // the newly-added content (and the "+Add day" button itself) below the
-  // modal's own visible fold with no automatic scroll. Without this it reads
-  // as "I clicked and nothing happened."
   const daysSectionRef = useRef<HTMLDivElement>(null);
   const addDayButtonRef = useRef<HTMLButtonElement>(null);
   const prevSessionsLength = useRef(0);
@@ -418,11 +252,8 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
     setSessions((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   };
   const removeSessionRow = (idx: number) => {
-    // Never leave the proposal with zero days — mirrors admin/events/page.tsx.
     setSessions((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
   };
-  // Fixes a single extra-day row that spans multiple calendar days (see
-  // sessionSpansTooLong) by replacing it in place with one row per day.
   const splitSessionRow = (idx: number) => {
     setSessions((prev) => {
       const row = prev[idx];
@@ -433,29 +264,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
     });
   };
 
-  // ---- Event Staff picker: THIS club's own roster only (never the global
-  // student directory — see the component-level comment above). Reloads
-  // whenever the selected club changes. ----
-  const [clubMembers, setClubMembers] = useState<ClubMember[]>([]);
-  const [loadingMembers, setLoadingMembers] = useState(false);
-  const [staffSearch, setStaffSearch] = useState("");
-
-  useEffect(() => {
-    if (!showForm || !form.clubId) return;
-    const timer = setTimeout(() => {
-      setLoadingMembers(true);
-      fetch(`/api/admin/clubs/${form.clubId}/members`)
-        .then((r) => (r.ok ? r.json() : []))
-        .then((d) => { if (Array.isArray(d)) setClubMembers(d); })
-        .catch(() => {})
-        .finally(() => setLoadingMembers(false));
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [showForm, form.clubId]);
-
-  // ---- Rich text description toolbar (bold / link / color) — mirrors the
-  // staff create-event description editor byte-for-byte so proposal text
-  // renders identically once approved. See src/lib/rich-text.ts. ----
+  // ---- Rich text description toolbar — byte-for-byte the same as ProposeEventSection. ----
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const injectMarkup = (prefix: string, suffix: string) => {
     if (!textareaRef.current) return;
@@ -467,12 +276,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
     const before = text.substring(0, start);
     const after = text.substring(end);
 
-    // Color: replace the color of an already-selected {{color:…|…}} block
-    // instead of nesting another one; otherwise wrap the selection in a new
-    // color block. Only ever acts on the CURRENT selection (never a
-    // remembered range from a previous call) — a remembered range can go
-    // stale the moment the user types or moves the cursor, silently editing
-    // the wrong part of the text on the next color pick.
     if (prefix.startsWith("{{color:")) {
       const m = selected.match(/^\{\{color:[^|]*\|([\s\S]*)\}\}$/);
       const inner = m ? m[1] : selected || "text";
@@ -504,9 +307,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
     setTimeout(() => { el.focus(); el.setSelectionRange(finalStart, finalEnd); }, 10);
   };
 
-  // ---- Poster upload — mirrors the staff create-event multi-poster pipeline
-  // (client-side compress to WebP, then POST /api/upload; server re-checks
-  // the 5MB cap / magic bytes regardless — see CLAUDE.md). ----
+  // ---- Poster upload — identical pipeline to ProposeEventSection. ----
   const [posterUploading, setPosterUploading] = useState(0);
 
   const compressAndUploadPoster = async (file: File): Promise<string | null> => {
@@ -589,8 +390,8 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
   };
 
   const submit = async () => {
-    if (!form.clubId || !form.title.trim() || !form.startTime || !form.endTime) {
-      setFormError("Club, title, start time, and end time are required.");
+    if (!form.title.trim() || !form.startTime || !form.endTime) {
+      setFormError("Title, start time, and end time are required.");
       return;
     }
     // Only block when the president has opted into a per-day schedule
@@ -599,7 +400,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
     // A plain multi-day start/end with no split chosen is a deliberate
     // "one check-in for the whole range" event (e.g. a 3-day camp) and must
     // NOT be force-split — the banner below still offers Split as an option,
-    // it just no longer blocks submission. Mirrors admin/events/page.tsx.
+    // it just no longer blocks submission.
     if (registrationMode === "once" && sessions.some((s) => sessionSpansTooLong(s.startTime, s.endTime))) {
       setFormError(t.multiDaySessionWarning);
       return;
@@ -614,7 +415,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
           method: isResubmit ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ...(isResubmit ? { action: "resubmit" } : { clubId: form.clubId }),
+            ...(isResubmit ? { action: "resubmit" } : { majorCode: major }),
             title: form.title.trim(),
           description: form.description.trim() || undefined,
           startTime: new Date(form.startTime).toISOString(),
@@ -633,13 +434,8 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
           quotaThai: form.targetThai && form.quotaThai ? Number(form.quotaThai) : undefined,
           quotaInternational: form.targetInternational && form.quotaInternational ? Number(form.quotaInternational) : undefined,
           firstYearOnly: form.firstYearOnly,
-          staffUserIds: form.staffUserIds.length > 0 ? form.staffUserIds : undefined,
           allowedRoles: form.allowedRoles.length > 0 ? form.allowedRoles : undefined,
           allowedMajors: form.allowedMajors.length > 0 ? form.allowedMajors : undefined,
-          allowedClubs: form.allowedClubs.length > 0 ? form.allowedClubs : undefined,
-          // Only sent when genuinely multi-day (2+ rows) — sessions now holds
-          // EVERY day including day 1 (mirrors admin/events/page.tsx), so a
-          // plain single-day proposal sends no sessions at all.
           sessions: registrationMode === "once" && sessions.length > 1
             ? sessions
                 .filter((s) => s.startTime && s.endTime)
@@ -725,13 +521,11 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <h2 style={{ fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
           <CalendarPlus size={20} style={{ color: "var(--accent-primary)" }} />
-          {t.adminProposalsClubTitle}
+          {t.adminProposalsMajorTitle}
         </h2>
-        {activeClubs.length > 0 && (
-          <button className="btn btn-primary btn-sm" onClick={openForm}>
-            {t.adminProposalsSectionTitle}
-          </button>
-        )}
+        <button className="btn btn-primary btn-sm" onClick={openForm}>
+          {t.adminProposalsSectionTitle}
+        </button>
       </div>
 
       {loading ? (
@@ -740,158 +534,103 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
         </div>
       ) : proposals.length === 0 ? (
         <p style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 13 }}>{t.adminProposalsEmptyMessage}</p>
-      ) : (() => {
-        const renderCard = (p: Proposal, accent?: string) => {
-          const badge = STATUS_BADGE[p.status];
-          const poster = p.imageUrls?.[0] || p.imageUrl;
-          return (
-            <div
-              key={p.id}
-              onClick={() => setViewingProposal(p)}
-              style={{
-                background: "var(--bg-elevated)",
-                borderRadius: 16,
-                padding: "12px 16px",
-                display: "flex",
-                gap: 12,
-                cursor: "pointer",
-                borderLeft: accent ? `3px solid ${accent}` : undefined,
-              }}
-            >
-              {poster && (
-                <img src={poster} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
-              )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: 14 }}>{p.title}</p>
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                      {p.club.name} · {new Date(p.startTime).toLocaleString()}
-                    </p>
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                      {t.adminProposalsRequestedByLabel} {p.proposer.name}{p.proposer.studentId ? ` (${p.proposer.studentId})` : ""}
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, height: "fit-content" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: badge.bg, color: badge.color }}>
-                      {badge.label}
-                    </span>
-                    <Eye size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
-                  </div>
-                </div>
-                {(p.walkInsEnabled || p.firstYearOnly || (p.staffUserIds && p.staffUserIds.length > 0) || (p.sessions && p.sessions.length > 1)) && (
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                    {p.sessions && p.sessions.length > 1 && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>
-                        {p.sessions.length} {lang === "th" ? "วัน" : "days"}
-                      </span>
-                    )}
-                    {p.walkInsOnly ? (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>{t.walkInsOnlyBadge}</span>
-                    ) : p.walkInsEnabled && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>{t.allowWalkins}</span>
-                    )}
-                    {p.firstYearOnly && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>{t.firstYearOnly}</span>
-                    )}
-                    {p.staffUserIds && p.staffUserIds.length > 0 && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>
-                        {p.staffUserIds.length} {lang === "th" ? "ทีมงาน" : "staff"}
-                      </span>
-                    )}
-                  </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {proposals.map((p) => {
+            const badge = STATUS_BADGE[p.status];
+            const poster = p.imageUrls?.[0] || p.imageUrl;
+            return (
+              <div
+                key={p.id}
+                onClick={() => setViewingProposal(p)}
+                style={{ background: "var(--bg-elevated)", borderRadius: 16, padding: "12px 16px", display: "flex", gap: 12, cursor: "pointer" }}
+              >
+                {poster && (
+                  <img src={poster} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
                 )}
-                {p.reviewNote && p.status === "rejected" ? (
-                  <div style={{
-                    display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8,
-                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-                    borderRadius: 12, padding: "8px 12px",
-                  }}>
-                    <AlertCircle size={14} style={{ color: "#ef4444", flexShrink: 0, marginTop: 1 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                     <div>
-                      <p style={{ fontSize: 10.5, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                        {t.adminProposalsRejectReasonLabel}
+                      <p style={{ fontWeight: 700, fontSize: 14 }}>{p.title}</p>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                        {new Date(p.startTime).toLocaleString()}
                       </p>
-                      <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.4 }}>{p.reviewNote}</p>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                        {t.adminProposalsRequestedByLabel} {p.proposer.name}{p.proposer.studentId ? ` (${p.proposer.studentId})` : ""}
+                      </p>
                     </div>
-                  </div>
-                ) : p.reviewNote && (
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>{p.reviewNote}</p>
-                )}
-                {p.status === "pending" && (
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ marginTop: 8, color: "#ef4444" }}
-                    disabled={withdrawingId === p.id}
-                    onClick={(e) => { e.stopPropagation(); withdraw(p.id); }}
-                  >
-                    {withdrawingId === p.id ? <Loader2 size={13} className="animate-spin" /> : null}
-                    {t.adminProposalsWithdrawButton}
-                  </button>
-                )}
-                {p.status === "rejected" && (
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ marginTop: 8, color: "var(--accent-primary)" }}
-                    onClick={(e) => { e.stopPropagation(); openEditResubmit(p); }}
-                  >
-                    <Edit2 size={13} />
-                    {t.adminProposalsResubmitButton}
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        };
-
-        // Multiple clubs presided over: group proposals under a per-club
-        // header (name + count + accent dot) so it's immediately obvious
-        // which club each proposal belongs to, instead of relying on reading
-        // the small club-name subtitle on every card. A single-club
-        // president skips this — there's nothing to disambiguate.
-        if (activeClubs.length > 1) {
-          const groups = activeClubs
-            .map((c) => ({ club: c, items: proposals.filter((p) => p.clubId === c.id) }))
-            .filter((g) => g.items.length > 0);
-          return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              {groups.map(({ club, items }) => {
-                const color = clubColor(club.id);
-                return (
-                  <div key={club.id}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flexShrink: 0 }} />
-                      <h3 style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                        {club.name}
-                      </h3>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", background: "var(--bg-elevated)", padding: "2px 8px", borderRadius: 999 }}>
-                        {items.length}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, height: "fit-content" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: badge.bg, color: badge.color }}>
+                        {badge.label}
                       </span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      {items.map((p) => renderCard(p, color))}
+                      <Eye size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          );
-        }
+                  {(p.walkInsEnabled || p.firstYearOnly || (p.sessions && p.sessions.length > 1)) && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                      {p.sessions && p.sessions.length > 1 && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>
+                          {p.sessions.length} {lang === "th" ? "วัน" : "days"}
+                        </span>
+                      )}
+                      {p.walkInsOnly ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>{t.walkInsOnlyBadge}</span>
+                      ) : p.walkInsEnabled && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>{t.allowWalkins}</span>
+                      )}
+                      {p.firstYearOnly && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>{t.firstYearOnly}</span>
+                      )}
+                    </div>
+                  )}
+                  {p.reviewNote && p.status === "rejected" ? (
+                    <div style={{
+                      display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8,
+                      background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                      borderRadius: 12, padding: "8px 12px",
+                    }}>
+                      <AlertCircle size={14} style={{ color: "#ef4444", flexShrink: 0, marginTop: 1 }} />
+                      <div>
+                        <p style={{ fontSize: 10.5, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                          {t.adminProposalsRejectReasonLabel}
+                        </p>
+                        <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.4 }}>{p.reviewNote}</p>
+                      </div>
+                    </div>
+                  ) : p.reviewNote && (
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>{p.reviewNote}</p>
+                  )}
+                  {p.status === "pending" && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ marginTop: 8, color: "#ef4444" }}
+                      disabled={withdrawingId === p.id}
+                      onClick={(e) => { e.stopPropagation(); withdraw(p.id); }}
+                    >
+                      {withdrawingId === p.id ? <Loader2 size={13} className="animate-spin" /> : null}
+                      {t.adminProposalsWithdrawButton}
+                    </button>
+                  )}
+                  {p.status === "rejected" && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ marginTop: 8, color: "var(--accent-primary)" }}
+                      onClick={(e) => { e.stopPropagation(); openEditResubmit(p); }}
+                    >
+                      <Edit2 size={13} />
+                      {t.adminProposalsResubmitButton}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-        return (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {proposals.map((p) => renderCard(p))}
-          </div>
-        );
-      })()}
-
-      {/* Portaled to document.body: the page wrapper this section lives inside
-          (ClubsPage's `animate-fade-in-up` div) keeps a residual `transform:
-          translateY(0)` after its entrance animation finishes (fill-mode:
-          both), which makes it the containing block for any `position: fixed`
-          descendant — clipping/mispositioning this modal to that div's box
-          instead of the viewport. A portal escapes that regardless of where
-          this component gets mounted in the future. */}
+      {/* Portaled to document.body — see ProposeEventSection's identical comment
+          on why (an ancestor's fill-mode:both entrance animation would otherwise
+          become the containing block for position:fixed). */}
       {showForm && createPortal(
         <div
           style={{
@@ -934,32 +673,19 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
               </button>
             </div>
             <div style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: 24, overflowY: "auto", flex: 1 }}>
-              {activeClubs.length > 1 && (
-                <div className="field">
-                  <label className="label">{t.adminProposalsClubLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
-                  {editingProposalId ? (
-                    // Club is fixed once a proposal exists — resubmitting only
-                    // edits its content, not which club it belongs to.
-                    <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
-                      {activeClubs.find((c) => c.id === form.clubId)?.name ?? form.clubId}
-                    </p>
-                  ) : (
-                    <ClubDropdown
-                      value={form.clubId}
-                      options={activeClubs.map((c) => ({ value: c.id, label: c.name }))}
-                      onChange={(clubId) => setForm({ ...form, clubId, staffUserIds: [] })}
-                      placeholder={t.adminProposalsClubLabel}
-                    />
-                  )}
-                </div>
-              )}
+              <div className="field">
+                <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <GraduationCap size={16} style={{ color: "var(--accent-primary)" }} />
+                  {lang === "th" ? "สาขาวิชา" : "Major"}
+                </label>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{major}</p>
+              </div>
+
               <div className="field">
                 <label className="label">{t.adminProposalsTitleLabel} <span style={{ color: "var(--accent-primary)" }}>*</span></label>
                 <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={200} style={{ fontSize: 16, padding: "16px 20px", borderRadius: 16 }} />
               </div>
 
-              {/* Description — rich text toolbar + live preview, byte-for-byte
-                  the same markup syntax as the staff create-event form. */}
               <div className="field">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                   <label className="label" style={{ marginBottom: 0 }}>{t.adminProposalsDescriptionLabel}</label>
@@ -1009,8 +735,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                     onChange={(e) => {
                       const val = e.target.value;
                       setForm((f) => ({ ...f, startTime: val }));
-                      // Single-day mode: keep the sole session row mirrored to
-                      // the main start/end — mirrors admin/events/page.tsx.
                       if (registrationMode === null && sessions.length === 1) {
                         setSessions([{ ...sessions[0], startTime: val }]);
                       }
@@ -1052,10 +776,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                     <button
                       type="button"
                       onClick={() => {
-                        // Splits into ALL days (not "day 1 + extras") and leaves
-                        // form.startTime/endTime untouched as the overall display
-                        // range — mirrors admin/events/page.tsx's split behavior
-                        // exactly, so the End Time here no longer collapses.
                         const split = splitIntoDailySessions(form.startTime, form.endTime);
                         if (split.length > 1) {
                           setRegistrationMode("once");
@@ -1099,17 +819,14 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 </div>
               </div>
 
-              {/* Allow Walk-ins */}
               <div className="field">
                 {checkboxRow(form.walkInsEnabled, () => {
-                  if (form.walkInsOnly) return; // locked on while Walk-ins Only is set
+                  if (form.walkInsOnly) return;
                   const nextVal = !form.walkInsEnabled;
                   setForm({ ...form, walkInsEnabled: nextVal, ...(!nextVal && { quotaWalkIn: "" }) });
                 }, t.allowWalkins)}
               </div>
 
-              {/* Walk-ins Only — no pre-registration accepted at all. Implies
-                  Allow Walk-ins. */}
               <div className="field">
                 {checkboxRow(form.walkInsOnly, () => {
                   const nextVal = !form.walkInsOnly;
@@ -1127,7 +844,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 </div>
               )}
 
-              {/* Target Audience Eligibility */}
               <div className="field">
                 <label className="label">{t.targetAudience}</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1164,7 +880,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 )}
               </div>
 
-              {/* First-Year Students Only */}
               <div className="field">
                 {checkboxRow(
                   form.firstYearOnly,
@@ -1175,29 +890,17 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 )}
               </div>
 
-              {/* How students register — click "Once" to opt into a multi-day
-                  schedule (nothing selected by default, exactly like the staff
-                  create-event form's registrationMode picker in
-                  admin/events/page.tsx). 'per_session' is intentionally not
-                  offered: the student registration flow has no per-day path yet. */}
               <div className="field">
                 <label className="label">{t.registrationModeLabel}</label>
                 <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px", lineHeight: 1.45 }}>{t.registrationModeHint}</p>
                 <div
                   onClick={() => {
                     if (registrationMode === "once") {
-                      // Click again to un-select — collapse back to a single
-                      // session row mirroring the main start/end, same as
-                      // admin/events/page.tsx.
                       const first = sessions[0];
                       setRegistrationMode(null);
                       setSessions([{ title: first?.title ?? "", startTime: form.startTime, endTime: form.endTime }]);
                     } else {
                       setRegistrationMode("once");
-                      // The sole row still mirrors the main start/end. If that
-                      // range itself spans multiple calendar days, split it into
-                      // one row per day right away — sessions now holds EVERY
-                      // day (mirrors admin/events/page.tsx), not just extras.
                       const first = sessions[0];
                       if (first?.startTime && first?.endTime) {
                         const split = splitIntoDailySessions(first.startTime, first.endTime);
@@ -1228,10 +931,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 </div>
               </div>
 
-              {/* Days / Sessions — only shown once "Once" is selected above
-                  (multi-day event). At least one row is required once shown;
-                  staff finalizes the real per-day sessions (and any walk-in
-                  sub-quotas) when creating the event from this proposal. */}
               {registrationMode !== null && (
               <div className="field" ref={daysSectionRef}>
                 <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1327,85 +1026,13 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
               </div>
               )}
 
-              {/* Event Staff — suggested helpers, drawn only from THIS club's
-                  own roster (see GET /api/admin/clubs/[id]/members). Staff can
-                  freely add/remove people when creating the real event. */}
+              {/* Suggested Access — role/major eligibility, entirely
+                  non-binding. Staff reviews/adjusts this when creating the
+                  real event — nothing here takes effect on its own. See the
+                  identical block in ProposeEventSection.tsx. */}
               <div className="field">
                 <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <ShieldCheck size={16} style={{ color: "#6366f1" }} />
-                  {lang === "th" ? "ทีมงานของกิจกรรมนี้" : "Event Staff"}
-                </label>
-                <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
-                  {lang === "th"
-                    ? "เลือกสมาชิกชมรมที่จะช่วยดูแลกิจกรรมนี้ (เป็นเพียงข้อเสนอแนะ ทีมงานฝ่ายจัดกิจกรรมสามารถปรับเปลี่ยนได้)"
-                    : "Suggest club members to help staff this event. This is only a suggestion — staff can adjust it when creating the real event."}
-                </p>
-                {form.staffUserIds.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                    {form.staffUserIds.map((uid) => {
-                      const u = clubMembers.find((x) => x.userId === uid);
-                      return (
-                        <span key={uid} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, fontSize: 12, fontWeight: 800, background: "rgba(99,102,241,0.1)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.25)" }}>
-                          {u ? (u.userName || u.studentId || uid) : uid}
-                          <button type="button" onClick={() => set("staffUserIds", form.staffUserIds.filter((x) => x !== uid))} style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontWeight: 900, fontSize: 13, lineHeight: 1 }}>✕</button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-                <input
-                  type="text"
-                  className="input"
-                  style={{ width: "100%", height: 42, borderRadius: 12, padding: "0 14px" }}
-                  placeholder={lang === "th" ? "ค้นหาด้วยชื่อหรือรหัสนักศึกษา…" : "Search club members by name or student ID…"}
-                  value={staffSearch}
-                  onChange={(e) => setStaffSearch(e.target.value)}
-                />
-                {staffSearch.trim().length > 0 && (
-                  <div style={{ marginTop: 8, maxHeight: 180, overflowY: "auto", border: "1px solid var(--border-subtle)", borderRadius: 12, background: "var(--bg-surface)" }}>
-                    {clubMembers
-                      .filter((u) => {
-                        const q = staffSearch.trim().toLowerCase();
-                        return (u.userName || "").toLowerCase().includes(q) || (u.studentId || "").toLowerCase().includes(q);
-                      })
-                      .slice(0, 30)
-                      .map((u) => {
-                        const on = form.staffUserIds.includes(u.userId);
-                        return (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() => set("staffUserIds", on ? form.staffUserIds.filter((x) => x !== u.userId) : [...form.staffUserIds, u.userId])}
-                            style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(99,102,241,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
-                          >
-                            <span style={{ fontWeight: 700 }}>{u.userName || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}</span></span>
-                            <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#6366f1" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
-                          </button>
-                        );
-                      })}
-                    {clubMembers.length === 0 && (
-                      <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>
-                        {loadingMembers ? (lang === "th" ? "กำลังโหลดรายชื่อ…" : "Loading members…") : (lang === "th" ? "ไม่พบสมาชิกชมรม" : "No club members found.")}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {form.staffUserIds.length === 0 && (
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginTop: 10 }}>
-                    {lang === "th" ? "ยังไม่ได้เสนอทีมงาน" : "No staff suggested yet."}
-                  </p>
-                )}
-              </div>
-
-              {/* Suggested Access — role/major/club eligibility, entirely
-                  non-binding. Staff explicitly reviews/adjusts this when
-                  creating the real event (see the fromProposal prefill in
-                  admin/events/page.tsx) — nothing here takes effect on its
-                  own, so leaving everything unchecked (= open to everyone) is
-                  always a safe default. */}
-              <div className="field">
-                <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <ShieldCheck size={16} style={{ color: "#6366f1" }} />
+                  <Users size={16} style={{ color: "#6366f1" }} />
                   {lang === "th" ? "สิทธิ์การเข้าร่วมที่แนะนำ" : lang === "cn" ? "建议的访问权限" : lang === "mm" ? "အကြံပြု ဝင်ရောက်ခွင့်" : "Suggested Access"}
                 </label>
                 <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12, fontWeight: 600 }}>
@@ -1447,7 +1074,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-secondary)", marginBottom: 8 }}>
                   {lang === "th" ? "ตามสาขา" : lang === "cn" ? "按专业" : lang === "mm" ? "အထူးပြုဌာနအလိုက်" : "By major"}
                 </p>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {ALL_MAJORS.map((major) => {
                     const isSelected = form.allowedMajors.includes(major);
                     return (
@@ -1469,39 +1096,9 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                     );
                   })}
                 </div>
-
-                <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-secondary)", marginBottom: 8 }}>
-                  {lang === "th" ? "ตามชมรม" : lang === "cn" ? "按社团" : lang === "mm" ? "ကလပ်အလိုက်" : "By club"}
-                </p>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {activeClubs.length === 0 ? (
-                    <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      {lang === "th" ? "ไม่มีชมรมให้เลือก" : lang === "cn" ? "没有可选择的社团。" : lang === "mm" ? "ရွေးချယ်ရန် ကလပ် မရှိပါ။" : "No clubs to choose from."}
-                    </p>
-                  ) : activeClubs.map((c) => {
-                    const isSelected = form.allowedClubs.includes(c.id);
-                    return (
-                      <button
-                        type="button"
-                        key={c.id}
-                        onClick={() => set("allowedClubs", isSelected ? form.allowedClubs.filter((id) => id !== c.id) : [...form.allowedClubs, c.id])}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 99,
-                          fontSize: 12, fontWeight: 800, cursor: "pointer",
-                          background: isSelected ? "rgba(139,92,246,0.12)" : "var(--bg-elevated)",
-                          color: isSelected ? "#8b5cf6" : "var(--text-secondary)",
-                          border: `1px solid ${isSelected ? "rgba(139,92,246,0.5)" : "transparent"}`,
-                        }}
-                      >
-                        {isSelected && <CheckCircle2 size={12} />}
-                        {c.name}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
-              {/* Event Poster */}
+              {/* Poster upload */}
               <div className="field">
                 <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {t.eventPosterLabel}
@@ -1527,10 +1124,10 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                         </button>
                         <div style={{ position: "absolute", bottom: 6, left: 6, right: 6, display: "flex", justifyContent: "space-between", gap: 6 }}>
                           <button type="button" onClick={() => movePoster(idx, -1)} disabled={idx === 0} title={lang === "th" ? "ย้ายไปด้านหน้า" : "Move left"} style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.35 : 1, backdropFilter: "blur(4px)" }}>
-                            <ChevronLeft size={15} />
+                            <ChevronLeftIcon />
                           </button>
                           <button type="button" onClick={() => movePoster(idx, 1)} disabled={idx === form.imageUrls.length - 1} title={lang === "th" ? "ย้ายไปด้านหลัง" : "Move right"} style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: idx === form.imageUrls.length - 1 ? "not-allowed" : "pointer", opacity: idx === form.imageUrls.length - 1 ? 0.35 : 1, backdropFilter: "blur(4px)" }}>
-                            <ChevronRight size={15} />
+                            <ChevronRightIcon />
                           </button>
                         </div>
                       </div>
@@ -1542,7 +1139,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                   position: "relative", height: form.imageUrls.length > 0 ? 110 : 160, background: "var(--bg-elevated)", borderRadius: 20,
                   border: "2px dashed var(--border-medium)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                   overflow: "hidden", cursor: posterUploading > 0 ? "wait" : "pointer", transition: "all 0.2s",
-                }} onClick={() => { if (posterUploading === 0) document.getElementById("proposal-poster-upload")?.click(); }}>
+                }} onClick={() => { if (posterUploading === 0) document.getElementById("major-proposal-poster-upload")?.click(); }}>
                   {posterUploading > 0 ? (
                     <div style={{ textAlign: "center", padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
                       <RefreshCw size={24} className="animate-spin" style={{ color: "var(--accent-primary)" }} />
@@ -1567,7 +1164,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                   )}
                   <input
                     type="file"
-                    id="proposal-poster-upload"
+                    id="major-proposal-poster-upload"
                     accept="image/*"
                     multiple
                     style={{ display: "none" }}
@@ -1597,12 +1194,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
         document.body
       )}
 
-      {/* Details view — read-only, portaled like the other modals. Lets the
-          proposer re-check exactly what was submitted (most importantly the
-          FULL per-day schedule: `sessions`, when present, holds EVERY day —
-          mirrors admin/events/page.tsx — with the Start/End fields above as
-          the overall display range; see the "days" badge in the list above,
-          which is just sessions.length) against what the summary badges show. */}
+      {/* Details view — read-only, portaled like the create modal. */}
       {viewingProposal && createPortal(
         <div
           style={{
@@ -1638,7 +1230,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
             <div style={{ padding: "24px 32px", borderBottom: "1px solid var(--border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexShrink: 0 }}>
               <div>
                 <h3 style={{ fontSize: "clamp(18px, 3.5vw, 22px)", fontWeight: 900 }}>{viewingProposal.title}</h3>
-                <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, marginTop: 4 }}>{viewingProposal.club.name}</p>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, marginTop: 4 }}>{viewingProposal.majorCode}</p>
                 <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, marginTop: 2 }}>
                   {t.adminProposalsRequestedByLabel} {viewingProposal.proposer.name}{viewingProposal.proposer.studentId ? ` (${viewingProposal.proposer.studentId})` : ""}
                 </p>
@@ -1674,10 +1266,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 />
               )}
 
-              {/* Full schedule — when `sessions` holds 2+ days it's the
-                  complete per-day breakdown (mirrors admin/events/page.tsx);
-                  otherwise this is a plain single-day proposal and the
-                  Start/End fields alone are the whole schedule. */}
               <div>
                 <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Clock size={16} style={{ color: "var(--accent-primary)" }} />
@@ -1740,11 +1328,6 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                     {t.internationalStudents}{viewingProposal.quotaInternational ? ` (${viewingProposal.quotaInternational})` : ""}
                   </span>
                 )}
-                {viewingProposal.staffUserIds && viewingProposal.staffUserIds.length > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
-                    {viewingProposal.staffUserIds.length} {lang === "th" ? "ทีมงาน" : "staff suggested"}
-                  </span>
-                )}
               </div>
 
               {viewingProposal.reviewNote && viewingProposal.status === "rejected" ? (
@@ -1799,5 +1382,23 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
         document.body
       )}
     </div>
+  );
+}
+
+// Tiny inline chevrons — avoids importing ChevronLeft/ChevronRight just for
+// the poster reorder buttons (ProposeEventSection already has them in scope
+// from its larger icon import list; this component keeps its imports lean).
+function ChevronLeftIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+function ChevronRightIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m9 18 6-6-6-6" />
+    </svg>
   );
 }

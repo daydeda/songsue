@@ -1248,6 +1248,57 @@ async function migrate() {
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS allowed_clubs jsonb`;
   console.log("  ✅ events.allowed_clubs");
 
+  // 76. forms.show_respondent_identity — controls whether non-admin viewers
+  // (registration/organizer, later smo/club_president/major_president) see a
+  // form submission's respondent name/studentId/contact info, or a masked/
+  // anonymized view. super_admin/admin always see identity regardless of this
+  // flag (enforced in app code, not here). NOT NULL DEFAULT false backfills
+  // every existing form to anonymized-by-default; the creator opts in per form
+  // when identity is genuinely needed (app logic, not a DB-level conditional
+  // default). Additive/idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS show_respondent_identity boolean NOT NULL DEFAULT false`;
+  console.log("  ✅ forms.show_respondent_identity");
+
+  // 77. event_proposals — major-based proposals (major_president). club_id
+  // becomes nullable (a major-scoped proposal carries major_code instead —
+  // exactly one of the two is set, enforced in app code, see POST
+  // /api/admin/event-proposals). DROP NOT NULL is a no-op if already dropped,
+  // so this stays idempotent on repeat runs.
+  await sql`ALTER TABLE event_proposals ALTER COLUMN club_id DROP NOT NULL`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS major_code text`;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_major_idx ON event_proposals (major_code)`;
+  console.log("  ✅ event_proposals.major_code (club_id now nullable)");
+
+  // 78. events — auto-re-review for club/major president direct edits (never
+  // blocked, see PUT /api/admin/events/[id]). DEFAULT 'pending' preserves
+  // today's "president can always edit their owned event" behavior for every
+  // existing row; re-review only starts once a president actually edits
+  // (see events.detailsReviewStatus in schema.ts). Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS details_review_status text NOT NULL DEFAULT 'pending'`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS details_reviewed_by text`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS details_reviewed_at timestamptz`;
+  console.log("  ✅ events.details_review_status/reviewed_by/reviewed_at");
+
+  // 79. forms — approve-then-lock for club/major president feedback forms.
+  // DEFAULT 'approved' backfills every existing form (all staff-created to
+  // date) as already-approved/unaffected; a president's create/edit always
+  // resets this to 'pending' in app code (see forms.reviewStatus in
+  // schema.ts and POST/PATCH /api/admin/events/[id]/form). Additive/idempotent.
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS review_status text NOT NULL DEFAULT 'approved'`;
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS reviewed_by text`;
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS reviewed_at timestamptz`;
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS review_note text`;
+  console.log("  ✅ forms.review_status/reviewed_by/reviewed_at/review_note");
+
+  // 80. event_proposals — suggested participant-eligibility ACL, mirrors
+  // events.allowedRoles/allowedMajors/allowedClubs exactly (non-binding: staff
+  // reviews/adjusts these explicitly when creating the real event from an
+  // approved proposal). Additive/idempotent.
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS allowed_roles jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS allowed_majors jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS allowed_clubs jsonb`;
+  console.log("  ✅ event_proposals.allowed_roles/allowed_majors/allowed_clubs");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -6,15 +6,24 @@ import { REVIEW_PROPOSAL_ROLES, SUBMIT_PROPOSAL_ROLES } from "@/lib/event-propos
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { ClubsService } from "@/modules/clubs/clubs.service";
 import { EventProposalsService } from "@/modules/events/event-proposals.service";
+import { majorsForFaculty, DEFAULT_FACULTY } from "@/lib/faculties";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { bangkokDateKey } from "@/lib/event-schema";
+import { sessionsHaveInvalidSpan } from "@/lib/event-schema";
 
 export const dynamic = "force-dynamic";
 
+// The only valid major codes a major_president may propose for — same list
+// users.major/events.ownerMajors draw from (see src/lib/faculties.ts).
+const VALID_MAJOR_CODES = majorsForFaculty(DEFAULT_FACULTY);
+
 const proposalCreateSchema = z
   .object({
-    clubId: z.string().uuid(),
+    // Exactly one of clubId (club_president) / majorCode (major_president) is
+    // set — enforced by the .refine below, not a DB constraint (see
+    // eventProposals.clubId/majorCode in schema.ts).
+    clubId: z.string().uuid().optional(),
+    majorCode: z.enum(VALID_MAJOR_CODES as [string, ...string[]]).optional(),
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(2000).optional().nullable(),
     startTime: z.string().datetime(),
@@ -50,28 +59,35 @@ const proposalCreateSchema = z
     // Suggested only — must be members of the SAME clubId, re-verified
     // server-side below (never trust the client-sent id list alone).
     staffUserIds: z.array(z.string()).optional().nullable(),
+    // Suggested participant-eligibility ACL — mirrors events.allowedRoles/
+    // allowedMajors/allowedClubs. Entirely non-binding: staff reviews/adjusts
+    // these explicitly when creating the real event (see the fromProposal
+    // prefill in admin/events/page.tsx) — never applied directly.
+    allowedRoles: z.array(z.string()).optional().nullable(),
+    allowedMajors: z.array(z.string()).optional().nullable(),
+    allowedClubs: z.array(z.string().uuid()).optional().nullable(),
   })
   .refine((d) => new Date(d.endTime) > new Date(d.startTime), {
     message: "endTime must be after startTime",
     path: ["endTime"],
   })
   .refine(
-    (d) => {
-      // Mirrors eventSchema (see /api/admin/events): once `sessions` is
-      // populated it holds EVERY day of the schedule (not just extras beyond
-      // day 1), and startTime/endTime becomes the overall display range — so
-      // it may legitimately span several days once sessions exist. Only each
-      // individual session must start and end on the same calendar day.
-      if (d.sessions && d.sessions.length > 0) {
-        return d.sessions.every((s) => bangkokDateKey(s.startTime) === bangkokDateKey(s.endTime));
-      }
-      return bangkokDateKey(d.startTime) === bangkokDateKey(d.endTime);
-    },
+    // Mirrors eventSchema (see /api/admin/events): only fires with an
+    // EXPLICIT per-day schedule (2+ session rows) where one row itself spans
+    // multiple days. A plain startTime/endTime with no sessions (or a single
+    // session) may legitimately span several days on purpose — e.g. a
+    // multi-day camp that only needs ONE check-in for the whole event rather
+    // than a check-in per day. See sessionsHaveInvalidSpan.
+    (d) => !d.sessions || !sessionsHaveInvalidSpan(d.sessions),
     {
-      message: "Each day must start and end on the same calendar day — add each additional day as its own row instead of stretching one day across several dates",
+      message: "Each day in a per-day schedule must start and end on the same calendar day — add each additional day as its own row instead of stretching one across several dates",
       path: ["endTime"],
     },
-  );
+  )
+  .refine((d) => (d.clubId ? 1 : 0) + (d.majorCode ? 1 : 0) === 1, {
+    message: "Exactly one of clubId or majorCode is required",
+    path: ["clubId"],
+  });
 
 // GET /api/admin/event-proposals — list proposals. Staff (REVIEW_PROPOSAL_ROLES)
 // see every proposal, optionally filtered by ?status=. A club_president sees
@@ -79,6 +95,11 @@ const proposalCreateSchema = z
 // EventScopeService.getPresidentScope, same scope object events/appeals use —
 // never trust a client-sent clubId). No pagination for v1, mirroring the
 // existing /api/admin/appeals precedent at this data volume.
+//
+// ?type=club|major further restricts to only club-owned or only major-owned
+// rows — used by /admin/clubs and /admin/majors respectively so a user who
+// holds both club_president and major_president never sees the other type's
+// proposals mixed into a page that has no UI to render them correctly.
 export async function GET(req: Request) {
   try {
     const session = await auth();
@@ -91,8 +112,9 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
+    const type = searchParams.get("type");
 
-    const proposals = await EventProposalsService.listForViewer(session.user.id!, myRoles, isStaff, status);
+    const proposals = await EventProposalsService.listForViewer(session.user.id!, myRoles, isStaff, status, type);
     return NextResponse.json(proposals);
   } catch (error) {
     console.error(error);
@@ -101,13 +123,15 @@ export async function GET(req: Request) {
 }
 
 // POST /api/admin/event-proposals — a club_president requests an event for a
-// club they preside over. All requested fields (title/time/location/quota/
-// audience/poster/staff/etc.) are non-binding suggestions: staff still
-// explicitly sets pointsAwarded/allowedRoles/allowedMajors/managedByRoles/
-// ownerClubIds when creating the real event (see POST /api/admin/events'
+// club they preside over, or a major_president requests one for their own
+// major. All requested fields (title/time/location/quota/audience/poster/
+// staff/etc.) are non-binding suggestions: staff still explicitly sets
+// pointsAwarded/allowedRoles/allowedMajors/managedByRoles/ownerClubIds/
+// ownerMajors when creating the real event (see POST /api/admin/events'
 // proposalId linkage) — nothing sensitive becomes self-service here, and the
 // suggested staffUserIds can only be drawn from the proposer's own club
-// roster (never the global student directory).
+// roster (never the global student directory) — majors have no roster
+// equivalent, so a major_president's proposal never carries staffUserIds.
 export async function POST(req: Request) {
   try {
     const session = await auth();
@@ -118,29 +142,37 @@ export async function POST(req: Request) {
 
     const data = proposalCreateSchema.parse(await req.json());
 
-    // Never trust a client-sent clubId — it must be a club this president
-    // actually presides over.
-    const inScope = await EventProposalsService.isClubInScope(session.user.id!, myRoles, data.clubId);
-    if (!inScope) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const club = await EventProposalsService.getClub(data.clubId);
-    if (!club) {
-      return NextResponse.json({ error: "Club not found" }, { status: 404 });
-    }
-    if (club.isArchived) {
-      return NextResponse.json({ error: "This club has been archived" }, { status: 400 });
-    }
-
-    // Never trust the client-sent staffUserIds — strip anyone who isn't
-    // actually a member of THIS club (the only roster the proposer can see).
+    // Never trust a client-sent clubId/majorCode — it must be one this
+    // president actually presides over/represents.
     let staffUserIds: string[] | null = null;
-    if (data.staffUserIds && data.staffUserIds.length > 0) {
-      const members = await ClubsService.getClubMembers(data.clubId);
-      const memberIds = new Set(members.map((m) => m.userId));
-      const filtered = data.staffUserIds.filter((id) => memberIds.has(id));
-      staffUserIds = filtered.length > 0 ? filtered : null;
+    if (data.clubId) {
+      const inScope = await EventProposalsService.isClubInScope(session.user.id!, myRoles, data.clubId);
+      if (!inScope) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      const club = await EventProposalsService.getClub(data.clubId);
+      if (!club) {
+        return NextResponse.json({ error: "Club not found" }, { status: 404 });
+      }
+      if (club.isArchived) {
+        return NextResponse.json({ error: "This club has been archived" }, { status: 400 });
+      }
+
+      // Never trust the client-sent staffUserIds — strip anyone who isn't
+      // actually a member of THIS club (the only roster the proposer can see).
+      if (data.staffUserIds && data.staffUserIds.length > 0) {
+        const members = await ClubsService.getClubMembers(data.clubId);
+        const memberIds = new Set(members.map((m) => m.userId));
+        const filtered = data.staffUserIds.filter((id) => memberIds.has(id));
+        staffUserIds = filtered.length > 0 ? filtered : null;
+      }
+    } else {
+      const inScope = await EventProposalsService.isMajorInScope(session.user.id!, myRoles, data.majorCode!);
+      if (!inScope) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      // No roster to suggest event staff from for a major — always ignored.
     }
 
     const ip = getClientIp(req);
@@ -148,7 +180,8 @@ export async function POST(req: Request) {
       const [proposal] = await tx
         .insert(eventProposals)
         .values({
-          clubId: data.clubId,
+          clubId: data.clubId ?? null,
+          majorCode: data.majorCode ?? null,
           proposedBy: session.user!.id!,
           title: data.title,
           description: data.description,
@@ -173,12 +206,17 @@ export async function POST(req: Request) {
           quotaInternational: data.quotaInternational,
           firstYearOnly: data.firstYearOnly ?? false,
           staffUserIds,
+          allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
+          allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
+          allowedClubs: data.allowedClubs && data.allowedClubs.length > 0 ? data.allowedClubs : null,
         })
         .returning();
 
       await AuditService.logActionInternal(tx, {
         actorId: session.user!.id!,
-        action: `Submitted event proposal "${proposal.title}" for club ${data.clubId}`,
+        action: data.clubId
+          ? `Submitted event proposal "${proposal.title}" for club ${data.clubId}`
+          : `Submitted event proposal "${proposal.title}" for major ${data.majorCode}`,
         ipAddress: ip,
       });
 

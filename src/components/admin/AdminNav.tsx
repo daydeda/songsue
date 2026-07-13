@@ -11,9 +11,11 @@ import {
   Megaphone,
   ShoppingBag,
   Building2,
+  GraduationCap,
   User,
   MessageSquareWarning,
-  ClipboardList
+  ClipboardList,
+  ListChecks
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { isScannerOnlyAny } from "@/lib/admin-access";
@@ -31,10 +33,12 @@ const NAV_GROUPS = [
       { href: "/admin/events",    key: "manageEvents",   icon: Calendar },
       { href: "/admin/scanner",   key: "qrScanner",      icon: QrCode },
       { href: "/admin/proposals", key: "manageProposals",icon: ClipboardList },
+      { href: "/admin/reviews",   key: "pendingReviews", icon: ListChecks },
       { href: "/admin/appeals",   key: "manageAppeals",  icon: MessageSquareWarning },
     ] },
   { titleKey: "navGroupCommunity", items: [
       { href: "/admin/clubs",    key: "manageClubs",           icon: Building2 },
+      { href: "/admin/majors",   key: "manageMajors",          icon: GraduationCap },
       { href: "/admin/students", key: "adminStudentsDirectory",icon: Users },
     ] },
   { titleKey: "navGroupContent", items: [
@@ -73,9 +77,15 @@ export function AdminNav({ roles }: { roles: string[] }) {
         item.href === "/admin/scanner" ||
         item.href === "/admin/events" ||
         item.href === "/admin/appeals" ||
-        (item.href === "/admin/clubs" && roles.includes("club_president"))
+        (item.href === "/admin/clubs" && roles.includes("club_president")) ||
+        (item.href === "/admin/majors" && roles.includes("major_president"))
       );
     }
+    // Majors nav: the major_president analogue of Clubs — but unlike Clubs
+    // (which staff also manage identity/membership for), there's no staff-facing
+    // "majors directory" concept, so this is gated to holding the role itself,
+    // not folded into the `return true` full-admin fallback below.
+    if (item.href === "/admin/majors") return roles.includes("major_president");
     if (item.href === "/admin/students") return canSeeStudents;
     if (item.href === "/admin/clubs") return canSeeClubs;
     if (item.href === "/admin/audit-logs") return canSeeAudit;
@@ -87,6 +97,9 @@ export function AdminNav({ roles }: { roles: string[] }) {
     // (REVIEW_PROPOSAL_ROLES, src/lib/event-proposals.ts) — organizer/registration
     // included, unlike appeals above.
     if (item.href === "/admin/proposals") return canReviewProposals;
+    // Pending Reviews: same staff set as the proposal review queue — see
+    // GET /api/admin/reviews's gate.
+    if (item.href === "/admin/reviews") return canReviewProposals;
     return true; // dashboard, events, scanner — every full-admin role
   };
 

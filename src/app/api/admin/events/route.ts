@@ -8,7 +8,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { sessionInputSchema, bangkokDateKey } from "@/lib/event-schema";
+import { sessionInputSchema, sessionsHaveInvalidSpan } from "@/lib/event-schema";
 
 const eventSchema = z.object({
   title: z.string().min(1),
@@ -64,16 +64,14 @@ const eventSchema = z.object({
   message: "endTime must be after startTime",
   path: ["endTime"],
 }).refine(
-  (d) => {
-    // No explicit sessions → the event's own startTime/endTime becomes the
-    // single default session (see the fallback below). If that crosses into a
-    // different calendar day, it's almost certainly a multi-day event that
-    // needs one session row per day, not a single day-spanning session.
-    if (d.sessions && d.sessions.length > 0) return true;
-    return bangkokDateKey(d.startTime) === bangkokDateKey(d.endTime);
-  },
+  (d) => !d.sessions || !sessionsHaveInvalidSpan(d.sessions),
   {
-    message: "startTime/endTime spans more than one calendar day with no sessions provided — add one session per day instead of a single multi-day session",
+    // Only fires with an EXPLICIT per-day schedule (2+ session rows) where one
+    // row itself spans multiple days — a single session (incl. the implicit
+    // one mirroring startTime/endTime when no sessions are sent) may
+    // legitimately span several days, e.g. a multi-day camp with one combined
+    // check-in for the whole event. See sessionsHaveInvalidSpan.
+    message: "Each day in a per-day schedule must start and end on the same calendar day — add each additional day as its own session instead of stretching one across several dates",
     path: ["endTime"],
   },
 );
@@ -235,6 +233,15 @@ export async function POST(req: Request) {
           ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null,
           ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null,
           staffUserIds: data.staffUserIds && data.staffUserIds.length > 0 ? data.staffUserIds : null,
+          // Staff is creating (and has therefore already reviewed) every field
+          // right now — unlike the DB column default of 'pending', which exists
+          // for the president-edit-triggers-re-review case (see PUT
+          // /api/admin/events/[id]). Without this, every brand-new event opened
+          // in the editor showed a "pending review" banner with nothing to
+          // review yet.
+          detailsReviewStatus: "approved",
+          detailsReviewedBy: session.user!.id!,
+          detailsReviewedAt: new Date(),
         })
         .returning();
 

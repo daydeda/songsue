@@ -23,19 +23,28 @@ export const SCORING_ROLES = ["super_admin", "admin", "registration", "organizer
 export const SCANNER_HREF = "/admin/scanner";
 
 // Pages a scanner-only role (smo, club_president, major_president) may open.
-// Besides the scanner they may now reach the events page, but ONLY to view the
-// attendance roster — every other control there is hidden (see admin/events
-// page) and the attendance API returns a thin roster with no phone/emergency/
-// medical signal (see api/admin/events/[id]/attendance). "/admin" is allowed
-// because its page just redirects to the scanner. "/admin/clubs" is allowed too,
-// but only club_president gets real data there — the page renders read-only and
-// scoped to just the club(s) they preside over (see GET /api/admin/clubs and
-// .../[id]/members); smo/major_president reaching this path get an empty/401
-// response since they preside over nothing. "/admin/appeals" is allowed too: smo
-// gets a read-only view (VIEW_APPEALS_ROLES, src/lib/strikes.ts) while
-// club_president/major_president may also approve/reject appeals for events they
-// own (RESOLVE_APPEALS_ROLES, scoped via EventScopeService).
-export const SCANNER_ONLY_PAGES = ["/admin", SCANNER_HREF, "/admin/events", "/admin/clubs", "/admin/appeals"] as const;
+// Besides the scanner they may now reach the events page for a widening set of
+// thin, role-specific views — never the full staff controls (see admin/events
+// page): attendance roster (thin, no phone/emergency/medical signal — see
+// api/admin/events/[id]/attendance), and evaluation forms (see .../[id]/form)
+// where club_president/major_president may fully manage forms (create/edit/
+// delete) but ONLY for events they own (scoped via EventScopeService, same
+// pattern as appeals/strikes below), while smo gets read-only access to every
+// event's forms/submissions (no ownership scoping) with no create/edit/delete.
+// "/admin" is allowed because its page just redirects to the scanner.
+// "/admin/clubs" is allowed too, but only club_president gets real data there —
+// the page renders read-only and scoped to just the club(s) they preside over
+// (see GET /api/admin/clubs and .../[id]/members); smo/major_president reaching
+// this path get an empty/401 response since they preside over nothing.
+// "/admin/appeals" is allowed too: smo gets a read-only view (VIEW_APPEALS_ROLES,
+// src/lib/strikes.ts) while club_president/major_president may also approve/
+// reject appeals for events they own (RESOLVE_APPEALS_ROLES, scoped via
+// EventScopeService).
+// "/admin/majors" is the major_president analogue of "/admin/clubs" — it
+// renders the propose-event section scoped to the president's own users.major
+// (see admin/majors/page.tsx); club_president/smo reaching this path get the
+// page's own empty state since they have no major to propose for.
+export const SCANNER_ONLY_PAGES = ["/admin", SCANNER_HREF, "/admin/events", "/admin/clubs", "/admin/majors", "/admin/appeals"] as const;
 
 // May a scanner-only role reach this exact (page) path? Used by the proxy to
 // confine these roles. Exact-match only — no /admin/events/* sub-pages exist.

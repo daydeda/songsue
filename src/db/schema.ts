@@ -238,6 +238,17 @@ export const events = pgTable("events", {
   // always bypass). Mirrors the allowedMajors jsonb string[] pattern above.
   ownerClubIds: jsonb("owner_club_ids").$type<string[]>(),
   ownerMajors: jsonb("owner_majors").$type<string[]>(),
+  // Details auto-re-review: a president's edit is NEVER blocked (see PUT
+  // /api/admin/events/[id]) — but any edit by a president always resets this
+  // back to 'pending', so staff re-reviews it before it counts as approved
+  // again. Staff themselves always write 'approved' (self-reviewed on the
+  // spot). Default 'pending' is deliberate (unlike forms.reviewStatus's
+  // 'approved' default): it preserves today's "president can always edit
+  // their owned event's details" behavior for every existing event — nothing
+  // retroactively flags; re-review only starts once a president actually edits.
+  detailsReviewStatus: text("details_review_status").notNull().default("pending"), // 'pending' | 'approved'
+  detailsReviewedBy: text("details_reviewed_by"), // no FK — mirrors noShowAppeals.reviewedBy
+  detailsReviewedAt: timestamp("details_reviewed_at", { withTimezone: true }),
   // Explicit event-staff roster: user ids assigned to staff THIS event (distinct
   // from managedByRoles/ownerClubIds/ownerMajors, which answer "who MANAGES the
   // event configuration" — this answers "who is working it on the ground", e.g.
@@ -475,6 +486,11 @@ export const forms = pgTable("forms", {
   individualPointsAwarded: integer("individual_points_awarded").default(0),
   isActive: boolean("is_active").default(true),
   isAwarded: boolean("is_awarded").default(false),
+  // Whether non-admin viewers (registration/organizer, later smo/club_president/major_president)
+  // see respondent name/studentId/contact on submissions, vs a masked view; super_admin/admin
+  // always see identity regardless (enforced in app code). Defaults false (anonymized) for every
+  // form type — the creator opts in per form when identity is genuinely needed.
+  showRespondentIdentity: boolean("show_respondent_identity").notNull().default(false),
   // Optional auto open/close window. NULL on either side = unbounded that side.
   // isActive stays the manual master override on top of this window.
   opensAt: timestamp("opens_at", { withTimezone: true }),
@@ -484,6 +500,16 @@ export const forms = pgTable("forms", {
   // their id is in assignedUserIds.
   assignedRoles: jsonb("assigned_roles").$type<string[]>().notNull().default([]),
   assignedUserIds: jsonb("assigned_user_ids").$type<string[]>().notNull().default([]),
+  // Review gate for forms created/edited by club_president/major_president (who own
+  // the event): staff (super_admin/admin/registration/organizer) edits are always
+  // auto-approved, but a president's create/edit always resets reviewStatus to
+  // 'pending' until staff explicitly approves it again. Default 'approved' is what
+  // makes this backward-compatible — every form created before this review step
+  // existed (all staff-created to date) is unaffected by this migration.
+  reviewStatus: text("review_status").notNull().default("approved"), // 'pending' | 'approved'
+  reviewedBy: text("reviewed_by"), // no FK — mirrors noShowAppeals.reviewedBy
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ([
@@ -956,10 +982,17 @@ export const noShowAppealsRelations = relations(noShowAppeals, ({ one }) => ({
 // resultingEventId is set only as a side effect of POST /api/admin/events{proposalId}
 // approving the proposal; "set null" so a later hard-delete of the created event
 // doesn't FK-block, and the proposal survives as a historical record.
+// clubId/majorCode: exactly one of the two is set per proposal (club_president
+// proposals set clubId, major_president proposals set majorCode) — enforced in
+// application code (the POST handler), not a DB constraint, to keep this migration
+// simple. clubId is nullable (rather than a NOT NULL FK) to allow major_president
+// proposals, which have no club at all. majorCode is a fixed code string (ANI/DG/
+// DII/MMIT/SE), no FK — majors aren't a table, mirroring events.ownerMajors above.
 // ============================================================================
 export const eventProposals = pgTable("event_proposals", {
   id: uuid("id").defaultRandom().primaryKey(),
-  clubId: uuid("club_id").notNull().references(() => clubs.id, { onDelete: "cascade" }),
+  clubId: uuid("club_id").references(() => clubs.id, { onDelete: "cascade" }),
+  majorCode: text("major_code"),
   proposedBy: text("proposed_by").notNull().references(() => users.id, { onDelete: "cascade" }),
 
   title: text("title").notNull(),
@@ -990,8 +1023,16 @@ export const eventProposals = pgTable("event_proposals", {
   // EventProposalsService/GET .../clubs/[id]/members), never the global
   // student directory. Staff can add/remove freely when creating the event.
   staffUserIds: jsonb("staff_user_ids").$type<string[]>(),
-  // Requested values only — non-binding. Staff sets pointsAwarded/allowedRoles/
-  // allowedMajors/managedByRoles/ownerClubIds explicitly when creating the real
+  // Suggested participant-eligibility ACL — mirrors events.allowedRoles/
+  // allowedMajors/allowedClubs exactly (same "null/[] = no restriction"
+  // convention). Non-binding, like every other field here: staff explicitly
+  // reviews/adjusts these when creating the real event (see the fromProposal
+  // prefill in admin/events/page.tsx) rather than them taking effect directly.
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  allowedClubs: jsonb("allowed_clubs").$type<string[]>(),
+  // Requested values only — non-binding. Staff sets pointsAwarded/
+  // managedByRoles/ownerClubIds explicitly when creating the real
   // event, mirroring the field-strip precedent for president-submitted edits in
   // api/admin/events/[id]/route.ts.
 
@@ -1008,6 +1049,7 @@ export const eventProposals = pgTable("event_proposals", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ([
   index("event_proposals_club_idx").on(table.clubId),
+  index("event_proposals_major_idx").on(table.majorCode),
   index("event_proposals_status_idx").on(table.status),
   index("event_proposals_proposed_by_idx").on(table.proposedBy),
 ]));

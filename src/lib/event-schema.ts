@@ -33,20 +33,32 @@ export function bangkokDateKey(iso: string): string {
 // admin event routes. Lives here rather than in a route.ts because Next.js route
 // modules may only export request handlers + known config — an extra export there
 // trips the generated route-type check.
-export const sessionInputSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    title: z.string().optional().nullable(),
-    startTime: z.string().datetime(),
-    endTime: z.string().datetime(),
-    quotaWalkIn: z.number().int().min(0).optional().nullable(),
-  })
-  .refine((s) => bangkokDateKey(s.startTime) === bangkokDateKey(s.endTime), {
-    message: "A single day/session must start and end on the same calendar day — add each additional day as its own session instead.",
-    path: ["endTime"],
-  });
+//
+// No same-calendar-day refine here (deliberately) — see sessionsHaveInvalidSpan
+// below for why a SINGLE session is allowed to span multiple days.
+export const sessionInputSchema = z.object({
+  id: z.string().uuid().optional(),
+  title: z.string().optional().nullable(),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  quotaWalkIn: z.number().int().min(0).optional().nullable(),
+});
 
 export type SessionInput = z.infer<typeof sessionInputSchema>;
+
+// Only meaningful once an event has an EXPLICIT per-day schedule (2+ rows) —
+// each row is then meant to be one day, so a row spanning multiple calendar
+// days among several is almost certainly a mistake. A single session/row is
+// allowed to span multiple calendar days on purpose: some events (e.g. a
+// multi-day camp) only need ONE check-in for the whole range rather than a
+// check-in per day, and forcing a split there would misrepresent the
+// organizer's intent. See registrationModeOnce / multiDaySessionWarning in
+// i18n.ts and the client-side warning-not-block banners in admin/events and
+// the club/major proposal forms.
+export function sessionsHaveInvalidSpan(sessions: { startTime: string; endTime: string }[]): boolean {
+  if (sessions.length <= 1) return false;
+  return sessions.some((s) => bangkokDateKey(s.startTime) !== bangkokDateKey(s.endTime));
+}
 
 // Same same-calendar-day check as the server refine above, for the admin
 // create-event and club-president proposal forms so they can warn/block

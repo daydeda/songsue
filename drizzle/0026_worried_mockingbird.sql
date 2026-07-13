@@ -1,0 +1,1 @@
+ALTER TABLE "forms" ADD COLUMN "show_respondent_identity" boolean DEFAULT false NOT NULL;

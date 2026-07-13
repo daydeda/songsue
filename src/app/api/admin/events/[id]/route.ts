@@ -5,7 +5,7 @@ import { count, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
-import { sessionInputSchema } from "@/lib/event-schema";
+import { sessionInputSchema, sessionsHaveInvalidSpan } from "@/lib/event-schema";
 import { effectiveRoles } from "@/lib/admin-access";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 
@@ -51,6 +51,10 @@ const eventUpdateSchema = z.object({
   // Specific user IDs assigned as staff for THIS event — see events.staffUserIds
   // in schema.ts. Staff-only, like managedByRoles below.
   staffUserIds: z.array(z.string()).optional().nullable(),
+  // Staff-only approve/reopen toggle — see events.detailsReviewStatus in
+  // schema.ts. Stripped for non-admin actors below, same as the other
+  // staff-only fields.
+  detailsReviewStatus: z.enum(["pending", "approved"]).optional(),
 }).refine(
   // Only enforce when BOTH ends are supplied — this is a partial update.
   (d) => {
@@ -58,6 +62,15 @@ const eventUpdateSchema = z.object({
     return new Date(d.endTime) > new Date(d.startTime);
   },
   { message: "endTime must be after startTime", path: ["endTime"] },
+).refine(
+  (d) => !d.sessions || !sessionsHaveInvalidSpan(d.sessions),
+  {
+    // Only fires with an EXPLICIT per-day schedule (2+ session rows) where one
+    // row itself spans multiple days — a single session may legitimately span
+    // several days on purpose. See sessionsHaveInvalidSpan.
+    message: "Each day in a per-day schedule must start and end on the same calendar day — add each additional day as its own session instead of stretching one across several dates",
+    path: ["endTime"],
+  },
 );
 
 // PUT /api/admin/events/[id] — Update event
@@ -104,6 +117,13 @@ export async function PUT(
       data.ownerClubIds = undefined;
       data.ownerMajors = undefined;
       data.staffUserIds = undefined;
+      // Always editable, auto re-review (see events.detailsReviewStatus in
+      // schema.ts) — mirrors forms.reviewStatus's identical pattern (see
+      // PATCH .../form): a president's edit is NEVER blocked, but it always
+      // resets detailsReviewStatus back to 'pending' so staff re-reviews it
+      // before it counts as approved again. Overrides whatever the client
+      // sent for detailsReviewStatus — that field is staff-only otherwise.
+      data.detailsReviewStatus = "pending";
     }
 
     // When posters are provided, normalize them and keep the imageUrl cover in
@@ -173,12 +193,22 @@ export async function PUT(
             ...(data.staffUserIds !== undefined && {
               staffUserIds: data.staffUserIds && data.staffUserIds.length > 0 ? data.staffUserIds : null
             }),
+            // Staff-only approve/reopen toggle (stripped above for president
+            // actors) — approving sets the reviewer/timestamp; reopening
+            // clears them, since they no longer describe the current state.
+            ...(data.detailsReviewStatus !== undefined && {
+              detailsReviewStatus: data.detailsReviewStatus,
+              detailsReviewedBy: data.detailsReviewStatus === "approved" ? session.user!.id! : null,
+              detailsReviewedAt: data.detailsReviewStatus === "approved" ? new Date() : null,
+            }),
             updatedAt: new Date(),
           })
           .where(eq(events.id, id))
           .returning();
 
-        if (!row) throw new Error("EVENT_NOT_FOUND");
+        if (!row) {
+          throw new Error("EVENT_NOT_FOUND");
+        }
 
         // Reconcile sessions when the editor sends them. Match by id (update),
         // insert new, drop removed — but NEVER delete a session that already has

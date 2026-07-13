@@ -3,11 +3,11 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import {
   Plus, Edit2, Trash2, Calendar, MapPin, Clock,
-  ArrowRight, User, Users, CheckCircle2, Search,
-  Sparkles, Filter, MoreVertical, X, ExternalLink,
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CornerDownRight, AlertCircle, BarChart3, RefreshCw, Zap,
+  User, Users, CheckCircle2, Search,
+  Sparkles, X, ExternalLink,
+  ChevronLeft, ChevronRight, AlertCircle, BarChart3, RefreshCw, Zap,
   Activity, Phone, HeartPulse, Info, Trophy, ClipboardList, Download, ShieldCheck,
-  Lock, FileText, AlertTriangle, MessageSquare, GraduationCap, DoorOpen, UserX, Building2
+  AlertTriangle, GraduationCap, DoorOpen, UserX, Building2
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
@@ -16,15 +16,7 @@ import { currentFirstYearPrefix, yearOfStudy } from "@/lib/event-access";
 import { sessionSpansTooLong, splitIntoDailySessions } from "@/lib/event-schema";
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
-import {
-  normalizeForm,
-  serializeForm,
-  newId,
-  BRANCH_NEXT,
-  BRANCH_SUBMIT,
-  type FormQuestion,
-  type FormSection,
-} from "@/lib/form-schema";
+import { EventFormBuilderModal } from "@/components/admin/EventFormBuilderModal";
 
 interface AdminEvent {
   id: string;
@@ -57,6 +49,11 @@ interface AdminEvent {
   // Specific user IDs assigned as staff for THIS event (as opposed to global
   // role) — their attendance is exempt from quota/no-show. See schema.ts.
   staffUserIds: string[] | null;
+  // Approve-then-lock for president direct edits — see events.detailsReviewStatus
+  // in schema.ts.
+  detailsReviewStatus?: "pending" | "approved";
+  detailsReviewedBy?: string | null;
+  detailsReviewedAt?: string | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
   attendeeCount?: number;
@@ -147,115 +144,6 @@ interface AdminAttendance {
   session?: { id: string; title: string | null; sortOrder: number } | null;
   user?: AdminStudent;
 }
-
-interface FormBuilderSubmission {
-  id: string;
-  studentName: string;
-  studentId: string;
-  houseId: string;
-  nickname?: string;
-  major?: string;
-  phone?: string;
-  contactChannels?: string;
-  answers: Record<string, string | number | string[]>;
-  submittedAt: string;
-  score?: number;
-  maxScore?: number;
-  hasGraded?: boolean;
-}
-
-interface EventFormSummary {
-  id: string;
-  formType: string;
-  sortOrder: number;
-  title: string;
-  description: string;
-  questions: unknown;
-  pointsAwarded: number;
-  individualPointsAwarded: number;
-  isActive: boolean;
-  isAwarded: boolean;
-  opensAt: string | null;
-  closesAt: string | null;
-  assignedRoles: string[];
-  assignedUserIds: string[];
-  stats: Record<string, number>;
-  submissions: FormBuilderSubmission[];
-}
-
-const FORM_TYPE_LABELS: Record<string, string> = {
-  K_pre: "K Pre-Test",
-  K_post: "K Post-Test",
-  A: "A - Attitude",
-  S: "S - Skill",
-  F: "F - Feedback",
-};
-
-// Roles an admin can assign an S (Skill) form to. Mirrors ASSIGNABLE_ROLES in
-// src/lib/form-access.ts.
-const ASSIGNABLE_FORM_ROLES = ["organizer", "registration", "staff", "smo", "anusmo", "student"] as const;
-const ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
-  organizer: "Organizer",
-  registration: "Registration",
-  staff: "Staff",
-  smo: "SMO",
-  anusmo: "ANUSMO",
-  student: "Student",
-};
-
-// Size a <textarea> to fit its content so typed/loaded line breaks are visible.
-// Used as a ref callback (fires on mount + each render, so it also grows when an
-// existing multi-line value is loaded into the editor) and from onChange. Without
-// this a rows=1 textarea hides newlines off-screen, making line breaks look broken.
-const autoGrowTextarea = (el: HTMLTextAreaElement | null): void => {
-  if (!el) return;
-  el.style.height = "auto";
-  el.style.height = `${el.scrollHeight}px`;
-};
-
-// Convert a stored ISO timestamp to a value for a <input type="datetime-local">
-// in the browser's local timezone (Bangkok for on-site admins), matching how
-// event registration times are handled elsewhere on this page.
-const toDatetimeLocal = (iso: string | null | undefined): string => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  const offset = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - offset).toISOString().slice(0, 16);
-};
-
-// Stable fingerprint of the form-builder's editable state, used to detect
-// unsaved edits so we can warn before an accidental close / reload. Sections
-// are run through serializeForm so the comparison matches exactly what gets
-// persisted, and the assignment arrays are sorted so reordering alone never
-// reads as a change.
-type BuilderState = {
-  activeFormType: string;
-  formTitle: string;
-  formDescription: string;
-  formPoints: number;
-  formIndividualPoints: number;
-  formSections: FormSection[];
-  formIsAwarded: boolean;
-  formOpensAt: string;
-  formClosesAt: string;
-  formAssignedRoles: string[];
-  formAssignedUserIds: string[];
-};
-const builderFingerprint = (f: BuilderState): string =>
-  JSON.stringify([
-    f.activeFormType, f.formTitle, f.formDescription, f.formPoints, f.formIndividualPoints,
-    serializeForm(f.formSections), f.formIsAwarded, f.formOpensAt, f.formClosesAt,
-    [...f.formAssignedRoles].sort(), [...f.formAssignedUserIds].sort(),
-  ]);
-
-const FORM_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  K_pre:  { bg: "rgba(99,102,241,0.12)",  text: "#6366f1", border: "rgba(99,102,241,0.3)"  },
-  K_post: { bg: "rgba(16,185,129,0.12)",  text: "#10b981", border: "rgba(16,185,129,0.3)"  },
-  A:      { bg: "rgba(245,158,11,0.12)",  text: "#f59e0b", border: "rgba(245,158,11,0.3)"  },
-  S:      { bg: "rgba(239,68,68,0.12)",   text: "#ef4444", border: "rgba(239,68,68,0.3)"   },
-  F:      { bg: "rgba(6,182,212,0.12)",   text: "#06b6d4", border: "rgba(6,182,212,0.3)"   },
-};
 
 // Role priority (mirrors ROLE_PRIORITY in src/auth.ts). A person's "primary"
 // role is the highest-priority role they hold; "student" is the lowest, so an
@@ -356,6 +244,11 @@ const EMPTY_FORM = {
   ownerClubIds: [] as string[], // WHICH club(s) own this event, when managedByRoles includes club_president
   ownerMajors: [] as string[], // WHICH major(s) own this event, when managedByRoles includes major_president
   staffUserIds: [] as string[], // specific people assigned as staff for this event; empty = none
+  // Approve-then-lock for president direct edits — see events.detailsReviewStatus
+  // in schema.ts. 'pending' means the owning president may still edit; a brand
+  // new event (not yet saved) has nothing to lock, so this only matters once loaded.
+  detailsReviewStatus: "pending" as "pending" | "approved",
+  detailsReviewedAt: null as string | null,
 };
 
 export default function AdminEventsPage() {
@@ -368,9 +261,11 @@ export default function AdminEventsPage() {
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
   // Scanner-only roles (smo, club_president, major_president) reach this page to
-  // VIEW attendance only — no create/edit/delete/feedback controls. Mirrors the
-  // thin-roster gate in api/admin/events/[id]/attendance (a user with any staff
-  // role gets the full page). Students never reach here (proxy blocks them).
+  // VIEW attendance only — no event create/edit/delete. Mirrors the thin-roster
+  // gate in api/admin/events/[id]/attendance (a user with any staff role gets
+  // the full page). Feedback forms are a separate, narrower carve-out — see
+  // canManageForms/canViewForms below. Students never reach here (proxy blocks
+  // them).
   const isAttendanceOnly = !myRoles.some((r) =>
     ["super_admin", "admin", "registration", "organizer"].includes(r)
   );
@@ -399,6 +294,17 @@ export default function AdminEventsPage() {
   // below and the matching server-side strip in PUT /api/admin/events/[id]).
   const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
   const canEditEventDetails = !isAttendanceOnly || isPresidentRole;
+  // Feedback/evaluation forms: staff manage every event's forms unscoped;
+  // club/major presidents may also fully manage (create/edit/delete) forms, but
+  // only for events they own — the events list here is already scoped to just
+  // their events (see canEditEventDetails above), so any event a president sees
+  // is theirs to manage. smo gets read-only access to every event's forms (no
+  // ownership scoping) — it may view the House Leaderboard & Submissions tab but
+  // never create/edit/delete a form. Server-side gate is the real source of
+  // truth (see gateEventForms in api/admin/events/[id]/form/route.ts).
+  const isSmoRole = myRoles.includes("smo");
+  const canManageForms = !isAttendanceOnly || isPresidentRole;
+  const canViewForms = canManageForms || isSmoRole;
   // Role/major access control, Managed By (president/owner), and points are
   // admin/registration/organizer only — even for a president editing their own event.
   const canEditRestrictedFields = !isAttendanceOnly;
@@ -434,6 +340,7 @@ export default function AdminEventsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [detailsReviewToggling, setDetailsReviewToggling] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "live" | "upcoming" | "past">("all");
 
@@ -476,27 +383,22 @@ export default function AdminEventsPage() {
   // when the active event has more than one session.
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
-  // Custom Form Builder states
+  // Custom Form Builder states — the builder itself lives in
+  // EventFormBuilderModal (see src/components/admin/EventFormBuilderModal.tsx),
+  // extracted so admin/clubs and admin/majors can mount it too; this page just
+  // tracks which event's builder (if any) is open.
   const [showFormBuilder, setShowFormBuilder] = useState(false);
   const [formEventId, setFormEventId] = useState<string | null>(null);
   const [formEventTitle, setFormEventTitle] = useState<string | null>(null);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formTitle, setFormTitle] = useState("");
-  const [formDescription, setFormDescription] = useState("");
-  const [formPoints, setFormPoints] = useState(0);
-  const [formIndividualPoints, setFormIndividualPoints] = useState(0);
-  const [formSections, setFormSections] = useState<FormSection[]>([]);
-  const [formIsAwarded, setFormIsAwarded] = useState(false);
-  // Scheduling window + S-form assignment
-  const [formOpensAt, setFormOpensAt] = useState("");
-  const [formClosesAt, setFormClosesAt] = useState("");
-  const [formAssignedRoles, setFormAssignedRoles] = useState<string[]>([]);
-  const [formAssignedUserIds, setFormAssignedUserIds] = useState<string[]>([]);
-  // People directory for the S-form person-picker (loaded on demand)
+  const openFormBuilder = (id: string, title: string) => {
+    setFormEventId(id);
+    setFormEventTitle(title);
+    setShowFormBuilder(true);
+  };
   const [assigneeUsers, setAssigneeUsers] = useState<{ id: string; name: string | null; studentId: string | null; role: string | null }[]>([]);
-  const [assigneeSearch, setAssigneeSearch] = useState("");
-  // Search box for the Event Staff picker — kept separate from assigneeSearch
-  // (the S-form assignee picker's own search box) so the two never share text.
+  // Search box for the Event Staff picker. EventFormBuilderModal has its own
+  // independent assigneeUsers/assigneeSearch for the S-form person-picker
+  // (it's a standalone component now — see that file).
   const [staffAssigneeSearch, setStaffAssigneeSearch] = useState("");
 
   // Loads the people directory once (best-effort), shared by the S-form
@@ -508,31 +410,11 @@ export default function AdminEventsPage() {
       .then((d) => { if (Array.isArray(d)) setAssigneeUsers(d.map((u) => ({ id: u.id, name: u.name, studentId: u.studentId, role: u.role }))); })
       .catch(() => {});
   };
-  const [formStats, setFormStats] = useState<Record<string, number> | null>(null);
-  const [formSubmissions, setFormSubmissions] = useState<FormBuilderSubmission[]>([]);
-  const [formSaving, setFormSaving] = useState(false);
-  const [formTab, setFormTab] = useState<"edit" | "stats">("edit");
-  const [submissionsPage, setSubmissionsPage] = useState(1);
-  const SUBMISSIONS_PER_PAGE = 10;
-  const submissionsListRef = useRef<HTMLDivElement | null>(null);
-  // Change page and scroll the list back to the top so the first card on the
-  // new page is in view (instead of staying at the bottom where Next was clicked).
-  const goToSubmissionsPage = (updater: (p: number) => number) => {
-    setSubmissionsPage(updater);
-    submissionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-  
-  // Multi-form state: list of all forms for the current event + which one is being edited
-  const [allEventForms, setAllEventForms] = useState<EventFormSummary[]>([]);
-  const [activeFormId, setActiveFormId] = useState<string | null>(null);
-  const [activeFormType, setActiveFormType] = useState<string>("K_post");
-  const [showNewFormPicker, setShowNewFormPicker] = useState(false);
 
-  // Custom admin form builder premium notification states
-  const [formBuilderError, setFormBuilderError] = useState<string | null>(null);
-  const [formBuilderSuccess, setFormBuilderSuccess] = useState<string | null>(null);
-
-  // Custom premium modals for confirmation and errors
+  // Custom premium modals for confirmation and errors — confirmModal is used
+  // by handleDelete/removeRegistrant below; EventFormBuilderModal has its own
+  // independent copy for its unsaved-changes/reopen-award confirmations (it's
+  // a standalone component, also mounted from admin/clubs & admin/majors).
   const [confirmModal, setConfirmModal] = useState<{
     show: boolean;
     title: string;
@@ -561,613 +443,20 @@ export default function AdminEventsPage() {
     message: ""
   });
 
-  // Snapshot of the builder state as last loaded or saved. Current state is
-  // compared against this to know whether there are unsaved edits.
-  const [pristineFingerprint, setPristineFingerprint] = useState("");
+  // Informational (not an error) confirmation shown after a president saves an
+  // event edit — see events.detailsReviewStatus in schema.ts: the edit always
+  // goes through, but it silently re-flags the event for staff review, so this
+  // is where that gets surfaced instead of leaving it invisible.
+  const [reviewNoticeModal, setReviewNoticeModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+  }>({
+    show: false,
+    title: "",
+    message: ""
+  });
 
-  const loadFormIntoEditor = (f: EventFormSummary) => {
-    setActiveFormId(f.id);
-    setActiveFormType(f.formType);
-    setFormTitle(f.title);
-    setFormDescription(f.description || "");
-    setFormPoints(f.pointsAwarded || 0);
-    setFormIndividualPoints(f.individualPointsAwarded || 0);
-    const loadedSections = normalizeForm(f.questions).sections;
-    setFormSections(loadedSections);
-    setFormIsAwarded(f.isAwarded || false);
-    setFormOpensAt(toDatetimeLocal(f.opensAt));
-    setFormClosesAt(toDatetimeLocal(f.closesAt));
-    setFormAssignedRoles(f.assignedRoles || []);
-    setFormAssignedUserIds(f.assignedUserIds || []);
-    setFormStats(f.stats);
-    setFormSubmissions(f.submissions || []);
-    setSubmissionsPage(1);
-    setFormTab(f.submissions && f.submissions.length > 0 ? "stats" : "edit");
-    setFormBuilderError(null);
-    setFormBuilderSuccess(null);
-    // Baseline = the freshly loaded form, so only later edits read as unsaved.
-    setPristineFingerprint(builderFingerprint({
-      activeFormType: f.formType,
-      formTitle: f.title,
-      formDescription: f.description || "",
-      formPoints: f.pointsAwarded || 0,
-      formIndividualPoints: f.individualPointsAwarded || 0,
-      formSections: loadedSections,
-      formIsAwarded: f.isAwarded || false,
-      formOpensAt: toDatetimeLocal(f.opensAt),
-      formClosesAt: toDatetimeLocal(f.closesAt),
-      formAssignedRoles: f.assignedRoles || [],
-      formAssignedUserIds: f.assignedUserIds || [],
-    }));
-  };
-
-  const openFormBuilder = async (eventId: string, eventTitle: string) => {
-    setFormEventId(eventId);
-    setFormEventTitle(eventTitle);
-    setShowFormBuilder(true);
-    setFormLoading(true);
-    setFormTab("edit");
-    setFormBuilderError(null);
-    setFormBuilderSuccess(null);
-    setShowNewFormPicker(false);
-    setAllEventForms([]);
-    setActiveFormId(null);
-    setAssigneeSearch("");
-
-    // Load the people directory once for the S-form person-picker (best-effort).
-    ensureAssigneeUsersLoaded();
-
-    try {
-      const res = await fetch(`/api/admin/events/${eventId}/form`);
-      const data = await res.json();
-      const eventForms: EventFormSummary[] = data.forms || [];
-      setAllEventForms(eventForms);
-
-      if (eventForms.length > 0) {
-        loadFormIntoEditor(eventForms[0]);
-      } else {
-        // No forms yet — show new-form picker
-        setShowNewFormPicker(true);
-        setActiveFormId(null);
-        setActiveFormType("K_post");
-        const defaultSections: FormSection[] = [{
-          id: "section-1",
-          title: "",
-          questions: [
-            { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
-            { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
-            { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
-          ],
-        }];
-        setFormTitle("");
-        setFormDescription("");
-        setFormPoints(0);
-        setFormIndividualPoints(0);
-        setFormSections(defaultSections);
-        setFormIsAwarded(false);
-        setFormOpensAt("");
-        setFormClosesAt("");
-        setFormAssignedRoles([]);
-        setFormAssignedUserIds([]);
-        setFormStats(null);
-        setFormSubmissions([]);
-        setPristineFingerprint(builderFingerprint({
-          activeFormType: "K_post", formTitle: "", formDescription: "", formPoints: 0, formIndividualPoints: 0,
-          formSections: defaultSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
-          formAssignedRoles: [], formAssignedUserIds: [],
-        }));
-      }
-    } catch (e) {
-      console.error(e);
-      setFormBuilderError(lang === "th" ? "ไม่สามารถโหลดเครื่องมือสร้างฟอร์มได้ กรุณาลองใหม่อีกครั้ง" : "Couldn't load the form builder. Please try again.");
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
-  const refreshAllForms = async () => {
-    if (!formEventId) return;
-    const res = await fetch(`/api/admin/events/${formEventId}/form`);
-    const data = await res.json();
-    const eventForms: EventFormSummary[] = data.forms || [];
-    setAllEventForms(eventForms);
-    // Refresh the active form data
-    if (activeFormId) {
-      const updated = eventForms.find((f) => f.id === activeFormId);
-      if (updated) loadFormIntoEditor(updated);
-    }
-    return eventForms;
-  };
-
-  const startNewForm = (type: string) => {
-    setActiveFormId(null);
-    setActiveFormType(type);
-    setShowNewFormPicker(false);
-    const newTitle = `${formEventTitle || "Event"} — ${FORM_TYPE_LABELS[type] || type}`;
-    const newSections: FormSection[] = [{
-      id: "section-1",
-      title: "",
-      questions: [
-        { id: "q1", type: "rating", label: "Overall Satisfaction", required: true },
-        { id: "q2", type: "text", label: "What did you learn or enjoy the most?", required: true },
-        { id: "q3", type: "text", label: "Any suggestions for improvement?", required: false },
-      ],
-    }];
-    setFormTitle(newTitle);
-    setFormDescription("");
-    setFormPoints(0);
-    setFormIndividualPoints(0);
-    setFormSections(newSections);
-    setFormIsAwarded(false);
-    setFormOpensAt("");
-    setFormClosesAt("");
-    setFormAssignedRoles([]);
-    setFormAssignedUserIds([]);
-    setFormStats(null);
-    setFormSubmissions([]);
-    setFormTab("edit");
-    setFormBuilderError(null);
-    setFormBuilderSuccess(null);
-    // Baseline = the default template, so closing an untouched new form is silent.
-    setPristineFingerprint(builderFingerprint({
-      activeFormType: type, formTitle: newTitle, formDescription: "", formPoints: 0, formIndividualPoints: 0,
-      formSections: newSections, formIsAwarded: false, formOpensAt: "", formClosesAt: "",
-      formAssignedRoles: [], formAssignedUserIds: [],
-    }));
-  };
-
-  const saveForm = async (skipReopenConfirm = false) => {
-    if (!formEventId) return;
-    setFormBuilderError(null);
-    setFormBuilderSuccess(null);
-
-    // "Closes at" is required: it's the trigger that closes the form and
-    // auto-awards the points, so a form without it would never resolve.
-    if (!formClosesAt) {
-      setFormBuilderError('Please set a "Closes at" time — it is required so the form can automatically close and award points.');
-      return;
-    }
-    if (formOpensAt && new Date(formClosesAt) <= new Date(formOpensAt)) {
-      setFormBuilderError('"Closes at" must be after "Opens at".');
-      return;
-    }
-
-    // Re-opening an already-awarded form (pushing its close time back into the
-    // future) claws back the points it already gave the winning house. Confirm
-    // first — the server then reverts the award and re-arms the form.
-    const reopening = formIsAwarded && new Date(formClosesAt).getTime() > Date.now();
-    if (reopening && !skipReopenConfirm) {
-      setConfirmModal({
-        show: true,
-        title: lang === "th" ? "เปิดแบบฟอร์มที่ให้คะแนนแล้วอีกครั้ง?" : lang === "cn" ? "重新开放已计分的表单？" : lang === "mm" ? "အမှတ်ပေးပြီးသော ဖောင်ကို ပြန်ဖွင့်မလား?" : "Re-open this awarded form?",
-        message: lang === "th"
-          ? "แบบฟอร์มนี้ปิดและให้คะแนนบ้านที่ชนะไปแล้ว การตั้งเวลาปิดใหม่ในอนาคตจะ ดึงคะแนนที่ให้ไปแล้วคืน และเปิดรับคำตอบอีกครั้ง คะแนนจะถูกมอบใหม่เมื่อปิดอีกครั้ง"
-          : lang === "cn"
-          ? "此表单已关闭并向获胜宿舍计分。将关闭时间设为未来将会收回已发放的分数，并重新开放提交。下次关闭时会重新计分。"
-          : lang === "mm"
-          ? "ဤဖောင်သည် ပိတ်ပြီး အနိုင်ရအိမ်သို့ အမှတ်ပေးပြီးဖြစ်သည်။ ပိတ်ချိန်ကို အနာဂတ်သို့ ပြန်သတ်မှတ်ပါက ပေးပြီးသားအမှတ်များကို ပြန်ရုပ်သိမ်းပြီး တင်သွင်းမှုများ ပြန်ဖွင့်ပါမည်။ နောက်တစ်ကြိမ်ပိတ်သည့်အခါ အမှတ်ပြန်ပေးပါမည်။"
-          : "This form already closed and awarded points to the winning house. Setting the close time in the future will take those points back and re-open it for entries. Points are re-awarded when it closes again.",
-        confirmText: lang === "th" ? "เปิดอีกครั้งและดึงคะแนนคืน" : lang === "cn" ? "重新开放并收回分数" : lang === "mm" ? "ပြန်ဖွင့်ပြီး အမှတ်ပြန်ယူမည်" : "Re-open & revert points",
-        cancelText: lang === "th" ? "ยกเลิก" : lang === "cn" ? "取消" : lang === "mm" ? "မလုပ်တော့ပါ" : "Cancel",
-        isDanger: true,
-        onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); saveForm(true); },
-      });
-      return;
-    }
-
-    setFormSaving(true);
-    try {
-      const isNew = !activeFormId;
-      const res = await fetch(`/api/admin/events/${formEventId}/form`, {
-        method: isNew ? "POST" : "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(isNew ? { formType: activeFormType } : { formId: activeFormId }),
-          title: formTitle,
-          description: formDescription,
-          pointsAwarded: formPoints,
-          individualPointsAwarded: formIndividualPoints,
-          questions: serializeForm(formSections),
-          // Forms are always active now — the schedule window (opensAt/closesAt)
-          // drives the lifecycle and auto-awards when closesAt passes.
-          isActive: true,
-          opensAt: formOpensAt ? new Date(formOpensAt).toISOString() : null,
-          closesAt: formClosesAt ? new Date(formClosesAt).toISOString() : null,
-          assignedRoles: activeFormType === "S" ? formAssignedRoles : [],
-          assignedUserIds: activeFormType === "S" ? formAssignedUserIds : [],
-        }),
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        setFormBuilderSuccess("Evaluation form saved successfully!");
-        // Just persisted — current builder state is now the saved baseline, so
-        // there are no unsaved edits (also covers the new-form path, where
-        // refreshAllForms can't yet match by the not-yet-set activeFormId).
-        setPristineFingerprint(builderFingerprint({
-          activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
-          formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
-        }));
-        // If this was a new form, set the activeFormId
-        if (isNew && saved.form?.id) {
-          setActiveFormId(saved.form.id);
-        }
-        await refreshAllForms();
-      } else {
-        const d = await res.json();
-        setFormBuilderError("Failed to save: " + (d.error || "Unknown error"));
-      }
-    } catch (e) {
-      console.error(e);
-      setFormBuilderError("Failed to save evaluation form.");
-    } finally {
-      setFormSaving(false);
-    }
-  };
-
-  const deleteActiveForm = async () => {
-    if (!formEventId || !activeFormId) return;
-    try {
-      const res = await fetch(`/api/admin/events/${formEventId}/form`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formId: activeFormId }),
-      });
-      if (res.ok) {
-        const remaining = await refreshAllForms();
-        if (remaining && remaining.length > 0) {
-          loadFormIntoEditor(remaining[0]);
-        } else {
-          setActiveFormId(null);
-          setShowNewFormPicker(true);
-        }
-        setFormBuilderSuccess("Form deleted.");
-      } else {
-        const d = await res.json();
-        setFormBuilderError("Failed to delete: " + (d.error || "Unknown error"));
-      }
-    } catch (e) {
-      console.error(e);
-      setFormBuilderError("Failed to delete form.");
-    }
-  };
-
-  // True when the builder has edits that differ from the last loaded/saved
-  // state. Skipped while loading so the mid-load state churn doesn't flicker.
-  const builderDirty =
-    showFormBuilder && !formLoading &&
-    builderFingerprint({
-      activeFormType, formTitle, formDescription, formPoints, formIndividualPoints, formSections,
-      formIsAwarded, formOpensAt, formClosesAt, formAssignedRoles, formAssignedUserIds,
-    }) !== pristineFingerprint;
-
-  // Guarded close: if there are unsaved edits, confirm before discarding.
-  const closeFormBuilder = () => {
-    if (builderDirty) {
-      setConfirmModal({
-        show: true,
-        title: lang === "th" ? "ละทิ้งการแก้ไขที่ยังไม่บันทึก?" : lang === "cn" ? "放弃未保存的更改？" : lang === "mm" ? "မသိမ်းရသေးသော ပြင်ဆင်မှုများကို ပယ်မလား?" : "Discard unsaved changes?",
-        message: lang === "th"
-          ? "คุณมีการแก้ไขแบบฟอร์มที่ยังไม่ได้บันทึก หากปิดตอนนี้การเปลี่ยนแปลงจะหายไป"
-          : lang === "cn"
-          ? "您对表单的更改尚未保存。现在关闭将会丢失这些更改。"
-          : lang === "mm"
-          ? "ဖောင်ပြင်ဆင်မှုများ မသိမ်းရသေးပါ။ ယခုပိတ်ပါက ပြောင်းလဲမှုများ ပျောက်ဆုံးပါမည်။"
-          : "You have unsaved changes to this form. Closing now will discard them.",
-        confirmText: lang === "th" ? "ละทิ้ง" : lang === "cn" ? "放弃" : lang === "mm" ? "ပယ်မည်" : "Discard",
-        cancelText: lang === "th" ? "แก้ไขต่อ" : lang === "cn" ? "继续编辑" : lang === "mm" ? "ဆက်ပြင်မည်" : "Keep editing",
-        isDanger: true,
-        onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); setShowFormBuilder(false); },
-      });
-      return;
-    }
-    setShowFormBuilder(false);
-  };
-
-  // Warn on browser tab close / reload while the builder has unsaved edits.
-  useEffect(() => {
-    if (!builderDirty) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [builderDirty]);
-
-  // ---- Section-aware form-builder helpers ----
-  // All mutations target a question inside a specific section, identified by
-  // (secId, qId), since question ids are only unique within the whole form anyway
-  // but the section is needed to scope the update efficiently.
-  const mutateQuestion = (secId: string, qId: string, fn: (q: FormQuestion) => FormQuestion) => {
-    setFormSections(prev =>
-      prev.map(s =>
-        s.id !== secId ? s : { ...s, questions: s.questions.map(q => (q.id === qId ? fn(q) : q)) }
-      )
-    );
-  };
-
-  const addSection = () => {
-    setFormSections(prev => [
-      ...prev,
-      { id: newId("section"), title: "", description: "", questions: [] },
-    ]);
-  };
-
-  const removeSection = (secId: string) => {
-    setFormSections(prev => {
-      const next = prev.filter(s => s.id !== secId);
-      // Never leave a form with zero sections.
-      if (next.length === 0) return [{ id: newId("section"), title: "", questions: [] }];
-      // Repair any branches that pointed at the deleted section.
-      return next.map(s => ({
-        ...s,
-        questions: s.questions.map(q => {
-          if (!q.branches) return q;
-          const cleaned: Record<string, string> = {};
-          for (const [opt, target] of Object.entries(q.branches)) {
-            cleaned[opt] = target === secId ? BRANCH_NEXT : target;
-          }
-          return { ...q, branches: cleaned };
-        }),
-      }));
-    });
-  };
-
-  const updateSection = (secId: string, key: "title" | "description", val: string) => {
-    setFormSections(prev => prev.map(s => (s.id === secId ? { ...s, [key]: val } : s)));
-  };
-
-  const moveSection = (secId: string, dir: -1 | 1) => {
-    setFormSections(prev => {
-      const idx = prev.findIndex(s => s.id === secId);
-      const target = idx + dir;
-      if (idx < 0 || target < 0 || target >= prev.length) return prev;
-      const copy = [...prev];
-      [copy[idx], copy[target]] = [copy[target], copy[idx]];
-      return copy;
-    });
-  };
-
-  const addQuestion = (secId: string) => {
-    const newQ: FormQuestion = { id: newId("q"), type: "text", label: "New Question", required: false };
-    setFormSections(prev =>
-      prev.map(s => (s.id === secId ? { ...s, questions: [...s.questions, newQ] } : s))
-    );
-  };
-
-  const removeQuestion = (secId: string, qId: string) => {
-    setFormSections(prev =>
-      prev.map(s => {
-        if (s.id !== secId) return s;
-        const questions = s.questions
-          .filter(q => q.id !== qId)
-          // Any sibling whose conditional pointed at the removed question reverts
-          // to always-visible.
-          .map(q => (q.visibleIf?.questionId === qId ? { ...q, visibleIf: undefined } : q));
-        return { ...s, questions };
-      })
-    );
-  };
-
-  const updateQuestion = (secId: string, qId: string, key: string, val: string | boolean | string[]) => {
-    setFormSections(prev =>
-      prev.map(s => {
-        if (s.id !== secId) return s;
-        let questions = s.questions.map(q => {
-          if (q.id !== qId) return q;
-          const updated = { ...q, [key]: val } as FormQuestion;
-          if (key === "type") {
-            if ((val === "choice" || val === "multiple") && !updated.options) {
-              updated.options = ["Option 1", "Option 2"];
-            }
-            // Branching is single-choice only; correct-answer shape differs per
-            // type — clear both so we never carry a stale value across a change.
-            if (val !== "choice") delete updated.branches;
-            delete updated.correct;
-          }
-          return updated;
-        });
-        // If this question is no longer a usable controller (not choice/multiple),
-        // drop sibling conditionals that depended on it.
-        if (key === "type" && val !== "choice" && val !== "multiple") {
-          questions = questions.map(q => (q.visibleIf?.questionId === qId ? { ...q, visibleIf: undefined } : q));
-        }
-        return { ...s, questions };
-      })
-    );
-  };
-
-  const addOption = (secId: string, qId: string) => {
-    mutateQuestion(secId, qId, q => {
-      const opts = q.options ? [...q.options] : [];
-      opts.push(`Option ${opts.length + 1}`);
-      return { ...q, options: opts };
-    });
-  };
-
-  const removeOption = (secId: string, qId: string, optIdx: number) => {
-    setFormSections(prev =>
-      prev.map(s => {
-        if (s.id !== secId) return s;
-        const removed = s.questions.find(q => q.id === qId)?.options?.[optIdx];
-        const questions = s.questions.map(q => {
-          if (q.id === qId) {
-            const opts = q.options ? q.options.filter((_, idx: number) => idx !== optIdx) : [];
-            const next: FormQuestion = { ...q, options: opts };
-            // Drop any branch/correct references to the removed option.
-            if (removed != null) {
-              if (next.branches) {
-                const b = { ...next.branches };
-                delete b[removed];
-                next.branches = b;
-              }
-              if (typeof next.correct === "string" && next.correct === removed) delete next.correct;
-              if (Array.isArray(next.correct)) next.correct = next.correct.filter(c => c !== removed);
-            }
-            return next;
-          }
-          // A sibling conditioned on the removed option value reverts to always-visible.
-          if (removed != null && q.visibleIf?.questionId === qId && q.visibleIf.value === removed) {
-            return { ...q, visibleIf: undefined };
-          }
-          return q;
-        });
-        return { ...s, questions };
-      })
-    );
-  };
-
-  const updateOption = (secId: string, qId: string, optIdx: number, val: string) => {
-    setFormSections(prev =>
-      prev.map(s => {
-        if (s.id !== secId) return s;
-        const prevVal = s.questions.find(q => q.id === qId)?.options?.[optIdx];
-        const questions = s.questions.map(q => {
-          if (q.id === qId) {
-            const opts = q.options ? [...q.options] : [];
-            opts[optIdx] = val;
-            const next: FormQuestion = { ...q, options: opts };
-            // Keep branch/correct keys aligned when an option label is renamed.
-            if (prevVal != null && prevVal !== val) {
-              if (next.branches && next.branches[prevVal] !== undefined) {
-                const b = { ...next.branches };
-                b[val] = b[prevVal];
-                delete b[prevVal];
-                next.branches = b;
-              }
-              if (typeof next.correct === "string" && next.correct === prevVal) next.correct = val;
-              if (Array.isArray(next.correct)) next.correct = next.correct.map(c => (c === prevVal ? val : c));
-            }
-            return next;
-          }
-          // Keep a sibling's conditional value aligned with the renamed option.
-          if (prevVal != null && prevVal !== val && q.visibleIf?.questionId === qId && q.visibleIf.value === prevVal) {
-            return { ...q, visibleIf: { questionId: qId, value: val } };
-          }
-          return q;
-        });
-        return { ...s, questions };
-      })
-    );
-  };
-
-  // ---- Grading ----
-  const toggleGraded = (secId: string, qId: string) => {
-    mutateQuestion(secId, qId, q => {
-      const graded = !q.graded;
-      return { ...q, graded, points: graded ? (q.points && q.points > 0 ? q.points : 1) : q.points };
-    });
-  };
-
-  const setPoints = (secId: string, qId: string, points: number) => {
-    mutateQuestion(secId, qId, q => ({ ...q, points: Math.max(1, points || 1) }));
-  };
-
-  const setChoiceCorrect = (secId: string, qId: string, opt: string) => {
-    mutateQuestion(secId, qId, q => ({ ...q, correct: opt }));
-  };
-
-  const toggleMultipleCorrect = (secId: string, qId: string, opt: string) => {
-    mutateQuestion(secId, qId, q => {
-      const cur = Array.isArray(q.correct) ? [...q.correct] : [];
-      const updated = cur.includes(opt) ? cur.filter(c => c !== opt) : [...cur, opt];
-      return { ...q, correct: updated };
-    });
-  };
-
-  const setTextCorrect = (secId: string, qId: string, val: string) => {
-    mutateQuestion(secId, qId, q => ({ ...q, correct: val }));
-  };
-
-  // ---- Branching (single-choice): route an option to a section / next / submit ----
-  const setBranch = (secId: string, qId: string, opt: string, target: string) => {
-    mutateQuestion(secId, qId, q => {
-      const branches = { ...(q.branches || {}) };
-      if (target === BRANCH_NEXT) {
-        delete branches[opt]; // default sequential flow — no need to store
-      } else {
-        branches[opt] = target;
-      }
-      return { ...q, branches };
-    });
-  };
-
-  // ---- Conditional visibility: show a question only when a controlling
-  // choice/multiple answer matches a given option value. ----
-  const setVisibleIf = (secId: string, qId: string, controllerId: string, value: string) => {
-    mutateQuestion(secId, qId, q => {
-      if (!controllerId) {
-        const next = { ...q };
-        delete next.visibleIf;
-        return next;
-      }
-      return { ...q, visibleIf: { questionId: controllerId, value } };
-    });
-  };
-
-  // Flattened view of every question across sections — used by the stats tab and
-  // the question counter.
-  const allFormQuestions = formSections.flatMap(s => s.questions);
-
-  // Export submissions to a real .xlsx (one row per student, one column per
-  // question, plus score) with auto-filter enabled for easy stats/filtering.
-  // xlsx is imported lazily so it never weighs on the initial admin bundle.
-  const exportSubmissionsXlsx = async () => {
-    if (formSubmissions.length === 0) return;
-    const XLSX = await import("xlsx");
-    const qcols = allFormQuestions.map((q, i) => ({ key: `Q${i + 1}: ${q.label || "Untitled"}`, q }));
-    const anyGraded = allFormQuestions.some(q => q.graded);
-    const header = [
-      "Name", "Nickname", "Student ID", "Major", "Phone", "Contact Channels", "House", "Submitted (Bangkok)",
-      ...(anyGraded ? ["Score", "Max Score"] : []),
-      ...qcols.map(c => c.key),
-    ];
-    const fmt = (ans: string | number | string[] | undefined) =>
-      ans == null ? "" : Array.isArray(ans) ? ans.join(", ") : String(ans);
-
-    const rows = formSubmissions.map(sub => {
-      const row: Record<string, string | number> = {
-        "Name": sub.studentName,
-        "Nickname": sub.nickname || "",
-        "Student ID": sub.studentId,
-        "Major": sub.major || "",
-        "Phone": sub.phone || "",
-        "Contact Channels": sub.contactChannels || "",
-        "House": sub.houseId,
-        "Submitted (Bangkok)": new Date(sub.submittedAt).toLocaleString("en-GB", { timeZone: "Asia/Bangkok" }),
-      };
-      if (anyGraded) {
-        row["Score"] = sub.score ?? 0;
-        row["Max Score"] = sub.maxScore ?? 0;
-      }
-      for (const c of qcols) {
-        const ans = sub.answers?.[c.q.id];
-        // File answers store an opaque key; export an absolute, auth-guarded URL
-        // the admin can open (the raw key is meaningless in a spreadsheet).
-        row[c.key] = c.q.type === "file"
-          ? (typeof ans === "string" && ans ? `${window.location.origin}/api/forms/file/${sub.id}?q=${c.q.id}` : "")
-          : fmt(ans);
-      }
-      return row;
-    });
-
-    const ws = XLSX.utils.json_to_sheet(rows, { header });
-    ws["!autofilter"] = { ref: ws["!ref"] || "A1" };
-    ws["!cols"] = header.map(h => ({ wch: Math.min(45, Math.max(12, h.length + 2)) }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Submissions");
-    // Name the file after the FORM (not just the event) so exports from an
-    // event's different forms (K_pre/K_post/A/S/F) don't collide or get
-    // confused. Prefer the form's own title; fall back to the event title plus
-    // the form-type label. Keep Thai (and other Unicode) letters intact; only
-    // strip characters that are illegal in filenames, then collapse
-    // whitespace/separators to "_".
-    const typeLabel = FORM_TYPE_LABELS[activeFormType] || activeFormType;
-    const rawName = formTitle.trim() || `${formEventTitle || "Event"} ${typeLabel}`;
-    const safeTitle = rawName
-      .replace(/[\\/:*?"<>|]+/g, "")
-      .replace(/\s+/g, "_")
-      .slice(0, 60)
-      .replace(/^_+|_+$/g, "") || "form";
-    XLSX.writeFile(wb, `submissions_${safeTitle}.xlsx`);
-  };
 
   const hasActualMedicalInfo = (user: AdminStudent | null | undefined) => {
     if (!user) return false;
@@ -1291,8 +580,18 @@ export default function AdminEventsPage() {
           quotaInternational: proposal.quotaInternational ?? null,
           firstYearOnly: proposal.firstYearOnly || false,
           staffUserIds: proposal.staffUserIds || [],
-          managedByRoles: ["club_president"],
-          ownerClubIds: [proposal.clubId],
+          // Suggested-access ACL — non-binding, same as every other prefilled
+          // field here: staff still explicitly reviews/adjusts before saving.
+          allowedRoles: proposal.allowedRoles || [],
+          allowedMajors: proposal.allowedMajors || [],
+          allowedClubs: proposal.allowedClubs || [],
+          // A proposal is either club-owned or major-owned (clubId/majorCode
+          // are mutually exclusive, see eventProposals in schema.ts) — prefill
+          // the matching owner/managed-by suggestion; staff can still adjust
+          // either before saving.
+          ...(proposal.clubId
+            ? { managedByRoles: ["club_president"], ownerClubIds: [proposal.clubId] }
+            : { managedByRoles: ["major_president"], ownerMajors: [proposal.majorCode] }),
         });
         // A proposal's `sessions` (see eventProposals.sessions), when it has 2+
         // entries, is the COMPLETE per-day breakdown (mirrors this page's own
@@ -1315,6 +614,35 @@ export default function AdminEventsPage() {
     // prefill, not a state to keep re-syncing with the URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // "Manage Feedback Form" shortcut from /admin/clubs or /admin/majors
+  // (?openForm=<eventId>) — reduces the president's path from "find the event
+  // in this list → open it → find the Feedback Form button" down to one click.
+  // openFormBuilder is self-contained (fetches the event's forms by id alone),
+  // but it also wants the event's title for the modal header, so this waits
+  // for the (already president-scoped, see GET /api/admin/events) `events`
+  // list to finish loading rather than making a second fetch just for that.
+  // Fires once the id is found and then clears the querystring so a refresh
+  // doesn't re-open it.
+  const openFormHandledRef = useRef(false);
+  useEffect(() => {
+    if (openFormHandledRef.current || loading) return;
+    const id = new URLSearchParams(window.location.search).get("openForm");
+    if (!id) return;
+    const evt = events.find((e) => e.id === id);
+    if (!evt) return;
+    openFormHandledRef.current = true;
+    // Deferred via setTimeout so openFormBuilder's setState calls fire after
+    // this render commits rather than synchronously within the effect body
+    // (react-hooks/set-state-in-effect) — mirrors the pattern used elsewhere
+    // in this codebase (e.g. admin/clubs/page.tsx's own load effect).
+    const timer = setTimeout(() => {
+      openFormBuilder(evt.id, evt.title);
+      window.history.replaceState(null, "", window.location.pathname);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [events, loading]);
+  const editHandledRef = useRef(false);
 
   const set = <K extends keyof typeof EMPTY_FORM>(key: K, val: typeof EMPTY_FORM[K]) => setFormData({ ...formData, [key]: val });
 
@@ -1525,10 +853,14 @@ export default function AdminEventsPage() {
 
     // Every row in `sessions` becomes one attendance session — and each session
     // only ever admits one check-in per student (idx_attendance_session_student).
-    // A row spanning >24h (e.g. typing the whole 11/07–13/07 range into the
-    // single default row instead of adding a day per date) would silently
-    // collapse a 3-day event into one check-in for the entire span.
-    if (sessions.some((s) => sessionSpansTooLong(s.startTime, s.endTime))) {
+    // Only block when a per-day schedule was actually chosen (registrationMode
+    // "once") and one of THOSE rows itself spans >24h — a genuine mistake,
+    // since each row is meant to be a single day. A plain multi-day start/end
+    // with no split chosen (registrationMode null) is a deliberate "one
+    // check-in for the whole range" event (e.g. a 3-day camp) and must NOT be
+    // force-split — the banner shown for that case still offers Split as an
+    // option, it just no longer blocks submission.
+    if (registrationMode !== null && sessions.some((s) => sessionSpansTooLong(s.startTime, s.endTime))) {
       setError(t.multiDaySessionWarning);
       return;
     }
@@ -1569,6 +901,12 @@ export default function AdminEventsPage() {
       });
 
       if (res.ok) {
+        // A president editing an event that was already approved just sent it
+        // back to 'pending' server-side (see PUT /api/admin/events/[id]) —
+        // surface that explicitly instead of leaving it invisible, since
+        // there's no more lock/banner blocking them from editing at all.
+        const wasEditingApprovedAsPresident =
+          isAttendanceOnly && isPresidentRole && !!editingId && formData.detailsReviewStatus === "approved";
         setShowForm(false);
         setFormData(EMPTY_FORM);
         setRegistrationMode(null);
@@ -1576,6 +914,13 @@ export default function AdminEventsPage() {
         setEditingId(null);
         setSourceProposalId(null);
         fetchEvents();
+        if (wasEditingApprovedAsPresident) {
+          setReviewNoticeModal({
+            show: true,
+            title: t.eventDetailsReviewNoticeTitle || "Saved — pending review",
+            message: t.eventDetailsReviewNoticeDesc || "Your changes were saved. Since this event was already approved, staff will need to review it again before it's fully approved.",
+          });
+        }
       } else {
         const err = await res.json();
         setError(err.error || "Failed to save event");
@@ -1721,6 +1066,8 @@ export default function AdminEventsPage() {
       ownerClubIds: evt.ownerClubIds || [],
       ownerMajors: evt.ownerMajors || [],
       staffUserIds: evt.staffUserIds || [],
+      detailsReviewStatus: evt.detailsReviewStatus || "pending",
+      detailsReviewedAt: evt.detailsReviewedAt || null,
     });
     // Load the people directory once for the Event Staff picker (best-effort).
     ensureAssigneeUsersLoaded();
@@ -1748,6 +1095,55 @@ export default function AdminEventsPage() {
     setShowForm(true);
     // Scrolling is handled by the showForm/editingId effect, which targets the
     // real scroll container (.admin-main) rather than the window.
+  };
+
+  // "Review" shortcut from /admin/reviews (?edit=<eventId>) — opens the plain
+  // event editor directly, same deep-link shape as the ?openForm= effect
+  // above. Declared after handleEdit (referenced below) rather than before it.
+  useEffect(() => {
+    if (editHandledRef.current || loading) return;
+    const id = new URLSearchParams(window.location.search).get("edit");
+    if (!id) return;
+    const evt = events.find((e) => e.id === id);
+    if (!evt) return;
+    editHandledRef.current = true;
+    const timer = setTimeout(() => {
+      handleEdit(evt);
+      window.history.replaceState(null, "", window.location.pathname);
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, loading]);
+
+  // Staff-only approve action (see events.detailsReviewStatus in schema.ts) —
+  // a president's edit is never blocked, but it always resets this back to
+  // 'pending' (see PUT /api/admin/events/[id]), so staff explicitly approves
+  // it again here. There's no "reopen"/lock counterpart anymore: nothing is
+  // ever locked, so there's nothing to reopen. Only ever called from the edit
+  // form's pending-review banner, itself staff-only (presidents never see it —
+  // canEditRestrictedFields gates its render below).
+  const approveEventDetails = async () => {
+    if (!editingId) return;
+    setDetailsReviewToggling(true);
+    try {
+      const res = await fetch(`/api/admin/events/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ detailsReviewStatus: "approved" }),
+      });
+      if (res.ok) {
+        setFormData((f) => ({ ...f, detailsReviewStatus: "approved" }));
+        fetchEvents();
+      } else {
+        const d = await res.json().catch(() => null);
+        setError((d && d.error) || "Failed to update review status.");
+      }
+    } catch (e) {
+      console.error(e);
+      setError("Failed to update review status.");
+    } finally {
+      setDetailsReviewToggling(false);
+    }
   };
 
   const viewAttendance = async (eventId: string) => {
@@ -2440,6 +1836,74 @@ export default function AdminEventsPage() {
             {editingId ? t.editEventTitle : t.newEventTitle}
           </h2>
 
+          {/* Always-editable + auto re-review banner (see events.detailsReviewStatus
+              in schema.ts): a president is never locked out of editing — this is
+              purely informational, telling them a pending edit is awaiting staff
+              review. Mirrors the Feedback Form's identical pending-review banner. */}
+          {isAttendanceOnly && isPresidentRole && editingId && formData.detailsReviewStatus === "pending" && (
+            <div style={{
+              display: "flex", alignItems: "flex-start", gap: 10,
+              background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)",
+              borderRadius: 16, padding: "16px 20px", marginBottom: 24,
+            }}>
+              <AlertTriangle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <p style={{ fontWeight: 800, fontSize: 13, color: "#f59e0b" }}>
+                  {t.eventDetailsPendingBannerTitle || "Awaiting staff review"}
+                </p>
+                <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.5 }}>
+                  {t.eventDetailsPendingBannerDesc || "You can keep editing — admin/registration staff will review these details before they're marked approved."}
+                </p>
+              </div>
+            </div>
+          )}
+          {/* Staff view of a PRESIDENT'S edit awaiting review — see
+              events.detailsReviewStatus in schema.ts. Only shown when there is
+              actually something to review: a brand-new event (or one staff just
+              created/edited themselves) is auto-marked approved at creation (see
+              POST /api/admin/events), and an event nobody but staff can ever edit
+              (no club/major president in managedByRoles) can never generate a
+              pending edit in the first place — showing this either of those
+              times is exactly what made it read as unexplained noise before.
+              Once shown, it disappears the moment staff approves (or the
+              president edits again, which just re-shows it) — no lingering
+              "approved" state to also parse. Mirrors the same
+              ownerClubIds/ownerMajors-only filter GET /api/admin/reviews uses
+              for its queue. */}
+          {!isAttendanceOnly && editingId && formData.detailsReviewStatus === "pending" &&
+            (formData.managedByRoles.includes("club_president") || formData.managedByRoles.includes("major_president")) && (
+            <div style={{
+              display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+              background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)",
+              borderRadius: 16, padding: "16px 20px", marginBottom: 24,
+            }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <AlertTriangle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <p style={{ fontWeight: 800, fontSize: 13, color: "#f59e0b" }}>
+                    {t.eventDetailsPendingStaffLabel || "President edited this event"}
+                  </p>
+                  <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.5 }}>
+                    {t.eventDetailsPendingStaffDesc || "The club/major president changed something below since you last approved it. Check the fields, then approve to clear this."}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  flexShrink: 0, background: "#f59e0b", color: "#fff", border: "none",
+                  boxShadow: "0 2px 8px rgba(245, 158, 11, 0.35)",
+                }}
+                disabled={detailsReviewToggling}
+                onClick={approveEventDetails}
+              >
+                {detailsReviewToggling ? <div className="spinner w-3 h-3 border-2" /> : <CheckCircle2 size={14} />}
+                {t.eventDetailsApproveBtn || "Approve changes"}
+              </button>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="relative">
             <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-10">
               {/* Left Column: Basic Info */}
@@ -2967,7 +2431,11 @@ export default function AdminEventsPage() {
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {([
-                      { value: "once" as const, label: t.registrationModeOnce, desc: t.registrationModeOnceDesc, recommended: true },
+                      // Not flagged "recommended" — it's the only supported mode today
+                      // (per_session below is unbuilt), so a "recommended" badge next to
+                      // the sole option would misleadingly imply it was chosen among
+                      // real alternatives. See registrationModeHint for the full context.
+                      { value: "once" as const, label: t.registrationModeOnce, desc: t.registrationModeOnceDesc, recommended: false },
                       // 'per_session' (separate sign-up each day) is intentionally
                       // hidden: the student registration flow has no per-day path yet,
                       // so picking it would create an event where Day-2 pre-registrants
@@ -4341,20 +3809,20 @@ export default function AdminEventsPage() {
                        >
                          <BarChart3 size={15} /> {lang === "th" ? "การเช็คอิน" : lang === "cn" ? "签到情况" : lang === "mm" ? "ချက်အင်ဝင်ရောက်မှု" : "Attendance"}
                        </button>
-                       {!isAttendanceOnly && (
+                       {canViewForms && (
                        <button
                           className="btn"
-                          style={{ 
-                            flex: 1, 
-                            height: 44, 
-                            borderRadius: 12, 
-                            fontSize: 13, 
-                            background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)", 
+                          style={{
+                            flex: 1,
+                            height: 44,
+                            borderRadius: 12,
+                            fontSize: 13,
+                            background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
                             color: "#fff",
                             border: "none",
-                            display: "flex", 
-                            alignItems: "center", 
-                            justifyContent: "center", 
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
                             gap: 6,
                             boxShadow: "0 4px 12px rgba(79, 70, 229, 0.2)",
                             cursor: "pointer"
@@ -4557,1067 +4025,13 @@ export default function AdminEventsPage() {
       </div>
 
       {/* Evaluation Form Builder Modal */}
-      {showFormBuilder && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.4)",
-          backdropFilter: "blur(8px)",
-          zIndex: 2200,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "clamp(12px, 3vw, 24px)"
-        }} onClick={closeFormBuilder}>
-          <div className="animate-fade-in-up custom-scrollbar" style={{
-            background: "var(--bg-surface)",
-            width: "100%",
-            maxWidth: 800,
-            maxHeight: "92vh",
-            borderRadius: "clamp(20px, 4vw, 32px)",
-            overflowY: "auto",
-            boxShadow: "0 30px 60px rgba(0,0,0,0.2)",
-            border: "1px solid var(--border-medium)"
-          }} onClick={e => e.stopPropagation()}>
-            
-            {/* Modal Header */}
-            <div style={{ padding: "20px clamp(16px, 5vw, 40px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 10, gap: 16 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{lang === "th" ? "แบบประเมินผู้เข้าร่วม" : lang === "cn" ? "互动反馈" : lang === "mm" ? "အပြန်အလှန် အကြံပြုချက်" : "Interactive Feedback"}</span>
-                <h3 style={{ fontSize: 22, fontWeight: 900, color: "var(--text-primary)", overflowWrap: "break-word", wordBreak: "break-word" }}>{formEventTitle || "Event"} {t.fbFormSuffix || "Form"}</h3>
-              </div>
-              <button
-                className="btn btn-ghost"
-                onClick={closeFormBuilder}
-                style={{ borderRadius: "50%", width: 40, height: 40, padding: 0 }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* KAS Form Selector — chips for each form + Add button */}
-            <div style={{ padding: "12px clamp(12px,4vw,32px)", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              {allEventForms.map((f) => {
-                const c = FORM_TYPE_COLORS[f.formType] || FORM_TYPE_COLORS["K_post"];
-                const isActive = f.id === activeFormId;
-                return (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => { setShowNewFormPicker(false); loadFormIntoEditor(f); }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      padding: "6px 14px", borderRadius: 99, fontSize: 12, fontWeight: 800,
-                      cursor: "pointer", transition: "all 0.15s",
-                      background: isActive ? c.bg : "var(--bg-surface)",
-                      color: isActive ? c.text : "var(--text-secondary)",
-                      border: isActive ? `1.5px solid ${c.border}` : "1.5px solid var(--border-subtle)",
-                      boxShadow: isActive ? `0 0 0 2px ${c.border}` : "none",
-                    }}
-                  >
-                    <span style={{ fontSize: 9, fontWeight: 900, background: c.bg, color: c.text, padding: "1px 5px", borderRadius: 4 }}>
-                      {FORM_TYPE_LABELS[f.formType] || f.formType}
-                    </span>
-                    <span style={{ maxWidth: 200, whiteSpace: "normal", overflowWrap: "break-word", wordBreak: "break-word", textAlign: "left", lineHeight: 1.3 }}>{f.title}</span>
-                    {f.isAwarded && <Lock size={10} style={{ flexShrink: 0 }} />}
-                    {!f.isActive && !f.isAwarded && <span style={{ fontSize: 10, opacity: 0.6 }}>●</span>}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => { setShowNewFormPicker(true); setActiveFormId(null); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  padding: "6px 14px", borderRadius: 99, fontSize: 12, fontWeight: 800,
-                  cursor: "pointer", background: "transparent",
-                  color: "var(--accent-primary)", border: "1.5px dashed var(--accent-primary)",
-                }}
-              >
-                {t.fbAddForm || "+ Add Form"}
-              </button>
-            </div>
-
-            {/* New Form Type Picker */}
-            {showNewFormPicker && !formLoading && (
-              <div style={{ padding: "20px clamp(12px,4vw,32px)", background: "var(--bg-surface)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <p style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  {t.fbSelectFormTypePicker || "Select the type of form to create for this event:"}
-                </p>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {(["K_pre", "K_post", "A", "S", "F"] as const).map((type) => {
-                    const c = FORM_TYPE_COLORS[type];
-                    const alreadyExists = allEventForms.some((f) => f.formType === type);
-                    return (
-                      <button
-                        key={type}
-                        type="button"
-                        disabled={alreadyExists}
-                        onClick={() => startNewForm(type)}
-                        style={{
-                          padding: "10px 20px", borderRadius: 14, fontSize: 13, fontWeight: 800,
-                          cursor: alreadyExists ? "not-allowed" : "pointer", opacity: alreadyExists ? 0.4 : 1,
-                          background: c.bg, color: c.text, border: `1.5px solid ${c.border}`,
-                          transition: "all 0.15s",
-                        }}
-                        title={alreadyExists ? (t.fbFormTypeAlreadyExists || "A form of this type already exists for this event") : ""}
-                      >
-                        {FORM_TYPE_LABELS[type]}
-                        {alreadyExists && " ✓"}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Modal Navigation Tabs */}
-            <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-surface)" }}>
-              <button
-                style={{
-                  flex: 1,
-                  padding: "16px 20px",
-                  fontSize: 14,
-                  fontWeight: 800,
-                  border: "none",
-                  borderBottom: formTab === "edit" ? "3px solid var(--accent-primary)" : "3px solid transparent",
-                  background: "transparent",
-                  color: formTab === "edit" ? "var(--accent-primary)" : "var(--text-secondary)",
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-                onClick={() => setFormTab("edit")}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  <FileText size={16} style={{ flexShrink: 0 }} /> {lang === "th" ? "ออกแบบฟอร์มและกฎ" : lang === "cn" ? "设计表单与规则" : lang === "mm" ? "ပုံစံနှင့် စည်းကမ်းများ ဒီဇိုင်းဆွဲရန်" : "Design Form & Rules"}
-                </span>
-              </button>
-              <button
-                style={{
-                  flex: 1,
-                  padding: "16px 20px",
-                  fontSize: 14,
-                  fontWeight: 800,
-                  border: "none",
-                  borderBottom: formTab === "stats" ? "3px solid var(--accent-primary)" : "3px solid transparent",
-                  background: "transparent",
-                  color: formTab === "stats" ? "var(--accent-primary)" : "var(--text-secondary)",
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-                onClick={() => setFormTab("stats")}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  <Trophy size={16} style={{ flexShrink: 0 }} /> {lang === "th" ? "กระดานผู้นำบ้านและการส่งข้อมูล" : lang === "cn" ? "学院排行榜与提交" : lang === "mm" ? "အိမ်တော် ဦးဆောင်သူစာရင်းနှင့် တင်သွင်းမှုများ" : "House Leaderboard & Submissions"} ({formSubmissions.length})
-                </span>
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            {formLoading ? (
-              <div style={{ padding: "80px 0", textAlign: "center" }}>
-                <div className="spinner w-8 h-8 border-4 border-t-transparent" style={{ margin: "0 auto 16px" }} />
-                <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbFetchingData || "Fetching evaluation system data..."}</p>
-              </div>
-            ) : showNewFormPicker && !activeFormId ? (
-              <div style={{ padding: "60px 40px", textAlign: "center" }}>
-                <ClipboardList size={48} style={{ color: "var(--text-muted)", margin: "0 auto 20px", opacity: 0.3, display: "block" }} />
-                <h4 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{t.fbSelectFormTypeToStart || "Select a form type above to get started"}</h4>
-                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                  {t.fbSelectFormTypeDesc || "Each form type (K Pre-Test, K Post-Test, A - Attitude, S - Skill) can only be created once per event."}
-                </p>
-              </div>
-            ) : (
-              <div style={{ padding: "clamp(16px, 5vw, 40px)" }}>
-                {formBuilderSuccess && (
-                  <div className="animate-fade-in" style={{
-                    background: "rgba(16, 185, 129, 0.08)",
-                    border: "1px solid rgba(16, 185, 129, 0.2)",
-                    borderRadius: 16,
-                    padding: "16px 20px",
-                    marginBottom: 28,
-                    color: "#10b981",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10
-                  }}>
-                    <CheckCircle2 size={16} style={{ flexShrink: 0 }} /> {formBuilderSuccess}
-                  </div>
-                )}
-
-                {formBuilderError && (
-                  <div className="animate-fade-in" style={{
-                    background: "rgba(239, 68, 68, 0.08)",
-                    border: "1px solid rgba(239, 68, 68, 0.2)",
-                    borderRadius: 16,
-                    padding: "16px 20px",
-                    marginBottom: 28,
-                    color: "#ef4444",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10
-                  }}>
-                    <AlertTriangle size={16} style={{ flexShrink: 0 }} /> {formBuilderError}
-                  </div>
-                )}
-                {formTab === "edit" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                    {/* General Settings */}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 24 }}>
-                      {/* Left Panel */}
-                      <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 16 }}>
-                        <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.eventFormTitleLabel}</label>
-                          <input
-                            type="text"
-                            className="input"
-                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px" }}
-                            value={formTitle}
-                            onChange={e => setFormTitle(e.target.value)}
-                            placeholder="e.g. Event Satisfaction Survey"
-                          />
-                        </div>
-                        <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.eventFormInstructionLabel}</label>
-                          <textarea
-                            className="input custom-scrollbar"
-                            style={{ width: "100%", minHeight: 80, borderRadius: 12, padding: "12px 16px", resize: "vertical" }}
-                            value={formDescription}
-                            onChange={e => setFormDescription(e.target.value)}
-                            placeholder="Helpful prompt text for students..."
-                          />
-                        </div>
-                      </div>
-                      
-                      {/* Right Panel */}
-                      <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 16 }}>
-                        {/* Form Type Badge */}
-                        {(() => {
-                          const c = FORM_TYPE_COLORS[activeFormType] || FORM_TYPE_COLORS["K_post"];
-                          return (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 12, background: c.bg, border: `1px solid ${c.border}` }}>
-                              <span style={{ fontSize: 12, fontWeight: 900, color: c.text }}>{FORM_TYPE_LABELS[activeFormType] || activeFormType}</span>
-                              <span style={{ fontSize: 11, color: c.text, opacity: 0.7 }}>
-                                {activeFormType === "K_pre" ? (t.fbFormTypeNoAttendance || "— No attendance required") : activeFormType === "S" ? (t.fbFormTypeAdminOnly || "— Admin/staff only") : (t.fbFormTypeRequiresCheckin || "— Requires check-in")}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                        <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-                            <Zap size={14} style={{ color: "var(--accent-primary)" }} /> {t.fbHousePointsReward || "House Points Reward"}
-                          </label>
-                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t.fbWinningHouseGetsPoints || "Winning house gets these points."}</p>
-                          <input
-                            type="number"
-                            className="input"
-                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", fontWeight: 800 }}
-                            value={formPoints}
-                            onChange={e => setFormPoints(Math.max(0, parseInt(e.target.value) || 0))}
-                          />
-                        </div>
-
-                        <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-                            <Sparkles size={14} style={{ color: "var(--accent-primary)" }} /> {t.fbIndividualPointsReward || "Individual Points Reward"}
-                          </label>
-                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t.fbEachSubmitterGetsPoints || "Each student gets these points when they submit."}</p>
-                          <input
-                            type="number"
-                            className="input"
-                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", fontWeight: 800 }}
-                            value={formIndividualPoints}
-                            onChange={e => setFormIndividualPoints(Math.max(0, parseInt(e.target.value) || 0))}
-                          />
-                        </div>
-
-                        {(() => {
-                          // Read-only lifecycle status. There is no manual open/close
-                          // anymore — the schedule window below drives everything, and
-                          // points auto-award once the close time passes.
-                          const now = new Date();
-                          const opens = formOpensAt ? new Date(formOpensAt) : null;
-                          const closes = formClosesAt ? new Date(formClosesAt) : null;
-                          let dot = "var(--green-house)";
-                          let label = t.fbStatusOpenForEntries || "Open for entries";
-                          if (formIsAwarded) {
-                            dot = "#10b981"; label = t.fbStatusFinalizedAwarded || "Finalized & points awarded";
-                          } else if (closes && now > closes) {
-                            dot = "var(--text-muted)"; label = t.fbStatusClosedAutoAward || "Closed — points will be awarded automatically";
-                          } else if (opens && now < opens) {
-                            dot = "#6366f1"; label = t.fbStatusScheduledNotOpen || "Scheduled — not open yet";
-                          }
-                          return (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.02)", padding: 16, borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: dot }} />
-                                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-secondary)" }}>
-                                  {t.fbStatusPrefix || "Status:"} {label}
-                                </span>
-                              </div>
-                              <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                                {t.fbStatusDesc || "Set the open/close times in the schedule below. When the close time passes, the house with the most submissions automatically wins the points — no manual action needed."}
-                              </p>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-
-                    {/* Schedule window (auto open/close by date & time) */}
-                    <div style={{ background: "var(--bg-elevated)", padding: 24, borderRadius: 24, border: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Calendar size={16} style={{ color: "var(--accent-primary)" }} />
-                        <h4 style={{ fontSize: 14, fontWeight: 900 }}>{t.fbScheduleHeading || "Schedule"}</h4>
-                      </div>
-                      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -4 }}>
-                        {t.fbScheduleDescPart1 || "Set when this form opens and closes (Bangkok time). Leave "}<b>{t.fbOpensAt || "Opens at"}</b>{t.fbScheduleDescPart2 || " blank to open immediately. "}<b>{t.fbClosesAt || "Closes at"}</b>{t.fbScheduleDescPart3 || " is required: when it passes, entries stop and the winning house is awarded automatically."}
-                      </p>
-                      {formIsAwarded && (
-                        <p style={{ fontSize: 12, color: "#b45309", fontWeight: 700, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 12, padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 6 }}>
-                          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-                          <span>{t.fbReopenWarningPart1 || "This form already closed and awarded its points. Setting "}<b>{t.fbClosesAt || "Closes at"}</b>{t.fbReopenWarningPart2 || " back to a future time re-opens it and "}<b>{t.fbReopenWarningBold || "takes the awarded points back"}</b>{t.fbReopenWarningPart3 || " from the winning house — they are re-awarded when it closes again."}</span>
-                        </p>
-                      )}
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 16 }}>
-                        <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.fbOpensAt || "Opens at"}</label>
-                          <input
-                            type="datetime-local"
-                            lang="en-GB"
-                            className="input"
-                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px" }}
-                            value={formOpensAt}
-                            onChange={(e) => setFormOpensAt(e.target.value)}
-                          />
-                        </div>
-                        <div className="field">
-                          <label className="label" style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "var(--text-secondary)" }}>{t.fbClosesAt || "Closes at"} <span style={{ color: "#ef4444" }}>*</span></label>
-                          <input
-                            type="datetime-local"
-                            lang="en-GB"
-                            className="input"
-                            style={{ width: "100%", height: 46, borderRadius: 12, padding: "0 16px", borderColor: !formClosesAt ? "#ef4444" : undefined }}
-                            value={formClosesAt}
-                            onChange={(e) => setFormClosesAt(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      {!formClosesAt && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {t.fbValidationCloseRequired || "A close time is required so the form can auto-close and award points."}</p>
-                      )}
-                      {formOpensAt && formClosesAt && new Date(formClosesAt) <= new Date(formOpensAt) && (
-                        <p style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} style={{ flexShrink: 0 }} /> {t.fbValidationCloseBeforeOpen || "Close time is before open time — students will never be able to submit."}</p>
-                      )}
-                    </div>
-
-                    {/* S-form assignment — who may see & fill this skill form */}
-                    {activeFormType === "S" && (
-                      <div style={{ background: "rgba(239,68,68,0.04)", padding: 24, borderRadius: 24, border: "1px solid rgba(239,68,68,0.2)", display: "flex", flexDirection: "column", gap: 16 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <ClipboardList size={16} style={{ color: "#ef4444" }} />
-                          <h4 style={{ fontSize: 14, fontWeight: 900 }}>{t.fbSFormWhoCanFill || "Who can do this form"}</h4>
-                        </div>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -8 }}>
-                          {t.fbSFormDesc || "Skill forms are hidden from everyone except super-admins/admins and the people you assign here (by role or by person). It appears in their dashboard history to fill — no event check-in needed."}
-                        </p>
-
-                        {/* By role */}
-                        <div>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.fbSFormAssignByRole || "Assign by role"}</span>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                            {ASSIGNABLE_FORM_ROLES.map((role) => {
-                              const on = formAssignedRoles.includes(role);
-                              return (
-                                <button
-                                  key={role}
-                                  type="button"
-                                  disabled={formIsAwarded}
-                                  onClick={() => setFormAssignedRoles((prev) => on ? prev.filter((r) => r !== role) : [...prev, role])}
-                                  style={{
-                                    padding: "6px 14px", borderRadius: 99, fontSize: 12, fontWeight: 800, cursor: formIsAwarded ? "not-allowed" : "pointer",
-                                    background: on ? "rgba(239,68,68,0.12)" : "var(--bg-surface)",
-                                    color: on ? "#ef4444" : "var(--text-secondary)",
-                                    border: on ? "1.5px solid rgba(239,68,68,0.4)" : "1.5px solid var(--border-subtle)",
-                                  }}
-                                >
-                                  {on ? "✓ " : ""}{ASSIGNABLE_ROLE_LABELS[role] || role}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* By person */}
-                        <div>
-                          <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.fbSFormAssignPeople || "Assign specific people"} ({formAssignedUserIds.length})</span>
-                          {/* Selected chips */}
-                          {formAssignedUserIds.length > 0 && (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                              {formAssignedUserIds.map((uid) => {
-                                const u = assigneeUsers.find((x) => x.id === uid);
-                                return (
-                                  <span key={uid} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, fontSize: 12, fontWeight: 800, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)" }}>
-                                    {u ? (u.name || u.studentId || uid) : uid}
-                                    <button type="button" disabled={formIsAwarded} onClick={() => setFormAssignedUserIds((prev) => prev.filter((x) => x !== uid))} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontWeight: 900, fontSize: 13, lineHeight: 1 }}>✕</button>
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                          <input
-                            type="text"
-                            className="input"
-                            style={{ width: "100%", height: 42, borderRadius: 12, padding: "0 14px", marginTop: 10 }}
-                            placeholder={t.fbSFormSearchPlaceholder || "Search people by name or student ID…"}
-                            value={assigneeSearch}
-                            onChange={(e) => setAssigneeSearch(e.target.value)}
-                            disabled={formIsAwarded}
-                          />
-                          {assigneeSearch.trim().length > 0 && (
-                            <div style={{ marginTop: 8, maxHeight: 200, overflowY: "auto", border: "1px solid var(--border-subtle)", borderRadius: 12, background: "var(--bg-surface)" }}>
-                              {assigneeUsers
-                                .filter((u) => {
-                                  const q = assigneeSearch.trim().toLowerCase();
-                                  return (u.name || "").toLowerCase().includes(q) || (u.studentId || "").toLowerCase().includes(q);
-                                })
-                                .slice(0, 30)
-                                .map((u) => {
-                                  const on = formAssignedUserIds.includes(u.id);
-                                  return (
-                                    <button
-                                      key={u.id}
-                                      type="button"
-                                      disabled={formIsAwarded}
-                                      onClick={() => setFormAssignedUserIds((prev) => on ? prev.filter((x) => x !== u.id) : [...prev, u.id])}
-                                      style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(239,68,68,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
-                                    >
-                                      <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}</span></span>
-                                      <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#ef4444" : "var(--accent-primary)" }}>{on ? (t.fbSFormAddedLabel || "✓ Added") : (t.fbSFormAddLabel || "+ Add")}</span>
-                                    </button>
-                                  );
-                                })}
-                              {assigneeUsers.length === 0 && (
-                                <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>{t.fbSFormLoadingPeople || "Loading people…"}</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {formAssignedRoles.length === 0 && formAssignedUserIds.length === 0 && (
-                          <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                            {t.fbSFormNoOneAssigned || "No one assigned yet — only super-admins/admins can see and fill this form."}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Sections & Questions */}
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "var(--accent-primary)", color: "#fff", fontSize: 12 }}>{allFormQuestions.length}</span>
-                          {lang === "th" ? "ส่วนและคำถาม" : lang === "cn" ? "章节与问题" : lang === "mm" ? "အပိုင်းများနှင့် မေးခွန်းများ" : "Sections & Questions"}
-                        </h4>
-                        <button
-                          type="button"
-                          className="btn"
-                          style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(99,102,241,0.1)", color: "#6366f1", border: "none", cursor: "pointer" }}
-                          onClick={addSection}
-                        >
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={14} style={{ flexShrink: 0 }} /> {lang === "th" ? "เพิ่มส่วน" : lang === "cn" ? "添加章节" : lang === "mm" ? "အပိုင်းထည့်ရန်" : "Add Section"}</span>
-                        </button>
-                      </div>
-
-                      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                        {formSections.map((section, sIdx) => (
-                          <div key={section.id} style={{ background: "rgba(99,102,241,0.04)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 24, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-                            {/* Section header */}
-                            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                                <span style={{ fontSize: 11, fontWeight: 900, color: "#6366f1", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                  {(lang === "th" ? "ส่วนที่ " : lang === "cn" ? "第 " : lang === "mm" ? "အပိုင်း " : "Section ")}{sIdx + 1}{formSections.length > 1 ? ` / ${formSections.length}` : ""}
-                                </span>
-                                <input
-                                  type="text"
-                                  className="input"
-                                  style={{ height: 40, borderRadius: 10, padding: "0 12px", fontWeight: 800 }}
-                                  value={section.title || ""}
-                                  onChange={e => updateSection(section.id, "title", e.target.value)}
-                                  placeholder={lang === "th" ? "ชื่อส่วน (ไม่บังคับ)" : lang === "cn" ? "章节标题（可选）" : lang === "mm" ? "အပိုင်းခေါင်းစဉ် (ရွေးချယ်ႏိုင်)" : "Section title (optional)"}
-                                />
-                                <textarea
-                                  ref={autoGrowTextarea}
-                                  className="input"
-                                  rows={1}
-                                  style={{ minHeight: 36, borderRadius: 10, padding: "8px 12px", fontSize: 13, resize: "none", overflow: "hidden", fontFamily: "inherit", lineHeight: 1.4 }}
-                                  value={section.description || ""}
-                                  onChange={e => { updateSection(section.id, "description", e.target.value); autoGrowTextarea(e.target); }}
-                                  placeholder={lang === "th" ? "คำอธิบายส่วน (ไม่บังคับ)" : lang === "cn" ? "章节描述（可选）" : lang === "mm" ? "အပိုင်းဖော်ပြချက် (ရွေးချယ်ႏိုင်)" : "Section description (optional)"}
-                                />
-                              </div>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                <button type="button" className="btn btn-ghost" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }} disabled={sIdx === 0} onClick={() => moveSection(section.id, -1)} title="Move up">
-                                  <ChevronUp size={16} />
-                                </button>
-                                <button type="button" className="btn btn-ghost" style={{ width: 36, height: 32, padding: 0, borderRadius: 8 }} disabled={sIdx === formSections.length - 1} onClick={() => moveSection(section.id, 1)} title="Move down">
-                                  <ChevronDown size={16} />
-                                </button>
-                                <button type="button" className="btn btn-danger" style={{ width: 36, height: 32, padding: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => removeSection(section.id)} title="Delete section">
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Questions in this section */}
-                            {section.questions.length === 0 ? (
-                              <div style={{ textAlign: "center", padding: "24px 16px", background: "var(--bg-elevated)", borderRadius: 16, border: "1px dashed var(--border-subtle)", color: "var(--text-muted)", fontSize: 13 }}>
-                                {lang === "th" ? "ยังไม่มีคำถามในส่วนนี้" : lang === "cn" ? "本章节暂无问题" : lang === "mm" ? "ဤအပိုင်းတွင် မေးခွန်းမရှိသေးပါ" : "No questions in this section yet."}
-                              </div>
-                            ) : (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                                {section.questions.map((q, idx) => {
-                                  const gradable = q.type === "choice" || q.type === "multiple" || q.type === "text";
-                                  // Questions that can drive this one's visibility: other
-                                  // choice/multiple questions in the same section that have options.
-                                  const controllers = section.questions.filter(
-                                    x => x.id !== q.id && (x.type === "choice" || x.type === "multiple") && (x.options?.length ?? 0) > 0
-                                  );
-                                  const controllerQ = q.visibleIf ? section.questions.find(x => x.id === q.visibleIf!.questionId) : undefined;
-                                  return (
-                                  <div
-                                    key={q.id || idx}
-                                    style={{ display: "flex", flexDirection: "column", gap: 16, background: "var(--bg-elevated)", padding: "20px", borderRadius: 20, border: q.graded ? "1px solid rgba(16,185,129,0.4)" : "1px solid var(--border-subtle)" }}
-                                  >
-                                    {/* Question Main Controls Row */}
-                                    <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: "1 1 auto", width: "100%" }}>
-                                        <span style={{ fontSize: 13, fontWeight: 900, color: "var(--text-muted)", width: 20, paddingTop: 9 }}>{idx + 1}.</span>
-                                        <textarea
-                                          ref={autoGrowTextarea}
-                                          className="input"
-                                          rows={1}
-                                          style={{ flex: 1, minHeight: 40, borderRadius: 10, padding: "9px 12px", resize: "none", overflow: "hidden", fontFamily: "inherit", lineHeight: 1.4 }}
-                                          value={q.label}
-                                          onChange={e => { updateQuestion(section.id, q.id, "label", e.target.value); autoGrowTextarea(e.target); }}
-                                          placeholder={lang === "th" ? "ข้อความคำถาม..." : lang === "cn" ? "问题内容..." : lang === "mm" ? "မေးခွန်းစာသား..." : "Question Text..."}
-                                        />
-                                      </div>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }} className="md:w-auto">
-                                        <select
-                                          className="input"
-                                          style={{ height: 40, borderRadius: 10, padding: "0 12px", background: "var(--bg-surface)", cursor: "pointer", fontWeight: 700, fontSize: 13, flex: "1 1 auto", minWidth: 160 }}
-                                          value={q.type}
-                                          onChange={e => updateQuestion(section.id, q.id, "type", e.target.value)}
-                                        >
-                                          <option value="text">{lang === "th" ? "คำตอบแบบยาว" : lang === "cn" ? "长答题" : lang === "mm" ? "စာသားအဖြေရှည်" : "Long Answer"}</option>
-                                          <option value="rating">{lang === "th" ? "คะแนนเรตติ้ง (1-5 ดาว)" : lang === "cn" ? "评分 (1-5 星)" : lang === "mm" ? "ကြယ်ပွင့်အဆင့်သတ်မှတ်ချက် (၁-၅)" : "Rating (1-5 Star)"}</option>
-                                          <option value="choice">{lang === "th" ? "หลายตัวเลือก (เลือกได้ 1 ข้อ)" : lang === "cn" ? "单选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (တစ်ခုရွေးရန်)" : "Multiple Choice"}</option>
-                                          <option value="multiple">{lang === "th" ? "เครื่องหมายเลือก (เลือกได้หลายข้อ)" : lang === "cn" ? "多选题" : lang === "mm" ? "ရွေးချယ်စရာများစွာ (အများကြီးရွေးရန်)" : "Checkbox"}</option>
-                                          <option value="file">{lang === "th" ? "อัปโหลดไฟล์ (รูปภาพ/PDF)" : lang === "cn" ? "文件上传（图片/PDF）" : lang === "mm" ? "ဖိုင်တင်ခြင်း (ပုံ/PDF)" : "File Upload (Image/PDF)"}</option>
-                                        </select>
-                                        <button
-                                          type="button"
-                                          style={{ padding: "6px 12px", height: 40, borderRadius: 10, border: "none", background: q.required ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.03)", color: q.required ? "#10b981" : "var(--text-muted)", whiteSpace: "nowrap", fontWeight: 800, fontSize: 11, cursor: "pointer" }}
-                                          onClick={() => updateQuestion(section.id, q.id, "required", !q.required)}
-                                        >
-                                          {q.required ? t.eventRequiredLabel : (lang === "th" ? "ไม่บังคับ" : lang === "cn" ? "选填" : lang === "mm" ? "ရွေးချယ်နိုင်သည်" : "Optional")}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="btn btn-danger"
-                                          style={{ width: 40, height: 40, padding: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                                          onClick={() => removeQuestion(section.id, q.id)}
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Options builder (choice/multiple) with correct-answer marking + branching */}
-                                    {(q.type === "choice" || q.type === "multiple") && (
-                                      <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
-                                        <span style={{ fontSize: 11, fontWeight: 900, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                          {lang === "th" ? "ตัวเลือกคำตอบ" : lang === "cn" ? "选项设置" : lang === "mm" ? "ရွေးချယ်စရာများ" : "Answer Options"}
-                                          {q.graded && <span style={{ color: "#10b981", marginLeft: 8 }}>{lang === "th" ? "• แตะวงกลมเพื่อตั้งคำตอบที่ถูก" : lang === "cn" ? "• 点击圆圈设为正确答案" : lang === "mm" ? "• မှန်ကန်သောအဖြေသတ်မှတ်ရန် နှိပ်ပါ" : "• tap the circle to mark the correct answer"}</span>}
-                                        </span>
-                                        {q.options?.map((opt: string, optIdx: number) => {
-                                          const isCorrect = q.type === "choice" ? q.correct === opt : Array.isArray(q.correct) && q.correct.includes(opt);
-                                          return (
-                                          <div key={optIdx} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                if (!q.graded) return;
-                                                if (q.type === "choice") setChoiceCorrect(section.id, q.id, opt);
-                                                else toggleMultipleCorrect(section.id, q.id, opt);
-                                              }}
-                                              title={q.graded ? "Mark correct" : undefined}
-                                              style={{ width: 22, height: 22, borderRadius: q.type === "choice" ? "50%" : 6, border: `2px solid ${isCorrect ? "#10b981" : "var(--border-medium)"}`, background: isCorrect ? "#10b981" : "transparent", color: "#fff", cursor: q.graded ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}
-                                            >
-                                              {isCorrect ? "✓" : ""}
-                                            </button>
-                                            <input
-                                              type="text"
-                                              className="input"
-                                              style={{ flex: "1 1 160px", height: 36, borderRadius: 8, padding: "0 12px", fontSize: 13 }}
-                                              value={opt}
-                                              onChange={e => updateOption(section.id, q.id, optIdx, e.target.value)}
-                                              placeholder={`Option ${optIdx + 1}`}
-                                            />
-                                            {/* Per-option branching (single-choice only) */}
-                                            {q.type === "choice" && formSections.length > 1 && (
-                                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                <CornerDownRight size={14} style={{ color: "var(--text-muted)" }} />
-                                                <select
-                                                  className="input"
-                                                  style={{ height: 36, borderRadius: 8, padding: "0 8px", fontSize: 12, background: "var(--bg-surface)", cursor: "pointer", maxWidth: 200 }}
-                                                  value={q.branches?.[opt] ?? BRANCH_NEXT}
-                                                  onChange={e => setBranch(section.id, q.id, opt, e.target.value)}
-                                                >
-                                                  <option value={BRANCH_NEXT}>{lang === "th" ? "ไปส่วนถัดไป" : lang === "cn" ? "继续下一节" : lang === "mm" ? "နောက်အပိုင်းသို့" : "Continue to next section"}</option>
-                                                  {formSections.map((s, i) => (
-                                                    <option key={s.id} value={s.id} disabled={s.id === section.id}>
-                                                      {(lang === "th" ? "ไปส่วนที่ " : lang === "cn" ? "前往第 " : lang === "mm" ? "အပိုင်း " : "Go to section ")}{i + 1}{s.title ? `: ${s.title}` : ""}
-                                                    </option>
-                                                  ))}
-                                                  <option value={BRANCH_SUBMIT}>{lang === "th" ? "ส่งแบบฟอร์ม" : lang === "cn" ? "提交表单" : lang === "mm" ? "ဖောင်တင်ရန်" : "Submit form"}</option>
-                                                </select>
-                                              </div>
-                                            )}
-                                            <button
-                                              type="button"
-                                              className="btn btn-ghost"
-                                              style={{ width: 36, height: 36, padding: 0, color: "#ef4444", borderRadius: 8, fontSize: 14, fontWeight: 800 }}
-                                              onClick={() => removeOption(section.id, q.id, optIdx)}
-                                              disabled={!q.options || q.options.length <= 1}
-                                            >
-                                              ✕
-                                            </button>
-                                          </div>
-                                          );
-                                        })}
-                                        <button
-                                          type="button"
-                                          className="btn btn-ghost"
-                                          style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 800, color: "var(--accent-primary)", padding: "4px 12px", height: 32, borderRadius: 8, marginTop: 4 }}
-                                          onClick={() => addOption(section.id, q.id)}
-                                        >
-                                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={12} style={{ flexShrink: 0 }} /> {lang === "th" ? "เพิ่มตัวเลือก" : lang === "cn" ? "添加选项" : lang === "mm" ? "ရွေးချယ်စရာထည့်ရန်" : "Add Option"}</span>
-                                        </button>
-                                      </div>
-                                    )}
-
-                                    {/* Grading controls */}
-                                    {gradable && (
-                                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleGraded(section.id, q.id)}
-                                          style={{ padding: "6px 14px", height: 36, borderRadius: 10, border: "none", background: q.graded ? "rgba(16,185,129,0.12)" : "rgba(0,0,0,0.03)", color: q.graded ? "#10b981" : "var(--text-muted)", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-                                        >
-                                          {q.graded ? "✓ " : ""}{lang === "th" ? "ให้คะแนน" : lang === "cn" ? "计分" : lang === "mm" ? "အမှတ်ပေး" : "Graded"}
-                                        </button>
-                                        {q.graded && (
-                                          <>
-                                            <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-                                              {lang === "th" ? "คะแนน" : lang === "cn" ? "分值" : lang === "mm" ? "အမှတ်" : "Points"}
-                                              <input
-                                                type="number"
-                                                min={1}
-                                                className="input"
-                                                style={{ width: 72, height: 36, borderRadius: 8, padding: "0 10px", fontSize: 13, fontWeight: 800 }}
-                                                value={q.points ?? 1}
-                                                onChange={e => setPoints(section.id, q.id, parseInt(e.target.value))}
-                                              />
-                                            </label>
-                                            {q.type === "text" && (
-                                              <input
-                                                type="text"
-                                                className="input"
-                                                style={{ flex: "1 1 200px", height: 36, borderRadius: 8, padding: "0 12px", fontSize: 13 }}
-                                                value={typeof q.correct === "string" ? q.correct : ""}
-                                                onChange={e => setTextCorrect(section.id, q.id, e.target.value)}
-                                                placeholder={lang === "th" ? "คำตอบที่ถูกต้อง (ไม่สนตัวพิมพ์ใหญ่เล็ก)" : lang === "cn" ? "正确答案（不区分大小写）" : lang === "mm" ? "မှန်ကန်သောအဖြေ" : "Correct answer (case-insensitive)"}
-                                              />
-                                            )}
-                                            {(q.type === "choice" || q.type === "multiple") && (
-                                              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
-                                                {lang === "th" ? "เลือกคำตอบที่ถูกจากวงกลมด้านบน" : lang === "cn" ? "请在上方标记正确答案" : lang === "mm" ? "အပေါ်တွင် မှန်ကန်သောအဖြေကို မှတ်သားပါ" : "Mark the correct option(s) above"}
-                                              </span>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {/* Conditional visibility — show this question only when a
-                                        controlling choice/multiple answer matches a given option. */}
-                                    {controllers.length > 0 && (
-                                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingLeft: 32, borderTop: "1px dashed var(--border-subtle)", paddingTop: 16 }}>
-                                        <CornerDownRight size={14} style={{ color: "#6366f1" }} />
-                                        <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-secondary)" }}>
-                                          {lang === "th" ? "แสดงเมื่อ" : lang === "cn" ? "显示条件" : lang === "mm" ? "ပြသမည် အကယ်၍" : "Show only if"}
-                                        </span>
-                                        <select
-                                          className="input"
-                                          style={{ height: 36, borderRadius: 8, padding: "0 8px", fontSize: 12, background: "var(--bg-surface)", cursor: "pointer", maxWidth: 220 }}
-                                          value={q.visibleIf?.questionId ?? ""}
-                                          onChange={e => {
-                                            const cid = e.target.value;
-                                            if (!cid) { setVisibleIf(section.id, q.id, "", ""); return; }
-                                            const ctrl = section.questions.find(x => x.id === cid);
-                                            const firstVal = ctrl?.options?.[0] ?? "";
-                                            setVisibleIf(section.id, q.id, cid, q.visibleIf?.questionId === cid ? q.visibleIf.value : firstVal);
-                                          }}
-                                        >
-                                          <option value="">{lang === "th" ? "แสดงเสมอ" : lang === "cn" ? "始终显示" : lang === "mm" ? "အမြဲပြသ" : "Always show"}</option>
-                                          {controllers.map((c, ci) => (
-                                            <option key={c.id} value={c.id}>{c.label || `Q${ci + 1}`}</option>
-                                          ))}
-                                        </select>
-                                        {q.visibleIf && controllerQ && (
-                                          <>
-                                            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>
-                                              {lang === "th" ? "มีคำตอบเป็น" : lang === "cn" ? "等于" : lang === "mm" ? "သည်" : "is"}
-                                            </span>
-                                            <select
-                                              className="input"
-                                              style={{ height: 36, borderRadius: 8, padding: "0 8px", fontSize: 12, background: "var(--bg-surface)", cursor: "pointer", maxWidth: 220 }}
-                                              value={q.visibleIf.value}
-                                              onChange={e => setVisibleIf(section.id, q.id, q.visibleIf!.questionId, e.target.value)}
-                                            >
-                                              {(controllerQ.options ?? []).map(opt => (
-                                                <option key={opt} value={opt}>{opt}</option>
-                                              ))}
-                                            </select>
-                                          </>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            <button
-                              type="button"
-                              className="btn"
-                              style={{ alignSelf: "flex-start", borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)", border: "none", cursor: "pointer" }}
-                              onClick={() => addQuestion(section.id)}
-                            >
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={14} style={{ flexShrink: 0 }} /> {t.eventAddQuestionLabel}</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Footer Actions */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", borderTop: "1px solid var(--border-subtle)", paddingTop: 28, marginTop: 12 }}>
-                      <div>
-                        {activeFormId && !formIsAwarded && (
-                          <button
-                            className="btn btn-danger"
-                            type="button"
-                            style={{ height: 40, borderRadius: 12, padding: "0 16px", fontSize: 12 }}
-                            onClick={() => setConfirmModal({
-                              show: true,
-                              title: t.fbDeleteFormTitle || "Delete this form?",
-                              message: t.fbDeleteFormMessage || "This will permanently delete the form and all its submissions.",
-                              confirmText: t.fbBtnDeleteForm || "Delete Form",
-                              cancelText: t.cancel || "Cancel",
-                              isDanger: true,
-                              onConfirm: () => { setConfirmModal(prev => ({ ...prev, show: false })); deleteActiveForm(); }
-                            })}
-                          >
-                            <Trash2 size={13} style={{ marginRight: 6 }} /> {t.fbBtnDeleteForm || "Delete Form"}
-                          </button>
-                        )}
-                      </div>
-                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "flex-end", flex: 1 }}>
-                        <button
-                          className="btn btn-ghost"
-                          type="button"
-                          style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
-                          onClick={closeFormBuilder}
-                        >
-                          {t.cancel || "Cancel"}
-                        </button>
-                        <button
-                          className="btn btn-primary"
-                          type="button"
-                          style={{ height: 46, borderRadius: 12, padding: "0 24px", whiteSpace: "nowrap" }}
-                          disabled={formSaving}
-                          onClick={() => saveForm()}
-                        >
-                          {formSaving ? <div className="spinner w-4 h-4 border-2" /> : formIsAwarded ? (t.fbBtnReopen || "Re-open & Save") : activeFormId ? (t.fbBtnSaveChanges || "Save Changes") : (t.fbBtnCreateForm || "Create Form")}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-                    
-                    {/* Auto-award status banner — points are awarded automatically
-                        when the scheduled close time passes; there is no manual
-                        award/open/close action anymore. */}
-                    {(() => {
-                      const now = new Date();
-                      const closes = formClosesAt ? new Date(formClosesAt) : null;
-                      const hasClosed = !!closes && now > closes;
-
-                      if (formIsAwarded) {
-                        return (
-                          <div
-                            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
-                            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", borderRadius: 24, padding: "24px 32px" }}
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", background: "rgba(16,185,129,0.1)", color: "#10b981", flexShrink: 0 }}>
-                                <CheckCircle2 size={22} />
-                              </div>
-                              <div>
-                                <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--text-primary)", marginBottom: 4 }}>{t.fbContestFinalizedTitle || "Contest Finalized & Closed"}</h4>
-                                <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                                  {t.fbContestFinalizedDesc || "Points have been awarded to the winning house and this evaluation form is frozen."}
-                                </p>
-                              </div>
-                            </div>
-                            <div style={{ padding: "8px 16px", borderRadius: 10, background: "rgba(16,185,129,0.1)", color: "#10b981", fontSize: 12, fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>
-                              <Lock size={14} style={{ flexShrink: 0 }} /> {t.fbPermanentLock || "Permanent Lock"}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div
-                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
-                          style={{ background: "linear-gradient(135deg, rgba(255,107,0,0.08) 0%, rgba(255,50,0,0.08) 100%)", border: "1px solid rgba(255,107,0,0.2)", borderRadius: 24, padding: "24px 32px" }}
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)", flexShrink: 0 }}>
-                              {hasClosed ? <Trophy size={22} /> : <Calendar size={22} />}
-                            </div>
-                            <div>
-                              <h4 style={{ fontSize: 16, fontWeight: 900, color: "var(--accent-primary)", marginBottom: 4 }}>
-                                {hasClosed ? (t.fbClosedAwaitingAward || "Closed — awaiting automatic award") : (t.fbAwardsWhenFormCloses || "Awards automatically when the form closes")}
-                              </h4>
-                              <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                                {hasClosed
-                                  ? <>The close time has passed. The house with the most submissions will automatically receive <b>+{formPoints} PTS</b> — it settles the next time the dashboard or scoreboard is opened, or at the daily 23:00 run.</>
-                                  : formClosesAt
-                                  ? <>When the close time passes, the house with the most submissions automatically receives <b>+{formPoints} PTS</b>. No manual action needed.</>
-                                  : <>No <b>Closes at</b> time is set, so this form stays open and will <b>not</b> auto-award. Set a close time under Design &amp; Rules to enable automatic awarding.</>}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Stats Leaderboard Cards */}
-                    <div>
-                      <h4 style={{ fontSize: 16, fontWeight: 900, marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 6 }}><BarChart3 size={16} style={{ flexShrink: 0 }} /> {t.fbHouseSubmissionStandings || "House Submission Standings"}</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {["red", "green", "yellow", "blue"].map(hId => {
-                          const houseColors: Record<string, string> = {
-                            red: "var(--red-house)",
-                            green: "var(--green-house)",
-                            yellow: "var(--yellow-house)",
-                            blue: "var(--blue-house)"
-                          };
-                          const houseNames: Record<string, string> = {
-                            red: t.houseMom || "Mom",
-                            green: t.houseTo || "To",
-                            yellow: t.houseLuang || "Luang",
-                            blue: t.houseMakara || "Makon"
-                          };
-                          const count = formStats?.[hId] || 0;
-                          return (
-                            <div 
-                              key={hId} 
-                              style={{ 
-                                background: "var(--bg-elevated)", 
-                                border: `1px solid var(--border-subtle)`,
-                                borderTop: `5px solid ${houseColors[hId]}`,
-                                borderRadius: 16, 
-                                padding: 20, 
-                                textAlign: "center" 
-                              }}
-                            >
-                              <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>{houseNames[hId]}</p>
-                              <p style={{ fontSize: 32, fontWeight: 900, color: "var(--text-primary)" }}>{count}</p>
-                              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t.fbSubmissionsCount || "submissions"}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* List of Submissions */}
-                    <div ref={submissionsListRef} style={{ scrollMarginTop: 80 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-                        <h4 style={{ fontSize: 16, fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 6 }}><MessageSquare size={16} style={{ flexShrink: 0 }} /> {t.fbStudentSubmissions || "Student Submissions"} ({formSubmissions.length})</h4>
-                        <button
-                          type="button"
-                          className="btn"
-                          style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(16,185,129,0.12)", color: "#10b981", border: "none", cursor: formSubmissions.length === 0 ? "not-allowed" : "pointer", opacity: formSubmissions.length === 0 ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
-                          disabled={formSubmissions.length === 0}
-                          onClick={exportSubmissionsXlsx}
-                        >
-                          <BarChart3 size={15} /> {lang === "th" ? "ส่งออก Excel (.xlsx)" : lang === "cn" ? "导出 Excel (.xlsx)" : lang === "mm" ? "Excel (.xlsx) ထုတ်ယူရန်" : "Export Excel (.xlsx)"}
-                        </button>
-                      </div>
-                      {formSubmissions.length === 0 ? (
-                        <div style={{ textAlign: "center", padding: "60px 20px", border: "1px dashed var(--border-subtle)", borderRadius: 20 }}>
-                          <p style={{ color: "var(--text-muted)", fontWeight: 700 }}>{t.fbNoSubmissionsYet || "No feedback submissions yet."}</p>
-                          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{t.fbNoSubmissionsDesc || "Once students complete the form, their answers will appear here live!"}</p>
-                        </div>
-                      ) : (() => {
-                        const totalPages = Math.max(1, Math.ceil(formSubmissions.length / SUBMISSIONS_PER_PAGE));
-                        const currentPage = Math.min(submissionsPage, totalPages);
-                        const start = (currentPage - 1) * SUBMISSIONS_PER_PAGE;
-                        const pageSubs = formSubmissions.slice(start, start + SUBMISSIONS_PER_PAGE);
-                        return (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                          {pageSubs.map((sub, sIdx) => (
-                            <div
-                              key={sub.id || (start + sIdx)}
-                              style={{ 
-                                background: "var(--bg-elevated)", 
-                                border: "1px solid var(--border-subtle)", 
-                                borderRadius: 20, 
-                                padding: 24 
-                              }}
-                            >
-                              {/* Header info */}
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 12 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <div style={{
-                                    width: 10,
-                                    height: 10,
-                                    borderRadius: "50%",
-                                    background: sub.houseId === "red" ? "var(--red-house)" : sub.houseId === "green" ? "var(--green-house)" : sub.houseId === "yellow" ? "var(--yellow-house)" : "var(--blue-house)"
-                                  }} />
-                                  <span style={{ fontWeight: 800, fontSize: 15 }}>{sub.studentName}</span>
-                                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>• {sub.studentId}</span>
-                                  {sub.hasGraded && (
-                                    <span style={{ fontSize: 12, fontWeight: 900, color: "#10b981", background: "rgba(16,185,129,0.1)", padding: "2px 10px", borderRadius: 999 }}>
-                                      {lang === "th" ? "คะแนน" : lang === "cn" ? "得分" : lang === "mm" ? "ရမှတ်" : "Score"} {sub.score}/{sub.maxScore}
-                                    </span>
-                                  )}
-                                </div>
-                                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
-                                  {new Date(sub.submittedAt).toLocaleString("en-GB", { timeZone: "Asia/Bangkok", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                                </span>
-                              </div>
-
-                              {/* Answers */}
-                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                {allFormQuestions.map((q) => {
-                                  const ans = sub.answers?.[q.id];
-                                  return (
-                                    <div key={q.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>{q.label}</span>
-                                      {q.type === "file" ? (
-                                        typeof ans === "string" && ans ? (
-                                          <a
-                                            href={`/api/forms/file/${sub.id}?q=${q.id}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            style={{ display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start", fontSize: 13, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(255,107,0,0.08)", border: "1px solid rgba(255,107,0,0.15)", borderRadius: 10, padding: "8px 14px", textDecoration: "none" }}
-                                          >
-                                            <Download size={14} /> {(ans.split(".").pop() || "file").toUpperCase()} · {lang === "th" ? "เปิดไฟล์" : lang === "cn" ? "查看文件" : lang === "mm" ? "ဖိုင်ဖွင့်ရန်" : "Open file"}
-                                          </a>
-                                        ) : (
-                                          <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: 13 }}>
-                                            {lang === "th" ? "ไม่มีไฟล์" : lang === "cn" ? "无文件" : lang === "mm" ? "ဖိုင်မရှိ" : "No file"}
-                                          </span>
-                                        )
-                                      ) : q.type === "rating" ? (
-                                        <div style={{ display: "flex", gap: 2, color: "#ffb000" }}>
-                                          {Array.from({ length: 5 }).map((_, starIdx) => (
-                                            <span key={starIdx} style={{ fontSize: 16 }}>
-                                               {starIdx < (typeof ans === "number" ? ans : typeof ans === "string" ? parseInt(ans) || 0 : 0) ? "★" : "☆"}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      ) : Array.isArray(ans) ? (
-                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
-                                          {ans.length > 0 ? (
-                                            ans.map((item: string, itemIdx: number) => (
-                                              <span
-                                                key={itemIdx}
-                                                style={{
-                                                  fontSize: 12,
-                                                  fontWeight: 800,
-                                                  background: "rgba(255,107,0,0.08)",
-                                                  color: "var(--accent-primary)",
-                                                  padding: "4px 8px",
-                                                  borderRadius: 8,
-                                                  border: "1px solid rgba(255,107,0,0.15)"
-                                                }}
-                                              >
-                                                {item}
-                                              </span>
-                                            ))
-                                          ) : (
-                                            <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: 13 }}>No selection</span>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <p style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500, whiteSpace: "pre-wrap" }}>
-                                          {ans || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>No answer</span>}
-                                        </p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                          {totalPages > 1 && (
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
-                              <button
-                                type="button"
-                                className="btn"
-                                disabled={currentPage <= 1}
-                                onClick={() => goToSubmissionsPage((p) => Math.max(1, p - 1))}
-                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage <= 1 ? "not-allowed" : "pointer", opacity: currentPage <= 1 ? 0.5 : 1 }}
-                              >
-                                {lang === "th" ? "ก่อนหน้า" : lang === "cn" ? "上一页" : lang === "mm" ? "ယခင်" : "Previous"}
-                              </button>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>
-                                {(lang === "th" ? "หน้า" : lang === "cn" ? "第" : lang === "mm" ? "စာမျက်နှာ" : "Page")} {currentPage} / {totalPages}
-                              </span>
-                              <button
-                                type="button"
-                                className="btn"
-                                disabled={currentPage >= totalPages}
-                                onClick={() => goToSubmissionsPage((p) => Math.min(totalPages, p + 1))}
-                                style={{ borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)", cursor: currentPage >= totalPages ? "not-allowed" : "pointer", opacity: currentPage >= totalPages ? 0.5 : 1 }}
-                              >
-                                {lang === "th" ? "ถัดไป" : lang === "cn" ? "下一页" : lang === "mm" ? "နောက်တစ်ခု" : "Next"}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+      {showFormBuilder && formEventId && (
+        <EventFormBuilderModal
+          eventId={formEventId}
+          eventTitle={formEventTitle || "Event"}
+          onClose={() => { setShowFormBuilder(false); setFormEventId(null); setFormEventTitle(null); }}
+          onChanged={fetchEvents}
+        />
       )}
 
       {/* Premium custom Confirm Modal */}
@@ -5744,6 +4158,59 @@ export default function AdminEventsPage() {
               onClick={() => setErrorModal(prev => ({ ...prev, show: false }))}
             >
               {lang === "th" ? "ปิด" : "Close"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Informational "pending review" notice — see reviewNoticeModal above. */}
+      {reviewNoticeModal.show && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(12px)",
+          zIndex: 2500,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24
+        }} onClick={() => setReviewNoticeModal(prev => ({ ...prev, show: false }))}>
+          <div className="animate-fade-in-up" style={{
+            background: "var(--bg-surface)",
+            width: "90%",
+            maxWidth: 440,
+            borderRadius: 28,
+            padding: 32,
+            textAlign: "center",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+            border: "1px solid var(--border-medium)"
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "rgba(245, 158, 11, 0.1)",
+              color: "#f59e0b",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px"
+            }}>
+              <AlertTriangle size={28} />
+            </div>
+            <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", marginBottom: 12 }}>
+              {reviewNoticeModal.title}
+            </h4>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28 }}>
+              {reviewNoticeModal.message}
+            </p>
+            <button
+              className="btn btn-primary"
+              style={{ width: "100%", height: 46, borderRadius: 12, fontSize: 14, fontWeight: 800 }}
+              onClick={() => setReviewNoticeModal(prev => ({ ...prev, show: false }))}
+            >
+              {lang === "th" ? "รับทราบ" : "Got it"}
             </button>
           </div>
         </div>

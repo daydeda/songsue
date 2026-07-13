@@ -27,12 +27,19 @@ type Proposal = {
   quotaInternational: number | null;
   firstYearOnly: boolean | null;
   staffUserIds: string[] | null;
+  allowedRoles: string[] | null;
+  allowedMajors: string[] | null;
+  allowedClubs: string[] | null;
   sessions: { title: string | null; startTime: string; endTime: string }[] | null;
   status: "pending" | "approved" | "rejected" | "withdrawn";
   reviewNote: string | null;
   createdAt: string;
   reviewedAt: string | null;
-  club: { id: string; name: string };
+  // Exactly one of club/majorCode is set — a club_president proposal carries
+  // club, a major_president proposal carries majorCode instead (club is null).
+  // See eventProposals.clubId/majorCode in schema.ts.
+  club: { id: string; name: string } | null;
+  majorCode: string | null;
   proposer: { id: string; name: string; studentId: string | null };
 };
 
@@ -162,7 +169,7 @@ export function EventProposalsClient() {
                     <div>
                       <p style={{ fontWeight: 700, fontSize: 15 }}>{p.title}</p>
                       <p style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                        <Building2 size={12} /> {p.club.name}
+                        <Building2 size={12} /> {p.club ? p.club.name : (lang === "th" ? `สาขา ${p.majorCode}` : `Major: ${p.majorCode}`)}
                         <span> · {t.adminProposalsRequestedByLabel} {p.proposer.name}{p.proposer.studentId ? ` (${p.proposer.studentId})` : ""}</span>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Clock size={11} /> {new Date(p.createdAt).toLocaleString("en-GB")}</span>
                       </p>
@@ -217,6 +224,24 @@ export function EventProposalsClient() {
                   {p.staffUserIds && p.staffUserIds.length > 0 && (
                     <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
                       {p.staffUserIds.length} {lang === "th" ? "ทีมงานที่เสนอ" : "suggested staff"}
+                    </span>
+                  )}
+                  {/* Suggested-access ACL — non-binding, staff sets the real
+                      allowedRoles/allowedMajors/allowedClubs when creating the
+                      event (see the fromProposal prefill in admin/events/page.tsx). */}
+                  {p.allowedRoles && p.allowedRoles.length > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "rgba(99,102,241,0.1)", color: "#6366f1" }}>
+                      {lang === "th" ? "แนะนำตามบทบาท: " : lang === "cn" ? "建议角色： " : lang === "mm" ? "အကြံပြုအခန်းကဏ္ဍ: " : "Suggested roles: "}{p.allowedRoles.join(", ")}
+                    </span>
+                  )}
+                  {p.allowedMajors && p.allowedMajors.length > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)" }}>
+                      {lang === "th" ? "แนะนำตามสาขา: " : lang === "cn" ? "建议专业： " : lang === "mm" ? "အကြံပြုအထူးပြုဌာန: " : "Suggested majors: "}{p.allowedMajors.join(", ")}
+                    </span>
+                  )}
+                  {p.allowedClubs && p.allowedClubs.length > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "rgba(139,92,246,0.1)", color: "#8b5cf6" }}>
+                      {p.allowedClubs.length} {lang === "th" ? "ชมรมที่แนะนำ" : lang === "cn" ? "个建议社团" : lang === "mm" ? "အကြံပြုကလပ်" : "suggested clubs"}
                     </span>
                   )}
                 </div>

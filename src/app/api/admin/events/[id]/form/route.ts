@@ -1,18 +1,62 @@
+import type { Session } from "next-auth";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { forms } from "@/db/schema";
+import { forms, events } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { normalizeForm, computeScore, type AnswerMap } from "@/lib/form-schema";
-import { ASSIGNABLE_ROLES } from "@/lib/form-access";
+import { ASSIGNABLE_ROLES, canSeeRespondentIdentity } from "@/lib/form-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { revertFormAward } from "@/lib/award-points";
 import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
+import { effectiveRoles } from "@/lib/admin-access";
+import { EventScopeService } from "@/modules/events/event-scope.service";
 
-const ADMIN_ROLES = ["super_admin", "admin", "registration", "organizer"];
+// Staff manage every event's forms, unscoped. club_president/major_president may
+// also fully manage forms (create/edit/delete/schedule/identity toggle), but only
+// for events they own — mirrors the scoping already used for attendance/strikes/
+// appeals (see EventScopeService). smo gets read-only access to every event's
+// forms, unscoped — it may GET but never create/edit/delete.
+const STAFF_ROLES = ["super_admin", "admin", "registration", "organizer"];
+const PRESIDENT_ROLES = ["club_president", "major_president"];
+const VIEW_ONLY_ROLES = ["smo"];
 
-function isAdmin(role?: string) {
-  return ADMIN_ROLES.includes(role || "");
+// Gate + (for presidents) scope-check a request against the event. `write`
+// widens/narrows which roles qualify: writes exclude the view-only roles and
+// always require presidents to own the event; reads admit view-only roles too,
+// unscoped. Also returns `isStaff` so callers can decide the review-gate
+// behavior (see forms.reviewStatus in schema.ts): staff writes are always
+// auto-approved, a president's writes always land back in 'pending'.
+async function gateEventForms(eventId: string, session: Session | null, write: boolean) {
+  if (!session?.user) {
+    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }), isStaff: false };
+  }
+  const myRoles = effectiveRoles(session.user.role, session.user.roles);
+  const isStaff = myRoles.some((r) => STAFF_ROLES.includes(r));
+  const presidentTags = myRoles.filter((r) => PRESIDENT_ROLES.includes(r));
+  const isViewOnly = !write && myRoles.some((r) => VIEW_ONLY_ROLES.includes(r));
+
+  if (!isStaff && presidentTags.length === 0 && !isViewOnly) {
+    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }), isStaff };
+  }
+
+  if (isStaff || isViewOnly) {
+    return { error: null as NextResponse | null, isStaff };
+  }
+
+  // Only presidents left — must own the event.
+  const event = await db.query.events.findFirst({
+    where: eq(events.id, eventId),
+    columns: { id: true, ownerClubIds: true, ownerMajors: true },
+  });
+  if (!event) {
+    return { error: NextResponse.json({ error: "Event not found" }, { status: 404 }), isStaff };
+  }
+  const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+  if (!EventScopeService.isEventManagedByScope(event, scope)) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }), isStaff };
+  }
+  return { error: null as NextResponse | null, isStaff };
 }
 
 // Parse an incoming datetime (ISO string) into a Date, or null. Invalid/empty
@@ -34,6 +78,15 @@ function sanitizeRoles(v: unknown): string[] {
 function sanitizeUserIds(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.filter((id): id is string => typeof id === "string" && id.trim().length > 0))];
+}
+
+// Resolve a new form's identity-visibility flag: an explicit boolean wins;
+// otherwise every form type defaults to hidden identity — so opening
+// submissions access to more roles (registration/organizer today, more roles
+// later) doesn't silently expose who said what. The creator opts in per form
+// when identity is genuinely needed (e.g. registration-style collection).
+function resolveShowRespondentIdentity(v: unknown): boolean {
+  return typeof v === "boolean" ? v : false;
 }
 
 // Bound a form's point award the same way manual house adjustments are capped
@@ -63,11 +116,9 @@ export async function GET(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || !isAdmin(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: eventId } = await params;
+    const gate = await gateEventForms(eventId, session, false);
+    if (gate.error) return gate.error;
 
     const allForms = await db.query.forms.findMany({
       where: eq(forms.eventId, eventId),
@@ -92,6 +143,7 @@ export async function GET(
       orderBy: (f, { asc }) => [asc(f.sortOrder), asc(f.createdAt)],
     });
 
+    let identityVisibleSubmissions = 0;
     const result = allForms.map((formObj) => {
       const houseStats: Record<string, number> = { red: 0, green: 0, yellow: 0, blue: 0 };
       for (const sub of formObj.submissions) {
@@ -100,6 +152,10 @@ export async function GET(
       }
 
       const normalized = normalizeForm(formObj.questions);
+      // super_admin/admin always see who submitted; other viewers (registration,
+      // organizer, and any role granted access later) only do when the form
+      // creator opted in via showRespondentIdentity — see form-access.ts.
+      const canSeeIdentity = canSeeRespondentIdentity(session!.user!.role, formObj.showRespondentIdentity, formObj.reviewStatus);
 
       return {
         id: formObj.id,
@@ -117,18 +173,25 @@ export async function GET(
         closesAt: formObj.closesAt,
         assignedRoles: formObj.assignedRoles ?? [],
         assignedUserIds: formObj.assignedUserIds ?? [],
+        showRespondentIdentity: formObj.showRespondentIdentity,
+        reviewStatus: formObj.reviewStatus,
+        reviewedBy: formObj.reviewedBy,
+        reviewedAt: formObj.reviewedAt,
+        reviewNote: formObj.reviewNote,
         stats: houseStats,
         submissions: formObj.submissions.map((sub) => {
           const { score, maxScore, hasGraded } = computeScore(normalized, (sub.answers as AnswerMap) || {});
+          if (canSeeIdentity) identityVisibleSubmissions++;
           return {
             id: sub.id,
-            studentName: sub.user?.name || "Student",
-            studentId: sub.user?.studentId || "",
+            studentName: canSeeIdentity ? (sub.user?.name || "Student") : "",
+            studentId: canSeeIdentity ? (sub.user?.studentId || "") : "",
             houseId: sub.user?.houseId || "unassigned",
-            nickname: sub.user?.nickname || "",
-            major: sub.user?.major || "",
-            phone: sub.user?.phone || "",
-            contactChannels: sub.user?.contactChannels || "",
+            nickname: canSeeIdentity ? (sub.user?.nickname || "") : "",
+            major: canSeeIdentity ? (sub.user?.major || "") : "",
+            phone: canSeeIdentity ? (sub.user?.phone || "") : "",
+            contactChannels: canSeeIdentity ? (sub.user?.contactChannels || "") : "",
+            identityHidden: !canSeeIdentity,
             answers: sub.answers,
             submittedAt: sub.submittedAt,
             score,
@@ -139,13 +202,15 @@ export async function GET(
       };
     });
 
-    // PDPA: the admin form view returns every submitter's phone + contact channels.
-    // Log the PII read (who/when), mirroring the attendance-list access log. Hard
-    // (not best-effort): if we can't record the read, we don't serve it.
+    // PDPA: the admin form view can return every submitter's phone + contact
+    // channels (when their identity isn't anonymized — see canSeeRespondentIdentity
+    // above). Log the read (who/when/how much was actually identified), mirroring
+    // the attendance-list access log. Hard (not best-effort): if we can't record
+    // the read, we don't serve it.
     const submissionCount = result.reduce((n, f) => n + f.submissions.length, 0);
     await AuditService.logAction({
-      actorId: session.user.id!,
-      action: `Viewed form submissions for event ${eventId} (${submissionCount} submissions, included submitter phone + contact channels)`,
+      actorId: session!.user!.id!,
+      action: `Viewed form submissions for event ${eventId} (${submissionCount} submissions; ${identityVisibleSubmissions} with submitter identity + phone/contact visible, ${submissionCount - identityVisibleSubmissions} anonymized)`,
       ipAddress: getClientIp(req),
     });
 
@@ -163,16 +228,15 @@ export async function POST(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || !isAdmin(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: eventId } = await params;
+    const gate = await gateEventForms(eventId, session, true);
+    if (gate.error) return gate.error;
+
     const body = await readJsonBody(req);
     if (body === null) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { title, description, questions, pointsAwarded, individualPointsAwarded, isActive, formType, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
+    const { title, description, questions, pointsAwarded, individualPointsAwarded, isActive, formType, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds, showRespondentIdentity } = body;
 
     const isValidQuestions =
       Array.isArray(questions) ||
@@ -198,6 +262,10 @@ export async function POST(
       return NextResponse.json({ error: "\"Closes at\" must be after \"Opens at\"." }, { status: 400 });
     }
 
+    // Review gate (see forms.reviewStatus in schema.ts): a staff create is
+    // immediately self-approved; a president's create always starts 'pending'
+    // until admin/registration reviews it — it's visible-but-closed to
+    // participants until then (see getFormAvailability).
     const [result] = await db
       .insert(forms)
       .values({
@@ -214,12 +282,22 @@ export async function POST(
         closesAt: closesAtDate,
         assignedRoles: sanitizeRoles(assignedRoles),
         assignedUserIds: sanitizeUserIds(assignedUserIds),
+        // A president may choose this too, same as staff — the review gate
+        // right below (reviewStatus: 'pending' for a president's create) is
+        // what actually protects this: a president's choice never goes live
+        // for ANYONE (including themselves) until staff explicitly approves
+        // it, so there's no self-enable bypass here despite honoring their
+        // submitted value.
+        showRespondentIdentity: resolveShowRespondentIdentity(showRespondentIdentity),
+        reviewStatus: gate.isStaff ? "approved" : "pending",
+        reviewedBy: gate.isStaff ? session!.user!.id! : null,
+        reviewedAt: gate.isStaff ? new Date() : null,
       })
       .returning();
 
     await AuditService.logAction({
-      actorId: session.user.id!,
-      action: `Created form "${result.title}" (${result.id}) for event ${eventId} with award: ${result.pointsAwarded} house PTS, ${result.individualPointsAwarded} individual PTS`,
+      actorId: session!.user!.id!,
+      action: `Created form "${result.title}" (${result.id}) for event ${eventId} with award: ${result.pointsAwarded} house PTS, ${result.individualPointsAwarded} individual PTS, respondent identity ${result.showRespondentIdentity ? "visible" : "anonymized"} to non-admin viewers, review status: ${result.reviewStatus}`,
       ipAddress: getClientIp(req),
     });
 
@@ -237,16 +315,15 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || !isAdmin(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: eventId } = await params;
+    const gate = await gateEventForms(eventId, session, true);
+    if (gate.error) return gate.error;
+
     const body = await readJsonBody(req);
     if (body === null) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { formId, title, description, questions, pointsAwarded, individualPointsAwarded, isActive, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds } = body;
+    const { formId, action, reviewNote, title, description, questions, pointsAwarded, individualPointsAwarded, isActive, sortOrder, opensAt, closesAt, assignedRoles, assignedUserIds, showRespondentIdentity } = body;
 
     if (!formId) {
       return NextResponse.json({ error: "formId is required" }, { status: 400 });
@@ -258,6 +335,36 @@ export async function PATCH(
 
     if (!existing) {
       return NextResponse.json({ error: "Form not found" }, { status: 404 });
+    }
+
+    // Review-only action — staff approves a pending form, or leaves a note
+    // asking the president for changes (stays pending; see forms.reviewStatus
+    // in schema.ts). Doesn't touch any other field, mirrors the event-proposals
+    // PATCH action pattern.
+    if (action === "approve" || action === "requestChanges") {
+      if (!gate.isStaff) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      const note = typeof reviewNote === "string" ? reviewNote.trim().slice(0, 1000) || null : null;
+      const [reviewed] = await db
+        .update(forms)
+        .set({
+          reviewStatus: action === "approve" ? "approved" : "pending",
+          reviewedBy: session!.user!.id!,
+          reviewedAt: new Date(),
+          reviewNote: note,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))
+        .returning();
+
+      await AuditService.logAction({
+        actorId: session!.user!.id!,
+        action: `${action === "approve" ? "Approved" : "Requested changes on"} form "${reviewed.title}" (${formId}) for event ${eventId}${note ? `: ${note}` : ""}`,
+        ipAddress: getClientIp(req),
+      });
+
+      return NextResponse.json({ success: true, form: reviewed });
     }
 
     const isValidQuestions =
@@ -288,7 +395,7 @@ export async function PATCH(
 
     // Reverting real house points is sensitive — confine it to full admins, even
     // though registration/organizer may otherwise edit a form.
-    if (reopening && !["super_admin", "admin"].includes(session.user.role || "")) {
+    if (reopening && !["super_admin", "admin"].includes(session!.user!.role || "")) {
       return NextResponse.json(
         { error: "Only an admin can re-open a form that has already awarded points." },
         { status: 403 }
@@ -322,16 +429,30 @@ export async function PATCH(
           closesAt: effectiveClosesAt,
           assignedRoles: "assignedRoles" in body ? sanitizeRoles(assignedRoles) : existing.assignedRoles,
           assignedUserIds: "assignedUserIds" in body ? sanitizeUserIds(assignedUserIds) : existing.assignedUserIds,
+          // A president may change this too, same as staff — see the matching
+          // comment on the POST handler above for why the review gate below
+          // is what actually protects this, not withholding write access.
+          showRespondentIdentity: typeof showRespondentIdentity === "boolean" ? showRespondentIdentity : existing.showRespondentIdentity,
+          // Review gate (see forms.reviewStatus in schema.ts): a staff edit is
+          // self-approved; a president's edit ALWAYS lands back in 'pending' —
+          // even editing an already-approved form re-closes it to participants
+          // until admin/registration reviews it again. Any stale review note
+          // from a prior round is cleared; the approve/requestChanges action
+          // above is the only path that sets one.
+          reviewStatus: gate.isStaff ? "approved" : "pending",
+          reviewedBy: gate.isStaff ? session!.user!.id! : null,
+          reviewedAt: gate.isStaff ? new Date() : null,
+          reviewNote: null,
           updatedAt: new Date(),
         })
         .where(and(eq(forms.id, formId), eq(forms.eventId, eventId)))
         .returning();
 
       await AuditService.logActionInternal(tx, {
-        actorId: session.user!.id!,
+        actorId: session!.user!.id!,
         action: reopening
           ? `Re-opened awarded form "${updated.title}" (${formId}) for event ${eventId}.${revertNote}`
-          : `Updated form "${updated.title}" (${formId}) for event ${eventId}`,
+          : `Updated form "${updated.title}" (${formId}) for event ${eventId}, review status: ${updated.reviewStatus}`,
         ipAddress: getClientIp(req),
       });
 
@@ -358,11 +479,10 @@ export async function DELETE(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || !isAdmin(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: eventId } = await params;
+    const gate = await gateEventForms(eventId, session, true);
+    if (gate.error) return gate.error;
+
     const body = await readJsonBody(req);
     if (body === null) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
@@ -388,7 +508,7 @@ export async function DELETE(
     await db.delete(forms).where(and(eq(forms.id, formId), eq(forms.eventId, eventId)));
 
     await AuditService.logAction({
-      actorId: session.user.id!,
+      actorId: session!.user!.id!,
       action: `Deleted form "${existing.title}" (${formId}) from event ${eventId}`,
       ipAddress: getClientIp(req),
     });

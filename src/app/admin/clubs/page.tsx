@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { effectiveRoles } from "@/lib/admin-access";
 import { ProposeEventSection } from "./ProposeEventSection";
+import { EventFeedbackFormsShortcut } from "@/components/admin/EventFeedbackFormsShortcut";
 import {
   Building2, Plus, Pencil, Archive, ArchiveRestore, X, Users, Eye,
   Trash2, AlertCircle, Check,
@@ -375,6 +376,7 @@ export default function ClubsPage() {
           </div>
         )}
 
+        {isClubPresident && <EventFeedbackFormsShortcut clubs={clubs} scope="club" />}
         {isClubPresident && <ProposeEventSection clubs={clubs} />}
 
         {listError && (

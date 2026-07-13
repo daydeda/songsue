@@ -1404,18 +1404,26 @@ export default function AdminEventsPage() {
   // Staff = anyone whose row is flagged isStaff (they were on the event's
   // explicit staffUserIds list when they registered/checked in — the
   // authoritative, pre-assigned signal), OR who shows up in the scannedBy
-  // fallback above, PLUS anyone currently on staffUserIds who hasn't
-  // registered/checked in at all yet (no attendance row exists for them, so
-  // they'd otherwise be invisible here despite being explicitly assigned —
-  // that's the whole point of assigning staff ahead of time). Split into
-  // their own section, ahead of the house-grouped regular students.
+  // fallback above, OR who is on the event's *current* staffUserIds list
+  // even though their attendance row predates that assignment (isStaff is a
+  // frozen snapshot taken at register time — see schema comment — so
+  // someone added to staff after they already registered/checked in would
+  // otherwise never flip sections), PLUS anyone currently on staffUserIds
+  // who hasn't registered/checked in at all yet (no attendance row exists
+  // for them, so they'd otherwise be invisible here despite being explicitly
+  // assigned). Split into their own section, ahead of the house-grouped
+  // regular students.
   const groupedAttendance = useMemo(() => {
     const staff: AttendanceUnit[] = [];
     const students: AttendanceUnit[] = [];
     const registeredIds = new Set<string>();
     for (const unit of attendanceUnits) {
       registeredIds.add(unit.primary.studentId);
-      const isStaff = unit.primary.isStaff || (!!unit.primary.user?.id && eventStaffIds.has(unit.primary.user.id));
+      const uid = unit.primary.user?.id;
+      const isStaff =
+        unit.primary.isStaff ||
+        (!!uid && eventStaffIds.has(uid)) ||
+        (!!uid && activeEventStaffUserIds.includes(uid));
       (isStaff ? staff : students).push(unit);
     }
     for (const uid of activeEventStaffUserIds) {

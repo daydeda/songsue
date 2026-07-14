@@ -3863,6 +3863,24 @@ export default function AdminEventsPage() {
                           {"Int'l Only"}
                         </div>
                       ) : null}
+                      {/* Discoverability for the staff diff banner (see events.
+                          pendingDetailsChanges in schema.ts): the diff itself only
+                          renders inside the edit form once opened, so without this
+                          badge staff have no way to tell a president edit is
+                          waiting for review short of opening every event's editor.
+                          Clicking jumps straight into the edit form via handleEdit,
+                          which auto-scrolls to formRef where the diff banner lives. */}
+                      {!isAttendanceOnly && evt.detailsReviewStatus === "pending" && (
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(evt)}
+                          className="badge animate-pulse-glow"
+                          style={{ background: "#f59e0b", color: "#fff", border: "none", padding: "6px 12px", cursor: "pointer" }}
+                        >
+                          <AlertTriangle size={12} style={{ marginRight: 4 }} />
+                          {t.eventDetailsPendingStaffLabel || "President edited this event"}
+                        </button>
+                      )}
                       {isLive && (
                         <div className="badge animate-pulse-glow" style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px" }}>
                           <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", marginRight: 6 }} />
@@ -3965,6 +3983,36 @@ export default function AdminEventsPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Card-level diff preview for staff — shows what a president
+                      changed (old -> new) right on the card, so staff don't have
+                      to open the edit form just to see what's pending. Computed
+                      straight from evt (AdminEvent already carries the live
+                      values + pendingDetailsChanges), independent of the fuller
+                      banner inside the edit form below. */}
+                  {!isAttendanceOnly && evt.detailsReviewStatus === "pending" && evt.pendingDetailsChanges && (() => {
+                    const diffRows = formatPendingDetailsDiff(evt.pendingDetailsChanges!, evt, t);
+                    if (diffRows.length === 0) return null;
+                    return (
+                      <div style={{
+                        display: "flex", flexDirection: "column", gap: 6,
+                        background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)",
+                        borderRadius: 14, padding: "12px 14px", marginBottom: 20,
+                      }}>
+                        {evt.pendingSubmitter && (
+                          <p style={{ fontSize: 11, fontWeight: 800, color: "#f59e0b", margin: 0 }}>
+                            {t.eventDetailsPendingSubmittedByLabel || "Submitted by:"} {evt.pendingSubmitter.name}
+                          </p>
+                        )}
+                        {diffRows.map((row) => (
+                          <p key={row.key} style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                            <strong style={{ color: "var(--text-primary)" }}>{row.label}:</strong>{" "}
+                            {row.oldText} <span style={{ color: "#f59e0b", fontWeight: 700 }}>→</span> {row.newText}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   {/* Quota Progress */}
                   <div style={{ marginTop: "auto", marginBottom: 24 }}>

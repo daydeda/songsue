@@ -223,18 +223,20 @@ export async function PUT(
           throw new Error("EVENT_NOT_FOUND");
         }
 
-        // Backfill attendance.isStaff for newly-assigned staff who already
-        // had an attendance/registration row for this event BEFORE being
-        // added to staffUserIds (e.g. they self-registered as a regular
-        // attendee, then were assigned as staff afterward). Without this,
-        // isStaff stays frozen at its register-time snapshot forever (see
-        // schema.ts comment) and they'd never be exempted from quota/no-show
-        // strikes or show up in the Attendance staff section. Only flips
-        // false -> true (never reverts staff -> non-staff on removal) so
-        // this stays non-destructive and can't be used to retroactively open
-        // up quota by unassigning someone.
+        // Keep attendance.isStaff in sync with staffUserIds both ways, so
+        // assign/unassign is a clean, reversible action from the admin's
+        // point of view (the Attendance roster's Staff/Students split and
+        // the quota/no-show tallies all key off this per-row flag — see
+        // schema.ts comment).
         if (data.staffUserIds !== undefined) {
-          const newlyAddedStaffIds = (data.staffUserIds ?? []).filter(
+          const newStaffIds = data.staffUserIds ?? [];
+          // Newly assigned: someone who already had an attendance/registration
+          // row for this event BEFORE being added to staffUserIds (e.g. they
+          // self-registered as a regular attendee, then were assigned as staff
+          // afterward). Without this, isStaff stays frozen at its register-time
+          // snapshot and they'd never be exempted from quota/no-show strikes or
+          // show up in the Attendance staff section.
+          const newlyAddedStaffIds = newStaffIds.filter(
             (uid) => !previousStaffUserIds.includes(uid)
           );
           if (newlyAddedStaffIds.length > 0) {
@@ -246,6 +248,27 @@ export async function PUT(
                   eq(attendance.eventId, id),
                   inArray(attendance.studentId, newlyAddedStaffIds),
                   eq(attendance.isStaff, false)
+                )
+              );
+          }
+          // Newly removed: reverting isStaff back to false so unassigning
+          // actually moves them back to Students and normal quota/no-show
+          // counting, instead of leaving them permanently misclassified as
+          // staff. This does mean their existing registration can retroactively
+          // count against quota/no-show strikes once unassigned — that's the
+          // intended, accurate behavior of undoing a staff assignment.
+          const newlyRemovedStaffIds = previousStaffUserIds.filter(
+            (uid) => !newStaffIds.includes(uid)
+          );
+          if (newlyRemovedStaffIds.length > 0) {
+            await tx
+              .update(attendance)
+              .set({ isStaff: false })
+              .where(
+                and(
+                  eq(attendance.eventId, id),
+                  inArray(attendance.studentId, newlyRemovedStaffIds),
+                  eq(attendance.isStaff, true)
                 )
               );
           }

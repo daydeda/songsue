@@ -26,6 +26,13 @@ const getSeatCounts = unstable_cache(
         value: sql<number>`count(distinct ${attendance.studentId})`,
       })
       .from(attendance)
+      // Staff rows don't count toward the displayed "X / quota" headcount —
+      // mirrors the quota exemption in register/route.ts, scanner.service.ts,
+      // and the admin list's getAttendeeCounts. Without this filter, staff
+      // registering for their own event inflated the numerator past quota
+      // (e.g. showing "17/16") even though the quota check itself already
+      // excludes them.
+      .where(eq(attendance.isStaff, false))
       .groupBy(attendance.eventId),
   ["events-seat-counts"],
   { revalidate: 15, tags: ["events-seat-counts"] },

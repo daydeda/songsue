@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { forms, events } from "@/db/schema";
 import { effectiveRoles } from "@/lib/admin-access";
 import { REVIEW_PROPOSAL_ROLES } from "@/lib/event-proposals";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +33,11 @@ export async function GET() {
     });
 
     const pendingEventsRaw = await db.query.events.findMany({
-      where: eq(events.detailsReviewStatus, "pending"),
+      // Requires an actual pendingDetailsChanges diff, not just the status flag —
+      // a stale/defaulted 'pending' status with no diff (e.g. a pre-existing event
+      // backfilled by the details_review_status column's DEFAULT 'pending', see
+      // drizzle/0030_backfill_details_review_status.sql) has nothing to review.
+      where: and(eq(events.detailsReviewStatus, "pending"), isNotNull(events.pendingDetailsChanges)),
       columns: {
         id: true,
         title: true,

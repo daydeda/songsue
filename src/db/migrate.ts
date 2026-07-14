@@ -1309,6 +1309,23 @@ async function migrate() {
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS pending_details_submitted_at timestamptz`;
   console.log("  ✅ events.pending_details_changes/submitted_by/submitted_at");
 
+  // 82. Fix false-positive "President edited this event" badge. Step 78's
+  // DEFAULT 'pending' NOT NULL retroactively stamped every event that already
+  // existed at that point as 'pending', even though no president ever
+  // touched it (pending_details_changes stayed NULL for those rows) — the
+  // admin UI's badge only checks detailsReviewStatus === 'pending', so those
+  // events show a permanent, false review badge with nothing to review.
+  // Flip back to 'approved' ONLY where there is no actual pending diff, so a
+  // genuine unreviewed president edit is never silently approved. Idempotent:
+  // re-running only touches rows still in the false state.
+  await sql`
+    UPDATE events
+    SET details_review_status = 'approved'
+    WHERE details_review_status = 'pending'
+      AND pending_details_changes IS NULL
+  `;
+  console.log("  ✅ backfilled false-positive events.details_review_status back to 'approved'");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

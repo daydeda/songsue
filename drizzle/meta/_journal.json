@@ -148,6 +148,13 @@
       "when": 1784036962043,
       "tag": "0029_rapid_rawhide_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784045334500,
+      "tag": "0030_backfill_details_review_status",
+      "breakpoints": true
     }
   ]
 }

@@ -1997,7 +1997,8 @@ export default function AdminEventsPage() {
               pendingDetailsChanges in schema.ts): a president is never locked out of
               editing — their edit is just held as a pending diff instead of touching
               the live event, purely informational here. */}
-          {isAttendanceOnly && isPresidentRole && editingId && formData.detailsReviewStatus === "pending" && (
+          {isAttendanceOnly && isPresidentRole && editingId && formData.detailsReviewStatus === "pending" &&
+            events.find((e) => e.id === editingId)?.pendingDetailsChanges && (
             <div style={{
               display: "flex", alignItems: "flex-start", gap: 10,
               background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)",
@@ -2029,7 +2030,8 @@ export default function AdminEventsPage() {
               events.pendingDetailsChanges vs. the current live values, not
               formData (which for staff always shows live values). */}
           {!isAttendanceOnly && editingId && formData.detailsReviewStatus === "pending" &&
-            (formData.managedByRoles.includes("club_president") || formData.managedByRoles.includes("major_president")) && (() => {
+            (formData.managedByRoles.includes("club_president") || formData.managedByRoles.includes("major_president")) &&
+            events.find((e) => e.id === editingId)?.pendingDetailsChanges && (() => {
             const editingEvent = events.find((e) => e.id === editingId);
             const diffRows = editingEvent?.pendingDetailsChanges
               ? formatPendingDetailsDiff(editingEvent.pendingDetailsChanges, editingEvent, t)
@@ -3870,7 +3872,12 @@ export default function AdminEventsPage() {
                           waiting for review short of opening every event's editor.
                           Clicking jumps straight into the edit form via handleEdit,
                           which auto-scrolls to formRef where the diff banner lives. */}
-                      {!isAttendanceOnly && evt.detailsReviewStatus === "pending" && (
+            {/* Requires an actual pendingDetailsChanges diff, not just the status
+                          flag — a stale/defaulted 'pending' status with no diff (e.g.
+                          a pre-existing event backfilled by the details_review_status
+                          column's DEFAULT 'pending', see drizzle/0030_backfill_details_review_status.sql)
+                          must never show this badge. */}
+                      {!isAttendanceOnly && evt.detailsReviewStatus === "pending" && evt.pendingDetailsChanges && (
                         <button
                           type="button"
                           onClick={() => handleEdit(evt)}

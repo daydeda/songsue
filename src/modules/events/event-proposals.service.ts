@@ -50,6 +50,7 @@ export class EventProposalsService {
       with: {
         club: { columns: { id: true, name: true, isArchived: true } },
         proposer: { columns: { id: true, name: true, studentId: true } },
+        reviewer: { columns: { id: true, name: true } },
       },
     });
 

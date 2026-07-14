@@ -52,9 +52,13 @@ const eventUpdateSchema = z.object({
   // in schema.ts. Staff-only, like managedByRoles below.
   staffUserIds: z.array(z.string()).optional().nullable(),
   // Staff-only approve/reopen toggle — see events.detailsReviewStatus in
-  // schema.ts. Stripped for non-admin actors below, same as the other
-  // staff-only fields.
+  // schema.ts. Never reaches a live column for a president actor (see
+  // PRESIDENT_EDITABLE_FIELDS below) — a president's PUT always forces
+  // pending regardless of this field.
   detailsReviewStatus: z.enum(["pending", "approved"]).optional(),
+  // Staff-only: drop a pending president edit without applying it — live
+  // fields stay exactly as they are. See events.pendingDetailsChanges.
+  discardPendingDetails: z.boolean().optional(),
 }).refine(
   // Only enforce when BOTH ends are supplied — this is a partial update.
   (d) => {
@@ -72,6 +76,128 @@ const eventUpdateSchema = z.object({
     path: ["endTime"],
   },
 );
+
+type EventUpdateData = z.infer<typeof eventUpdateSchema>;
+
+// Fields a club/major president may propose changes to on an EXISTING event —
+// title/schedule/quota/etc. Role/access/points/staff fields are deliberately
+// excluded (those stay staff-only, see the admin-only branch in PUT below).
+// This single list drives three things that must never drift apart: what a
+// president's diff is allowed to contain, the "did anything actually change"
+// check, and what gets applied to live columns when staff approve it.
+const PRESIDENT_EDITABLE_FIELDS = [
+  "title", "description", "startTime", "endTime", "registrationOpenTime",
+  "registrationCloseTime", "quota", "location", "imageUrl", "imageUrls",
+  "walkInsEnabled", "walkInsOnly", "quotaWalkIn", "registrationMode",
+  "sessions", "targetThai", "targetInternational", "quotaThai",
+  "quotaInternational", "firstYearOnly",
+] as const;
+type PresidentEditableField = (typeof PRESIDENT_EDITABLE_FIELDS)[number];
+type PendingDetailsPayload = Partial<Pick<EventUpdateData, PresidentEditableField>>;
+
+function pickEditableFields(data: EventUpdateData): PendingDetailsPayload {
+  const picked: PendingDetailsPayload = {};
+  for (const field of PRESIDENT_EDITABLE_FIELDS) {
+    const value = data[field];
+    if (value !== undefined) {
+      (picked as Record<string, unknown>)[field] = value;
+    }
+  }
+  return picked;
+}
+
+// Builds the events-table SET clause shared by (a) a direct staff edit and
+// (b) applying an approved pending president diff (see PUT below) — kept in
+// one place so those two paths can never disagree on how a field is written.
+function buildEventSetFields(
+  data: EventUpdateData,
+  posters: string[] | undefined,
+  coverFromPosters: string | null | undefined
+) {
+  return {
+    ...(data.title && { title: data.title }),
+    ...(data.description !== undefined && { description: data.description }),
+    ...(data.startTime && { startTime: new Date(data.startTime) }),
+    ...(data.endTime && { endTime: new Date(data.endTime) }),
+    ...(data.registrationOpenTime !== undefined && {
+        registrationOpenTime: data.registrationOpenTime ? new Date(data.registrationOpenTime) : null
+    }),
+    ...(data.registrationCloseTime !== undefined && {
+        registrationCloseTime: data.registrationCloseTime ? new Date(data.registrationCloseTime) : null
+    }),
+    ...(data.quota !== undefined && { quota: data.quota }),
+    ...(data.location !== undefined && { location: data.location }),
+    ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
+    ...(data.individualPointsAwarded !== undefined && { individualPointsAwarded: data.individualPointsAwarded }),
+    ...(posters !== undefined
+      ? { imageUrls: posters, imageUrl: coverFromPosters }
+      : (data.imageUrl !== undefined && { imageUrl: data.imageUrl })),
+    // walkInsOnly implies walkInsEnabled regardless of what the client sent.
+    ...(data.walkInsOnly !== undefined && { walkInsOnly: data.walkInsOnly }),
+    ...(data.walkInsOnly
+      ? { walkInsEnabled: true }
+      : (data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled })),
+    ...(data.quotaWalkIn !== undefined && { quotaWalkIn: data.quotaWalkIn }),
+    ...(data.registrationMode !== undefined && { registrationMode: data.registrationMode }),
+    ...(data.targetThai !== undefined && { targetThai: data.targetThai }),
+    ...(data.targetInternational !== undefined && { targetInternational: data.targetInternational }),
+    ...(data.quotaThai !== undefined && { quotaThai: data.quotaThai }),
+    ...(data.quotaInternational !== undefined && { quotaInternational: data.quotaInternational }),
+    ...(data.allowedRoles !== undefined && {
+      allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null
+    }),
+    ...(data.allowedMajors !== undefined && {
+      allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null
+    }),
+    ...(data.allowedClubs !== undefined && {
+      allowedClubs: data.allowedClubs && data.allowedClubs.length > 0 ? data.allowedClubs : null
+    }),
+    ...(data.firstYearOnly !== undefined && { firstYearOnly: data.firstYearOnly }),
+    ...(data.managedByRoles !== undefined && {
+      managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null
+    }),
+    ...(data.ownerClubIds !== undefined && {
+      ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null
+    }),
+    ...(data.ownerMajors !== undefined && {
+      ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null
+    }),
+    ...(data.staffUserIds !== undefined && {
+      staffUserIds: data.staffUserIds && data.staffUserIds.length > 0 ? data.staffUserIds : null
+    }),
+  };
+}
+
+const DATE_FIELDS = new Set(["startTime", "endTime", "registrationOpenTime", "registrationCloseTime"]);
+
+// No diff library in this repo (see the analogous manual string-diff builder
+// in src/app/api/admin/users/[id]/route.ts) — a plain JSON-stringify compare
+// is precise enough for the scalar/array fields here, with dates normalized
+// to epoch millis first since a submitted ISO string and a fetched Date must
+// compare equal when they represent the same instant.
+function editableValueChanged(field: string, submitted: unknown, current: unknown): boolean {
+  if (submitted === undefined) return false;
+  if (DATE_FIELDS.has(field)) {
+    const s = submitted == null ? null : new Date(submitted as string).getTime();
+    const c = current == null ? null : new Date(current as string | Date).getTime();
+    return s !== c;
+  }
+  return JSON.stringify(submitted ?? null) !== JSON.stringify(current ?? null);
+}
+
+function normalizeSessionForCompare(s: {
+  title?: string | null;
+  startTime: string | Date;
+  endTime: string | Date;
+  quotaWalkIn?: number | null;
+}) {
+  return {
+    title: s.title?.trim() || null,
+    startTime: new Date(s.startTime).toISOString(),
+    endTime: new Date(s.endTime).toISOString(),
+    quotaWalkIn: s.quotaWalkIn ?? null,
+  };
+}
 
 // PUT /api/admin/events/[id] — Update event
 export async function PUT(
@@ -91,43 +217,9 @@ export async function PUT(
     const body = await req.json().catch(() => null);
     const data = eventUpdateSchema.parse(body);
 
-    // A club/major president may edit their OWN event's details (title,
-    // description, schedule, location, quota, etc.) but never role/major access,
-    // Managed By, or points — those stay staff-only, so strip them from the
-    // payload here regardless of what the client sent (defense in depth — the UI
-    // already disables these fields for presidents, this is the real gate).
-    if (!isAdminRole) {
-      const existing = await db.query.events.findFirst({
-        where: eq(events.id, id),
-        columns: { ownerClubIds: true, ownerMajors: true },
-      });
-      if (!existing) {
-        return NextResponse.json({ error: "Event not found" }, { status: 404 });
-      }
-      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
-      if (!EventScopeService.isEventManagedByScope(existing, scope)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-      data.pointsAwarded = undefined;
-      data.individualPointsAwarded = undefined;
-      data.allowedRoles = undefined;
-      data.allowedMajors = undefined;
-      data.allowedClubs = undefined;
-      data.managedByRoles = undefined;
-      data.ownerClubIds = undefined;
-      data.ownerMajors = undefined;
-      data.staffUserIds = undefined;
-      // Always editable, auto re-review (see events.detailsReviewStatus in
-      // schema.ts) — mirrors forms.reviewStatus's identical pattern (see
-      // PATCH .../form): a president's edit is NEVER blocked, but it always
-      // resets detailsReviewStatus back to 'pending' so staff re-reviews it
-      // before it counts as approved again. Overrides whatever the client
-      // sent for detailsReviewStatus — that field is staff-only otherwise.
-      data.detailsReviewStatus = "pending";
-    }
-
-    // When posters are provided, normalize them and keep the imageUrl cover in
-    // sync with imageUrls[0]. If only the legacy imageUrl is sent, fall back to it.
+    // Posters normalization from the submitted payload — used both for a
+    // direct staff edit and for a president's stored diff, so it only needs
+    // to happen once regardless of which branch below actually uses it.
     let posters: string[] | undefined;
     if (data.imageUrls !== undefined) {
       posters = (data.imageUrls ?? [])
@@ -140,79 +232,170 @@ export async function PUT(
     let updated: typeof events.$inferSelect;
     try {
       updated = await db.transaction(async (tx) => {
-        // Grab the pre-update staffUserIds so newly-added staff can be
-        // backfilled onto existing attendance rows below (see after the
-        // events update) — only needed when this call actually touches the
-        // staff list.
-        let previousStaffUserIds: string[] = [];
-        if (data.staffUserIds !== undefined) {
-          const existingEvent = await tx.query.events.findFirst({
-            where: eq(events.id, id),
-            columns: { staffUserIds: true },
-          });
-          previousStaffUserIds = existingEvent?.staffUserIds ?? [];
+        const current = await tx.query.events.findFirst({ where: eq(events.id, id) });
+        if (!current) {
+          throw new Error("EVENT_NOT_FOUND");
         }
+
+        // A club/major president may edit their OWN event's details (title,
+        // description, schedule, location, quota, etc.) — but the edit is
+        // held as a pending proposal (events.pendingDetailsChanges) instead
+        // of ever touching the live columns; those are only written once
+        // staff approve it below. Role/access/points/Managed By/staff stay
+        // staff-only, enforced by PRESIDENT_EDITABLE_FIELDS being an
+        // allowlist (pickEditableFields), not by stripping a denylist.
+        if (!isAdminRole) {
+          const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
+          if (!EventScopeService.isEventManagedByScope(current, scope)) {
+            throw new Error("UNAUTHORIZED_SCOPE");
+          }
+
+          const editablePayload = pickEditableFields(data);
+          if (posters !== undefined) {
+            editablePayload.imageUrls = posters;
+            editablePayload.imageUrl = coverFromPosters;
+          }
+
+          // Compare against the MOST RECENT proposed state, not always the
+          // live row — an already-outstanding pending edit (from an earlier,
+          // still-unreviewed submission) is what the president is actually
+          // looking at when they reopen the form (see handleEdit's draft
+          // merge client-side), so resubmitting it unchanged must read as a
+          // no-op too, not as a fresh change every time.
+          const existingPending = (current.pendingDetailsChanges as PendingDetailsPayload | null) ?? {};
+          const comparisonBase: Record<string, unknown> = { ...(current as unknown as Record<string, unknown>), ...existingPending };
+
+          let sessionsChanged = false;
+          if (data.sessions !== undefined) {
+            let baseSessions: { title: string | null; startTime: string | Date; endTime: string | Date; quotaWalkIn: number | null }[];
+            if (existingPending.sessions !== undefined) {
+              baseSessions = existingPending.sessions.map((s) => ({
+                title: s.title ?? null,
+                startTime: s.startTime,
+                endTime: s.endTime,
+                quotaWalkIn: s.quotaWalkIn ?? null,
+              }));
+            } else {
+              baseSessions = await tx
+                .select({
+                  title: eventSessions.title,
+                  startTime: eventSessions.startTime,
+                  endTime: eventSessions.endTime,
+                  quotaWalkIn: eventSessions.quotaWalkIn,
+                })
+                .from(eventSessions)
+                .where(eq(eventSessions.eventId, id))
+                .orderBy(eventSessions.sortOrder);
+            }
+            sessionsChanged = JSON.stringify(data.sessions.map(normalizeSessionForCompare))
+              !== JSON.stringify(baseSessions.map(normalizeSessionForCompare));
+          }
+
+          const scalarChanged = PRESIDENT_EDITABLE_FIELDS.some((field) => {
+            if (field === "sessions") return false;
+            const submitted = (editablePayload as Record<string, unknown>)[field];
+            return editableValueChanged(field, submitted, comparisonBase[field]);
+          });
+
+          if (!scalarChanged && !sessionsChanged) {
+            // No-op save (president opened the editor and saved without
+            // changing anything) — don't create a spurious pending-review
+            // flag or touch any review-state column.
+            return current;
+          }
+
+          const [row] = await tx
+            .update(events)
+            .set({
+              pendingDetailsChanges: editablePayload,
+              pendingDetailsSubmittedBy: session.user!.id!,
+              pendingDetailsSubmittedAt: new Date(),
+              detailsReviewStatus: "pending",
+              // detailsReviewedBy/At deliberately left untouched — they
+              // describe who approved the CURRENT LIVE content, which this
+              // branch never modifies. A pending edit sitting on top doesn't
+              // make the live content's last approval any less accurate.
+              updatedAt: new Date(),
+            })
+            .where(eq(events.id, id))
+            .returning();
+          if (!row) throw new Error("EVENT_NOT_FOUND");
+
+          await AuditService.logActionInternal(tx, {
+            actorId: session.user!.id!,
+            action: `Submitted pending changes for review: ${row.title}`,
+            ipAddress: ip,
+          });
+
+          return row;
+        }
+
+        // Staff-only: drop a pending president edit without applying it —
+        // live fields stay exactly as they are (they were never touched).
+        if (data.discardPendingDetails) {
+          const [row] = await tx
+            .update(events)
+            .set({
+              pendingDetailsChanges: null,
+              pendingDetailsSubmittedBy: null,
+              pendingDetailsSubmittedAt: null,
+              detailsReviewStatus: "approved",
+              updatedAt: new Date(),
+            })
+            .where(eq(events.id, id))
+            .returning();
+          if (!row) throw new Error("EVENT_NOT_FOUND");
+
+          await AuditService.logActionInternal(tx, {
+            actorId: session.user!.id!,
+            action: `Discarded pending changes: ${row.title}`,
+            ipAddress: ip,
+          });
+
+          return row;
+        }
+
+        // Approving a pending president diff: apply its stored values to the
+        // live columns via the same field-mapper a direct staff edit uses.
+        // Anything the admin ALSO explicitly sent in this same request takes
+        // precedence over the stored diff (in practice the UI only ever
+        // sends the isolated { detailsReviewStatus: "approved" } call below).
+        const approvingPending = data.detailsReviewStatus === "approved" && current.pendingDetailsChanges != null;
+        // Trusted without re-validation: this JSON only ever holds a payload
+        // that already passed eventUpdateSchema.parse() at submission time.
+        const pendingAsData = approvingPending
+          ? (current.pendingDetailsChanges as Partial<EventUpdateData>)
+          : undefined;
+        const effectiveData: EventUpdateData = pendingAsData ? { ...pendingAsData, ...data } : data;
+
+        let effectivePosters = posters;
+        let effectiveCover = coverFromPosters;
+        if (pendingAsData && posters === undefined && pendingAsData.imageUrls !== undefined) {
+          effectivePosters = (pendingAsData.imageUrls ?? [])
+            .filter((u): u is string => typeof u === "string" && u.trim() !== "");
+          effectiveCover = effectivePosters[0] ?? null;
+        }
+
+        const previousStaffUserIds = effectiveData.staffUserIds !== undefined
+          ? (current.staffUserIds ?? [])
+          : [];
 
         const [row] = await tx
           .update(events)
           .set({
-            ...(data.title && { title: data.title }),
-            ...(data.description !== undefined && { description: data.description }),
-            ...(data.startTime && { startTime: new Date(data.startTime) }),
-            ...(data.endTime && { endTime: new Date(data.endTime) }),
-            ...(data.registrationOpenTime !== undefined && {
-                registrationOpenTime: data.registrationOpenTime ? new Date(data.registrationOpenTime) : null
-            }),
-            ...(data.registrationCloseTime !== undefined && {
-                registrationCloseTime: data.registrationCloseTime ? new Date(data.registrationCloseTime) : null
-            }),
-            ...(data.quota !== undefined && { quota: data.quota }),
-            ...(data.location !== undefined && { location: data.location }),
-            ...(data.pointsAwarded !== undefined && { pointsAwarded: data.pointsAwarded }),
-            ...(data.individualPointsAwarded !== undefined && { individualPointsAwarded: data.individualPointsAwarded }),
-            ...(posters !== undefined
-              ? { imageUrls: posters, imageUrl: coverFromPosters }
-              : (data.imageUrl !== undefined && { imageUrl: data.imageUrl })),
-            // walkInsOnly implies walkInsEnabled regardless of what the client sent.
-            ...(data.walkInsOnly !== undefined && { walkInsOnly: data.walkInsOnly }),
-            ...(data.walkInsOnly
-              ? { walkInsEnabled: true }
-              : (data.walkInsEnabled !== undefined && { walkInsEnabled: data.walkInsEnabled })),
-            ...(data.quotaWalkIn !== undefined && { quotaWalkIn: data.quotaWalkIn }),
-            ...(data.registrationMode !== undefined && { registrationMode: data.registrationMode }),
-            ...(data.targetThai !== undefined && { targetThai: data.targetThai }),
-            ...(data.targetInternational !== undefined && { targetInternational: data.targetInternational }),
-            ...(data.quotaThai !== undefined && { quotaThai: data.quotaThai }),
-            ...(data.quotaInternational !== undefined && { quotaInternational: data.quotaInternational }),
-            ...(data.allowedRoles !== undefined && {
-              allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null
-            }),
-            ...(data.allowedMajors !== undefined && {
-              allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null
-            }),
-            ...(data.allowedClubs !== undefined && {
-              allowedClubs: data.allowedClubs && data.allowedClubs.length > 0 ? data.allowedClubs : null
-            }),
-            ...(data.firstYearOnly !== undefined && { firstYearOnly: data.firstYearOnly }),
-            ...(data.managedByRoles !== undefined && {
-              managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null
-            }),
-            ...(data.ownerClubIds !== undefined && {
-              ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null
-            }),
-            ...(data.ownerMajors !== undefined && {
-              ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null
-            }),
-            ...(data.staffUserIds !== undefined && {
-              staffUserIds: data.staffUserIds && data.staffUserIds.length > 0 ? data.staffUserIds : null
-            }),
-            // Staff-only approve/reopen toggle (stripped above for president
+            ...buildEventSetFields(effectiveData, effectivePosters, effectiveCover),
+            // Staff-only approve/reopen toggle (never reached for president
             // actors) — approving sets the reviewer/timestamp; reopening
             // clears them, since they no longer describe the current state.
             ...(data.detailsReviewStatus !== undefined && {
               detailsReviewStatus: data.detailsReviewStatus,
               detailsReviewedBy: data.detailsReviewStatus === "approved" ? session.user!.id! : null,
               detailsReviewedAt: data.detailsReviewStatus === "approved" ? new Date() : null,
+            }),
+            ...(approvingPending && {
+              pendingDetailsChanges: null,
+              pendingDetailsSubmittedBy: null,
+              pendingDetailsSubmittedAt: null,
             }),
             updatedAt: new Date(),
           })
@@ -228,8 +411,8 @@ export async function PUT(
         // point of view (the Attendance roster's Staff/Students split and
         // the quota/no-show tallies all key off this per-row flag — see
         // schema.ts comment).
-        if (data.staffUserIds !== undefined) {
-          const newStaffIds = data.staffUserIds ?? [];
+        if (effectiveData.staffUserIds !== undefined) {
+          const newStaffIds = effectiveData.staffUserIds ?? [];
           // Newly assigned: someone who already had an attendance/registration
           // row for this event BEFORE being added to staffUserIds (e.g. they
           // self-registered as a regular attendee, then were assigned as staff
@@ -274,11 +457,12 @@ export async function PUT(
           }
         }
 
-        // Reconcile sessions when the editor sends them. Match by id (update),
-        // insert new, drop removed — but NEVER delete a session that already has
+        // Reconcile sessions when the editor sends them (either directly, or
+        // via an approved pending diff). Match by id (update), insert new,
+        // drop removed — but NEVER delete a session that already has
         // attendance (non-destructive). An event must always keep ≥1 session.
-        if (data.sessions !== undefined) {
-          const incoming = data.sessions;
+        if (effectiveData.sessions !== undefined) {
+          const incoming = effectiveData.sessions;
           const existing = await tx
             .select({ id: eventSessions.id })
             .from(eventSessions)
@@ -328,7 +512,9 @@ export async function PUT(
         // Log the event update (through the service so the hash chain stays intact)
         await AuditService.logActionInternal(tx, {
           actorId: session.user!.id!,
-          action: `Updated Event: ${row.title}`,
+          action: approvingPending
+            ? `Approved pending changes: ${row.title}`
+            : `Updated Event: ${row.title}`,
           ipAddress: ip,
         });
 
@@ -337,6 +523,9 @@ export async function PUT(
     } catch (e) {
       if (e instanceof Error && e.message === "EVENT_NOT_FOUND") {
         return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+      if (e instanceof Error && e.message === "UNAUTHORIZED_SCOPE") {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
       if (e instanceof Error && e.message === "NO_SESSIONS_LEFT") {
         return NextResponse.json({ error: "An event must have at least one session" }, { status: 400 });
@@ -382,7 +571,7 @@ export async function DELETE(
         .delete(events)
         .where(eq(events.id, id))
         .returning({ id: events.id, title: events.title });
-      
+
       if (!deleted) {
         throw new Error("Event not found");
       }

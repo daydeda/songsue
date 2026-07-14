@@ -49,11 +49,16 @@ interface AdminEvent {
   // Specific user IDs assigned as staff for THIS event (as opposed to global
   // role) — their attendance is exempt from quota/no-show. See schema.ts.
   staffUserIds: string[] | null;
-  // Approve-then-lock for president direct edits — see events.detailsReviewStatus
-  // in schema.ts.
+  // Hold-and-diff for president edits — a president's PUT never touches the
+  // live fields above; it's stored here until staff approve or discard it.
+  // See events.detailsReviewStatus/pendingDetailsChanges in schema.ts.
   detailsReviewStatus?: "pending" | "approved";
   detailsReviewedBy?: string | null;
   detailsReviewedAt?: string | null;
+  pendingDetailsChanges?: Record<string, unknown> | null;
+  pendingDetailsSubmittedBy?: string | null;
+  pendingDetailsSubmittedAt?: string | null;
+  pendingSubmitter?: { id: string; name: string } | null;
   registrationMode?: "once" | "per_session";
   sessions?: EventSession[];
   attendeeCount?: number;
@@ -84,6 +89,69 @@ type SessionRow = {
   endTime: string;
   quotaWalkIn: number | null;
 };
+
+// Field -> label/formatter table for the staff pending-changes diff banner
+// (see events.pendingDetailsChanges in schema.ts). One entry per field a
+// president can propose changes to — add an entry here if the server's
+// PRESIDENT_EDITABLE_FIELDS (PUT /api/admin/events/[id]) ever grows.
+type PendingDiffRow = { key: string; label: string; oldText: string; newText: string };
+
+function formatPendingDetailsDiff(
+  pending: Record<string, unknown>,
+  current: AdminEvent,
+  t: Record<string, string>
+): PendingDiffRow[] {
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleString("en-GB") : "—");
+  const fmtBool = (v: unknown) => (v ? "✓" : "—");
+  const fmtText = (v: unknown) => {
+    const s = (v as string | null | undefined)?.trim();
+    return s ? s : "—";
+  };
+  const fmtNumber = (v: unknown) => (v === null || v === undefined ? "—" : String(v));
+  const fmtImages = (v: unknown) => {
+    const n = Array.isArray(v) ? v.length : 0;
+    return `${n} ${n === 1 ? "image" : "images"}`;
+  };
+  const fmtSessions = (v: unknown) => {
+    const n = Array.isArray(v) ? v.length : 0;
+    return `${n} ${n === 1 ? "session" : "sessions"}`;
+  };
+  const fmtMode = (v: unknown) =>
+    v === "per_session" ? (t.registrationModePerSession || "Per-session") : (t.registrationModeOnce || "Once");
+
+  const fields: { key: string; label: string; fmt: (v: unknown) => string }[] = [
+    { key: "title", label: t.eventTitleLabel || "Title", fmt: fmtText },
+    { key: "description", label: t.eventDescriptionLabel || "Description", fmt: fmtText },
+    { key: "startTime", label: t.eventStartTimeLabel || "Start", fmt: fmtDate },
+    { key: "endTime", label: t.eventEndTimeLabel || "End", fmt: fmtDate },
+    { key: "registrationOpenTime", label: t.eventRegistrationOpenLabel || "Registration opens", fmt: fmtDate },
+    { key: "registrationCloseTime", label: t.eventRegistrationCloseLabel || "Registration closes", fmt: fmtDate },
+    { key: "quota", label: t.eventQuotaLabel || "Quota", fmt: fmtNumber },
+    { key: "location", label: t.eventLocationLabel || "Location", fmt: fmtText },
+    { key: "imageUrls", label: t.eventPosterLabel || "Poster", fmt: fmtImages },
+    { key: "walkInsEnabled", label: t.allowWalkins || "Allow walk-ins", fmt: fmtBool },
+    { key: "walkInsOnly", label: t.walkInsOnlyToggleLabel || "Walk-ins only", fmt: fmtBool },
+    { key: "quotaWalkIn", label: t.walkInQuota || "Walk-in quota", fmt: fmtNumber },
+    { key: "registrationMode", label: t.registrationModeLabel || "Registration mode", fmt: fmtMode },
+    { key: "sessions", label: t.eventPendingDiffSessionsLabel || "Sessions", fmt: fmtSessions },
+    { key: "targetThai", label: t.thaiStudents || "Thai students", fmt: fmtBool },
+    { key: "targetInternational", label: t.internationalStudents || "International students", fmt: fmtBool },
+    { key: "quotaThai", label: t.thaiStudentQuota || "Thai quota", fmt: fmtNumber },
+    { key: "quotaInternational", label: t.intlStudentQuota || "International quota", fmt: fmtNumber },
+    { key: "firstYearOnly", label: t.firstYearOnly || "First-year only", fmt: fmtBool },
+  ];
+
+  const rows: PendingDiffRow[] = [];
+  for (const f of fields) {
+    if (!(f.key in pending)) continue;
+    const oldVal = (current as unknown as Record<string, unknown>)[f.key];
+    const oldText = f.fmt(oldVal);
+    const newText = f.fmt(pending[f.key]);
+    if (oldText === newText) continue;
+    rows.push({ key: f.key, label: f.label, oldText, newText });
+  }
+  return rows;
+}
 
 interface EmergencyContact {
   name: string;
@@ -244,9 +312,9 @@ const EMPTY_FORM = {
   ownerClubIds: [] as string[], // WHICH club(s) own this event, when managedByRoles includes club_president
   ownerMajors: [] as string[], // WHICH major(s) own this event, when managedByRoles includes major_president
   staffUserIds: [] as string[], // specific people assigned as staff for this event; empty = none
-  // Approve-then-lock for president direct edits — see events.detailsReviewStatus
-  // in schema.ts. 'pending' means the owning president may still edit; a brand
-  // new event (not yet saved) has nothing to lock, so this only matters once loaded.
+  // Hold-and-diff for president edits — see events.detailsReviewStatus/
+  // pendingDetailsChanges in schema.ts. A brand new event (not yet saved) has
+  // no pending edit, so this only matters once an existing event is loaded.
   detailsReviewStatus: "pending" as "pending" | "approved",
   detailsReviewedAt: null as string | null,
 };
@@ -901,12 +969,17 @@ export default function AdminEventsPage() {
       });
 
       if (res.ok) {
-        // A president editing an event that was already approved just sent it
-        // back to 'pending' server-side (see PUT /api/admin/events/[id]) —
-        // surface that explicitly instead of leaving it invisible, since
-        // there's no more lock/banner blocking them from editing at all.
-        const wasEditingApprovedAsPresident =
-          isAttendanceOnly && isPresidentRole && !!editingId && formData.detailsReviewStatus === "approved";
+        // A president's edit is never applied live — it's held as a pending
+        // proposal until staff approve it (see PUT /api/admin/events/[id]
+        // and events.pendingDetailsChanges in schema.ts). Surface that
+        // explicitly whenever this save actually produced a pending change,
+        // so it doesn't look like the edit vanished; a genuine no-op save
+        // (nothing actually changed) produces no pending changes and this
+        // stays silent, same as today.
+        const result = await res.json().catch(() => null);
+        const savedEvent = result?.event as AdminEvent | undefined;
+        const submittedForReview =
+          isAttendanceOnly && isPresidentRole && !!editingId && !!savedEvent?.pendingDetailsChanges;
         setShowForm(false);
         setFormData(EMPTY_FORM);
         setRegistrationMode(null);
@@ -914,11 +987,11 @@ export default function AdminEventsPage() {
         setEditingId(null);
         setSourceProposalId(null);
         fetchEvents();
-        if (wasEditingApprovedAsPresident) {
+        if (submittedForReview) {
           setReviewNoticeModal({
             show: true,
-            title: t.eventDetailsReviewNoticeTitle || "Saved — pending review",
-            message: t.eventDetailsReviewNoticeDesc || "Your changes were saved. Since this event was already approved, staff will need to review it again before it's fully approved.",
+            title: t.eventDetailsReviewNoticeTitle || "Submitted for review",
+            message: t.eventDetailsReviewNoticeDesc || "Your changes were submitted for staff review. Students will keep seeing the previously-approved version until staff approve them.",
           });
         }
       } else {
@@ -1032,36 +1105,57 @@ export default function AdminEventsPage() {
       return new Date(d.getTime() - offset).toISOString().slice(0, 16);
     };
 
+    // A president reopening their own event with an unreviewed pending edit
+    // sees their last-submitted draft, not the stale live values — otherwise
+    // it would look like their edit was silently discarded. Staff always see
+    // live values here; the diff banner in the form shows what's pending
+    // separately (see the pending-review banner further down this file).
+    // Trusted without re-validation — this JSON only ever holds a payload
+    // that already passed the PUT route's own schema check at submit time.
+    const isPresidentDraftView = isAttendanceOnly && isPresidentRole && !!evt.pendingDetailsChanges;
+    const pending: Record<string, unknown> = (isPresidentDraftView && evt.pendingDetailsChanges) || {};
+    const eff = <T,>(key: string, fallback: T): T =>
+      pending[key] !== undefined ? (pending[key] as T) : fallback;
+
     // Editing an existing event is never "from a proposal" — clears any
     // leftover sourceProposalId from a previous create-from-proposal open.
     setSourceProposalId(null);
     setFormData({
-      title: evt.title,
-      description: evt.description || "",
-      location: evt.location || "",
-      startTime: toLocal(evt.startTime),
-      endTime: toLocal(evt.endTime),
-      registrationOpenTime: evt.registrationOpenTime ? toLocal(evt.registrationOpenTime) : "",
-      registrationCloseTime: evt.registrationCloseTime ? toLocal(evt.registrationCloseTime) : "",
-      quota: evt.quota || 0,
+      title: eff("title", evt.title),
+      description: eff("description", evt.description) || "",
+      location: eff("location", evt.location) || "",
+      startTime: toLocal(eff("startTime", evt.startTime)),
+      endTime: toLocal(eff("endTime", evt.endTime)),
+      registrationOpenTime: eff("registrationOpenTime", evt.registrationOpenTime)
+        ? toLocal(eff("registrationOpenTime", evt.registrationOpenTime)!)
+        : "",
+      registrationCloseTime: eff("registrationCloseTime", evt.registrationCloseTime)
+        ? toLocal(eff("registrationCloseTime", evt.registrationCloseTime)!)
+        : "",
+      quota: eff("quota", evt.quota) || 0,
       pointsAwarded: evt.pointsAwarded || 0,
       individualPointsAwarded: evt.individualPointsAwarded || 0,
-      imageUrl: evt.imageUrl || "",
+      imageUrl: eff("imageUrl", evt.imageUrl) || "",
       // Legacy events have only imageUrl — wrap it so the manager shows one poster.
-      imageUrls: (evt.imageUrls && evt.imageUrls.length > 0)
-        ? evt.imageUrls
-        : (evt.imageUrl ? [evt.imageUrl] : []),
-      walkInsEnabled: evt.walkInsEnabled || false,
-      walkInsOnly: evt.walkInsOnly || false,
-      quotaWalkIn: evt.quotaWalkIn || null,
-      targetThai: evt.targetThai !== false,
-      targetInternational: evt.targetInternational !== false,
-      quotaThai: evt.quotaThai || null,
-      quotaInternational: evt.quotaInternational || null,
+      imageUrls: (() => {
+        const urls = eff("imageUrls", evt.imageUrls);
+        const cover = eff("imageUrl", evt.imageUrl);
+        return urls && urls.length > 0 ? urls : (cover ? [cover] : []);
+      })(),
+      walkInsEnabled: eff("walkInsEnabled", evt.walkInsEnabled) || false,
+      walkInsOnly: eff("walkInsOnly", evt.walkInsOnly) || false,
+      quotaWalkIn: eff("quotaWalkIn", evt.quotaWalkIn) || null,
+      targetThai: eff("targetThai", evt.targetThai) !== false,
+      targetInternational: eff("targetInternational", evt.targetInternational) !== false,
+      quotaThai: eff("quotaThai", evt.quotaThai) || null,
+      quotaInternational: eff("quotaInternational", evt.quotaInternational) || null,
+      // Role/access/points/Managed By/staff are staff-only — always from the
+      // live event, never from a president's pending payload (it can never
+      // contain them, see PRESIDENT_EDITABLE_FIELDS server-side).
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
       allowedClubs: evt.allowedClubs || [],
-      firstYearOnly: evt.firstYearOnly || false,
+      firstYearOnly: eff("firstYearOnly", evt.firstYearOnly) || false,
       managedByRoles: evt.managedByRoles || [],
       ownerClubIds: evt.ownerClubIds || [],
       ownerMajors: evt.ownerMajors || [],
@@ -1071,15 +1165,31 @@ export default function AdminEventsPage() {
     });
     // Load the people directory once for the Event Staff picker (best-effort).
     ensureAssigneeUsersLoaded();
+    const pendingSessions = eff<
+      { id?: string; title?: string | null; startTime: string; endTime: string; quotaWalkIn?: number | null }[] | undefined
+    >("sessions", undefined);
+    const registrationModeEff = eff<"once" | "per_session" | undefined>("registrationMode", evt.registrationMode);
     // Only pre-select a mode (which reveals the Days editor) when the event is
     // genuinely multi-day or per-session. A plain single-session "once" event
     // edits cleanly with the mode left unselected, just like creating one.
-    const isMultiDay = (evt.sessions && evt.sessions.length > 1) || evt.registrationMode === "per_session";
-    setRegistrationMode(isMultiDay ? (evt.registrationMode === "per_session" ? "per_session" : "once") : null);
-    // Pre-populate the days editor from the event's sessions, carrying each id so
-    // PUT updates rather than recreates them. Sort by sortOrder for a stable order.
-    // Legacy events without sessions fall back to one row mirroring start/end.
-    const evtSessions = (evt.sessions && evt.sessions.length > 0)
+    const sessionCount = pendingSessions ? pendingSessions.length : (evt.sessions?.length ?? 0);
+    const isMultiDay = sessionCount > 1 || registrationModeEff === "per_session";
+    setRegistrationMode(isMultiDay ? (registrationModeEff === "per_session" ? "per_session" : "once") : null);
+    // Pre-populate the days editor from the pending draft's sessions when
+    // viewing one (a president's proposed schedule, unmatched to sortOrder
+    // since it's a flat proposed list), else from the live event's sessions,
+    // carrying each id so PUT updates rather than recreates them. Sort by
+    // sortOrder for a stable order. Legacy events without sessions fall back
+    // to one row mirroring start/end.
+    const evtSessions = pendingSessions
+      ? pendingSessions.map((s) => ({
+          id: s.id,
+          title: s.title || "",
+          startTime: toLocal(s.startTime),
+          endTime: toLocal(s.endTime),
+          quotaWalkIn: s.quotaWalkIn ?? null,
+        }))
+      : (evt.sessions && evt.sessions.length > 0)
       ? [...evt.sessions]
           .sort((a, b) => a.sortOrder - b.sortOrder)
           .map((s) => ({
@@ -1115,13 +1225,12 @@ export default function AdminEventsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, loading]);
 
-  // Staff-only approve action (see events.detailsReviewStatus in schema.ts) —
-  // a president's edit is never blocked, but it always resets this back to
-  // 'pending' (see PUT /api/admin/events/[id]), so staff explicitly approves
-  // it again here. There's no "reopen"/lock counterpart anymore: nothing is
-  // ever locked, so there's nothing to reopen. Only ever called from the edit
-  // form's pending-review banner, itself staff-only (presidents never see it —
-  // canEditRestrictedFields gates its render below).
+  // Staff-only approve action (see events.detailsReviewStatus/
+  // pendingDetailsChanges in schema.ts) — a president's edit is held as a
+  // pending diff, never applied live; this is what actually applies it,
+  // clearing the pending flag in the same request. Only ever called from the
+  // edit form's pending-review banner, itself staff-only (presidents never
+  // see it — canEditRestrictedFields gates its render below).
   const approveEventDetails = async () => {
     if (!editingId) return;
     setDetailsReviewToggling(true);
@@ -1132,7 +1241,15 @@ export default function AdminEventsPage() {
         body: JSON.stringify({ detailsReviewStatus: "approved" }),
       });
       if (res.ok) {
-        setFormData((f) => ({ ...f, detailsReviewStatus: "approved" }));
+        // Approving APPLIES the pending diff to the live event (including
+        // sessions, which aren't part of this response's event row) — close
+        // and refetch rather than patching local form/session state in
+        // place, so what's shown always matches what's now actually live.
+        setShowForm(false);
+        setFormData(EMPTY_FORM);
+        setRegistrationMode(null);
+        setSessions([]);
+        setEditingId(null);
         fetchEvents();
       } else {
         const d = await res.json().catch(() => null);
@@ -1141,6 +1258,38 @@ export default function AdminEventsPage() {
     } catch (e) {
       console.error(e);
       setError("Failed to update review status.");
+    } finally {
+      setDetailsReviewToggling(false);
+    }
+  };
+
+  // Staff-only: drop a pending president edit without applying it — live
+  // fields stay exactly as they are (a president's edit never touches them
+  // until approved), this just clears the pending flag. Mirrors
+  // approveEventDetails above; see PUT /api/admin/events/[id].
+  const discardPendingDetails = async () => {
+    if (!editingId) return;
+    setDetailsReviewToggling(true);
+    try {
+      const res = await fetch(`/api/admin/events/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ discardPendingDetails: true }),
+      });
+      if (res.ok) {
+        setShowForm(false);
+        setFormData(EMPTY_FORM);
+        setRegistrationMode(null);
+        setSessions([]);
+        setEditingId(null);
+        fetchEvents();
+      } else {
+        const d = await res.json().catch(() => null);
+        setError((d && d.error) || "Failed to discard pending changes.");
+      }
+    } catch (e) {
+      console.error(e);
+      setError("Failed to discard pending changes.");
     } finally {
       setDetailsReviewToggling(false);
     }
@@ -1844,10 +1993,10 @@ export default function AdminEventsPage() {
             {editingId ? t.editEventTitle : t.newEventTitle}
           </h2>
 
-          {/* Always-editable + auto re-review banner (see events.detailsReviewStatus
-              in schema.ts): a president is never locked out of editing — this is
-              purely informational, telling them a pending edit is awaiting staff
-              review. Mirrors the Feedback Form's identical pending-review banner. */}
+          {/* Always-editable + hold-for-review banner (see events.detailsReviewStatus/
+              pendingDetailsChanges in schema.ts): a president is never locked out of
+              editing — their edit is just held as a pending diff instead of touching
+              the live event, purely informational here. */}
           {isAttendanceOnly && isPresidentRole && editingId && formData.detailsReviewStatus === "pending" && (
             <div style={{
               display: "flex", alignItems: "flex-start", gap: 10,
@@ -1857,60 +2006,102 @@ export default function AdminEventsPage() {
               <AlertTriangle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
               <div>
                 <p style={{ fontWeight: 800, fontSize: 13, color: "#f59e0b" }}>
-                  {t.eventDetailsPendingBannerTitle || "Awaiting staff review"}
+                  {t.eventDetailsPendingBannerTitle || "Pending staff review"}
                 </p>
                 <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.5 }}>
-                  {t.eventDetailsPendingBannerDesc || "You can keep editing — admin/registration staff will review these details before they're marked approved."}
+                  {t.eventDetailsPendingBannerDesc || "You can keep editing — students still see the previously-approved version until admin/registration staff approve these changes."}
                 </p>
               </div>
             </div>
           )}
-          {/* Staff view of a PRESIDENT'S edit awaiting review — see
-              events.detailsReviewStatus in schema.ts. Only shown when there is
-              actually something to review: a brand-new event (or one staff just
-              created/edited themselves) is auto-marked approved at creation (see
-              POST /api/admin/events), and an event nobody but staff can ever edit
-              (no club/major president in managedByRoles) can never generate a
-              pending edit in the first place — showing this either of those
-              times is exactly what made it read as unexplained noise before.
-              Once shown, it disappears the moment staff approves (or the
-              president edits again, which just re-shows it) — no lingering
-              "approved" state to also parse. Mirrors the same
-              ownerClubIds/ownerMajors-only filter GET /api/admin/reviews uses
-              for its queue. */}
+          {/* Staff view of a PRESIDENT'S pending edit — see
+              events.detailsReviewStatus/pendingDetailsChanges in schema.ts. Only
+              shown when there is actually something to review: a brand-new event
+              (or one staff just created/edited themselves) is auto-marked approved
+              at creation (see POST /api/admin/events), and an event nobody but
+              staff can ever edit (no club/major president in managedByRoles) can
+              never generate a pending edit in the first place. Once shown, it
+              disappears the moment staff approves or discards (or the president
+              edits again, which just re-shows it with the latest diff). Mirrors
+              the same ownerClubIds/ownerMajors-only filter GET /api/admin/reviews
+              uses for its queue. The live event is untouched the whole time — see
+              PUT /api/admin/events/[id] — so the diff below is computed against
+              events.pendingDetailsChanges vs. the current live values, not
+              formData (which for staff always shows live values). */}
           {!isAttendanceOnly && editingId && formData.detailsReviewStatus === "pending" &&
-            (formData.managedByRoles.includes("club_president") || formData.managedByRoles.includes("major_president")) && (
-            <div style={{
-              display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
-              background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)",
-              borderRadius: 16, padding: "16px 20px", marginBottom: 24,
-            }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <AlertTriangle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <p style={{ fontWeight: 800, fontSize: 13, color: "#f59e0b" }}>
-                    {t.eventDetailsPendingStaffLabel || "President edited this event"}
-                  </p>
-                  <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.5 }}>
-                    {t.eventDetailsPendingStaffDesc || "The club/major president changed something below since you last approved it. Check the fields, then approve to clear this."}
-                  </p>
+            (formData.managedByRoles.includes("club_president") || formData.managedByRoles.includes("major_president")) && (() => {
+            const editingEvent = events.find((e) => e.id === editingId);
+            const diffRows = editingEvent?.pendingDetailsChanges
+              ? formatPendingDetailsDiff(editingEvent.pendingDetailsChanges, editingEvent, t)
+              : [];
+            return (
+              <div style={{
+                display: "flex", flexDirection: "column", gap: 12,
+                background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)",
+                borderRadius: 16, padding: "16px 20px", marginBottom: 24,
+              }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <AlertTriangle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <p style={{ fontWeight: 800, fontSize: 13, color: "#f59e0b" }}>
+                        {t.eventDetailsPendingStaffLabel || "President edited this event"}
+                      </p>
+                      <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.5 }}>
+                        {t.eventDetailsPendingStaffDesc || "The club/major president proposed the changes below. The live event is unaffected until you approve them."}
+                      </p>
+                      {editingEvent?.pendingSubmitter && (
+                        <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
+                          {t.eventDetailsPendingSubmittedByLabel || "Submitted by:"} {editingEvent.pendingSubmitter.name}
+                          {editingEvent.pendingDetailsSubmittedAt && ` · ${new Date(editingEvent.pendingDetailsSubmittedAt).toLocaleString("en-GB")}`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{
+                        background: "transparent", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.4)",
+                      }}
+                      disabled={detailsReviewToggling}
+                      onClick={discardPendingDetails}
+                    >
+                      {detailsReviewToggling ? <div className="spinner w-3 h-3 border-2" /> : <X size={14} />}
+                      {t.eventDetailsDiscardBtn || "Discard"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{
+                        background: "#f59e0b", color: "#fff", border: "none",
+                        boxShadow: "0 2px 8px rgba(245, 158, 11, 0.35)",
+                      }}
+                      disabled={detailsReviewToggling}
+                      onClick={approveEventDetails}
+                    >
+                      {detailsReviewToggling ? <div className="spinner w-3 h-3 border-2" /> : <CheckCircle2 size={14} />}
+                      {t.eventDetailsApproveBtn || "Approve changes"}
+                    </button>
+                  </div>
                 </div>
+                {diffRows.length > 0 && (
+                  <div style={{
+                    display: "flex", flexDirection: "column", gap: 6,
+                    background: "var(--bg-surface)", borderRadius: 12, padding: "12px 14px",
+                  }}>
+                    {diffRows.map((row) => (
+                      <p key={row.key} style={{ fontSize: 12.5, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                        <strong style={{ color: "var(--text-primary)" }}>{row.label}:</strong>{" "}
+                        {row.oldText} <span style={{ color: "#f59e0b", fontWeight: 700 }}>→</span> {row.newText}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{
-                  flexShrink: 0, background: "#f59e0b", color: "#fff", border: "none",
-                  boxShadow: "0 2px 8px rgba(245, 158, 11, 0.35)",
-                }}
-                disabled={detailsReviewToggling}
-                onClick={approveEventDetails}
-              >
-                {detailsReviewToggling ? <div className="spinner w-3 h-3 border-2" /> : <CheckCircle2 size={14} />}
-                {t.eventDetailsApproveBtn || "Approve changes"}
-              </button>
-            </div>
-          )}
+            );
+          })()}
 
           <form onSubmit={handleSubmit} className="relative">
             <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-10">

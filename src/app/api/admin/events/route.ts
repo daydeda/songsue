@@ -130,6 +130,11 @@ export async function GET() {
 
     const list = await db.query.events.findMany({
       orderBy: (events, { desc }) => [desc(events.startTime)],
+      with: {
+        // Joined so the pending-changes review banner can show who submitted
+        // the edit, not just when — see events.pendingDetailsSubmittedBy.
+        pendingSubmitter: { columns: { id: true, name: true } },
+      },
     });
 
     // Attendee counts via a single grouped aggregate (DISTINCT students — a multi-day

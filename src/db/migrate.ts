@@ -1299,6 +1299,16 @@ async function migrate() {
   await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS allowed_clubs jsonb`;
   console.log("  ✅ event_proposals.allowed_roles/allowed_majors/allowed_clubs");
 
+  // 81. events — pending edit proposal for club/major president edits to an
+  // EXISTING event. A president's edit is no longer applied live; it's held
+  // as JSON here until staff approve or discard it (the live columns above
+  // are never touched by a president's edit anymore). All three nullable,
+  // no default — null means "no pending edit". Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS pending_details_changes jsonb`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS pending_details_submitted_by text`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS pending_details_submitted_at timestamptz`;
+  console.log("  ✅ events.pending_details_changes/submitted_by/submitted_at");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

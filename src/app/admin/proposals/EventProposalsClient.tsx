@@ -41,6 +41,7 @@ type Proposal = {
   club: { id: string; name: string } | null;
   majorCode: string | null;
   proposer: { id: string; name: string; studentId: string | null };
+  reviewer: { id: string; name: string } | null;
 };
 
 const FILTERS = ["pending", "approved", "rejected", "withdrawn", "all"] as const;
@@ -250,10 +251,11 @@ export function EventProposalsClient() {
                   <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8 }}>{p.reviewNote}</p>
                 )}
 
-                {p.status !== "pending" && p.reviewedAt && (
+                {p.status !== "pending" && p.reviewer && (
                   <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, display: "flex", alignItems: "center", gap: 5 }}>
                     <UserCheck size={12} />
-                    {t.adminProposalsReviewedByLabel} {new Date(p.reviewedAt).toLocaleString("en-GB")}
+                    {t.adminProposalsReviewedByLabel} {p.reviewer.name}
+                    {p.reviewedAt && ` · ${new Date(p.reviewedAt).toLocaleString("en-GB")}`}
                   </p>
                 )}
 

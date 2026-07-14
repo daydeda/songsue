@@ -47,15 +47,21 @@ export async function GET() {
     const rawEvents = await db.query.events.findMany({
       orderBy: (events, { asc }) => [asc(events.startTime)],
     });
-    // Strip internal president-ownership metadata before it ever reaches a
-    // student/guest response — ownerClubIds/ownerMajors identify which
-    // club_president/major_president manages an event (see EventScopeService)
-    // and have no bearing on student eligibility, so this student-facing feed
-    // has no reason to expose them.
+    // Strip internal president-ownership/review-state metadata before it
+    // ever reaches a student/guest response — ownerClubIds/ownerMajors
+    // identify which club_president/major_president manages an event (see
+    // EventScopeService), and pendingDetailsChanges/pendingDetailsSubmittedBy/
+    // pendingDetailsSubmittedAt hold an unapproved president edit awaiting
+    // staff review (see PUT /api/admin/events/[id]) — none of this has any
+    // bearing on student eligibility or what a student should see, so this
+    // student-facing feed has no reason to expose it.
     const allEvents = rawEvents.map((event) => {
       const sanitized = { ...event };
       delete (sanitized as { ownerClubIds?: unknown }).ownerClubIds;
       delete (sanitized as { ownerMajors?: unknown }).ownerMajors;
+      delete (sanitized as { pendingDetailsChanges?: unknown }).pendingDetailsChanges;
+      delete (sanitized as { pendingDetailsSubmittedBy?: unknown }).pendingDetailsSubmittedBy;
+      delete (sanitized as { pendingDetailsSubmittedAt?: unknown }).pendingDetailsSubmittedAt;
       return sanitized;
     });
 

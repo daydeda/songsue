@@ -249,6 +249,14 @@ export const events = pgTable("events", {
   detailsReviewStatus: text("details_review_status").notNull().default("pending"), // 'pending' | 'approved'
   detailsReviewedBy: text("details_reviewed_by"), // no FK — mirrors noShowAppeals.reviewedBy
   detailsReviewedAt: timestamp("details_reviewed_at", { withTimezone: true }),
+  // Pending edit proposal: a club/major president's edit to an EXISTING event's
+  // details (title/dates/quota/etc.) is no longer applied live — it's held here
+  // until staff approve or discard it. The live event columns above are never
+  // touched by a president's edit anymore; this JSON blob is the only place
+  // their submitted values live until approval.
+  pendingDetailsChanges: jsonb("pending_details_changes").$type<Record<string, unknown>>(),
+  pendingDetailsSubmittedBy: text("pending_details_submitted_by"), // no FK — mirrors detailsReviewedBy's no-FK pattern
+  pendingDetailsSubmittedAt: timestamp("pending_details_submitted_at", { withTimezone: true }),
   // Explicit event-staff roster: user ids assigned to staff THIS event (distinct
   // from managedByRoles/ownerClubIds/ownerMajors, which answer "who MANAGES the
   // event configuration" — this answers "who is working it on the ground", e.g.
@@ -411,10 +419,11 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   gameStats: many(gameStats),
 }));
 
-export const eventsRelations = relations(events, ({ many }) => ({
+export const eventsRelations = relations(events, ({ one, many }) => ({
   sessions: many(eventSessions),
   attendances: many(attendance),
   scoreHistory: many(scoreHistory),
+  pendingSubmitter: one(users, { fields: [events.pendingDetailsSubmittedBy], references: [users.id], relationName: "eventPendingDetailsSubmitter" }),
 }));
 
 export const eventSessionsRelations = relations(eventSessions, ({ one, many }) => ({

@@ -19,6 +19,7 @@ import {
   MapPin,
   Plus,
   RefreshCw,
+  ShieldCheck,
   Trash2,
   Users,
   X,
@@ -44,6 +45,11 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
 };
 const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 
+// A student in this president's own major, for the Event Staff picker —
+// mirrors ProposeEventSection's ClubMember shape, minus `role` (a major has
+// no membership role concept, unlike a club).
+type MajorMember = { id: string; name: string | null; studentId: string | null };
+
 type Proposal = {
   id: string;
   title: string;
@@ -64,6 +70,7 @@ type Proposal = {
   quotaThai: number | null;
   quotaInternational: number | null;
   firstYearOnly: boolean | null;
+  staffUserIds: string[] | null;
   allowedRoles: string[] | null;
   allowedMajors: string[] | null;
   sessions: { title: string | null; startTime: string; endTime: string }[] | null;
@@ -92,6 +99,7 @@ const EMPTY_FORM = {
   quotaThai: "",
   quotaInternational: "",
   firstYearOnly: false,
+  staffUserIds: [] as string[],
   allowedRoles: [] as string[],
   allowedMajors: [] as string[],
 };
@@ -103,14 +111,16 @@ const EMPTY_FORM = {
 // ownerMajors explicitly when creating the real event from an approved
 // proposal (see POST /api/admin/events' proposalId linkage).
 //
-// Deliberately simpler than ProposeEventSection in two ways:
-//   - No club picker: `major` is the signed-in president's own users.major,
-//     fixed for the whole component (a major_president represents exactly one
-//     major — there's no equivalent to "which club" to choose between).
-//   - No Event Staff picker: a club has a member roster to suggest staff from
-//     (GET /api/admin/clubs/[id]/members); a major has no such roster, so
-//     major-scoped proposals never carry staffUserIds — staff assign event
-//     staff themselves at conversion time, same as any unfilled suggestion.
+// Deliberately simpler than ProposeEventSection in one way: no club picker —
+// `major` is the signed-in president's own users.major, fixed for the whole
+// component (a major_president represents exactly one major — there's no
+// equivalent to "which club" to choose between).
+//
+// The Event Staff picker mirrors ProposeEventSection's, except the roster it
+// draws from is every user whose users.major equals this president's own
+// major (GET /api/admin/majors/[code]/members) rather than a club_members
+// table — majors have no separate membership roster, so "member of this
+// major" just means users.major = code.
 export function MajorProposeEventSection({ major }: { major: string }) {
   const { t, lang } = useLanguage();
 
@@ -195,6 +205,7 @@ export function MajorProposeEventSection({ major }: { major: string }) {
       quotaThai: p.quotaThai != null ? String(p.quotaThai) : "",
       quotaInternational: p.quotaInternational != null ? String(p.quotaInternational) : "",
       firstYearOnly: p.firstYearOnly ?? false,
+      staffUserIds: p.staffUserIds ?? [],
       allowedRoles: p.allowedRoles ?? [],
       allowedMajors: p.allowedMajors ?? [],
     });
@@ -263,6 +274,27 @@ export function MajorProposeEventSection({ major }: { major: string }) {
       return [...prev.slice(0, idx), ...replacement, ...prev.slice(idx + 1)];
     });
   };
+
+  // ---- Event Staff picker: students in THIS president's own major only
+  // (never the global student directory — see the component-level comment
+  // above). `major` is fixed for the whole component, so this only needs to
+  // reload when the form opens. ----
+  const [majorMembers, setMajorMembers] = useState<MajorMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [staffSearch, setStaffSearch] = useState("");
+
+  useEffect(() => {
+    if (!showForm) return;
+    const timer = setTimeout(() => {
+      setLoadingMembers(true);
+      fetch(`/api/admin/majors/${major}/members`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => { if (Array.isArray(d)) setMajorMembers(d); })
+        .catch(() => {})
+        .finally(() => setLoadingMembers(false));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [showForm, major]);
 
   // ---- Rich text description toolbar — byte-for-byte the same as ProposeEventSection. ----
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -434,6 +466,7 @@ export function MajorProposeEventSection({ major }: { major: string }) {
           quotaThai: form.targetThai && form.quotaThai ? Number(form.quotaThai) : undefined,
           quotaInternational: form.targetInternational && form.quotaInternational ? Number(form.quotaInternational) : undefined,
           firstYearOnly: form.firstYearOnly,
+          staffUserIds: form.staffUserIds.length > 0 ? form.staffUserIds : undefined,
           allowedRoles: form.allowedRoles.length > 0 ? form.allowedRoles : undefined,
           allowedMajors: form.allowedMajors.length > 0 ? form.allowedMajors : undefined,
           sessions: registrationMode === "once" && sessions.length > 1
@@ -566,7 +599,7 @@ export function MajorProposeEventSection({ major }: { major: string }) {
                       <Eye size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
                     </div>
                   </div>
-                  {(p.walkInsEnabled || p.firstYearOnly || (p.sessions && p.sessions.length > 1)) && (
+                  {(p.walkInsEnabled || p.firstYearOnly || (p.staffUserIds && p.staffUserIds.length > 0) || (p.sessions && p.sessions.length > 1)) && (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                       {p.sessions && p.sessions.length > 1 && (
                         <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>
@@ -580,6 +613,11 @@ export function MajorProposeEventSection({ major }: { major: string }) {
                       )}
                       {p.firstYearOnly && (
                         <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>{t.firstYearOnly}</span>
+                      )}
+                      {p.staffUserIds && p.staffUserIds.length > 0 && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--bg-surface)", color: "var(--text-muted)" }}>
+                          {p.staffUserIds.length} {lang === "th" ? "ทีมงาน" : "staff"}
+                        </span>
                       )}
                     </div>
                   )}
@@ -1026,6 +1064,77 @@ export function MajorProposeEventSection({ major }: { major: string }) {
               </div>
               )}
 
+              {/* Event Staff — suggested helpers, drawn only from students in
+                  THIS president's own major (see GET
+                  /api/admin/majors/[code]/members). Staff can freely
+                  add/remove people when creating the real event. */}
+              <div className="field">
+                <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <ShieldCheck size={16} style={{ color: "#6366f1" }} />
+                  {lang === "th" ? "ทีมงานของกิจกรรมนี้" : "Event Staff"}
+                </label>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
+                  {lang === "th"
+                    ? "เลือกนักศึกษาในสาขาที่จะช่วยดูแลกิจกรรมนี้ (เป็นเพียงข้อเสนอแนะ ทีมงานฝ่ายจัดกิจกรรมสามารถปรับเปลี่ยนได้)"
+                    : "Suggest students in your major to help staff this event. This is only a suggestion — staff can adjust it when creating the real event."}
+                </p>
+                {form.staffUserIds.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                    {form.staffUserIds.map((uid) => {
+                      const u = majorMembers.find((x) => x.id === uid);
+                      return (
+                        <span key={uid} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, fontSize: 12, fontWeight: 800, background: "rgba(99,102,241,0.1)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.25)" }}>
+                          {u ? (u.name || u.studentId || uid) : uid}
+                          <button type="button" onClick={() => set("staffUserIds", form.staffUserIds.filter((x) => x !== uid))} style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontWeight: 900, fontSize: 13, lineHeight: 1 }}>✕</button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  className="input"
+                  style={{ width: "100%", height: 42, borderRadius: 12, padding: "0 14px" }}
+                  placeholder={lang === "th" ? "ค้นหาด้วยชื่อหรือรหัสนักศึกษา…" : "Search students in your major by name or student ID…"}
+                  value={staffSearch}
+                  onChange={(e) => setStaffSearch(e.target.value)}
+                />
+                {staffSearch.trim().length > 0 && (
+                  <div style={{ marginTop: 8, maxHeight: 180, overflowY: "auto", border: "1px solid var(--border-subtle)", borderRadius: 12, background: "var(--bg-surface)" }}>
+                    {majorMembers
+                      .filter((u) => {
+                        const q = staffSearch.trim().toLowerCase();
+                        return (u.name || "").toLowerCase().includes(q) || (u.studentId || "").toLowerCase().includes(q);
+                      })
+                      .slice(0, 30)
+                      .map((u) => {
+                        const on = form.staffUserIds.includes(u.id);
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => set("staffUserIds", on ? form.staffUserIds.filter((x) => x !== u.id) : [...form.staffUserIds, u.id])}
+                            style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(99,102,241,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
+                          >
+                            <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || ""}</span></span>
+                            <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#6366f1" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
+                          </button>
+                        );
+                      })}
+                    {majorMembers.length === 0 && (
+                      <p style={{ padding: 14, fontSize: 12, color: "var(--text-muted)" }}>
+                        {loadingMembers ? (lang === "th" ? "กำลังโหลดรายชื่อ…" : "Loading members…") : (lang === "th" ? "ไม่พบนักศึกษาในสาขานี้" : "No students found in this major.")}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {form.staffUserIds.length === 0 && (
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginTop: 10 }}>
+                    {lang === "th" ? "ยังไม่ได้เสนอทีมงาน" : "No staff suggested yet."}
+                  </p>
+                )}
+              </div>
+
               {/* Suggested Access — role/major eligibility, entirely
                   non-binding. Staff reviews/adjusts this when creating the
                   real event — nothing here takes effect on its own. See the
@@ -1326,6 +1435,11 @@ export function MajorProposeEventSection({ major }: { major: string }) {
                 {viewingProposal.targetInternational && (
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
                     {t.internationalStudents}{viewingProposal.quotaInternational ? ` (${viewingProposal.quotaInternational})` : ""}
+                  </span>
+                )}
+                {viewingProposal.staffUserIds && viewingProposal.staffUserIds.length > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+                    {viewingProposal.staffUserIds.length} {lang === "th" ? "ทีมงาน" : "staff suggested"}
                   </span>
                 )}
               </div>

@@ -7,6 +7,7 @@ import { sessionsHaveInvalidSpan } from "@/lib/event-schema";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { ClubsService } from "@/modules/clubs/clubs.service";
 import { EventProposalsService } from "@/modules/events/event-proposals.service";
+import { MajorsService } from "@/modules/majors/majors.service";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -177,13 +178,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
 
       // Never trust the client-sent staffUserIds — strip anyone who isn't
-      // actually a member of THIS club (same rule as POST).
+      // actually a member of THIS club/major (same rule as POST).
       let staffUserIds: string[] | null = null;
-      if (proposal.clubId && data.staffUserIds && data.staffUserIds.length > 0) {
-        const members = await ClubsService.getClubMembers(proposal.clubId);
-        const memberIds = new Set(members.map((m) => m.userId));
-        const filtered = data.staffUserIds.filter((uid) => memberIds.has(uid));
-        staffUserIds = filtered.length > 0 ? filtered : null;
+      if (data.staffUserIds && data.staffUserIds.length > 0) {
+        if (proposal.clubId) {
+          const members = await ClubsService.getClubMembers(proposal.clubId);
+          const memberIds = new Set(members.map((m) => m.userId));
+          const filtered = data.staffUserIds.filter((uid) => memberIds.has(uid));
+          staffUserIds = filtered.length > 0 ? filtered : null;
+        } else if (proposal.majorCode) {
+          const members = await MajorsService.getMajorMembers(proposal.majorCode);
+          const memberIds = new Set(members.map((m) => m.id));
+          const filtered = data.staffUserIds.filter((uid) => memberIds.has(uid));
+          staffUserIds = filtered.length > 0 ? filtered : null;
+        }
       }
 
       const ip = getClientIp(req);

@@ -6,6 +6,7 @@ import { REVIEW_PROPOSAL_ROLES, SUBMIT_PROPOSAL_ROLES } from "@/lib/event-propos
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { ClubsService } from "@/modules/clubs/clubs.service";
 import { EventProposalsService } from "@/modules/events/event-proposals.service";
+import { MajorsService } from "@/modules/majors/majors.service";
 import { majorsForFaculty, DEFAULT_FACULTY } from "@/lib/faculties";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -130,8 +131,8 @@ export async function GET(req: Request) {
 // ownerMajors when creating the real event (see POST /api/admin/events'
 // proposalId linkage) — nothing sensitive becomes self-service here, and the
 // suggested staffUserIds can only be drawn from the proposer's own club
-// roster (never the global student directory) — majors have no roster
-// equivalent, so a major_president's proposal never carries staffUserIds.
+// roster, or from the proposer's own major (via users.major — see
+// MajorsService.getMajorMembers), never the global student directory.
 export async function POST(req: Request) {
   try {
     const session = await auth();
@@ -172,7 +173,15 @@ export async function POST(req: Request) {
       if (!inScope) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-      // No roster to suggest event staff from for a major — always ignored.
+
+      // Never trust the client-sent staffUserIds — strip anyone who isn't
+      // actually a student in THIS major (the only roster the proposer can see).
+      if (data.staffUserIds && data.staffUserIds.length > 0) {
+        const members = await MajorsService.getMajorMembers(data.majorCode!);
+        const memberIds = new Set(members.map((m) => m.id));
+        const filtered = data.staffUserIds.filter((id) => memberIds.has(id));
+        staffUserIds = filtered.length > 0 ? filtered : null;
+      }
     }
 
     const ip = getClientIp(req);

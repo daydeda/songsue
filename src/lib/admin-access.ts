@@ -97,23 +97,51 @@ export function effectiveRoles(role?: string | null, roles?: string[] | null): s
   return role ? [role] : ["student"];
 }
 
-// May any of these roles enter the admin area at all?
-export function canEnterAdminAny(roles: string[]): boolean {
-  return roles.some(canEnterAdmin);
+/* ---------------------------------------------------------------------------
+ * Registration-role-retirement (Phase 1, additive): users.position ===
+ * "registration" grants access whose breadth depends on who holds it.
+ * SMO/ANUSMO holders get the full unscoped breadth the "registration" ROLE
+ * has today (this predicate); club/major members holding the position
+ * instead get an EVENT-scoped subset — see
+ * EventScopeService.getRegistrationPositionScope, which is NOT reflected
+ * here (a club/major-scoped holder must never pass this global check).
+ * These `position` params are all optional so every existing call site keeps
+ * its exact current behavior until it's deliberately updated to pass it.
+ * ------------------------------------------------------------------------- */
+export function isGlobalRegistrationPosition(roles: string[], position?: string | null): boolean {
+  return position === "registration" && (roles.includes("smo") || roles.includes("anusmo"));
+}
+
+// May any of these roles enter the admin area at all? ANY staff position
+// (src/lib/positions.ts — vice_president, secretary, finance, ..., not just
+// "registration") grants at least confined entry: a plain club/major member
+// holding a staff title has legitimate business inside /admin (e.g. a
+// read-only view of their own club's roster, see admin/clubs/page.tsx),
+// even though they hold no admin-entry ROLE. isScannerOnlyAny below then
+// confines them the same way it already confines a registration-position
+// holder — server-side route gates decide exactly what data they can reach.
+export function canEnterAdminAny(roles: string[], position?: string | null): boolean {
+  return roles.some(canEnterAdmin) || !!position;
 }
 
 // Scanner-only iff the set can enter admin but holds NO full-admin role — i.e.
-// every admin-granting role they have is scanner-only.
-export function isScannerOnlyAny(roles: string[]): boolean {
-  return canEnterAdminAny(roles) && !roles.some((r) => FULL_ADMIN_ROLES.includes(r));
+// every admin-granting role they have is scanner-only. A global registration
+// position (smo/anusmo) is full admin, not scanner-only; a club/major-scoped
+// registration position falls into the same scanner-only-confined bucket as
+// club_president/major_president (SCANNER_ONLY_PAGES already covers it).
+export function isScannerOnlyAny(roles: string[], position?: string | null): boolean {
+  if (isGlobalRegistrationPosition(roles, position)) return false;
+  return canEnterAdminAny(roles, position) && !roles.some((r) => FULL_ADMIN_ROLES.includes(r));
 }
 
-// May any of these roles award/deduct individual student points?
+// May any of these roles award/deduct individual student points? Deliberately
+// role-only/unchanged: a registration-position holder (club/major-scoped or
+// not) never gets individual scoring, matching club_president/major_president.
 export function canGiveIndividualScoreAny(roles: string[]): boolean {
   return roles.some(canGiveIndividualScore);
 }
 
 // Landing href for a role set (scanner-only → scanner, else dashboard).
-export function adminLandingHrefForRoles(roles: string[]): string {
-  return isScannerOnlyAny(roles) ? SCANNER_HREF : "/admin/dashboard";
+export function adminLandingHrefForRoles(roles: string[], position?: string | null): string {
+  return isScannerOnlyAny(roles, position) ? SCANNER_HREF : "/admin/dashboard";
 }

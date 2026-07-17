@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { forms, events } from "@/db/schema";
-import { effectiveRoles } from "@/lib/admin-access";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { REVIEW_PROPOSAL_ROLES } from "@/lib/event-proposals";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -20,7 +20,9 @@ export async function GET() {
   try {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    if (!session?.user || !myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))) {
+    const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
+      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+    if (!session?.user || !isStaff) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { ClubsService } from "@/modules/clubs/clubs.service";
+import { POSITION_IDS } from "@/lib/positions";
+import { effectiveRoles } from "@/lib/admin-access";
 
 // Every role the system recognizes, highest-privilege first. Used both to derive
 // the primary `role` from a roles[] set and (via roleEnum) to validate incoming
@@ -37,6 +39,10 @@ const userRoleSchema = z.object({
   // admin students page only sends this when the club_president checkbox is
   // shown, but any caller may send [] to clear all presidencies for this user.
   clubIds: z.array(z.string().uuid()).optional(),
+  // SMO/club/major title (src/lib/positions.ts) — distinct from role/roles
+  // above. Validated here (not read as-is from body) so a bad value 400s
+  // instead of silently writing garbage.
+  position: z.enum(POSITION_IDS).optional().nullable(),
 });
 
 // PATCH: Update user information or role
@@ -68,6 +74,17 @@ export async function PATCH(
     const { name, prefix, major, houseId, studentId, nickname } = body;
     let { role, roles } = parsedRoles.data;
     const { clubIds } = parsedRoles.data;
+    let { position } = parsedRoles.data;
+
+    // Contact info (phone/contactChannels) is only ever writable by
+    // super_admin, mirroring the read-side gate in GET /api/admin/students —
+    // a crafted request from an admin/registration actor must not be able to
+    // smuggle these fields in even though the route otherwise allows admin.
+    const isSuperAdminActor = effectiveRoles(session.user.role, session.user.roles).includes("super_admin");
+    // phone is unique-but-nullable in the schema — normalize "" to null so
+    // clearing it for one user can't collide with another user's empty string.
+    const phone = isSuperAdminActor && typeof body.phone === "string" ? (body.phone.trim() || null) : undefined;
+    const contactChannels = isSuperAdminActor && typeof body.contactChannels === "string" ? body.contactChannels : undefined;
 
     if (roles && Array.isArray(roles)) {
       // Find the primary role based on priority
@@ -97,6 +114,22 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden: Cannot edit Super Admin accounts" }, { status: 403 });
     }
 
+    // Position lock: a club_president/major_president's title is always
+    // "President" — nobody, including super_admin, may set it to anything
+    // else through this route (mirrors the same invariant enforced in
+    // ClubsService.setMemberPosition / MajorsService.setMemberPosition, which
+    // guard the club/major-scoped president's own editing surface). Evaluated
+    // against the FINAL role set (this request's `roles` if provided, else the
+    // user's current one) so an unrelated field-only edit still re-asserts it,
+    // and losing the role releases a stale "president" title back to unset.
+    const finalRoles = roles ?? ((targetUser.roles as string[] | null) ?? (targetUser.role ? [targetUser.role] : []));
+    const willBePresident = finalRoles.includes("club_president") || finalRoles.includes("major_president");
+    if (willBePresident) {
+      position = "president";
+    } else if (position === undefined && targetUser.position === "president") {
+      position = null;
+    }
+
     // Build the audit summary: role changes are logged with old → new values,
     // other fields by name only (no PII values in the log itself).
     const changes: string[] = [];
@@ -114,6 +147,11 @@ export async function PATCH(
     if (houseId !== undefined && houseId !== targetUser.houseId) changes.push("houseId");
     if (studentId !== undefined && studentId !== targetUser.studentId) changes.push("studentId");
     if (nickname !== undefined && nickname !== targetUser.nickname) changes.push("nickname");
+    if (position !== undefined && position !== targetUser.position) {
+      changes.push(`position: ${targetUser.position ?? "none"} → ${position ?? "none"}`);
+    }
+    if (phone !== undefined && phone !== targetUser.phone) changes.push("phone");
+    if (contactChannels !== undefined && contactChannels !== targetUser.contactChannels) changes.push("contactChannels");
 
     // Club presidencies: diff against the CURRENT set so the audit note only
     // fires on a real change. The actual club_members write happens inside the
@@ -144,6 +182,9 @@ export async function PATCH(
           houseId,
           studentId,
           nickname,
+          position,
+          phone,
+          contactChannels,
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));

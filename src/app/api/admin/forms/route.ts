@@ -5,6 +5,7 @@ import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { desc, eq, count } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 const formCreateSchema = z.object({
   eventId: z.string().uuid(),
@@ -23,7 +24,8 @@ const formCreateSchema = z.object({
 export async function GET() {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.position);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -62,7 +64,8 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.position);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -71,6 +71,7 @@ async function fetchUserDataFromDb(userId: string) {
       imageTransform: true,
       qrToken: true,
       studentId: true,
+      position: true,
     },
   });
   return dbUser ?? null;
@@ -102,6 +103,7 @@ async function applyDbUserToToken(token: Record<string, unknown>, dbUser: DbUser
   token.imageTransform = dbUser.imageTransform ?? null;
   token.qrToken = qrToken;
   token.studentId = dbUser.studentId ?? null;
+  token.position = dbUser.position ?? null;
 
   const currentEmail = (dbUser.email || "").toLowerCase();
   if (SUPER_ADMIN_EMAILS.includes(currentEmail)) {
@@ -201,6 +203,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 imageTransform: (user!.imageTransform as { scale: number; x: number; y: number } | null) ?? null,
                 qrToken: user!.qrToken ?? null,
                 studentId: user!.studentId ?? null,
+                position: user!.position ?? null,
                 image: user!.image ?? null,
                 isDevBypass: true,
               };
@@ -255,6 +258,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
+            token.position = dbUser.position ?? null;
           }
         } else {
           const dbUser = await fetchUserDataFromDb(user.id as string);
@@ -282,6 +286,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
+            token.position = dbUser.position ?? null;
           } else {
             await applyDbUserToToken(token, dbUser, userId);
           }
@@ -317,6 +322,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
+            token.position = dbUser.position ?? null;
           } else {
             await applyDbUserToToken(token, dbUser, userId);
           }
@@ -347,6 +353,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.imageTransform = (token.imageTransform as { scale: number; x: number; y: number } | null) ?? null;
       session.user.qrToken = (token.qrToken as string) ?? null;
       session.user.studentId = (token.studentId as string) ?? null;
+      session.user.position = (token.position as string | null) ?? null;
 
       // Force super_admin role for the official emails - CASE INSENSITIVE (FE-04)
       const currentEmail = (session.user?.email || "").toLowerCase();

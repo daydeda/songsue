@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { checkAndAwardPastEventPoints } from "@/lib/award-points";
 import { NextResponse } from "next/server";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 export const dynamic = "force-dynamic";
 // Hard ceiling on this function. Even in the worst case it dies at 15s instead of
@@ -20,7 +21,7 @@ export async function GET() {
   const session = await auth();
   const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(
     session?.user?.role || ""
-  );
+  ) || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.position);
   if (!session?.user || !isAdminRole) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

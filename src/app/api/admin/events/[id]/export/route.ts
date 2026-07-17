@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
+import { redactEmergencyContacts } from "@/lib/emergency-contacts";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -42,12 +43,17 @@ type AttendeeUser = {
 // GET /api/admin/events/[id]/export — attendee list as a real .xlsx with
 // auto-filter enabled. Staff (super_admin/admin) may export any event.
 // Scanner-only student-leader roles (smo/club_president/major_president) may
-// also export, but only get a THIN roster (no phone, no meds-check, no medical
-// or emergency-contact columns — mirrors THIN_USER_COLUMNS in the sibling
-// attendance API) — same "ask an admin for detail" policy enforced there.
+// also export: smo only gets a THIN roster (no phone, no meds-check, no
+// medical or emergency-contact columns — mirrors THIN_USER_COLUMNS in the
+// sibling attendance API) — same "ask an admin for detail" policy enforced
+// there. club_president/major_president instead get the FULL roster
+// (including medical detail) for events they OWN, scoped below — by
+// deliberate product decision (2026-07-18) mirroring the club/major
+// member-roster grant (see ClubsService.getClubMembers) — except emergency
+// contacts are redacted to relationship + phone only (no contact name), same
+// as that roster; the audit log is the accountability mechanism.
 // registration/organizer still cannot export at all (unlike the
 // attendance/report endpoints, which admit them for on-screen viewing).
-// Medical & emergency-contact columns are included for super_admin only.
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -58,6 +64,7 @@ export async function GET(
       session?.user?.roles ??
       (session?.user?.role ? [session.user.role] : []);
     const isStaffRole = roles.includes("super_admin") || roles.includes("admin");
+    const isPresidentRole = roles.some((r) => ["club_president", "major_president"].includes(r));
     const isThinExportRole = roles.some((r) =>
       ["smo", "club_president", "major_president"].includes(r)
     );
@@ -67,9 +74,14 @@ export async function GET(
     }
 
     const canViewMedical = roles.includes("super_admin");
+    // A club/major president exporting an event THEY OWN (scoped below) also
+    // gets medical detail + (redacted) emergency contacts — see isPresidentRole
+    // comment above.
+    const includeMedicalColumns = canViewMedical || isPresidentRole;
     // Thin export: identity + check-in only, same as the attendance roster's
-    // thin-roster view. Any staff role overrides this.
-    const isThinRoster = !isStaffRole;
+    // thin-roster view. Any staff role, or a president exporting their own
+    // event, overrides this.
+    const isThinRoster = !isStaffRole && !isPresidentRole;
 
     const { id: eventId } = await params;
     // Optional ?sessionId= narrows the export to one day of a multi-day event,
@@ -86,11 +98,10 @@ export async function GET(
 
     // Event scoping for president roles (mirrors the attendance API): club_president
     // / major_president may only export events they OWN (ownerClubIds/ownerMajors
-    // match their own club membership / major). Staff and smo are unscoped.
-    const presidentTags = roles.filter((r) =>
-      ["club_president", "major_president"].includes(r)
-    );
-    if (!isStaffRole && presidentTags.length > 0) {
+    // match their own club membership / major). Staff and smo are unscoped. This
+    // is what makes the medical-detail grant above safe: a president only ever
+    // reaches past this check for an event their own club/major owns.
+    if (!isStaffRole && isPresidentRole) {
       const scope = await EventScopeService.getPresidentScope(session.user.id!, roles);
       const managed = EventScopeService.isEventManagedByScope(event, scope);
       if (!managed) {
@@ -127,14 +138,14 @@ export async function GET(
             contactChannels: !isThinRoster,
             major: true,
             role: true,
-            chronicDiseases: canViewMedical,
-            medicalHistory: canViewMedical,
-            drugAllergies: canViewMedical,
-            foodAllergies: canViewMedical,
-            dietaryRestrictions: canViewMedical,
-            faintingHistory: canViewMedical,
-            emergencyMedication: canViewMedical,
-            emergencyContacts: canViewMedical,
+            chronicDiseases: includeMedicalColumns,
+            medicalHistory: includeMedicalColumns,
+            drugAllergies: includeMedicalColumns,
+            foodAllergies: includeMedicalColumns,
+            dietaryRestrictions: includeMedicalColumns,
+            faintingHistory: includeMedicalColumns,
+            emergencyMedication: includeMedicalColumns,
+            emergencyContacts: includeMedicalColumns,
           },
           with: {
             house: { columns: { name: true } },
@@ -159,20 +170,24 @@ export async function GET(
     // note the health info in the export. Mirrors the CSV report and the
     // attendance-list access log.
     //
-    // The "Meds Check" (medsCheckOption) column is in every STAFF export, so a
+    // The "Meds Check" (medsCheckOption) column is in every non-thin export, so a
     // plain admin's export still carries health info the descriptor must disclose.
-    // super_admin additionally receives full medical detail + emergency-contact
-    // columns; a plain admin gets only the meds-check signal. Thin-roster exporters
-    // (smo/president roles) get neither — no health info of any kind. Record which,
-    // so the log never understates (or overstates) the exposure.
+    // super_admin additionally receives full medical detail + full emergency-contact
+    // columns (incl. contact name); a club/major president exporting their own
+    // event gets the same medical detail but with the contact's NAME redacted
+    // (relationship + phone only); a plain admin gets only the meds-check signal.
+    // Thin-roster exporters (smo) get neither — no health info of any kind. Record
+    // which, so the log never understates (or overstates) the exposure.
     const healthNote = canViewMedical
       ? ", included health detail + emergency contacts"
+      : isPresidentRole
+      ? ", included health detail + emergency contacts (relationship/phone only, president tier)"
       : isThinRoster
       ? ", no health info (thin roster)"
       : ", included meds-check status";
     await AuditService.logAction({
       actorId: session.user.id!,
-      action: `Exported attendee XLSX for event ${eventId}${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${healthNote})`,
+      action: `Exported attendee XLSX for event "${event.title}" (${eventId})${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${healthNote})`,
       ipAddress: getClientIp(req),
     });
 
@@ -190,6 +205,10 @@ export async function GET(
             .map((c) => `${c.name} (${c.relationship}) ${c.phone}`)
             .join("; ")
         : "";
+    // President tier: same emergency-contact data, but the contact's own name
+    // is redacted before it ever reaches a column (relationship + phone only).
+    const fmtContactsRedacted = (contacts: unknown) =>
+      redactEmergencyContacts(contacts).map((c) => `${c.relationship}: ${c.phone}`).join("; ");
     const fmtTime = (d: Date | null) =>
       d ? d.toLocaleString("en-GB", { timeZone: "Asia/Bangkok" }) : "";
 
@@ -210,17 +229,19 @@ export async function GET(
         "Check-in (Bangkok)": fmtTime(m.checkInTime),
         "Method": m.method || "",
       };
-      // Thin-roster exporters (smo/club_president/major_president) get identity +
-      // check-in only — no email, phone, contact channels, or meds-check status
-      // (the latter would reveal a medical condition). Mirrors THIN_USER_COLUMNS
-      // in the sibling attendance API. They must ask an admin for detail.
+      // Thin-roster exporters (smo) get identity + check-in only — no email,
+      // phone, contact channels, or meds-check status (the latter would reveal
+      // a medical condition). Mirrors THIN_USER_COLUMNS in the sibling
+      // attendance API. They must ask an admin for detail. club_president/
+      // major_president are NOT thin (see isThinRoster above), so this branch
+      // covers them too.
       if (!isThinRoster) {
         base["Email"] = u?.email || "";
         base["Phone"] = u?.phone || "";
         base["Contact Channels"] = u?.contactChannels || "";
         base["Meds Check"] = m.medsCheckOption || "";
       }
-      if (canViewMedical) {
+      if (includeMedicalColumns) {
         base["Chronic Diseases"] = u?.chronicDiseases || "";
         base["Medical History"] = u?.medicalHistory || "";
         base["Drug Allergies"] = u?.drugAllergies || "";
@@ -228,7 +249,9 @@ export async function GET(
         base["Dietary Restrictions"] = u?.dietaryRestrictions || "";
         base["Fainting History"] = u?.faintingHistory ? "Yes" : "";
         base["Emergency Medication"] = u?.emergencyMedication || "";
-        base["Emergency Contacts"] = fmtContacts(u?.emergencyContacts);
+        base["Emergency Contacts"] = canViewMedical
+          ? fmtContacts(u?.emergencyContacts)
+          : fmtContactsRedacted(u?.emergencyContacts);
       }
       return base;
     };
@@ -238,7 +261,7 @@ export async function GET(
       ...(!isThinRoster ? ["Email", "Phone", "Contact Channels"] : []),
       "Major", "Role", "House", "Staff", "Status", "Check-in (Bangkok)", "Method",
       ...(!isThinRoster ? ["Meds Check"] : []),
-      ...(canViewMedical
+      ...(includeMedicalColumns
         ? [
             "Chronic Diseases", "Medical History", "Drug Allergies", "Food Allergies",
             "Dietary Restrictions", "Fainting History", "Emergency Medication", "Emergency Contacts",

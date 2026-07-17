@@ -60,4 +60,87 @@ export class EventScopeService {
   static filterEventsByScope<T extends ScopedEvent>(events: T[], scope: PresidentScope): T[] {
     return events.filter((event) => EventScopeService.isEventManagedByScope(event, scope));
   }
+
+  /**
+   * Resolves scope for a users.position === "registration" holder (see
+   * CLAUDE.md / the registration-role-retirement plan). `position` comes from
+   * the session (no extra query needed for the smo/anusmo case):
+   *   - smo/anusmo + position="registration" -> global (scope.global = true).
+   *   - has a club_members row (any role, 'member' or 'president') -> scoped
+   *     to that/those club(s)' events only.
+   *   - otherwise (plain student, identified only by users.major) -> scoped
+   *     to their own major's events only.
+   * Anything else (position !== "registration") resolves to an empty,
+   * non-global scope — no registration-position access at all.
+   */
+  static async getRegistrationPositionScope(
+    userId: string,
+    roles: string[],
+    position: string | null | undefined
+  ): Promise<{ global: boolean } & PresidentScope> {
+    if (position !== "registration") return { global: false, clubIds: [], majors: [] };
+
+    if (roles.includes("smo") || roles.includes("anusmo")) {
+      return { global: true, clubIds: [], majors: [] };
+    }
+
+    const memberships = await db.query.clubMembers.findMany({
+      where: eq(clubMembers.userId, userId),
+      columns: { clubId: true },
+    });
+    if (memberships.length > 0) {
+      return { global: false, clubIds: memberships.map((m) => m.clubId), majors: [] };
+    }
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { major: true },
+    });
+    return { global: false, clubIds: [], majors: user?.major ? [user.major] : [] };
+  }
+
+  /**
+   * Combined access resolver for event-scoped routes, replacing the
+   * duplicated "isUnscopedStaff / getPresidentScope" boilerplate at each call
+   * site. `isUnscopedStaff` and `hasPresidentTag` stay each route's own
+   * existing role-array checks (still include "registration" in Phase 1, so
+   * this is a strict superset of today's behavior — nothing regresses).
+   */
+  static async resolveEventAccess(params: {
+    userId: string;
+    roles: string[];
+    position: string | null | undefined;
+    isUnscopedStaff: boolean;
+    hasPresidentTag: boolean;
+  }): Promise<
+    | { allowed: false }
+    | { allowed: true; unscoped: true }
+    | { allowed: true; unscoped: false; scope: PresidentScope }
+  > {
+    if (params.isUnscopedStaff) return { allowed: true, unscoped: true };
+
+    const reg = await EventScopeService.getRegistrationPositionScope(
+      params.userId,
+      params.roles,
+      params.position
+    );
+    if (reg.global) return { allowed: true, unscoped: true };
+
+    const pres = params.hasPresidentTag
+      ? await EventScopeService.getPresidentScope(params.userId, params.roles)
+      : { clubIds: [], majors: [] };
+
+    if (!params.hasPresidentTag && params.position !== "registration") {
+      return { allowed: false };
+    }
+
+    return {
+      allowed: true,
+      unscoped: false,
+      scope: {
+        clubIds: [...pres.clubIds, ...reg.clubIds],
+        majors: [...pres.majors, ...reg.majors],
+      },
+    };
+  }
 }

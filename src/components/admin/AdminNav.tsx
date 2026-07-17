@@ -18,7 +18,7 @@ import {
   ListChecks
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
-import { isScannerOnlyAny } from "@/lib/admin-access";
+import { isScannerOnlyAny, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { REVIEW_PROPOSAL_ROLES } from "@/lib/event-proposals";
 
 // Grouped by topic so the sidebar reads as sections rather than one long list.
@@ -50,34 +50,40 @@ const NAV_GROUPS = [
     ] },
 ] as const;
 
-export function AdminNav({ roles }: { roles: string[] }) {
+export function AdminNav({ roles, position }: { roles: string[]; position?: string | null }) {
   const pathname = usePathname();
   const { t } = useLanguage();
 
   // A user may hold several roles; show an item if ANY of their roles is allowed to
   // see it (union of permissions). Matches the page + API gates and admin-access.
   const has = (allowed: string[]) => roles.some((r) => allowed.includes(r));
-  const scannerOnly = isScannerOnlyAny(roles);
-  const canSeeStudents = has(["super_admin", "admin", "registration"]); // organizer barred
+  const scannerOnly = isScannerOnlyAny(roles, position);
+  // A GLOBAL registration position (smo/anusmo + position="registration") gets nav
+  // parity with the "registration" role for the items that role set already covers.
+  const globalReg = isGlobalRegistrationPosition(roles, position);
+  const canSeeStudents = has(["super_admin", "admin", "registration"]) || globalReg; // organizer barred
   const canSeeAudit = has(["super_admin", "admin"]);                    // organizer + registration barred
   const canManage = has(["super_admin", "admin"]);                      // announcement + shop
   const canSeeClubs = has(["super_admin", "admin"]);                    // club identity management
-  const canReviewProposals = has([...REVIEW_PROPOSAL_ROLES]); // event-proposal review queue
+  const canReviewProposals = has([...REVIEW_PROPOSAL_ROLES]) || globalReg; // event-proposal review queue
 
   const itemAllowed = (item: { href: string }) => {
     // Scanner-only users (smo, club/major president, no full-admin role) see just the
     // QR Scanner, Events (attendance-view only) and Appeals. Shared predicate so this
-    // can't drift from proxy/admin-access. club_president additionally sees Clubs, but
-    // scoped read-only to their own club's roster (see admin/clubs/page.tsx + its APIs).
-    // Appeals itself is view-only for smo and owned-events-only for club/major
-    // president (VIEW_APPEALS_ROLES/RESOLVE_APPEALS_ROLES, src/lib/strikes.ts) — the
-    // page/API enforce that; the nav just decides whether the link shows at all.
+    // can't drift from proxy/admin-access. club_president additionally sees Clubs with
+    // full (own-club) roster access; a non-president staff position (secretary,
+    // finance, ... — src/lib/positions.ts) also sees Clubs, but read-only and further
+    // scoped to just their own club — see admin/clubs/page.tsx's isClubStaffViewer +
+    // its APIs' staff-position tier. Appeals itself is view-only for smo and
+    // owned-events-only for club/major president (VIEW_APPEALS_ROLES/
+    // RESOLVE_APPEALS_ROLES, src/lib/strikes.ts) — the page/API enforce that; the nav
+    // just decides whether the link shows at all.
     if (scannerOnly) {
       return (
         item.href === "/admin/scanner" ||
         item.href === "/admin/events" ||
         item.href === "/admin/appeals" ||
-        (item.href === "/admin/clubs" && roles.includes("club_president")) ||
+        (item.href === "/admin/clubs" && (roles.includes("club_president") || !!position)) ||
         (item.href === "/admin/majors" && roles.includes("major_president"))
       );
     }

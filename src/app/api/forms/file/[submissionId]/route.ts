@@ -5,6 +5,7 @@ import { downloadFormFile } from "@/lib/form-file-storage";
 import { eq } from "drizzle-orm";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { NextResponse } from "next/server";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ submissi
     }
 
     const isOwner = submission.studentId === session.user.id;
-    const isAdmin = ADMIN_ROLES.includes(session.user.role || "");
+    const isAdmin = ADMIN_ROLES.includes(session.user.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.position);
     if (!isOwner && !isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

@@ -1,6 +1,7 @@
 import { db } from "@/db";
-import { clubs, clubMembers, events, users } from "@/db/schema";
+import { clubs, clubMembers, events, houses, users } from "@/db/schema";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { redactEmergencyContacts } from "@/lib/emergency-contacts";
 
 // Mirrors AuditService's DBTransaction type (src/modules/audit/audit.service.ts) so
 // callers that need setUserClubPresidencies to be atomic with their own writes (e.g.
@@ -96,8 +97,17 @@ export class ClubsService {
   }
 
   /**
-   * Lists a club's members with role, joined with the user's display name and
-   * student id. Groundwork for a future per-club roster UI — not surfaced yet.
+   * Lists a club's members with role, joined with the user's roster detail —
+   * a club_president manages their own club/events with this (see
+   * admin/clubs/page.tsx), so beyond identity (name/studentId) it also
+   * includes contact info, major, and house. Medical detail/emergency
+   * contacts are deliberately NOT included here (data minimization) — they're
+   * fetched per-member, on demand, via getClubMemberMedical, only when a
+   * president actually expands that one member's panel, so the audit trail
+   * (and the data that leaves the server at all) reflects who was actually
+   * looked at rather than the whole roster on every page load. Use
+   * getClubMembersFull for a genuine bulk pull (the .xlsx export, which
+   * legitimately needs everyone's detail at once).
    */
   static async getClubMembers(clubId: string) {
     const rows = await db
@@ -106,14 +116,132 @@ export class ClubsService {
         userId: clubMembers.userId,
         role: clubMembers.role,
         userName: users.name,
+        nickname: users.nickname,
         studentId: users.studentId,
+        major: users.major,
+        phone: users.phone,
+        contactChannels: users.contactChannels,
+        noShowCount: users.noShowCount,
+        house: { id: houses.id, name: houses.name, color: houses.color },
+        // Global staff title (src/lib/positions.ts) — distinct from `role`
+        // above, which is just this club_members row's 'member'/'president'.
+        // Always "president" when role === 'president' (kept in sync by
+        // setMemberPosition/applyClubPresidencies below — see the "locked
+        // position" comment there) — never independently editable.
+        position: users.position,
       })
       .from(clubMembers)
       .innerJoin(users, eq(users.id, clubMembers.userId))
+      .leftJoin(houses, eq(houses.id, users.houseId))
       .where(eq(clubMembers.clubId, clubId))
       .orderBy(asc(users.name));
 
     return rows;
+  }
+
+  /**
+   * Same roster as getClubMembers, but WITHOUT phone/contactChannels — for a
+   * non-president staff-position holder's (e.g. secretary, finance — any
+   * NON_SMO_POSITION_IDS title short of "president") read-only view of their
+   * own club (see GET .../members' staff-position tier). No medical/
+   * emergency-contact access exists at this tier at all — that stays a
+   * separate on-demand route gated to admin/club_president only.
+   */
+  static async getClubMembersLimited(clubId: string) {
+    const rows = await db
+      .select({
+        id: clubMembers.id,
+        userId: clubMembers.userId,
+        role: clubMembers.role,
+        userName: users.name,
+        nickname: users.nickname,
+        studentId: users.studentId,
+        major: users.major,
+        house: { id: houses.id, name: houses.name, color: houses.color },
+        position: users.position,
+      })
+      .from(clubMembers)
+      .innerJoin(users, eq(users.id, clubMembers.userId))
+      .leftJoin(houses, eq(houses.id, users.houseId))
+      .where(eq(clubMembers.clubId, clubId))
+      .orderBy(asc(users.name));
+
+    return rows;
+  }
+
+  /**
+   * Same roster as getClubMembers, but WITH medical/emergency-contact detail
+   * for every member at once — a genuine bulk PII pull, used only by the
+   * .xlsx export route (which is audit-logged as such). Emergency contacts
+   * are redacted to relationship + phone only — the contact's own NAME is
+   * stripped before it ever leaves the DB layer, never sent to a president.
+   */
+  static async getClubMembersFull(clubId: string) {
+    const rows = await db
+      .select({
+        id: clubMembers.id,
+        userId: clubMembers.userId,
+        role: clubMembers.role,
+        userName: users.name,
+        nickname: users.nickname,
+        studentId: users.studentId,
+        major: users.major,
+        phone: users.phone,
+        contactChannels: users.contactChannels,
+        noShowCount: users.noShowCount,
+        house: { id: houses.id, name: houses.name, color: houses.color },
+        chronicDiseases: users.chronicDiseases,
+        medicalHistory: users.medicalHistory,
+        drugAllergies: users.drugAllergies,
+        foodAllergies: users.foodAllergies,
+        dietaryRestrictions: users.dietaryRestrictions,
+        faintingHistory: users.faintingHistory,
+        emergencyMedication: users.emergencyMedication,
+        emergencyContacts: users.emergencyContacts,
+        position: users.position,
+      })
+      .from(clubMembers)
+      .innerJoin(users, eq(users.id, clubMembers.userId))
+      .leftJoin(houses, eq(houses.id, users.houseId))
+      .where(eq(clubMembers.clubId, clubId))
+      .orderBy(asc(users.name));
+
+    return rows.map((r) => ({
+      ...r,
+      emergencyContacts: redactEmergencyContacts(r.emergencyContacts),
+    }));
+  }
+
+  /**
+   * Medical/emergency-contact detail for ONE member of this club — fetched
+   * on demand when a president expands that member's panel (see
+   * api/admin/clubs/[id]/members/[memberId]/medical/route.ts), never as part
+   * of the bulk roster read. Returns null if the user isn't actually a member
+   * of this club (never trust a client-supplied memberId alone). Emergency
+   * contacts are redacted to relationship + phone only, same as the roster.
+   */
+  static async getClubMemberMedical(clubId: string, userId: string) {
+    const [row] = await db
+      .select({
+        userId: clubMembers.userId,
+        userName: users.name,
+        studentId: users.studentId,
+        chronicDiseases: users.chronicDiseases,
+        medicalHistory: users.medicalHistory,
+        drugAllergies: users.drugAllergies,
+        foodAllergies: users.foodAllergies,
+        dietaryRestrictions: users.dietaryRestrictions,
+        faintingHistory: users.faintingHistory,
+        emergencyMedication: users.emergencyMedication,
+        emergencyContacts: users.emergencyContacts,
+      })
+      .from(clubMembers)
+      .innerJoin(users, eq(users.id, clubMembers.userId))
+      .where(and(eq(clubMembers.clubId, clubId), eq(clubMembers.userId, userId)))
+      .limit(1);
+
+    if (!row) return null;
+    return { ...row, emergencyContacts: redactEmergencyContacts(row.emergencyContacts) };
   }
 
   /**
@@ -182,6 +310,51 @@ export class ClubsService {
   }
 
   /**
+   * Club IDs where this user is a plain 'member' (never 'president') — used
+   * to scope a non-president staff-position holder (e.g. secretary, finance)
+   * to a read-only view of their own club(s). Naturally excludes clubs they
+   * preside over — those already get the fuller club_president view via
+   * getPresidentClubIds, so a president is never double-counted here.
+   */
+  static async getStaffMemberClubIds(userId: string): Promise<string[]> {
+    const rows = await db
+      .select({ clubId: clubMembers.clubId })
+      .from(clubMembers)
+      .where(and(eq(clubMembers.userId, userId), eq(clubMembers.role, "member")));
+    return rows.map((r) => r.clubId);
+  }
+
+  /**
+   * Sets a club member's global `users.position` (title) — verifies the user
+   * is actually a member of THIS club before writing, so a crafted userId
+   * belonging to a different club can't be touched. Returns undefined if the
+   * user isn't a member of this club.
+   *
+   * A club_members row with role === 'president' always has position forced
+   * to "president" — nobody (not even super_admin/admin through this same
+   * endpoint) may set it to anything else, matching the client, which never
+   * renders an editable control for a president row. This mirrors
+   * applyClubPresidencies below, which is what puts a user into this state in
+   * the first place.
+   */
+  static async setMemberPosition(clubId: string, userId: string, position: string | null) {
+    const [membership] = await db
+      .select()
+      .from(clubMembers)
+      .where(and(eq(clubMembers.clubId, clubId), eq(clubMembers.userId, userId)));
+    if (!membership) return undefined;
+
+    const effectivePosition = membership.role === "president" ? "president" : position;
+
+    const [updated] = await db
+      .update(users)
+      .set({ position: effectivePosition, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning({ id: users.id, position: users.position });
+    return updated;
+  }
+
+  /**
    * Removes a (clubId, userId) membership row entirely, regardless of role.
    */
   static async removeClubMember(clubId: string, userId: string) {
@@ -245,6 +418,21 @@ export class ClubsService {
             inArray(clubMembers.clubId, toRemove),
           ),
         );
+    }
+
+    // Keep users.position in sync with presidency: gaining a first presidency
+    // forces the "President" title (see setMemberPosition's matching lock);
+    // losing the LAST one releases it back to unset. A user still presiding
+    // over at least one other club keeps "president" untouched. Only touch the
+    // column when this call actually changed something, so an unrelated
+    // save (clubIds unchanged) never stomps a manually-set position.
+    if (toAdd.length > 0) {
+      await tx.update(users).set({ position: "president", updatedAt: new Date() }).where(eq(users.id, userId));
+    } else if (toRemove.length > 0 && desiredIds.size === 0) {
+      const [user] = await tx.select({ position: users.position }).from(users).where(eq(users.id, userId));
+      if (user?.position === "president") {
+        await tx.update(users).set({ position: null, updatedAt: new Date() }).where(eq(users.id, userId));
+      }
     }
   }
 }

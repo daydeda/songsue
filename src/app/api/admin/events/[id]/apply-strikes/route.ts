@@ -5,7 +5,7 @@ import { attendance, events, users } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
-import { effectiveRoles } from "@/lib/admin-access";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { deductIndividualPoints } from "@/lib/award-individual-points";
 import { APPLY_STRIKES_ROLES, NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
@@ -38,7 +38,14 @@ async function findNoShowStudentIds(eventId: string): Promise<string[]> {
 
 async function loadEventAndGate(eventId: string, session: Session | null) {
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  if (!session?.user || !myRoles.some((r) => (APPLY_STRIKES_ROLES as readonly string[]).includes(r))) {
+  const position = session?.user?.position;
+  // A registration position (global via smo/anusmo, or club/major-scoped) is
+  // additively admitted as an entry ticket — narrowed to the actor's own
+  // club/major by the EventScopeService check below when not global.
+  if (
+    !session?.user ||
+    !(myRoles.some((r) => (APPLY_STRIKES_ROLES as readonly string[]).includes(r)) || position === "registration")
+  ) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
@@ -53,14 +60,21 @@ async function loadEventAndGate(eventId: string, session: Session | null) {
     return { error: NextResponse.json({ error: "Cannot apply strikes before the event has ended" }, { status: 403 }) };
   }
 
-  // Club/major presidents may only strike no-shows for events they OWN (mirrors
-  // the scoping in api/admin/events/[id]/attendance). Staff (incl. registration)
-  // are unscoped; smo never reaches here (excluded from APPLY_STRIKES_ROLES above).
+  // Club/major presidents, and a club/major-scoped registration position, may
+  // only strike no-shows for events they OWN (mirrors the scoping in
+  // api/admin/events/[id]/attendance). Staff (incl. registration) and a GLOBAL
+  // registration position (smo/anusmo + position="registration") are unscoped;
+  // bare smo/anusmo (without the position) never reaches here (excluded from
+  // APPLY_STRIKES_ROLES above).
   const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-  const isUnscopedStaff = myRoles.some((r) => ["super_admin", "admin", "organizer", "registration"].includes(r));
-  if (!isUnscopedStaff && presidentTags.length > 0) {
-    const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
-    if (!EventScopeService.isEventManagedByScope(event, scope)) {
+  const isUnscopedStaff = myRoles.some((r) => ["super_admin", "admin", "organizer", "registration"].includes(r))
+    || isGlobalRegistrationPosition(myRoles, position);
+  if (!isUnscopedStaff) {
+    const access = await EventScopeService.resolveEventAccess({
+      userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+    });
+    const managed = access.allowed && (access.unscoped || EventScopeService.isEventManagedByScope(event, access.scope));
+    if (!managed) {
       return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
     }
   }

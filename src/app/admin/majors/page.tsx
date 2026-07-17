@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { effectiveRoles } from "@/lib/admin-access";
 import { MajorProposeEventSection } from "./MajorProposeEventSection";
+import { MajorTeamSection } from "./MajorTeamSection";
 import { EventFeedbackFormsShortcut } from "@/components/admin/EventFeedbackFormsShortcut";
 import { GraduationCap } from "lucide-react";
 
@@ -58,6 +59,7 @@ export default function MajorsPage() {
       ) : isMajorPresident && major ? (
         <>
           <EventFeedbackFormsShortcut scope="major" />
+          <MajorTeamSection major={major} />
           <MajorProposeEventSection major={major} />
         </>
       ) : (

@@ -10,5 +10,5 @@ import { adminLandingHrefForRoles, effectiveRoles } from "@/lib/admin-access";
 // redirects unauthenticated/disallowed users.)
 export default async function AdminIndex() {
   const session = await auth();
-  redirect(adminLandingHrefForRoles(effectiveRoles(session?.user?.role, session?.user?.roles)));
+  redirect(adminLandingHrefForRoles(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.position));
 }

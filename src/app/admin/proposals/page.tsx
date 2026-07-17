@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import { adminLandingHrefForRoles, effectiveRoles } from "@/lib/admin-access";
+import { adminLandingHrefForRoles, effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { REVIEW_PROPOSAL_ROLES } from "@/lib/event-proposals";
 import { EventProposalsClient } from "./EventProposalsClient";
 
@@ -14,9 +14,13 @@ export const dynamic = "force-dynamic";
 export default async function AdminProposalsPage() {
   const session = await auth();
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  const canReview = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r));
+  const position = session?.user?.position;
+  // Reviewing proposals has no club/major-scoped equivalent — only a GLOBAL
+  // registration position (smo/anusmo) gets parity, matching the API's gate.
+  const canReview = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
+    || isGlobalRegistrationPosition(myRoles, position);
   if (!canReview) {
-    redirect(adminLandingHrefForRoles(myRoles));
+    redirect(adminLandingHrefForRoles(myRoles, position));
   }
 
   return <EventProposalsClient />;

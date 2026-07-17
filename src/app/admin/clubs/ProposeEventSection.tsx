@@ -6,6 +6,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { currentFirstYearPrefix } from "@/lib/event-access";
 import { sessionSpansTooLong, splitIntoDailySessions } from "@/lib/event-schema";
 import { parseRichText } from "@/lib/rich-text";
+import { POSITION_I18N_KEY } from "@/lib/positions";
 import {
   AlertCircle,
   CalendarPlus,
@@ -49,7 +50,7 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
 };
 const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 
-type ClubMember = { id: string; userId: string; role: string; userName: string | null; studentId: string | null };
+type ClubMember = { id: string; userId: string; role: string; userName: string | null; studentId: string | null; position: string | null };
 
 // A suggested extra day for a multi-day event — mirrors admin/events/page.tsx's
 // SessionRow, minus `id`/`quotaWalkIn` (these are always brand-new suggestions;
@@ -1378,7 +1379,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                             onClick={() => set("staffUserIds", on ? form.staffUserIds.filter((x) => x !== u.userId) : [...form.staffUserIds, u.userId])}
                             style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(99,102,241,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
                           >
-                            <span style={{ fontWeight: 700 }}>{u.userName || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}</span></span>
+                            <span style={{ fontWeight: 700 }}>{u.userName || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || u.role}{u.position ? ` · ${t[POSITION_I18N_KEY[u.position as keyof typeof POSITION_I18N_KEY] as keyof typeof t]}` : ""}</span></span>
                             <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#6366f1" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
                           </button>
                         );

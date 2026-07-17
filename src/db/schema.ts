@@ -75,6 +75,12 @@ export const users = pgTable("users", {
   nickname: text("nickname"),
   faculty: text("faculty"), // always 'CAMT' (null treated as CAMT too) — see src/lib/faculties.ts
   major: text("major"), // major code, e.g. ANI, DG, DII, MMIT, SE
+  // SMO/club/major title (e.g. 'president', 'club_affairs') — DISTINCT from
+  // `role`/`roles` (system access). Stores a stable id from POSITION_IDS
+  // (src/lib/positions.ts). Plain text (matching `role`'s convention), validated
+  // at the Zod layer on every write. Already live in the DB via migrate.ts step
+  // 6; this line is schema/history parity.
+  position: text("position"),
   imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }
   religion: text("religion"),
   phone: text("phone").unique(),

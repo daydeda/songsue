@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { canEnterAdminAny, canGiveIndividualScoreAny, effectiveRoles } from "@/lib/admin-access";
+import { canEnterAdminAny, canGiveIndividualScoreAny, effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { ScannerService } from "@/modules/events/scanner.service";
 import { EventsService } from "@/modules/events/events.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
@@ -56,25 +56,34 @@ export async function POST(req: Request) {
     // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
     // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
     const roles = effectiveRoles(session.user.role, session.user.roles);
-    if (!canEnterAdminAny(roles)) {
+    const position = session.user.position;
+    if (!canEnterAdminAny(roles, position)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
     const { qrToken, eventId, sessionId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
 
-    // President roles may only scan events they OWN (ownerClubIds/ownerMajors),
-    // mirroring the /api/admin/events list + attendance/report scoping. Staff and
-    // smo unscoped.
-    const isStaff = roles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    // President roles, and a club/major-scoped registration position, may only
+    // scan events they OWN (ownerClubIds/ownerMajors), mirroring the
+    // /api/admin/events list + attendance/report scoping. Staff, smo, and a
+    // GLOBAL registration position (smo/anusmo + position="registration") are
+    // unscoped — scoping the club/major case is deliberately STRICTER than the
+    // old flat "registration" role would have been (every club's every event),
+    // not looser, so this is safe to enable without a bake-in period like the
+    // rest of this rollout.
+    const isStaff = roles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
+      || isGlobalRegistrationPosition(roles, position);
     const presidentTags = roles.filter((r) => ["club_president", "major_president"].includes(r));
-    if (!isStaff && presidentTags.length > 0) {
+    if (!isStaff && (presidentTags.length > 0 || position === "registration")) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
         columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const scope = await EventScopeService.getPresidentScope(session.user.id!, roles);
-      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
+      const access = await EventScopeService.resolveEventAccess({
+        userId: session.user.id!, roles, position, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+      });
+      const managed = access.allowed && (access.unscoped || (ev ? EventScopeService.isEventManagedByScope(ev, access.scope) : false));
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
@@ -209,7 +218,7 @@ export async function GET(req: Request) {
     // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
     // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
     const roles = effectiveRoles(session.user.role, session.user.roles);
-    if (!canEnterAdminAny(roles)) {
+    if (!canEnterAdminAny(roles, session.user.position)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

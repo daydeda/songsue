@@ -9,14 +9,20 @@ export const maxDuration = 20;
 export async function GET() {
   try {
     const session = await auth();
+    const myRoles = session?.user
+      ? effectiveRoles(session.user.role, session.user.roles)
+      : [];
     if (
       !session?.user ||
-      !effectiveRoles(session.user.role, session.user.roles).some((r) =>
-        ["super_admin", "admin", "registration"].includes(r),
-      )
+      !myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r))
     ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Contact info (email/phone/contactChannels) is only ever included for
+    // super_admin — everyone else on this bulk directory endpoint gets the
+    // PDPA-minimal columns, same as before.
+    const isSuperAdmin = myRoles.includes("super_admin");
 
     // Only fetch non-sensitive data for the general directory
     const allStudents = await db.query.users.findMany({
@@ -27,15 +33,14 @@ export async function GET() {
         prefix: true,
         nickname: true,
         major: true,
-        // No phone here: nothing in the directory UI renders it, and PDPA says
-        // bulk endpoints carry the minimum. The super_admin-only detail route
-        // (/api/admin/students/[id]) still returns contact info when needed.
+        position: true,
         houseId: true,
         profileCompleted: true,
         role: true,
         roles: true,
         noShowCount: true,
         registrationBlocked: true,
+        ...(isSuperAdmin ? { email: true, phone: true, contactChannels: true } : {}),
       },
       with: { house: true },
     });

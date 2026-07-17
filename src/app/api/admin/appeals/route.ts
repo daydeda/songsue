@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { noShowAppeals } from "@/db/schema";
-import { effectiveRoles } from "@/lib/admin-access";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { VIEW_APPEALS_ROLES } from "@/lib/strikes";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 import { desc, eq } from "drizzle-orm";
@@ -25,7 +25,11 @@ export async function GET(req: Request) {
   try {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    if (!session?.user || !myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r))) {
+    const position = session?.user?.position;
+    if (
+      !session?.user ||
+      !(myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r)) || position === "registration")
+    ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -47,15 +51,15 @@ export async function GET(req: Request) {
       },
     });
 
-    const isUnscoped = myRoles.some((r) => ["super_admin", "admin", "registration", "smo"].includes(r));
+    const isUnscoped = myRoles.some((r) => ["super_admin", "admin", "registration", "smo"].includes(r))
+      || isGlobalRegistrationPosition(myRoles, position);
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-    const scoped =
-      !isUnscoped && presidentTags.length > 0
-        ? await (async () => {
-            const scope = await EventScopeService.getPresidentScope(session.user!.id!, myRoles);
-            return appeals.filter((a) => a.event && EventScopeService.isEventManagedByScope(a.event, scope));
-          })()
-        : appeals;
+    const access = await EventScopeService.resolveEventAccess({
+      userId: session.user!.id!, roles: myRoles, position, isUnscopedStaff: isUnscoped, hasPresidentTag: presidentTags.length > 0,
+    });
+    const scoped = access.allowed
+      ? (access.unscoped ? appeals : appeals.filter((a) => a.event && EventScopeService.isEventManagedByScope(a.event, access.scope)))
+      : [];
 
     // ownerClubIds/ownerMajors were only fetched for the scoping check above —
     // strip them before returning so the response shape matches what

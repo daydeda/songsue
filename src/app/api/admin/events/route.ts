@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { events, attendance, eventSessions, eventProposals } from "@/db/schema";
-import { effectiveRoles } from "@/lib/admin-access";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 import { and, eq, sql } from "drizzle-orm";
@@ -105,7 +105,9 @@ export async function GET() {
     // (read-only list) because the QR Scanner's event picker fetches this endpoint;
     // write handlers (POST/PUT/DELETE) deliberately exclude them.
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
+    const position = session?.user?.position;
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r))
+      || position === "registration";
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -114,14 +116,18 @@ export async function GET() {
     // events they own (ownerClubIds/ownerMajors match their own club membership /
     // major — see EventScopeService), not merely events tagged with the generic
     // managedByRoles president tag. This is independent of allowedRoles (participant
-    // visibility). Staff roles and smo are unscoped (see all). This drives both the
-    // admin events page AND the scanner's event picker, which share this endpoint.
-    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    // visibility). Staff roles, smo, and a global registration position (smo/anusmo
+    // + position="registration") are unscoped (see all). A club/major-scoped
+    // registration position (case 2/3) is scoped the same way presidents are. This
+    // drives both the admin events page AND the scanner's event picker, which
+    // share this endpoint.
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
+      || isGlobalRegistrationPosition(myRoles, position);
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-    const scopeToPresidentTags = !isStaff && presidentTags.length > 0;
-    const presidentScope = scopeToPresidentTags
-      ? await EventScopeService.getPresidentScope(session.user.id!, myRoles)
-      : null;
+    const access = await EventScopeService.resolveEventAccess({
+      userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: isStaff, hasPresidentTag: presidentTags.length > 0,
+    });
+    const presidentScope = access.allowed && !access.unscoped ? access.scope : null;
 
     // Award runs deliberately do NOT live on this polled read path — they run on
     // their own isolated, advisory-locked endpoints (/api/admin/award-check and
@@ -182,7 +188,12 @@ export async function POST(req: Request) {
     // who is also tagged club_president elsewhere) gets wrongly rejected here,
     // matching how PUT /api/admin/events/[id] already resolves roles.
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    // Creating a brand-new event has no existing ownerClubIds/ownerMajors to scope
+    // against, so a club/major-scoped registration position (case 2/3) does NOT
+    // get this — only a GLOBAL registration position (smo/anusmo, case 1) does,
+    // matching the org-wide-capability split used elsewhere in this rollout.
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
+      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -34,7 +34,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    if (!session?.user || !myRoles.some((r) => (RESOLVE_APPEALS_ROLES as readonly string[]).includes(r))) {
+    const position = session?.user?.position;
+    // Additively admit a registration-position holder (global via smo/anusmo, or
+    // club/major-scoped) as an entry ticket — scoped down to their own club/major
+    // by the EventScopeService check below, same as club_president/major_president.
+    if (
+      !session?.user ||
+      !(myRoles.some((r) => (RESOLVE_APPEALS_ROLES as readonly string[]).includes(r)) || position === "registration")
+    ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -52,9 +59,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r));
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-    if (!isStaff && presidentTags.length > 0) {
-      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
-      if (!appeal.event || !EventScopeService.isEventManagedByScope(appeal.event, scope)) {
+    const hasPresidentTag = presidentTags.length > 0;
+    if (!isStaff && (hasPresidentTag || position === "registration")) {
+      const access = await EventScopeService.resolveEventAccess({
+        userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag,
+      });
+      const managed = access.allowed && (access.unscoped || (appeal.event ? EventScopeService.isEventManagedByScope(appeal.event, access.scope) : false));
+      if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }

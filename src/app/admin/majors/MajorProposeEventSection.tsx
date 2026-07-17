@@ -6,6 +6,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { currentFirstYearPrefix } from "@/lib/event-access";
 import { sessionSpansTooLong, splitIntoDailySessions } from "@/lib/event-schema";
 import { parseRichText } from "@/lib/rich-text";
+import { POSITION_I18N_KEY } from "@/lib/positions";
 import {
   AlertCircle,
   CalendarPlus,
@@ -48,7 +49,7 @@ const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 // A student in this president's own major, for the Event Staff picker —
 // mirrors ProposeEventSection's ClubMember shape, minus `role` (a major has
 // no membership role concept, unlike a club).
-type MajorMember = { id: string; name: string | null; studentId: string | null };
+type MajorMember = { id: string; name: string | null; studentId: string | null; position: string | null };
 
 type Proposal = {
   id: string;
@@ -1116,7 +1117,7 @@ export function MajorProposeEventSection({ major }: { major: string }) {
                             onClick={() => set("staffUserIds", on ? form.staffUserIds.filter((x) => x !== u.id) : [...form.staffUserIds, u.id])}
                             style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px", border: "none", borderBottom: "1px solid var(--border-subtle)", background: on ? "rgba(99,102,241,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontSize: 13 }}
                           >
-                            <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || ""}</span></span>
+                            <span style={{ fontWeight: 700 }}>{u.name || "—"} <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>· {u.studentId || ""}{u.position ? ` · ${t[POSITION_I18N_KEY[u.position as keyof typeof POSITION_I18N_KEY] as keyof typeof t]}` : ""}</span></span>
                             <span style={{ fontSize: 12, fontWeight: 900, color: on ? "#6366f1" : "var(--accent-primary)" }}>{on ? "✓ Added" : "+ Add"}</span>
                           </button>
                         );

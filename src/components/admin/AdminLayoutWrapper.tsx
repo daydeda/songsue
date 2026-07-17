@@ -17,6 +17,7 @@ export function AdminLayoutWrapper({
     image?: string | null;
     role?: string | null;
     roles?: string[] | null;
+    position?: string | null;
   };
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -90,7 +91,7 @@ export function AdminLayoutWrapper({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <AdminNav roles={roles} />
+          <AdminNav roles={roles} position={user.position} />
         </div>
 
         <div className="mt-auto pt-6 border-t border-[var(--border-subtle)]">

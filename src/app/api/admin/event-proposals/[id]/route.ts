@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { eventProposals } from "@/db/schema";
-import { effectiveRoles } from "@/lib/admin-access";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { REVIEW_PROPOSAL_ROLES } from "@/lib/event-proposals";
 import { sessionsHaveInvalidSpan } from "@/lib/event-schema";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
@@ -84,7 +84,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    if (!session?.user || !myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))) {
+    const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
+      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+    if (!session?.user || !isStaff) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -138,7 +140,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
     }
 
-    const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r));
+    const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
+      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
     if (action === "reject" && !isStaff) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

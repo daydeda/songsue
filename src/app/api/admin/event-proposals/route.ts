@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { eventProposals } from "@/db/schema";
-import { effectiveRoles } from "@/lib/admin-access";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { REVIEW_PROPOSAL_ROLES, SUBMIT_PROPOSAL_ROLES } from "@/lib/event-proposals";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { ClubsService } from "@/modules/clubs/clubs.service";
@@ -105,7 +105,12 @@ export async function GET(req: Request) {
   try {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r));
+    // Reviewing proposals is a staff-side capability with no club/major-scoped
+    // equivalent (a club's own registration officer reviewing their own club's
+    // proposal is a self-review loop) — only a GLOBAL registration position
+    // (smo/anusmo) gets reviewer parity here, same as event creation/edit.
+    const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
+      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
     const isPresident = myRoles.some((r) => (SUBMIT_PROPOSAL_ROLES as readonly string[]).includes(r));
     if (!session?.user || (!isStaff && !isPresident)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

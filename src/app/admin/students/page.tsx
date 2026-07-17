@@ -13,6 +13,7 @@ import {
   BookOpen, Briefcase, Award, AlertTriangle, RotateCcw
 } from "lucide-react";
 import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
+import { POSITION_IDS, POSITION_I18N_KEY, isClubAffairsEligible } from "@/lib/positions";
 
 type Student = {
   id: string;
@@ -21,7 +22,13 @@ type Student = {
   name: string;
   nickname?: string;
   major?: string;
+  position?: string | null;
+  email?: string;
   phone?: string;
+  // Both email and phone are only ever present on this Student object when the
+  // requester is super_admin — see GET /api/admin/students, which strips
+  // these columns for every other role (PDPA minimization).
+  contactChannels?: string | null;
   houseId?: string;
   house?: { id: string; name: string; color?: string } | null;
   profileCompleted?: boolean;
@@ -1261,6 +1268,68 @@ export default function AdminStudentsDirectory() {
                   placeholder="e.g. SE, ANI, MMIT"
                 />
               </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.position}</label>
+                <CustomDropdown
+                  value={editingStudent.position || ""}
+                  options={[
+                    { value: "", label: "—", icon: <X size={16} className="text-muted" /> },
+                    ...POSITION_IDS.filter(id =>
+                      id !== "club_affairs" || isClubAffairsEligible(
+                        editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])
+                      )
+                    ).map(id => ({
+                      value: id,
+                      label: t[POSITION_I18N_KEY[id] as keyof typeof t] as string,
+                      icon: <Briefcase size={16} className="text-[var(--accent-primary)]" />,
+                    })),
+                  ]}
+                  onChange={val => setEditingStudent({ ...editingStudent, position: val || null })}
+                  icon={<Briefcase size={18} />}
+                />
+              </div>
+
+              {/* Contact info — email/phone/contactChannels are only ever
+                  present on editingStudent for a super_admin requester (the
+                  API strips them for everyone else), so this section is
+                  naturally invisible to admin/registration/organizer too. */}
+              {userRole === "super_admin" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 16, background: "var(--bg-elevated)", borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <ShieldAlert size={14} style={{ color: "#ef4444" }} />
+                    <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      {lang === "th" ? "ข้อมูลติดต่อ (Super Admin เท่านั้น)" : "Contact Info (Super Admin only)"}
+                    </span>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.email}</label>
+                    <input
+                      className="input"
+                      value={editingStudent.email || ""}
+                      disabled
+                      readOnly
+                      style={{ opacity: 0.7, cursor: "not-allowed" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.phone}</label>
+                    <input
+                      className="input"
+                      value={editingStudent.phone || ""}
+                      onChange={e => setEditingStudent({ ...editingStudent, phone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.contactChannels}</label>
+                    <input
+                      className="input"
+                      value={editingStudent.contactChannels || ""}
+                      onChange={e => setEditingStudent({ ...editingStudent, contactChannels: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ flexShrink: 0, padding: "16px clamp(20px, 5vw, 32px)", background: "var(--bg-elevated)", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button className="btn btn-ghost" onClick={() => setEditingStudent(null)}>{t.cancel}</button>

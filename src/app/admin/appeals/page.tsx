@@ -16,9 +16,12 @@ export const dynamic = "force-dynamic";
 export default async function AdminAppealsPage() {
   const session = await auth();
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  const canView = myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r));
+  const position = session?.user?.position;
+  // Additively admits a registration position (global via smo/anusmo, or
+  // club/major-scoped) — matches GET /api/admin/appeals's own gate.
+  const canView = myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r)) || position === "registration";
   if (!canView) {
-    redirect(adminLandingHrefForRoles(myRoles));
+    redirect(adminLandingHrefForRoles(myRoles, position));
   }
 
   return <AppealsClient />;

@@ -17,6 +17,7 @@ import { sessionSpansTooLong, splitIntoDailySessions } from "@/lib/event-schema"
 import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
 import { EventFormBuilderModal } from "@/components/admin/EventFormBuilderModal";
+import { isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 interface AdminEvent {
   id: string;
@@ -154,7 +155,10 @@ function formatPendingDetailsDiff(
 }
 
 interface EmergencyContact {
-  name: string;
+  // Absent (not just empty) when the server redacted it — the president tier
+  // (api/admin/events/[id]/attendance, .../export) never sends the contact's
+  // own name, only relationship + phone (see src/lib/emergency-contacts.ts).
+  name?: string;
   relationship: string;
   phone: string;
 }
@@ -325,25 +329,42 @@ export default function AdminEventsPage() {
   // The admin area also admits registration/organizer (see admin/layout.tsx),
   // but seeing medical detail in the exported file / student modal — which
   // includes PDPA-sensitive medical & emergency contact data — is restricted to
-  // super_admin/admin only.
+  // super_admin/admin, plus (2026-07-18) a club/major president viewing an
+  // event THEY OWN, with the emergency contact's own name redacted server-side
+  // for that tier — see canSeeRawMedicalDetail below.
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
+  // A global registration position (users.position === "registration" held by an
+  // smo/anusmo) gets the same full staff-tier breadth the "registration" ROLE
+  // has on this page — mirrors every server-side gate this page talks to
+  // (POST/PUT/DELETE /api/admin/events, .../form) via isGlobalRegistrationPosition.
+  // Without this, such a user's role SET (["smo"]) never matches the
+  // "registration" string below, so they'd be silently stuck on the thin,
+  // view-only surface even though the server accepts their writes.
+  const globalRegPosition = isGlobalRegistrationPosition(myRoles, session?.user?.position);
   // Scanner-only roles (smo, club_president, major_president) reach this page to
   // VIEW attendance only — no event create/edit/delete. Mirrors the thin-roster
   // gate in api/admin/events/[id]/attendance (a user with any staff role gets
   // the full page). Feedback forms are a separate, narrower carve-out — see
   // canManageForms/canViewForms below. Students never reach here (proxy blocks
   // them).
-  const isAttendanceOnly = !myRoles.some((r) =>
+  const isAttendanceOnly = !globalRegPosition && !myRoles.some((r) =>
     ["super_admin", "admin", "registration", "organizer"].includes(r)
   );
   // The Export Excel button: staff export the full (role-gated) file; the
-  // scanner-only student-leader roles may also export, but the server
-  // (api/admin/events/[id]/export) hands them a THIN file with no phone,
-  // meds-check, medical, or emergency-contact columns — they must ask an
-  // admin/super_admin for that detail. isAttendanceOnly is exactly that
-  // thin-roster set on this page (only staff + thin-roster ever reach here).
-  const canSeeExportButton = canExportAttendance || isAttendanceOnly;
+  // scanner-only student-leader roles (smo/club_president/major_president)
+  // may also export, but the server (api/admin/events/[id]/export) hands them
+  // a THIN file with no phone, meds-check, medical, or emergency-contact
+  // columns — they must ask an admin/super_admin for that detail. Mirrors the
+  // server's isThinExportRole exactly — deliberately NARROWER than
+  // isAttendanceOnly, which also buckets in a plain club/major member whose
+  // position TITLE happens to be "registration" (users.position, see
+  // src/lib/positions.ts — cosmetic, not a system role) but who holds no
+  // export-eligible role; the server already 403s that case, so the button
+  // must not be shown for it either.
+  const canSeeExportButton = canExportAttendance || myRoles.some((r) =>
+    ["smo", "club_president", "major_president"].includes(r)
+  );
   // No-show strike-out (US-STRI-15): organizers confirm no-shows for their own
   // ended events; registration is unscoped staff, like admin. smo may view the
   // roster but does NOT apply strikes. club_president/major_president are
@@ -362,6 +383,21 @@ export default function AdminEventsPage() {
   // below and the matching server-side strip in PUT /api/admin/events/[id]).
   const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
   const canEditEventDetails = !isAttendanceOnly || isPresidentRole;
+  // Attendee Contact/Medical sections + filter, on the roster and in the
+  // per-student detail modal: staff (registration/organizer included, thin
+  // signal only) OR a president viewing an event they own — server-scoped via
+  // GET /api/admin/events already only listing events they manage. smo stays
+  // excluded (thin roster, no contact/medical data at all — see
+  // api/admin/events/[id]/attendance).
+  const canSeeAttendeeContactAndMedical = !isAttendanceOnly || isPresidentRole;
+  // Raw medical TEXT (vs. the category-signal-only view registration/organizer
+  // get): super_admin/admin, or a president viewing their own event — by
+  // deliberate product decision (2026-07-18) mirroring the club/major
+  // member-roster grant (see ClubsService.getClubMembers). The server
+  // (api/admin/events/[id]/attendance, .../export) redacts the emergency
+  // contact's own NAME for the president tier even so — audit log is the
+  // accountability mechanism, not field-level gating.
+  const canSeeRawMedicalDetail = canExportAttendance || isPresidentRole;
   // Feedback/evaluation forms: staff manage every event's forms unscoped;
   // club/major presidents may also fully manage (create/edit/delete) forms, but
   // only for events they own — the events list here is already scoped to just
@@ -379,8 +415,9 @@ export default function AdminEventsPage() {
   // Removing a wrongly-registered student is admin/registration only — deliberately
   // NARROWER than canEditEventDetails (excludes organizer AND presidents). A
   // president removing a peer's registration is a bias/conflict-of-interest risk;
-  // see the matching server-side gate in api/admin/events/[id]/attendance DELETE.
-  const canRemoveRegistrant = myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r));
+  // see the matching server-side gate in api/admin/events/[id]/attendance DELETE
+  // (which also honors a global registration position the same way).
+  const canRemoveRegistrant = globalRegPosition || myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r));
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1689,11 +1726,12 @@ export default function AdminEventsPage() {
     }
   };
 
-  // Meds-check badge — PDPA-gated to super_admin/admin (canExportAttendance),
-  // since the presence of a meds check reveals who has a medical condition.
-  // Shared by the single-day card and each day-row of a collapsed multi-day card.
+  // Meds-check badge — PDPA-gated to super_admin/admin or a president viewing
+  // their own event (canSeeRawMedicalDetail), since the presence of a meds
+  // check reveals who has a medical condition. Shared by the single-day card
+  // and each day-row of a collapsed multi-day card.
   const renderMedsBadge = (option: string | null, badgeKey?: string) => {
-    if (!canExportAttendance || !option) return null;
+    if (!canSeeRawMedicalDetail || !option) return null;
     const color = option === "brought" ? "#10b981" : option === "forgot" ? "#ef4444" : "#3b82f6";
     const bg = option === "brought" ? "rgba(16, 185, 129, 0.12)" : option === "forgot" ? "rgba(239, 68, 68, 0.12)" : "rgba(59, 130, 246, 0.12)";
     const border = option === "brought" ? "rgba(16, 185, 129, 0.2)" : option === "forgot" ? "rgba(239, 68, 68, 0.2)" : "rgba(59, 130, 246, 0.2)";
@@ -1774,7 +1812,11 @@ export default function AdminEventsPage() {
                 <Activity size={20} />
               </div>
             )}
-            {!unregistered && (
+            {/* Student Profile: admin/super_admin only for now — every other
+                role/position (registration, organizer, smo, presidents, etc.)
+                is TBD and excluded until that's determined; canExportAttendance
+                already means exactly "super_admin or admin". */}
+            {!unregistered && canExportAttendance && (
               <button
                 className="btn btn-ghost"
                 style={{ padding: 8, borderRadius: 10 }}
@@ -4520,7 +4562,7 @@ export default function AdminEventsPage() {
                     className="attendance-action-btn"
                     onClick={exportAttendanceXlsx}
                     title={
-                      canExportAttendance
+                      canSeeRawMedicalDetail
                         ? "Export all attendees of this event to Excel (.xlsx)"
                         : "Export attendees to Excel (.xlsx) — name, ID, and check-in only. Ask an admin for phone, medical, or emergency-contact detail."
                     }
@@ -4632,10 +4674,10 @@ export default function AdminEventsPage() {
                 )}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   {/* Filtering to condition-holders is signal-level (who, not
-                      what), so it's available to all STAFF admin roles — but not
-                      attendance-only (scanner) roles, whose thin roster has no
-                      medical signal to filter on. */}
-                  {!isAttendanceOnly && (
+                      what), so it's available to all STAFF admin roles and a
+                      president viewing their own event — but not smo, whose
+                      thin roster has no medical signal to filter on. */}
+                  {canSeeAttendeeContactAndMedical && (
                   <button
                     onClick={() => setFilterMedical(!filterMedical)}
                     style={{
@@ -5217,9 +5259,9 @@ export default function AdminEventsPage() {
                 </div>
               </div>
 
-              {/* Contact — hidden from attendance-only (scanner) roles, whose thin
-                  roster carries no phone. */}
-              {!isAttendanceOnly && (
+              {/* Contact — hidden from smo (thin roster carries no phone); visible
+                  to staff and a president viewing an event they own. */}
+              {canSeeAttendeeContactAndMedical && (
               <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
                 <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Contact Information</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -5230,12 +5272,15 @@ export default function AdminEventsPage() {
               )}
 
               {/* Medical & Health Info: the raw detail the student filled in is
-                  PDPA-sensitive and shown only to super_admin/admin
-                  (canExportAttendance). Other admin-area roles (registration)
-                  still see the "has a condition" signal, not the detail. */}
-              {/* Medical — hidden from attendance-only (scanner) roles, whose thin
-                  roster carries no medical signal (so it can't be derived here). */}
-              {!isAttendanceOnly && (
+                  PDPA-sensitive and shown only via canSeeRawMedicalDetail
+                  (super_admin/admin, or a president viewing their own event —
+                  contact NAME still redacted server-side for the president
+                  tier, see the Emergency Contact section below). Other
+                  admin-area roles (registration/organizer) still see the "has
+                  a condition" signal, not the detail. */}
+              {/* Medical — hidden from smo (thin roster carries no medical
+                  signal, so it can't be derived here). */}
+              {canSeeAttendeeContactAndMedical && (
               <div style={{
                 background: hasMedicalSignal(selectedStudent)
                   ? "rgba(239, 68, 68, 0.05)"
@@ -5262,7 +5307,7 @@ export default function AdminEventsPage() {
                 </p>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {canExportAttendance ? (
+                  {canSeeRawMedicalDetail ? (
                     <>
                       {selectedStudent.chronicDiseases && selectedStudent.chronicDiseases.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.chronicDiseases}:</b> {selectedStudent.chronicDiseases}</p>}
                       {selectedStudent.medicalHistory && selectedStudent.medicalHistory.trim() !== "-" && <p style={{ fontSize: 14 }}><b>{t.medicalHistory}:</b> {selectedStudent.medicalHistory}</p>}
@@ -5299,7 +5344,12 @@ export default function AdminEventsPage() {
               </div>
               )}
 
-              {/* Emergency Contact — visible to all admin-area roles */}
+              {/* Emergency Contact — visible to all admin-area roles that reach
+                  this modal at all (smo is excluded above, thin roster). The
+                  contact's own NAME is only present when the server actually
+                  sent it (super_admin/admin/registration/organizer); a
+                  president viewing their own event gets relationship + phone
+                  only (redacted server-side, see EmergencyContact.name above). */}
               {selectedStudent.emergencyContacts && selectedStudent.emergencyContacts.length > 0 && (
                 <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 20 }}>
                   <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 12, letterSpacing: "0.05em" }}>Emergency Contact</p>
@@ -5307,7 +5357,7 @@ export default function AdminEventsPage() {
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div>
                         <p style={{ fontWeight: 700, fontSize: 14 }}>
-                          {c.name} ({c.relationship.startsWith("Other:") ? c.relationship.substring(6) : c.relationship})
+                          {c.name ? `${c.name} ` : ""}({c.relationship.startsWith("Other:") ? c.relationship.substring(6) : c.relationship})
                         </p>
                         <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{c.phone}</p>
                       </div>

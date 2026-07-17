@@ -9,7 +9,7 @@ import { ASSIGNABLE_ROLES, canSeeRespondentIdentity } from "@/lib/form-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { revertFormAward } from "@/lib/award-points";
 import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
-import { effectiveRoles } from "@/lib/admin-access";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // Staff manage every event's forms, unscoped. club_president/major_president may
@@ -32,11 +32,17 @@ async function gateEventForms(eventId: string, session: Session | null, write: b
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }), isStaff: false };
   }
   const myRoles = effectiveRoles(session.user.role, session.user.roles);
-  const isStaff = myRoles.some((r) => STAFF_ROLES.includes(r));
+  const position = session.user.position;
+  // A global registration position (smo/anusmo + position="registration") gets
+  // full staff-tier breadth (auto-approved writes, unscoped) — fold into isStaff.
+  const isStaff = myRoles.some((r) => STAFF_ROLES.includes(r)) || isGlobalRegistrationPosition(myRoles, position);
   const presidentTags = myRoles.filter((r) => PRESIDENT_ROLES.includes(r));
   const isViewOnly = !write && myRoles.some((r) => VIEW_ONLY_ROLES.includes(r));
+  // A club/major-scoped registration position (not global, not staff) is a new
+  // entry path mirroring presidents: scoped, non-staff-tier (pending-review) writes.
+  const isPositionScoped = !isStaff && position === "registration";
 
-  if (!isStaff && presidentTags.length === 0 && !isViewOnly) {
+  if (!isStaff && presidentTags.length === 0 && !isViewOnly && !isPositionScoped) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }), isStaff };
   }
 
@@ -44,7 +50,7 @@ async function gateEventForms(eventId: string, session: Session | null, write: b
     return { error: null as NextResponse | null, isStaff };
   }
 
-  // Only presidents left — must own the event.
+  // Only presidents / a position-scoped registration holder left — must own the event.
   const event = await db.query.events.findFirst({
     where: eq(events.id, eventId),
     columns: { id: true, ownerClubIds: true, ownerMajors: true },
@@ -52,8 +58,11 @@ async function gateEventForms(eventId: string, session: Session | null, write: b
   if (!event) {
     return { error: NextResponse.json({ error: "Event not found" }, { status: 404 }), isStaff };
   }
-  const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
-  if (!EventScopeService.isEventManagedByScope(event, scope)) {
+  const access = await EventScopeService.resolveEventAccess({
+    userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+  });
+  const managed = access.allowed && (access.unscoped || EventScopeService.isEventManagedByScope(event, access.scope));
+  if (!managed) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }), isStaff };
   }
   return { error: null as NextResponse | null, isStaff };
@@ -208,9 +217,14 @@ export async function GET(
     // the attendance-list access log. Hard (not best-effort): if we can't record
     // the read, we don't serve it.
     const submissionCount = result.reduce((n, f) => n + f.submissions.length, 0);
+    const event = await db.query.events.findFirst({
+      where: eq(events.id, eventId),
+      columns: { title: true },
+    });
+    const eventLabel = event ? `"${event.title}" (${eventId})` : eventId;
     await AuditService.logAction({
       actorId: session!.user!.id!,
-      action: `Viewed form submissions for event ${eventId} (${submissionCount} submissions; ${identityVisibleSubmissions} with submitter identity + phone/contact visible, ${submissionCount - identityVisibleSubmissions} anonymized)`,
+      action: `Viewed form submissions for event ${eventLabel} (${submissionCount} submissions; ${identityVisibleSubmissions} with submitter identity + phone/contact visible, ${submissionCount - identityVisibleSubmissions} anonymized)`,
       ipAddress: getClientIp(req),
     });
 

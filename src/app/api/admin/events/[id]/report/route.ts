@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
+import { isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -16,7 +17,9 @@ export async function GET(
   try {
     const session = await auth();
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
+    const position = session?.user?.position;
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r))
+      || position === "registration";
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -32,13 +35,22 @@ export async function GET(
     }
 
     // Event scoping for president roles (mirrors the /api/admin/events list filter
-    // and the attendance route): club_president / major_president may only export
-    // events they OWN (ownerClubIds/ownerMajors). Staff and smo are unscoped.
-    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    // and the attendance route): club_president / major_president, and a
+    // club/major-scoped registration position, may only export events they OWN
+    // (ownerClubIds/ownerMajors). Staff, smo, and a GLOBAL registration position
+    // are unscoped.
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
+      || isGlobalRegistrationPosition(myRoles, position);
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-    if (!isStaff && presidentTags.length > 0) {
-      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
-      const managed = EventScopeService.isEventManagedByScope(event, scope);
+    const hasPresidentTag = presidentTags.length > 0;
+    // Bare smo (no president tag, no registration position) stays unscoped —
+    // unchanged from before. Presidents and a club/major-scoped registration
+    // position are the only ones actually scoped here.
+    if (!isStaff && (hasPresidentTag || position === "registration")) {
+      const access = await EventScopeService.resolveEventAccess({
+        userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag,
+      });
+      const managed = access.allowed && (access.unscoped || EventScopeService.isEventManagedByScope(event, access.scope));
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
@@ -69,7 +81,7 @@ export async function GET(
     // Bulk PII export: keep a tamper-evident record of who pulled it (PDPA).
     await AuditService.logAction({
       actorId: session.user.id!,
-      action: `Exported attendance report XLSX for event ${eventId} (${allAttendance.length} rows)`,
+      action: `Exported attendance report XLSX for event "${event.title}" (${eventId}) (${allAttendance.length} rows)`,
       ipAddress: getClientIp(req),
     });
 

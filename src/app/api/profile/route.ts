@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { FACULTY_IDS } from "@/lib/faculties";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { HousesService, HOUSE_BALANCE_LOCK_KEY } from "@/modules/houses/houses.service";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 // Emergency contacts are stored as a jsonb array of {name, relationship, phone}.
 // Validate the shape instead of accepting z.any() — the onboarding form always
@@ -96,7 +97,8 @@ export async function POST(req: Request) {
     const body = await req.json();
     const data = profileSchema.parse(body);
 
-    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
+    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.position);
     if (!data.studentId && !isAdmin) {
       return NextResponse.json({ error: "Student ID is required" }, { status: 400 });
     }
@@ -202,7 +204,8 @@ export async function PATCH(req: Request) {
     // studentId gates Thai/International event eligibility and is set at onboarding.
     // The UI locks it, but a raw PATCH could still send a new value — strip it here
     // for non-admins so it can never be changed after the fact.
-    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
+    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.position);
     if (!isAdmin) {
       delete data.studentId;
       // Faculty is set once at onboarding and gates which house a student is

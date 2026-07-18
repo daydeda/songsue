@@ -90,7 +90,7 @@ export async function GET(req: Request) {
   try {
     const session = await withTimeout(auth(), READ_TIMEOUT_MS, "auth");
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    const globalReg = isGlobalRegistrationPosition(myRoles, session?.user?.position);
+    const globalReg = isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "") || globalReg;
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -30,7 +30,7 @@ export class MajorsService {
         contactChannels: users.contactChannels,
         noShowCount: users.noShowCount,
         roles: users.roles,
-        position: users.position,
+        position: users.majorPosition,
         house: { id: houses.id, name: houses.name, color: houses.color },
       })
       .from(users)
@@ -65,7 +65,7 @@ export class MajorsService {
         contactChannels: users.contactChannels,
         noShowCount: users.noShowCount,
         roles: users.roles,
-        position: users.position,
+        position: users.majorPosition,
         house: { id: houses.id, name: houses.name, color: houses.color },
         chronicDiseases: users.chronicDiseases,
         medicalHistory: users.medicalHistory,
@@ -123,9 +123,11 @@ export class MajorsService {
   }
 
   /**
-   * Sets a major team member's global `users.position` (title) — scoped by
+   * Sets a major team member's `users.majorPosition` (title) — scoped by
    * majorCode so a crafted userId belonging to a different major can't be
-   * touched. Returns undefined if no user with that id belongs to this major.
+   * touched, and scoped to this ONE column so it never collides with the
+   * same user's club or SMO/ANUSMO title. Returns undefined if no user with
+   * that id belongs to this major.
    *
    * A member who holds the major_president role always has position forced
    * to "president" — nobody (not even super_admin/admin through this same
@@ -144,9 +146,9 @@ export class MajorsService {
 
     const [updated] = await db
       .update(users)
-      .set({ position: effectivePosition, updatedAt: new Date() })
+      .set({ majorPosition: effectivePosition, updatedAt: new Date() })
       .where(and(eq(users.id, userId), eq(users.major, majorCode)))
-      .returning({ id: users.id, position: users.position });
+      .returning({ id: users.id, position: users.majorPosition });
     return updated;
   }
 }

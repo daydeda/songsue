@@ -7,7 +7,7 @@ export async function GET() {
   try {
     const session = await auth();
     const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "")
-      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.position);
+      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

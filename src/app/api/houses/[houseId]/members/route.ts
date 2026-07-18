@@ -35,7 +35,7 @@ export async function GET(
       columns: { houseId: true },
     });
     const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "")
-      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.position);
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.smoPosition, session.user.anusmoPosition);
     if (!isAdmin && colorGroupOfHouseId(viewer?.houseId) !== colorGroup) {
       return NextResponse.json(
         { error: "Forbidden: you can only view your own house" },

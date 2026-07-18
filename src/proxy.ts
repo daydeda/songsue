@@ -47,9 +47,9 @@ export async function proxy(req: NextRequest) {
   // (else a president whose primary resolves to a non-entry role is wrongly blocked).
   const roles = effectiveRoles(user.role, user.roles);
   // Scanner-only roles (smo, club/major president) may enter /admin but are confined
-  // to the QR scanner. A registration position (users.position, distinct from
-  // role/roles) additively widens entry the same way — see admin-access.ts.
-  const isScannerOnly = isScannerOnlyAny(roles, user.position);
+  // to the QR scanner. A registration position (users.smoPosition/anusmoPosition,
+  // distinct from role/roles) additively widens entry the same way — see admin-access.ts.
+  const isScannerOnly = isScannerOnlyAny(roles, user.hasStaffPosition, user.smoPosition, user.anusmoPosition);
 
   // Authenticated but profile not complete → force onboarding
   // (except for the /onboarding page itself, and API routes)
@@ -68,7 +68,7 @@ export async function proxy(req: NextRequest) {
 
   // Admin routes — block anyone who can't enter the admin area at all. (SMO is
   // allowed in but is confined to the scanner by the rule below.)
-  if (pathname.startsWith("/admin") && !canEnterAdminAny(roles, user.position)) {
+  if (pathname.startsWith("/admin") && !canEnterAdminAny(roles, user.hasStaffPosition)) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 

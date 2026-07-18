@@ -267,7 +267,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
         </Link>
       );
     })}
-    {(canEnterAdminAny(effectiveRoles(user?.role, user?.roles), user?.position)) && (
+    {(canEnterAdminAny(effectiveRoles(user?.role, user?.roles), user?.hasStaffPosition)) && (
       <Link href="/admin" className="dropdown-item admin-item" onClick={() => setIsProfileDropdownOpen(false)}>
         <ShieldCheck size={16} />
         {t.adminPanel}

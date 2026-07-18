@@ -110,7 +110,7 @@ export async function GET(req: Request) {
     // proposal is a self-review loop) — only a GLOBAL registration position
     // (smo/anusmo) gets reviewer parity here, same as event creation/edit.
     const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     const isPresident = myRoles.some((r) => (SUBMIT_PROPOSAL_ROLES as readonly string[]).includes(r));
     if (!session?.user || (!isStaff && !isPresident)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

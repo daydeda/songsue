@@ -25,11 +25,14 @@ export async function GET(req: Request) {
   try {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    const position = session?.user?.position;
-    if (
-      !session?.user ||
-      !(myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r)) || position === "registration")
-    ) {
+    // Additively admits a registration position (global via smo/anusmo, OR
+    // club/major-scoped — mirrors PATCH /api/admin/appeals/[id]'s entry gate,
+    // not just the global case) — the scoping below then narrows a scoped
+    // holder down to their own club/major's appeals.
+    const isRoleAdmin = myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r));
+    const canView = isRoleAdmin || (!!session?.user?.id
+      && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, session.user.smoPosition, session.user.anusmoPosition)));
+    if (!session?.user || !canView) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -52,10 +55,10 @@ export async function GET(req: Request) {
     });
 
     const isUnscoped = myRoles.some((r) => ["super_admin", "admin", "registration", "smo"].includes(r))
-      || isGlobalRegistrationPosition(myRoles, position);
+      || isGlobalRegistrationPosition(myRoles, session.user.smoPosition, session.user.anusmoPosition);
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     const access = await EventScopeService.resolveEventAccess({
-      userId: session.user!.id!, roles: myRoles, position, isUnscopedStaff: isUnscoped, hasPresidentTag: presidentTags.length > 0,
+      userId: session.user!.id!, roles: myRoles, smoPosition: session.user.smoPosition, anusmoPosition: session.user.anusmoPosition, isUnscopedStaff: isUnscoped, hasPresidentTag: presidentTags.length > 0,
     });
     const scoped = access.allowed
       ? (access.unscoped ? appeals : appeals.filter((a) => a.event && EventScopeService.isEventManagedByScope(a.event, access.scope)))

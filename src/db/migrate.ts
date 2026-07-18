@@ -1326,6 +1326,23 @@ async function migrate() {
   `;
   console.log("  ✅ backfilled false-positive events.details_review_status back to 'approved'");
 
+  // 83. Scoped staff-title columns, replacing the single global users.position
+  // (which silently clobbered a student's title across club/major/SMO/ANUSMO
+  // contexts — see src/lib/positions.ts and src/lib/admin-access.ts).
+  // club_members.position is the per-club analogue; users.majorPosition,
+  // users.smoPosition, users.anusmoPosition are each independently scoped (a
+  // student can hold both smo and anusmo with a different title in each).
+  // users.position itself is left untouched (legacy, no longer written) — no
+  // automated backfill, since a student active in more than one context makes
+  // the old value ambiguous; see scripts/list-legacy-positions.mjs for a
+  // read-only report to drive manual reassignment after this runs. All four
+  // nullable, no default. Additive/idempotent.
+  await sql`ALTER TABLE club_members ADD COLUMN IF NOT EXISTS position text`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS major_position text`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS smo_position text`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS anusmo_position text`;
+  console.log("  ✅ club_members.position, users.major_position/smo_position/anusmo_position");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

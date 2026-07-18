@@ -21,7 +21,7 @@ export async function GET() {
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
     const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isStaff) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

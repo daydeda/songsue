@@ -14,13 +14,14 @@ export const dynamic = "force-dynamic";
 export default async function AdminProposalsPage() {
   const session = await auth();
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  const position = session?.user?.position;
+  const smoPosition = session?.user?.smoPosition;
+  const anusmoPosition = session?.user?.anusmoPosition;
   // Reviewing proposals has no club/major-scoped equivalent — only a GLOBAL
   // registration position (smo/anusmo) gets parity, matching the API's gate.
   const canReview = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
-    || isGlobalRegistrationPosition(myRoles, position);
+    || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
   if (!canReview) {
-    redirect(adminLandingHrefForRoles(myRoles, position));
+    redirect(adminLandingHrefForRoles(myRoles, session?.user?.hasStaffPosition, smoPosition, anusmoPosition));
   }
 
   return <EventProposalsClient />;

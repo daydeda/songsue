@@ -101,7 +101,7 @@ export async function GET(
 
     // Not admin-tier and not this club's president: fall through to the
     // narrower staff-position tier, scoped to their own plain membership.
-    const hasStaffPosition = !!session.user.position;
+    const hasStaffPosition = !!session.user.hasClubPosition;
     const staffClubIds = hasStaffPosition
       ? await ClubsService.getStaffMemberClubIds(session.user.id!)
       : [];

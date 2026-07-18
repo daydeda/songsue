@@ -45,6 +45,10 @@ export const clubMembers = pgTable("club_members", {
   clubId: uuid("club_id").notNull().references(() => clubs.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("member"), // 'president' | 'member'
+  // Per-club staff title (e.g. 'president', 'club_affairs') from src/lib/positions.ts.
+  // The per-club analogue of the (now-legacy) `users.position` — distinct from this
+  // row's own `role` ('member' | 'president'), which is about system membership tier.
+  position: text("position"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ([
   uniqueIndex("club_members_club_user_unique").on(table.clubId, table.userId),
@@ -75,12 +79,22 @@ export const users = pgTable("users", {
   nickname: text("nickname"),
   faculty: text("faculty"), // always 'CAMT' (null treated as CAMT too) — see src/lib/faculties.ts
   major: text("major"), // major code, e.g. ANI, DG, DII, MMIT, SE
-  // SMO/club/major title (e.g. 'president', 'club_affairs') — DISTINCT from
-  // `role`/`roles` (system access). Stores a stable id from POSITION_IDS
-  // (src/lib/positions.ts). Plain text (matching `role`'s convention), validated
-  // at the Zod layer on every write. Already live in the DB via migrate.ts step
-  // 6; this line is schema/history parity.
+  // LEGACY/DEPRECATED: used to store a single SMO/club/major title shared across
+  // all three contexts (club membership, major team, SMO/ANUSMO), which silently
+  // clobbered each other. Superseded by clubMembers.position, majorPosition,
+  // smoPosition, and anusmoPosition below — no longer written. Kept (not dropped)
+  // because migrations here must be non-destructive (see CLAUDE.md); dropping it
+  // is a separate future cleanup once the new columns are verified in prod.
   position: text("position"),
+  // Major-team staff title (e.g. 'president', 'secretary') from src/lib/positions.ts,
+  // scoped to the user's one major. Replaces the legacy `position` column above.
+  majorPosition: text("major_position"),
+  // SMO staff title from src/lib/positions.ts, scoped to holding the 'smo' role.
+  // A user can hold both smo and anusmo roles at once with different titles in each.
+  smoPosition: text("smo_position"),
+  // ANUSMO staff title from src/lib/positions.ts, scoped to holding the 'anusmo' role.
+  // A user can hold both smo and anusmo roles at once with different titles in each.
+  anusmoPosition: text("anusmo_position"),
   imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }
   religion: text("religion"),
   phone: text("phone").unique(),

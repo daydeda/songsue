@@ -14,11 +14,12 @@ export const dynamic = "force-dynamic";
 export default async function AdminReviewsPage() {
   const session = await auth();
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  const position = session?.user?.position;
+  const smoPosition = session?.user?.smoPosition;
+  const anusmoPosition = session?.user?.anusmoPosition;
   const canReview = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
-    || isGlobalRegistrationPosition(myRoles, position);
+    || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
   if (!canReview) {
-    redirect(adminLandingHrefForRoles(myRoles, position));
+    redirect(adminLandingHrefForRoles(myRoles, session?.user?.hasStaffPosition, smoPosition, anusmoPosition));
   }
 
   return <PendingReviewsClient />;

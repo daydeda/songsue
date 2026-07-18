@@ -50,17 +50,29 @@ const NAV_GROUPS = [
     ] },
 ] as const;
 
-export function AdminNav({ roles, position }: { roles: string[]; position?: string | null }) {
+export function AdminNav({
+  roles,
+  hasStaffPosition,
+  hasClubPosition,
+  smoPosition,
+  anusmoPosition,
+}: {
+  roles: string[];
+  hasStaffPosition?: boolean;
+  hasClubPosition?: boolean;
+  smoPosition?: string | null;
+  anusmoPosition?: string | null;
+}) {
   const pathname = usePathname();
   const { t } = useLanguage();
 
   // A user may hold several roles; show an item if ANY of their roles is allowed to
   // see it (union of permissions). Matches the page + API gates and admin-access.
   const has = (allowed: string[]) => roles.some((r) => allowed.includes(r));
-  const scannerOnly = isScannerOnlyAny(roles, position);
+  const scannerOnly = isScannerOnlyAny(roles, hasStaffPosition, smoPosition, anusmoPosition);
   // A GLOBAL registration position (smo/anusmo + position="registration") gets nav
   // parity with the "registration" role for the items that role set already covers.
-  const globalReg = isGlobalRegistrationPosition(roles, position);
+  const globalReg = isGlobalRegistrationPosition(roles, smoPosition, anusmoPosition);
   const canSeeStudents = has(["super_admin", "admin", "registration"]) || globalReg; // organizer barred
   const canSeeAudit = has(["super_admin", "admin"]);                    // organizer + registration barred
   const canManage = has(["super_admin", "admin"]);                      // announcement + shop
@@ -83,7 +95,7 @@ export function AdminNav({ roles, position }: { roles: string[]; position?: stri
         item.href === "/admin/scanner" ||
         item.href === "/admin/events" ||
         item.href === "/admin/appeals" ||
-        (item.href === "/admin/clubs" && (roles.includes("club_president") || !!position)) ||
+        (item.href === "/admin/clubs" && (roles.includes("club_president") || !!hasClubPosition)) ||
         (item.href === "/admin/majors" && roles.includes("major_president"))
       );
     }

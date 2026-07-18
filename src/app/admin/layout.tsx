@@ -19,7 +19,7 @@ export default async function AdminLayout({
   // the whole role SET (effectiveRoles, shared with the proxy + entry points) so a
   // user whose admin-granting role isn't their primary one isn't wrongly locked out.
   const roles = effectiveRoles(session.user.role, session.user.roles);
-  if (!canEnterAdminAny(roles, session.user.position)) {
+  if (!canEnterAdminAny(roles, session.user.hasStaffPosition)) {
     redirect("/dashboard");
   }
 

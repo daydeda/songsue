@@ -105,9 +105,11 @@ export async function GET() {
     // (read-only list) because the QR Scanner's event picker fetches this endpoint;
     // write handlers (POST/PUT/DELETE) deliberately exclude them.
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const position = session?.user?.position;
-    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r))
-      || position === "registration";
+    const smoPosition = session?.user?.smoPosition;
+    const anusmoPosition = session?.user?.anusmoPosition;
+    const isRoleAdmin = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
+    const isAdminRole = isRoleAdmin || (!!session?.user?.id
+      && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition)));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -122,10 +124,10 @@ export async function GET() {
     // drives both the admin events page AND the scanner's event picker, which
     // share this endpoint.
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
-      || isGlobalRegistrationPosition(myRoles, position);
+      || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     const access = await EventScopeService.resolveEventAccess({
-      userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: isStaff, hasPresidentTag: presidentTags.length > 0,
+      userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: isStaff, hasPresidentTag: presidentTags.length > 0,
     });
     const presidentScope = access.allowed && !access.unscoped ? access.scope : null;
 
@@ -193,7 +195,7 @@ export async function POST(req: Request) {
     // get this — only a GLOBAL registration position (smo/anusmo, case 1) does,
     // matching the org-wide-capability split used elsewhere in this rollout.
     const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

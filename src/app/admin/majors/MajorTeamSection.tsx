@@ -360,9 +360,9 @@ export function MajorTeamSection({ major }: { major: string }) {
                 <div onClick={(e) => e.stopPropagation()}>
                   {m.isPresident ? (
                     // Locked: the major_president's position is always "President"
-                    // (MajorsService.setMemberPosition keeps users.position in sync
-                    // server-side) — no editable control is ever rendered here, for
-                    // anyone, including super_admin.
+                    // (MajorsService.setMemberPosition/the users PATCH route keep
+                    // users.majorPosition in sync server-side) — no editable control
+                    // is ever rendered here, for anyone, including super_admin.
                     <span className="badge badge-blue" style={{ flexShrink: 0 }}>President</span>
                   ) : (
                     <select

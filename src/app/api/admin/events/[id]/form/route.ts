@@ -32,15 +32,16 @@ async function gateEventForms(eventId: string, session: Session | null, write: b
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }), isStaff: false };
   }
   const myRoles = effectiveRoles(session.user.role, session.user.roles);
-  const position = session.user.position;
+  const smoPosition = session.user.smoPosition;
+  const anusmoPosition = session.user.anusmoPosition;
   // A global registration position (smo/anusmo + position="registration") gets
   // full staff-tier breadth (auto-approved writes, unscoped) — fold into isStaff.
-  const isStaff = myRoles.some((r) => STAFF_ROLES.includes(r)) || isGlobalRegistrationPosition(myRoles, position);
+  const isStaff = myRoles.some((r) => STAFF_ROLES.includes(r)) || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
   const presidentTags = myRoles.filter((r) => PRESIDENT_ROLES.includes(r));
   const isViewOnly = !write && myRoles.some((r) => VIEW_ONLY_ROLES.includes(r));
   // A club/major-scoped registration position (not global, not staff) is a new
   // entry path mirroring presidents: scoped, non-staff-tier (pending-review) writes.
-  const isPositionScoped = !isStaff && position === "registration";
+  const isPositionScoped = !isStaff && (await EventScopeService.hasRegistrationScope(session.user.id!, myRoles, smoPosition, anusmoPosition));
 
   if (!isStaff && presidentTags.length === 0 && !isViewOnly && !isPositionScoped) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }), isStaff };
@@ -59,7 +60,7 @@ async function gateEventForms(eventId: string, session: Session | null, write: b
     return { error: NextResponse.json({ error: "Event not found" }, { status: 404 }), isStaff };
   }
   const access = await EventScopeService.resolveEventAccess({
-    userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+    userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
   });
   const managed = access.allowed && (access.unscoped || EventScopeService.isEventManagedByScope(event, access.scope));
   if (!managed) {

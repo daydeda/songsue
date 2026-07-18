@@ -334,14 +334,14 @@ export default function AdminEventsPage() {
   // for that tier — see canSeeRawMedicalDetail below.
   const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
   const canExportAttendance = myRoles.includes("super_admin") || myRoles.includes("admin");
-  // A global registration position (users.position === "registration" held by an
-  // smo/anusmo) gets the same full staff-tier breadth the "registration" ROLE
+  // A global registration position (smoPosition/anusmoPosition === "registration"
+  // held by an smo/anusmo) gets the same full staff-tier breadth the "registration" ROLE
   // has on this page — mirrors every server-side gate this page talks to
   // (POST/PUT/DELETE /api/admin/events, .../form) via isGlobalRegistrationPosition.
   // Without this, such a user's role SET (["smo"]) never matches the
   // "registration" string below, so they'd be silently stuck on the thin,
   // view-only surface even though the server accepts their writes.
-  const globalRegPosition = isGlobalRegistrationPosition(myRoles, session?.user?.position);
+  const globalRegPosition = isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
   // Scanner-only roles (smo, club_president, major_president) reach this page to
   // VIEW attendance only — no event create/edit/delete. Mirrors the thin-roster
   // gate in api/admin/events/[id]/attendance (a user with any staff role gets
@@ -358,7 +358,7 @@ export default function AdminEventsPage() {
   // columns — they must ask an admin/super_admin for that detail. Mirrors the
   // server's isThinExportRole exactly — deliberately NARROWER than
   // isAttendanceOnly, which also buckets in a plain club/major member whose
-  // position TITLE happens to be "registration" (users.position, see
+  // position TITLE happens to be "registration" (club_members.position, see
   // src/lib/positions.ts — cosmetic, not a system role) but who holds no
   // export-eligible role; the server already 403s that case, so the button
   // must not be shown for it either.

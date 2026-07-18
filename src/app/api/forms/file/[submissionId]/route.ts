@@ -50,7 +50,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ submissi
 
     const isOwner = submission.studentId === session.user.id;
     const isAdmin = ADMIN_ROLES.includes(session.user.role || "")
-      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.position);
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.smoPosition, session.user.anusmoPosition);
     if (!isOwner && !isAdmin) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

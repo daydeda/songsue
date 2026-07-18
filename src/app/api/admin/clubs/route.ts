@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     const role = session?.user?.role || "";
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
     const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(role)
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     // Gate on the full role SET, not just the primary role: club_president ranks
     // below smo/anusmo/organizer/registration/admin in ROLE_PRIORITY (src/auth.ts),
     // so a user who is BOTH e.g. smo and club_president has session.user.role
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     // Any staff position (not just "president", which is already covered by the
     // club_president role above) grants a read-only own-club view — see the
     // matching tier in GET .../[id]/members.
-    const hasStaffPosition = !!session?.user?.position;
+    const hasStaffPosition = !!session?.user?.hasClubPosition;
     if (!session?.user || !(isAdminRole || isClubPresident || hasStaffPosition)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

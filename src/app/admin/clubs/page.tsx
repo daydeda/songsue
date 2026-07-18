@@ -84,7 +84,7 @@ export default function ClubsPage() {
   // medical, and never export — the server mirrors this exactly (GET
   // /api/admin/clubs and .../[id]/members' staff-position tier; the
   // manage/medical/export routes are untouched and reject this tier).
-  const isClubStaffViewer = !!session?.user?.position && !canManage && !isClubPresident;
+  const isClubStaffViewer = !!session?.user?.hasClubPosition && !canManage && !isClubPresident;
   // "Include archived clubs" is a staff-triage control (dead/renamed clubs) —
   // irrelevant noise for a club_president, who only ever sees their own club(s)
   // anyway. Shown only to roles that actually manage the club roster at large.
@@ -873,8 +873,9 @@ export default function ClubsPage() {
                           {m.role === "president" ? (
                             // Locked: a club president's position is always "President"
                             // (ClubsService.setMemberPosition/applyClubPresidencies keep
-                            // users.position in sync server-side) — no editable control
-                            // is ever rendered here, for anyone, including super_admin.
+                            // that club_members row's position in sync server-side) — no
+                            // editable control is ever rendered here, for anyone,
+                            // including super_admin.
                             <span className="badge badge-blue">President</span>
                           ) : canManageMembers ? (
                             <select

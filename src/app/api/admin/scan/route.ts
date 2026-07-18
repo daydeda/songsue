@@ -56,8 +56,9 @@ export async function POST(req: Request) {
     // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
     // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
     const roles = effectiveRoles(session.user.role, session.user.roles);
-    const position = session.user.position;
-    if (!canEnterAdminAny(roles, position)) {
+    const smoPosition = session.user.smoPosition;
+    const anusmoPosition = session.user.anusmoPosition;
+    if (!canEnterAdminAny(roles, session.user.hasStaffPosition)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -73,15 +74,17 @@ export async function POST(req: Request) {
     // not looser, so this is safe to enable without a bake-in period like the
     // rest of this rollout.
     const isStaff = roles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
-      || isGlobalRegistrationPosition(roles, position);
+      || isGlobalRegistrationPosition(roles, smoPosition, anusmoPosition);
     const presidentTags = roles.filter((r) => ["club_president", "major_president"].includes(r));
-    if (!isStaff && (presidentTags.length > 0 || position === "registration")) {
+    const hasRegistrationScope = !isStaff && presidentTags.length === 0
+      && (await EventScopeService.hasRegistrationScope(session.user.id!, roles, smoPosition, anusmoPosition));
+    if (!isStaff && (presidentTags.length > 0 || hasRegistrationScope)) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
         columns: { ownerClubIds: true, ownerMajors: true },
       });
       const access = await EventScopeService.resolveEventAccess({
-        userId: session.user.id!, roles, position, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+        userId: session.user.id!, roles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
       });
       const managed = access.allowed && (access.unscoped || (ev ? EventScopeService.isEventManagedByScope(ev, access.scope) : false));
       if (!managed) {
@@ -218,7 +221,7 @@ export async function GET(req: Request) {
     // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
     // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
     const roles = effectiveRoles(session.user.role, session.user.roles);
-    if (!canEnterAdminAny(roles, session.user.position)) {
+    if (!canEnterAdminAny(roles, session.user.hasStaffPosition)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

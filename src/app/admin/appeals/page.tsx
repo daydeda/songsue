@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import { adminLandingHrefForRoles, effectiveRoles } from "@/lib/admin-access";
+import { adminLandingHrefForRoles, effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { VIEW_APPEALS_ROLES } from "@/lib/strikes";
 import { AppealsClient } from "./AppealsClient";
 
@@ -16,12 +16,13 @@ export const dynamic = "force-dynamic";
 export default async function AdminAppealsPage() {
   const session = await auth();
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  const position = session?.user?.position;
+  const smoPosition = session?.user?.smoPosition;
+  const anusmoPosition = session?.user?.anusmoPosition;
   // Additively admits a registration position (global via smo/anusmo, or
   // club/major-scoped) — matches GET /api/admin/appeals's own gate.
-  const canView = myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r)) || position === "registration";
+  const canView = myRoles.some((r) => (VIEW_APPEALS_ROLES as readonly string[]).includes(r)) || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
   if (!canView) {
-    redirect(adminLandingHrefForRoles(myRoles, position));
+    redirect(adminLandingHrefForRoles(myRoles, session?.user?.hasStaffPosition, smoPosition, anusmoPosition));
   }
 
   return <AppealsClient />;

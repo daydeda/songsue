@@ -11,10 +11,22 @@ declare module "next-auth" {
       imageTransform: { scale: number; x: number; y: number } | null;
       qrToken: string | null;
       studentId: string | null;
-      // SMO/club/major title (src/lib/positions.ts) — distinct from role/roles.
-      // Not read for access control anywhere yet except the position-based
-      // registration scoping in EventScopeService/admin-access.ts.
-      position: string | null;
+      // Scoped staff titles (src/lib/positions.ts) — distinct from role/roles.
+      // Replace the old single global `position` field: club titles live on
+      // club_members.position (per club, not on the session), majorPosition/
+      // smoPosition/anusmoPosition are scoped to the user's one major and to
+      // holding the smo/anusmo role respectively (a user can hold both roles
+      // at once with different titles in each). hasClubPosition/
+      // hasStaffPosition are precomputed booleans (see src/auth.ts) so the
+      // edge proxy never needs a DB round trip to answer "does this user hold
+      // ANY / a club-scoped staff title" — used for admin-entry gating in
+      // admin-access.ts. smoPosition/anusmoPosition feed
+      // isGlobalRegistrationPosition there too.
+      majorPosition: string | null;
+      smoPosition: string | null;
+      anusmoPosition: string | null;
+      hasClubPosition: boolean;
+      hasStaffPosition: boolean;
     } & DefaultSession["user"]
   }
 
@@ -27,6 +39,10 @@ declare module "next-auth" {
     imageTransform: { scale: number; x: number; y: number } | null;
     qrToken: string | null;
     studentId: string | null;
-    position: string | null;
+    majorPosition: string | null;
+    smoPosition: string | null;
+    anusmoPosition: string | null;
+    hasClubPosition: boolean;
+    hasStaffPosition: boolean;
   }
 }

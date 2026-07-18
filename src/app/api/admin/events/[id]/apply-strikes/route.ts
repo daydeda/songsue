@@ -38,14 +38,16 @@ async function findNoShowStudentIds(eventId: string): Promise<string[]> {
 
 async function loadEventAndGate(eventId: string, session: Session | null) {
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-  const position = session?.user?.position;
+  const smoPosition = session?.user?.smoPosition;
+  const anusmoPosition = session?.user?.anusmoPosition;
   // A registration position (global via smo/anusmo, or club/major-scoped) is
   // additively admitted as an entry ticket — narrowed to the actor's own
-  // club/major by the EventScopeService check below when not global.
-  if (
-    !session?.user ||
-    !(myRoles.some((r) => (APPLY_STRIKES_ROLES as readonly string[]).includes(r)) || position === "registration")
-  ) {
+  // club/major by the EventScopeService check below when not global. Only
+  // queried when the cheap role check alone doesn't already admit the actor.
+  const isRoleAdmin = myRoles.some((r) => (APPLY_STRIKES_ROLES as readonly string[]).includes(r));
+  const hasRegistrationScope = !isRoleAdmin && !!session?.user?.id
+    && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition));
+  if (!session?.user || !(isRoleAdmin || hasRegistrationScope)) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
@@ -68,10 +70,10 @@ async function loadEventAndGate(eventId: string, session: Session | null) {
   // APPLY_STRIKES_ROLES above).
   const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
   const isUnscopedStaff = myRoles.some((r) => ["super_admin", "admin", "organizer", "registration"].includes(r))
-    || isGlobalRegistrationPosition(myRoles, position);
+    || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
   if (!isUnscopedStaff) {
     const access = await EventScopeService.resolveEventAccess({
-      userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+      userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
     });
     const managed = access.allowed && (access.unscoped || EventScopeService.isEventManagedByScope(event, access.scope));
     if (!managed) {

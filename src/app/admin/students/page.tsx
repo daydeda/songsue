@@ -13,7 +13,7 @@ import {
   BookOpen, Briefcase, Award, AlertTriangle, RotateCcw
 } from "lucide-react";
 import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
-import { POSITION_IDS, POSITION_I18N_KEY, isClubAffairsEligible } from "@/lib/positions";
+import { POSITION_IDS, POSITION_I18N_KEY } from "@/lib/positions";
 
 type Student = {
   id: string;
@@ -22,7 +22,13 @@ type Student = {
   name: string;
   nickname?: string;
   major?: string;
-  position?: string | null;
+  // SMO/ANUSMO staff titles (src/lib/positions.ts), scoped independently — a
+  // student can hold both roles at once with a different title in each. Club
+  // titles live on club_members.position (edited in admin/clubs's Members
+  // modal) and major titles on users.majorPosition (admin/majors's Team
+  // panel) — neither is edited from this page.
+  smoPosition?: string | null;
+  anusmoPosition?: string | null;
   email?: string;
   phone?: string;
   // Both email and phone are only ever present on this Student object when the
@@ -1269,26 +1275,49 @@ export default function AdminStudentsDirectory() {
                 />
               </div>
 
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.position}</label>
-                <CustomDropdown
-                  value={editingStudent.position || ""}
-                  options={[
-                    { value: "", label: "—", icon: <X size={16} className="text-muted" /> },
-                    ...POSITION_IDS.filter(id =>
-                      id !== "club_affairs" || isClubAffairsEligible(
-                        editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])
-                      )
-                    ).map(id => ({
-                      value: id,
-                      label: t[POSITION_I18N_KEY[id] as keyof typeof t] as string,
-                      icon: <Briefcase size={16} className="text-[var(--accent-primary)]" />,
-                    })),
-                  ]}
-                  onChange={val => setEditingStudent({ ...editingStudent, position: val || null })}
-                  icon={<Briefcase size={18} />}
-                />
-              </div>
+              {/* SMO/ANUSMO titles are scoped independently (src/lib/positions.ts) —
+                  a student holding both roles at once (the role checkboxes above
+                  are a multi-select, not mutually exclusive) gets one dropdown per
+                  role, each with its own title. Club titles are edited per-club in
+                  admin/clubs's Members modal; major titles in admin/majors's Team
+                  panel — neither lives on this page. */}
+              {(editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])).includes("smo") && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.positionSMO || "SMO Position"}</label>
+                  <CustomDropdown
+                    value={editingStudent.smoPosition || ""}
+                    options={[
+                      { value: "", label: "—", icon: <X size={16} className="text-muted" /> },
+                      ...POSITION_IDS.map(id => ({
+                        value: id,
+                        label: t[POSITION_I18N_KEY[id] as keyof typeof t] as string,
+                        icon: <Briefcase size={16} className="text-[var(--accent-primary)]" />,
+                      })),
+                    ]}
+                    onChange={val => setEditingStudent({ ...editingStudent, smoPosition: val || null })}
+                    icon={<Briefcase size={18} />}
+                  />
+                </div>
+              )}
+
+              {(editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])).includes("anusmo") && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.positionANUSMO || "ANUSMO Position"}</label>
+                  <CustomDropdown
+                    value={editingStudent.anusmoPosition || ""}
+                    options={[
+                      { value: "", label: "—", icon: <X size={16} className="text-muted" /> },
+                      ...POSITION_IDS.map(id => ({
+                        value: id,
+                        label: t[POSITION_I18N_KEY[id] as keyof typeof t] as string,
+                        icon: <Briefcase size={16} className="text-[var(--accent-primary)]" />,
+                      })),
+                    ]}
+                    onChange={val => setEditingStudent({ ...editingStudent, anusmoPosition: val || null })}
+                    icon={<Briefcase size={18} />}
+                  />
+                </div>
+              )}
 
               {/* Contact info — email/phone/contactChannels are only ever
                   present on editingStudent for a super_admin requester (the

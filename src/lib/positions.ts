@@ -1,6 +1,8 @@
 // Canonical SMO/club/major "position" (title) enum — DISTINCT from users.role/
-// roles (system access-control). Stored as a stable id in users.position (never
-// the raw Thai string), so relabeling a title later needs no data migration.
+// roles (system access-control). Stored as a stable id — club_members.position
+// (per club), users.majorPosition, users.smoPosition, users.anusmoPosition (each
+// scoped independently, never the raw Thai string), so relabeling a title later
+// needs no data migration.
 
 export const POSITION_IDS = [
   "president",

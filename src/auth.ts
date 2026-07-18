@@ -4,8 +4,8 @@ import Credentials from "next-auth/providers/credentials"
 import { DrizzleAdapter } from "@auth/drizzle-adapter"
 import { headers } from "next/headers"
 import { db } from "@/db"
-import { accounts, sessions, users, verificationTokens } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { accounts, sessions, users, verificationTokens, clubMembers } from "@/db/schema"
+import { eq, and, isNotNull } from "drizzle-orm"
 import { AuditService } from "@/modules/audit/audit.service"
 import { isSiteMoved } from "@/lib/site-moved"
 import { isRemoteDatabase } from "@/db/guard"
@@ -71,10 +71,23 @@ async function fetchUserDataFromDb(userId: string) {
       imageTransform: true,
       qrToken: true,
       studentId: true,
-      position: true,
+      majorPosition: true,
+      smoPosition: true,
+      anusmoPosition: true,
     },
   });
-  return dbUser ?? null;
+  if (!dbUser) return null;
+
+  // Precomputed here (rather than at every canEnterAdminAny call site) so the
+  // edge proxy — which only ever reads the session, never queries the DB
+  // directly — can gate confined /admin entry for a plain club staff-title
+  // holder without a round trip. See src/lib/admin-access.ts.
+  const clubPositionRow = await db.query.clubMembers.findFirst({
+    where: and(eq(clubMembers.userId, userId), isNotNull(clubMembers.position)),
+    columns: { id: true },
+  });
+
+  return { ...dbUser, hasClubPosition: !!clubPositionRow };
 }
 
 type DbUser = NonNullable<Awaited<ReturnType<typeof fetchUserDataFromDb>>>;
@@ -103,7 +116,11 @@ async function applyDbUserToToken(token: Record<string, unknown>, dbUser: DbUser
   token.imageTransform = dbUser.imageTransform ?? null;
   token.qrToken = qrToken;
   token.studentId = dbUser.studentId ?? null;
-  token.position = dbUser.position ?? null;
+  token.majorPosition = dbUser.majorPosition ?? null;
+  token.smoPosition = dbUser.smoPosition ?? null;
+  token.anusmoPosition = dbUser.anusmoPosition ?? null;
+  token.hasClubPosition = dbUser.hasClubPosition;
+  token.hasStaffPosition = !!(dbUser.majorPosition || dbUser.smoPosition || dbUser.anusmoPosition || dbUser.hasClubPosition);
 
   const currentEmail = (dbUser.email || "").toLowerCase();
   if (SUPER_ADMIN_EMAILS.includes(currentEmail)) {
@@ -203,7 +220,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 imageTransform: (user!.imageTransform as { scale: number; x: number; y: number } | null) ?? null,
                 qrToken: user!.qrToken ?? null,
                 studentId: user!.studentId ?? null,
-                position: user!.position ?? null,
+                majorPosition: user!.majorPosition ?? null,
+                smoPosition: user!.smoPosition ?? null,
+                anusmoPosition: user!.anusmoPosition ?? null,
+                hasClubPosition: false,
+                hasStaffPosition: !!(user!.majorPosition || user!.smoPosition || user!.anusmoPosition),
                 image: user!.image ?? null,
                 isDevBypass: true,
               };
@@ -258,7 +279,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
-            token.position = dbUser.position ?? null;
+            token.majorPosition = dbUser.majorPosition ?? null;
+    token.smoPosition = dbUser.smoPosition ?? null;
+    token.anusmoPosition = dbUser.anusmoPosition ?? null;
+    token.hasClubPosition = dbUser.hasClubPosition;
+    token.hasStaffPosition = !!(dbUser.majorPosition || dbUser.smoPosition || dbUser.anusmoPosition || dbUser.hasClubPosition);
           }
         } else {
           const dbUser = await fetchUserDataFromDb(user.id as string);
@@ -286,7 +311,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
-            token.position = dbUser.position ?? null;
+            token.majorPosition = dbUser.majorPosition ?? null;
+    token.smoPosition = dbUser.smoPosition ?? null;
+    token.anusmoPosition = dbUser.anusmoPosition ?? null;
+    token.hasClubPosition = dbUser.hasClubPosition;
+    token.hasStaffPosition = !!(dbUser.majorPosition || dbUser.smoPosition || dbUser.anusmoPosition || dbUser.hasClubPosition);
           } else {
             await applyDbUserToToken(token, dbUser, userId);
           }
@@ -322,7 +351,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
-            token.position = dbUser.position ?? null;
+            token.majorPosition = dbUser.majorPosition ?? null;
+    token.smoPosition = dbUser.smoPosition ?? null;
+    token.anusmoPosition = dbUser.anusmoPosition ?? null;
+    token.hasClubPosition = dbUser.hasClubPosition;
+    token.hasStaffPosition = !!(dbUser.majorPosition || dbUser.smoPosition || dbUser.anusmoPosition || dbUser.hasClubPosition);
           } else {
             await applyDbUserToToken(token, dbUser, userId);
           }
@@ -353,7 +386,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.imageTransform = (token.imageTransform as { scale: number; x: number; y: number } | null) ?? null;
       session.user.qrToken = (token.qrToken as string) ?? null;
       session.user.studentId = (token.studentId as string) ?? null;
-      session.user.position = (token.position as string | null) ?? null;
+      session.user.majorPosition = (token.majorPosition as string | null) ?? null;
+      session.user.smoPosition = (token.smoPosition as string | null) ?? null;
+      session.user.anusmoPosition = (token.anusmoPosition as string | null) ?? null;
+      session.user.hasClubPosition = (token.hasClubPosition as boolean) ?? false;
+      session.user.hasStaffPosition = (token.hasStaffPosition as boolean) ?? false;
 
       // Force super_admin role for the official emails - CASE INSENSITIVE (FE-04)
       const currentEmail = (session.user?.email || "").toLowerCase();

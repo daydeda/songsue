@@ -123,12 +123,14 @@ export class ClubsService {
         contactChannels: users.contactChannels,
         noShowCount: users.noShowCount,
         house: { id: houses.id, name: houses.name, color: houses.color },
-        // Global staff title (src/lib/positions.ts) — distinct from `role`
+        // Per-club staff title (src/lib/positions.ts) — distinct from `role`
         // above, which is just this club_members row's 'member'/'president'.
         // Always "president" when role === 'president' (kept in sync by
         // setMemberPosition/applyClubPresidencies below — see the "locked
-        // position" comment there) — never independently editable.
-        position: users.position,
+        // position" comment there) — never independently editable. Scoped to
+        // THIS club_members row, so the same user can hold a different title
+        // in another club (or major/SMO/ANUSMO) without collision.
+        position: clubMembers.position,
       })
       .from(clubMembers)
       .innerJoin(users, eq(users.id, clubMembers.userId))
@@ -158,7 +160,7 @@ export class ClubsService {
         studentId: users.studentId,
         major: users.major,
         house: { id: houses.id, name: houses.name, color: houses.color },
-        position: users.position,
+        position: clubMembers.position,
       })
       .from(clubMembers)
       .innerJoin(users, eq(users.id, clubMembers.userId))
@@ -198,7 +200,7 @@ export class ClubsService {
         faintingHistory: users.faintingHistory,
         emergencyMedication: users.emergencyMedication,
         emergencyContacts: users.emergencyContacts,
-        position: users.position,
+        position: clubMembers.position,
       })
       .from(clubMembers)
       .innerJoin(users, eq(users.id, clubMembers.userId))
@@ -325,10 +327,12 @@ export class ClubsService {
   }
 
   /**
-   * Sets a club member's global `users.position` (title) — verifies the user
-   * is actually a member of THIS club before writing, so a crafted userId
-   * belonging to a different club can't be touched. Returns undefined if the
-   * user isn't a member of this club.
+   * Sets a club member's `club_members.position` (title), scoped to THIS one
+   * club — verifies the user is actually a member of this club before
+   * writing, so a crafted userId belonging to a different club can't be
+   * touched, and so the same user's title in another club (or their major/
+   * SMO/ANUSMO title) is never touched. Returns undefined if the user isn't
+   * a member of this club.
    *
    * A club_members row with role === 'president' always has position forced
    * to "president" — nobody (not even super_admin/admin through this same
@@ -347,10 +351,10 @@ export class ClubsService {
     const effectivePosition = membership.role === "president" ? "president" : position;
 
     const [updated] = await db
-      .update(users)
-      .set({ position: effectivePosition, updatedAt: new Date() })
-      .where(eq(users.id, userId))
-      .returning({ id: users.id, position: users.position });
+      .update(clubMembers)
+      .set({ position: effectivePosition })
+      .where(and(eq(clubMembers.clubId, clubId), eq(clubMembers.userId, userId)))
+      .returning({ id: clubMembers.id, userId: clubMembers.userId, position: clubMembers.position });
     return updated;
   }
 
@@ -398,13 +402,19 @@ export class ClubsService {
     const toAdd = clubIds.filter((id) => !currentIds.has(id));
     const toRemove = [...currentIds].filter((id) => !desiredIds.has(id));
 
+    // Each president row carries its OWN "president" title directly (see
+    // setMemberPosition's matching lock) — scoped to that one club_members
+    // row, so this never touches the user's title in another club or their
+    // major/SMO/ANUSMO title. Losing a presidency deletes the row outright
+    // (below), so there's nothing to "release back to unset" the way the old
+    // single global users.position column needed.
     for (const clubId of toAdd) {
       await tx
         .insert(clubMembers)
-        .values({ clubId, userId, role: "president" })
+        .values({ clubId, userId, role: "president", position: "president" })
         .onConflictDoUpdate({
           target: [clubMembers.clubId, clubMembers.userId],
-          set: { role: "president" },
+          set: { role: "president", position: "president" },
         });
     }
 
@@ -418,21 +428,6 @@ export class ClubsService {
             inArray(clubMembers.clubId, toRemove),
           ),
         );
-    }
-
-    // Keep users.position in sync with presidency: gaining a first presidency
-    // forces the "President" title (see setMemberPosition's matching lock);
-    // losing the LAST one releases it back to unset. A user still presiding
-    // over at least one other club keeps "president" untouched. Only touch the
-    // column when this call actually changed something, so an unrelated
-    // save (clubIds unchanged) never stomps a manually-set position.
-    if (toAdd.length > 0) {
-      await tx.update(users).set({ position: "president", updatedAt: new Date() }).where(eq(users.id, userId));
-    } else if (toRemove.length > 0 && desiredIds.size === 0) {
-      const [user] = await tx.select({ position: users.position }).from(users).where(eq(users.id, userId));
-      if (user?.position === "president") {
-        await tx.update(users).set({ position: null, updatedAt: new Date() }).where(eq(users.id, userId));
-      }
     }
   }
 }

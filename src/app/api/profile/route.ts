@@ -98,7 +98,7 @@ export async function POST(req: Request) {
     const data = profileSchema.parse(body);
 
     const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "")
-      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.position);
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.smoPosition, session.user.anusmoPosition);
     if (!data.studentId && !isAdmin) {
       return NextResponse.json({ error: "Student ID is required" }, { status: 400 });
     }
@@ -205,7 +205,7 @@ export async function PATCH(req: Request) {
     // The UI locks it, but a raw PATCH could still send a new value — strip it here
     // for non-admins so it can never be changed after the fact.
     const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "")
-      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.position);
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.smoPosition, session.user.anusmoPosition);
     if (!isAdmin) {
       delete data.studentId;
       // Faculty is set once at onboarding and gates which house a student is

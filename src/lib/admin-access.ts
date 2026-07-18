@@ -98,30 +98,41 @@ export function effectiveRoles(role?: string | null, roles?: string[] | null): s
 }
 
 /* ---------------------------------------------------------------------------
- * Registration-role-retirement (Phase 1, additive): users.position ===
- * "registration" grants access whose breadth depends on who holds it.
- * SMO/ANUSMO holders get the full unscoped breadth the "registration" ROLE
- * has today (this predicate); club/major members holding the position
- * instead get an EVENT-scoped subset — see
+ * Scoped positions (src/lib/positions.ts titles), replacing the old single
+ * global users.position column: club_members.position (per club),
+ * users.majorPosition, users.smoPosition, users.anusmoPosition. A holder of
+ * "registration" as their smoPosition/anusmoPosition grants access whose
+ * breadth depends on who holds it. SMO/ANUSMO holders get the full unscoped
+ * breadth the "registration" ROLE has today (this predicate); club/major
+ * members holding the position instead get an EVENT-scoped subset — see
  * EventScopeService.getRegistrationPositionScope, which is NOT reflected
  * here (a club/major-scoped holder must never pass this global check).
- * These `position` params are all optional so every existing call site keeps
- * its exact current behavior until it's deliberately updated to pass it.
+ * smoPosition/anusmoPosition params are all optional so every existing call
+ * site keeps its exact current behavior until it's deliberately updated.
  * ------------------------------------------------------------------------- */
-export function isGlobalRegistrationPosition(roles: string[], position?: string | null): boolean {
-  return position === "registration" && (roles.includes("smo") || roles.includes("anusmo"));
+export function isGlobalRegistrationPosition(
+  roles: string[],
+  smoPosition?: string | null,
+  anusmoPosition?: string | null,
+): boolean {
+  return (
+    (roles.includes("smo") && smoPosition === "registration") ||
+    (roles.includes("anusmo") && anusmoPosition === "registration")
+  );
 }
 
 // May any of these roles enter the admin area at all? ANY staff position
 // (src/lib/positions.ts — vice_president, secretary, finance, ..., not just
-// "registration") grants at least confined entry: a plain club/major member
-// holding a staff title has legitimate business inside /admin (e.g. a
-// read-only view of their own club's roster, see admin/clubs/page.tsx),
-// even though they hold no admin-entry ROLE. isScannerOnlyAny below then
-// confines them the same way it already confines a registration-position
-// holder — server-side route gates decide exactly what data they can reach.
-export function canEnterAdminAny(roles: string[], position?: string | null): boolean {
-  return roles.some(canEnterAdmin) || !!position;
+// "registration"), in ANY scope (club, major, smo, anusmo), grants at least
+// confined entry: a plain club/major member holding a staff title has
+// legitimate business inside /admin (e.g. a read-only view of their own
+// club's roster, see admin/clubs/page.tsx), even though they hold no
+// admin-entry ROLE. isScannerOnlyAny below then confines them the same way
+// it already confines a registration-position holder — server-side route
+// gates decide exactly what data they can reach. `hasStaffPosition` is a
+// precomputed OR across all 4 scoped position fields (see src/auth.ts).
+export function canEnterAdminAny(roles: string[], hasStaffPosition?: boolean): boolean {
+  return roles.some(canEnterAdmin) || !!hasStaffPosition;
 }
 
 // Scanner-only iff the set can enter admin but holds NO full-admin role — i.e.
@@ -129,9 +140,14 @@ export function canEnterAdminAny(roles: string[], position?: string | null): boo
 // position (smo/anusmo) is full admin, not scanner-only; a club/major-scoped
 // registration position falls into the same scanner-only-confined bucket as
 // club_president/major_president (SCANNER_ONLY_PAGES already covers it).
-export function isScannerOnlyAny(roles: string[], position?: string | null): boolean {
-  if (isGlobalRegistrationPosition(roles, position)) return false;
-  return canEnterAdminAny(roles, position) && !roles.some((r) => FULL_ADMIN_ROLES.includes(r));
+export function isScannerOnlyAny(
+  roles: string[],
+  hasStaffPosition?: boolean,
+  smoPosition?: string | null,
+  anusmoPosition?: string | null,
+): boolean {
+  if (isGlobalRegistrationPosition(roles, smoPosition, anusmoPosition)) return false;
+  return canEnterAdminAny(roles, hasStaffPosition) && !roles.some((r) => FULL_ADMIN_ROLES.includes(r));
 }
 
 // May any of these roles award/deduct individual student points? Deliberately
@@ -142,6 +158,11 @@ export function canGiveIndividualScoreAny(roles: string[]): boolean {
 }
 
 // Landing href for a role set (scanner-only → scanner, else dashboard).
-export function adminLandingHrefForRoles(roles: string[], position?: string | null): string {
-  return isScannerOnlyAny(roles, position) ? SCANNER_HREF : "/admin/dashboard";
+export function adminLandingHrefForRoles(
+  roles: string[],
+  hasStaffPosition?: boolean,
+  smoPosition?: string | null,
+  anusmoPosition?: string | null,
+): string {
+  return isScannerOnlyAny(roles, hasStaffPosition, smoPosition, anusmoPosition) ? SCANNER_HREF : "/admin/dashboard";
 }

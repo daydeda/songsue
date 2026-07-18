@@ -56,10 +56,11 @@ export async function GET(
   try {
     const session = await auth();
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const position = session?.user?.position;
+    const smoPosition = session?.user?.smoPosition;
+    const anusmoPosition = session?.user?.anusmoPosition;
     // A global registration position (smo/anusmo + position="registration") gets
     // the full staff-tier breadth org-wide — fold it into isStaffRole.
-    const globalReg = isGlobalRegistrationPosition(myRoles, position);
+    const globalReg = isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
     // Staff roles get the full/standard roster. Scanner-only student-leader roles
     // (smo, club_president, major_president) may also view attendance; smo gets a
     // THIN roster only (see isThinRoster below), while club_president/
@@ -70,7 +71,8 @@ export async function GET(
     // A club/major-scoped registration position (case 2/3: not staff, not global)
     // is a distinct entry path — full (non-thin) roster, but scoped to only the
     // events their club/major owns, same as club_president/major_president below.
-    const isPositionScopedRegistration = !isStaffRole && position === "registration";
+    const isPositionScopedRegistration = !isStaffRole && !!session?.user?.id
+      && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition));
     if (!session?.user || (!isStaffRole && !isThinRosterRole && !isPositionScopedRegistration)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -108,7 +110,7 @@ export async function GET(
         columns: { ownerClubIds: true, ownerMajors: true },
       });
       const access = await EventScopeService.resolveEventAccess({
-        userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag: isPresidentRole,
+        userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag: isPresidentRole,
       });
       const managed = access.allowed && (access.unscoped || (ev ? EventScopeService.isEventManagedByScope(ev, access.scope) : false));
       if (!managed) {
@@ -283,7 +285,7 @@ export async function DELETE(
     const session = await auth();
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
     const isStaffRole = myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r))
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isStaffRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

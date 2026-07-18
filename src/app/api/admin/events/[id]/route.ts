@@ -213,7 +213,7 @@ export async function PUT(
     // to safely extend; only a GLOBAL registration position (case 1) gets full
     // edit parity with the "registration" role.
     const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     const isPresidentRole = myRoles.some((r) => ["club_president", "major_president"].includes(r));
     if (!session?.user || (!isAdminRole && !isPresidentRole)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -559,7 +559,7 @@ export async function DELETE(
   try {
     const session = await auth();
     const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "")
-      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.position);
+      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

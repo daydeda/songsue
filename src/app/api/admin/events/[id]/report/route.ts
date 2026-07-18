@@ -17,9 +17,11 @@ export async function GET(
   try {
     const session = await auth();
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const position = session?.user?.position;
-    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r))
-      || position === "registration";
+    const smoPosition = session?.user?.smoPosition;
+    const anusmoPosition = session?.user?.anusmoPosition;
+    const isRoleAdmin = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
+    const isAdminRole = isRoleAdmin || (!!session?.user?.id
+      && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition)));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -40,15 +42,17 @@ export async function GET(
     // (ownerClubIds/ownerMajors). Staff, smo, and a GLOBAL registration position
     // are unscoped.
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
-      || isGlobalRegistrationPosition(myRoles, position);
+      || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     const hasPresidentTag = presidentTags.length > 0;
     // Bare smo (no president tag, no registration position) stays unscoped —
     // unchanged from before. Presidents and a club/major-scoped registration
     // position are the only ones actually scoped here.
-    if (!isStaff && (hasPresidentTag || position === "registration")) {
+    const hasRegistrationScope = !isStaff && !hasPresidentTag && !!session?.user?.id
+      && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition));
+    if (!isStaff && (hasPresidentTag || hasRegistrationScope)) {
       const access = await EventScopeService.resolveEventAccess({
-        userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag,
+        userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag,
       });
       const managed = access.allowed && (access.unscoped || EventScopeService.isEventManagedByScope(event, access.scope));
       if (!managed) {

@@ -85,7 +85,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const session = await auth();
     const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
     const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isStaff) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -141,7 +141,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
 
     const isStaff = myRoles.some((r) => (REVIEW_PROPOSAL_ROLES as readonly string[]).includes(r))
-      || isGlobalRegistrationPosition(myRoles, session?.user?.position);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (action === "reject" && !isStaff) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

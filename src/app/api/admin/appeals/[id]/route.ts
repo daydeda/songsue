@@ -33,15 +33,18 @@ class AlreadyResolvedError extends Error {}
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
-    const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
-    const position = session?.user?.position;
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const myRoles = effectiveRoles(session.user.role, session.user.roles);
+    const smoPosition = session.user.smoPosition;
+    const anusmoPosition = session.user.anusmoPosition;
     // Additively admit a registration-position holder (global via smo/anusmo, or
     // club/major-scoped) as an entry ticket — scoped down to their own club/major
     // by the EventScopeService check below, same as club_president/major_president.
-    if (
-      !session?.user ||
-      !(myRoles.some((r) => (RESOLVE_APPEALS_ROLES as readonly string[]).includes(r)) || position === "registration")
-    ) {
+    const regScope = await EventScopeService.getRegistrationPositionScope(session.user.id!, myRoles, smoPosition, anusmoPosition);
+    const hasRegistrationAccess = regScope.global || regScope.clubIds.length > 0 || regScope.majors.length > 0;
+    if (!(myRoles.some((r) => (RESOLVE_APPEALS_ROLES as readonly string[]).includes(r)) || hasRegistrationAccess)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -60,9 +63,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration"].includes(r));
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
     const hasPresidentTag = presidentTags.length > 0;
-    if (!isStaff && (hasPresidentTag || position === "registration")) {
+    if (!isStaff && (hasPresidentTag || hasRegistrationAccess)) {
       const access = await EventScopeService.resolveEventAccess({
-        userId: session.user.id!, roles: myRoles, position, isUnscopedStaff: false, hasPresidentTag,
+        userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag,
       });
       const managed = access.allowed && (access.unscoped || (appeal.event ? EventScopeService.isEventManagedByScope(appeal.event, access.scope) : false));
       if (!managed) {

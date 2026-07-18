@@ -39,10 +39,15 @@ const userRoleSchema = z.object({
   // admin students page only sends this when the club_president checkbox is
   // shown, but any caller may send [] to clear all presidencies for this user.
   clubIds: z.array(z.string().uuid()).optional(),
-  // SMO/club/major title (src/lib/positions.ts) — distinct from role/roles
-  // above. Validated here (not read as-is from body) so a bad value 400s
-  // instead of silently writing garbage.
-  position: z.enum(POSITION_IDS).optional().nullable(),
+  // SMO/ANUSMO staff titles (src/lib/positions.ts) — distinct from role/roles
+  // above, and scoped independently: a user can hold both smo and anusmo at
+  // once with a different title in each. Club titles are set per-club via
+  // ClubsService (admin/clubs's Members modal); major titles via MajorsService
+  // (admin/majors's Team panel) — neither goes through this route. Validated
+  // here (not read as-is from body) so a bad value 400s instead of silently
+  // writing garbage.
+  smoPosition: z.enum(POSITION_IDS).optional().nullable(),
+  anusmoPosition: z.enum(POSITION_IDS).optional().nullable(),
 });
 
 // PATCH: Update user information or role
@@ -73,8 +78,7 @@ export async function PATCH(
     // Fields that can be updated by admin
     const { name, prefix, major, houseId, studentId, nickname } = body;
     let { role, roles } = parsedRoles.data;
-    const { clubIds } = parsedRoles.data;
-    let { position } = parsedRoles.data;
+    const { clubIds, smoPosition, anusmoPosition } = parsedRoles.data;
 
     // Contact info (phone/contactChannels) is only ever writable by
     // super_admin, mirroring the read-side gate in GET /api/admin/students —
@@ -114,20 +118,22 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden: Cannot edit Super Admin accounts" }, { status: 403 });
     }
 
-    // Position lock: a club_president/major_president's title is always
-    // "President" — nobody, including super_admin, may set it to anything
-    // else through this route (mirrors the same invariant enforced in
-    // ClubsService.setMemberPosition / MajorsService.setMemberPosition, which
-    // guard the club/major-scoped president's own editing surface). Evaluated
+    // Major-position lock: a major_president's title is always "President" —
+    // nobody, including super_admin, may set it to anything else (mirrors the
+    // same invariant MajorsService.setMemberPosition enforces on the
+    // major-scoped president's own editing surface, and ClubsService's
+    // equivalent for club_members.position — that one lives entirely in
+    // ClubsService now, since a club_members row exists to hold it). Evaluated
     // against the FINAL role set (this request's `roles` if provided, else the
     // user's current one) so an unrelated field-only edit still re-asserts it,
     // and losing the role releases a stale "president" title back to unset.
     const finalRoles = roles ?? ((targetUser.roles as string[] | null) ?? (targetUser.role ? [targetUser.role] : []));
-    const willBePresident = finalRoles.includes("club_president") || finalRoles.includes("major_president");
-    if (willBePresident) {
-      position = "president";
-    } else if (position === undefined && targetUser.position === "president") {
-      position = null;
+    const willBeMajorPresident = finalRoles.includes("major_president");
+    let majorPosition: string | null | undefined;
+    if (willBeMajorPresident) {
+      majorPosition = "president";
+    } else if (targetUser.majorPosition === "president") {
+      majorPosition = null;
     }
 
     // Build the audit summary: role changes are logged with old → new values,
@@ -147,8 +153,14 @@ export async function PATCH(
     if (houseId !== undefined && houseId !== targetUser.houseId) changes.push("houseId");
     if (studentId !== undefined && studentId !== targetUser.studentId) changes.push("studentId");
     if (nickname !== undefined && nickname !== targetUser.nickname) changes.push("nickname");
-    if (position !== undefined && position !== targetUser.position) {
-      changes.push(`position: ${targetUser.position ?? "none"} → ${position ?? "none"}`);
+    if (smoPosition !== undefined && smoPosition !== targetUser.smoPosition) {
+      changes.push(`smoPosition: ${targetUser.smoPosition ?? "none"} → ${smoPosition ?? "none"}`);
+    }
+    if (anusmoPosition !== undefined && anusmoPosition !== targetUser.anusmoPosition) {
+      changes.push(`anusmoPosition: ${targetUser.anusmoPosition ?? "none"} → ${anusmoPosition ?? "none"}`);
+    }
+    if (majorPosition !== undefined && majorPosition !== targetUser.majorPosition) {
+      changes.push(`majorPosition: ${targetUser.majorPosition ?? "none"} → ${majorPosition ?? "none"}`);
     }
     if (phone !== undefined && phone !== targetUser.phone) changes.push("phone");
     if (contactChannels !== undefined && contactChannels !== targetUser.contactChannels) changes.push("contactChannels");
@@ -182,7 +194,9 @@ export async function PATCH(
           houseId,
           studentId,
           nickname,
-          position,
+          majorPosition,
+          smoPosition,
+          anusmoPosition,
           phone,
           contactChannels,
           updatedAt: new Date(),

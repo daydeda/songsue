@@ -27,8 +27,8 @@ const DoorCastle3D = dynamic(
   { ssr: false }
 );
 
-// Registration opens 24 July 2026, 00:00 Bangkok time.
-const REGISTRATION_OPENS_AT = new Date("2026-07-24T00:00:00+07:00").getTime();
+// Registration opens 23 July 2026, 00:00 Bangkok time.
+const REGISTRATION_OPENS_AT = new Date("2026-07-23T00:00:00+07:00").getTime();
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 

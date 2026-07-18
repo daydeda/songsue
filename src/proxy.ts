@@ -29,7 +29,8 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/favicon.ico") ||
     pathname.startsWith("/smocamt-logo.png") ||
     pathname.startsWith("/smocamt-logo-icon.png") ||
-    pathname.startsWith("/icon.png");
+    pathname.startsWith("/icon.svg") ||
+    pathname.startsWith("/flag_house");
 
   if (isPublicPath) {
     return NextResponse.next();
@@ -107,5 +108,8 @@ export const config = {
   // and gating them sent <img> requests to /login, rendering as broken images.
   // Supabase-backed deploys serve these from a cross-origin URL the proxy never
   // sees, so this only affects the self-hosted (local-disk) deploy.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|smocamt-logo-icon.png|icon.png|uploads).*)"],
+  //
+  // `flag_house` (public/flag_house/*) is excluded for the same reason — the
+  // Two Media In Arts landing page renders house flags before sign-in.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|smocamt-logo-icon.png|icon.svg|uploads|flag_house).*)"],
 };

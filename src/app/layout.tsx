@@ -44,13 +44,10 @@ const notoSansSC = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: "ActiveCAMT — CAMT Student Activity Hub",
+  title: "Two Media In Arts",
   description:
     "The official student activity management platform for CAMT, Chiang Mai University. Register for events, track your house points, and manage attendance.",
   keywords: ["CAMT", "CMU", "student activities", "house points", "attendance"],
-  icons: {
-    icon: "/smocamt-logo-icon.png",
-  },
 };
 
 import { SessionProvider } from "@/components/providers/SessionProvider";

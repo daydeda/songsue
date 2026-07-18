@@ -23,7 +23,10 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' https:${process.env.NODE_ENV === "development" ? " ws: wss:" : ""}`,
+  // blob: is needed for GLTFLoader's internal texture decoding (it fetches
+  // embedded glTF images via blob: URLs, which counts as connect-src, not
+  // img-src, in the eyes of the CSP).
+  `connect-src 'self' https: blob:${process.env.NODE_ENV === "development" ? " ws: wss:" : ""}`,
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
   "object-src 'none'",

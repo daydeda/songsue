@@ -312,16 +312,39 @@ export function FlagFlutter3D({
   prefersReducedMotion: boolean;
   scrollProgress?: MotionValue<number>;
 }) {
+  // R3F's Canvas only re-measures its size on window resize/scroll events
+  // (see react-three-fiber's default `resize` debounce config), not on every
+  // DOM layout change. When this mounts inside an animating flex/vh layout
+  // (AnimatePresence + Framer Motion entry transitions), the very first
+  // ResizeObserver reading can land before that layout has settled, so the
+  // canvas renders undersized until something dispatches resize/scroll —
+  // which is exactly why scrolling the page "fixes" it. Force a re-measure
+  // right after the layout has had a chance to settle so users don't have to.
+  useLayoutEffect(() => {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
+
   return (
-    <Canvas
-      shadows={{ type: THREE.BasicShadowMap }}
-      dpr={[1, 1.75]}
-      camera={{ position: [-0.8, 1.2, 6], fov: 32 }}
-      gl={{ alpha: true, antialias: true }}
-      style={{ width: "100%", height: "100%" }}
-    >
-      <Scene url={src} prefersReducedMotion={prefersReducedMotion} scrollProgress={scrollProgress} />
-    </Canvas>
+    <div style={{ width: "100%", height: "100%" }}>
+      <Canvas
+        shadows={{ type: THREE.BasicShadowMap }}
+        dpr={[1, 1.75]}
+        camera={{ position: [-0.8, 1.2, 6], fov: 32 }}
+        gl={{ alpha: true, antialias: true }}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <Scene url={src} prefersReducedMotion={prefersReducedMotion} scrollProgress={scrollProgress} />
+      </Canvas>
+    </div>
   );
 }
 

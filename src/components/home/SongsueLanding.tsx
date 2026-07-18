@@ -163,11 +163,16 @@ function HousesCarousel({
     setDirection(-1);
     setActiveIndex((prev) => (prev - 1 + houses.length) % houses.length);
   };
+  const goToHouse = (idx: number) => {
+    if (idx === activeIndex) return;
+    setDirection(idx > activeIndex ? 1 : -1);
+    setActiveIndex(idx);
+  };
 
   const house = houses[activeIndex];
 
   return (
-    <section className="relative flex flex-col items-center justify-center px-6 py-20 w-full overflow-hidden" style={{ minHeight: "100vh" }}>
+    <section className="relative flex flex-col items-center justify-center px-6 py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
       {/* Flash overlay */}
       <div 
         className="fixed inset-0 bg-white z-[100] pointer-events-none transition-opacity" 
@@ -179,10 +184,10 @@ function HousesCarousel({
         <h2 className="landing-title" style={sectionTitleStyle}>{copy.houses.title}</h2>
       </div>
 
-      <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: phase === "door" ? "80vh" : "80vh" }}>
+      <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: "80svh" }}>
         
         {phase === "door" && (
-          <div className="relative w-full flex flex-col items-center justify-center" style={{ height: "80vh" }}>
+          <div className="relative w-full flex flex-col items-center justify-center" style={{ height: "80svh" }}>
              <div className="w-full h-full">
                <DoorCastle3D onEnter={onEnter} />
              </div>
@@ -194,30 +199,31 @@ function HousesCarousel({
 
         {phase === "carousel" && (
           <div className="w-full flex flex-col items-center">
-            <div className="w-full relative overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing" style={{ minHeight: "80vh" }}>
-              <AnimatePresence mode="wait" custom={direction}>
+            <div className="w-full relative overflow-hidden flex items-center justify-center" style={{ minHeight: "80svh" }}>
+              <AnimatePresence mode="popLayout" custom={direction}>
                 <motion.div
                   key={activeIndex}
                   custom={direction}
                   initial={{ opacity: 0, x: direction === 0 ? 0 : direction * 50, y: direction === 0 ? 20 : 0 }}
                   animate={{ opacity: 1, x: 0, y: 0 }}
                   exit={{ opacity: 0, x: direction * -50 }}
-                  transition={{ 
-                    duration: 0.4, 
+                  transition={{
+                    duration: 0.4,
                     ease: "easeOut",
-                    delay: direction === 0 ? 0.5 : 0 
+                    delay: direction === 0 ? 0.5 : 0
                   }}
                   drag="x"
                   dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.2}
+                  dragElastic={0.15}
+                  dragMomentum={false}
                   onDragEnd={(e, { offset, velocity }) => {
-                    if (offset.x < -50 || velocity.x < -500) {
+                    if (offset.x < -60 || velocity.x < -400) {
                       nextHouse();
-                    } else if (offset.x > 50 || velocity.x > 500) {
+                    } else if (offset.x > 60 || velocity.x > 400) {
                       prevHouse();
                     }
                   }}
-                  className="w-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-24 h-full"
+                  className="w-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-24 h-full cursor-grab active:cursor-grabbing"
                 >
                   {/* Left: Caption & Name */}
                   <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4" style={{ minWidth: 280, maxWidth: 400 }}>
@@ -245,14 +251,14 @@ function HousesCarousel({
                   {/* Right: Flag */}
                   <div 
                     className="flex-1 w-full flex items-center justify-center lg:justify-end translate-x-8 translate-y-12 lg:translate-x-24 lg:translate-y-16" 
-                    style={{ height: "80vh", minHeight: 400, filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.55))" }}
+                    style={{ height: "80svh", minHeight: 400, filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.55))" }}
                   >
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.8, y: 30 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      transition={{ 
-                        delay: direction === 0 ? 0.7 : 0.15, 
-                        type: "spring", stiffness: 200, damping: 20 
+                    <motion.div
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        delay: direction === 0 ? 0.7 : 0,
+                        duration: 0.4, ease: "easeOut"
                       }}
                       className="w-full h-full flex items-center justify-center relative"
                     >
@@ -278,11 +284,19 @@ function HousesCarousel({
 
             {/* Pagination Dots */}
             <div className="flex gap-3 mt-8 z-20">
-              {houses.map((_, idx) => (
-                <div 
-                  key={idx} 
-                  className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === activeIndex ? "bg-white scale-125" : "bg-white/20"}`} 
-                />
+              {houses.map((h, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => goToHouse(idx)}
+                  aria-label={`${storyLang === "th" ? "ไปที่บ้าน" : "Go to house"} ${h.faculty[storyLang]}`}
+                  aria-current={idx === activeIndex}
+                  className="touch-target flex items-center justify-center"
+                  style={{ width: 32, height: 32 }}
+                >
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === activeIndex ? "bg-white scale-125" : "bg-white/20"}`}
+                  />
+                </button>
               ))}
             </div>
           </div>
@@ -362,7 +376,7 @@ export function SongsueLanding({
       </button>
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div ref={heroRef} className="relative flex flex-col items-center justify-center text-center px-6" style={{ minHeight: "100vh" }}>
+      <div ref={heroRef} className="relative flex flex-col items-center justify-center text-center px-6" style={{ minHeight: "100svh" }}>
         <motion.div
           style={prefersReducedMotion ? undefined : { opacity: heroOpacity, y: heroY, scale: heroScale }}
           initial={{ opacity: 0, y: 24 }}
@@ -416,7 +430,7 @@ export function SongsueLanding({
       <motion.section
         {...reveal}
         className="relative flex flex-col items-center justify-center text-center px-6 py-24"
-        style={{ minHeight: "90vh" }}
+        style={{ minHeight: "90svh" }}
       >
         <div
           className="flex flex-col items-center gap-8 w-full"

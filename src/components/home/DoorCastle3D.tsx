@@ -14,7 +14,6 @@ import goldDiff from "../../../public/textures/metal/diffuse.jpg";
 import goldNorm from "../../../public/textures/metal/normal.jpg";
 import goldRough from "../../../public/textures/metal/roughness.jpg";
 
-import stoneDiff from "../../../public/textures/stone/diffuse.jpg";
 import stoneNorm from "../../../public/textures/stone/normal.jpg";
 import stoneRough from "../../../public/textures/stone/roughness.jpg";
 
@@ -46,25 +45,6 @@ function CastleDoorModel({
     }
   });
 
-  const wallShape = useMemo(() => {
-    const shape = new THREE.Shape();
-    shape.moveTo(-15, -2);
-    shape.lineTo(15, -2);
-    shape.lineTo(15, 15);
-    shape.lineTo(-15, 15);
-    shape.lineTo(-15, -2);
-
-    const hole = new THREE.Path();
-    hole.moveTo(-2, 0);
-    hole.lineTo(2, 0);
-    hole.lineTo(2, 4);
-    hole.absarc(0, 4, 2, 0, Math.PI, false);
-    hole.lineTo(-2, 0);
-    shape.holes.push(hole);
-
-    return shape;
-  }, []);
-
   const leftShape = useMemo(() => {
     const shape = new THREE.Shape();
     shape.moveTo(0.04, 0);
@@ -85,7 +65,7 @@ function CastleDoorModel({
     return shape;
   }, []);
 
-  const extrudeDoorSettings = useMemo(() => ({ depth: 0.25, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.04, bevelThickness: 0.04 }), []);
+  const extrudeDoorSettings = useMemo(() => ({ depth: 0.25, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.04, bevelThickness: 0.04 }), []);
 
   const woodTex = useTexture({
     map: woodDiff.src,
@@ -97,8 +77,12 @@ function CastleDoorModel({
     normalMap: goldNorm.src,
     roughnessMap: goldRough.src
   });
+  // No diffuse/color map here on purpose — the source photo is a red brick
+  // wall, not grey stone, and multiplying it into the material tinted the
+  // whole arch/columns brown no matter what tint color was layered on top.
+  // Normal + roughness alone still give real bump detail; color comes only
+  // from stoneMaterial's flat grey.
   const stoneTex = useTexture({
-    map: stoneDiff.src,
     normalMap: stoneNorm.src,
     roughnessMap: stoneRough.src
   });
@@ -114,18 +98,14 @@ function CastleDoorModel({
     Object.values(goldTex).forEach((tex: any) => tex.repeat.set(2, 2));
   }, [woodTex, goldTex, stoneTex]);
 
-  const goldMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: "#d4af37", metalness: 0.9, ...goldTex }), [goldTex]);
-  const woodMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: "#6a2512", ...woodTex }), [woodTex]);
-  const stoneMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: "#aaaaaa", ...stoneTex }), [stoneTex]);
+  // Lower roughness reads as polished/regal gold instead of the dull matte
+  // look a default roughness of 1 gives metals under PBR lighting.
+  const goldMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: "#d4af37", metalness: 0.85, roughness: 0.3, ...goldTex }), [goldTex]);
+  const woodMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: "#7a2f16", roughness: 0.65, ...woodTex }), [woodTex]);
+  const stoneMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: "#8c8c8c", roughness: 0.9, ...stoneTex }), [stoneTex]);
 
   return (
     <group onClick={(e) => { e.stopPropagation(); onClick(); }}>
-      {/* Castle Wall */}
-      <mesh position={[0, 0, -0.3]} receiveShadow castShadow>
-        <extrudeGeometry args={[wallShape, { depth: 0.6, bevelEnabled: false }]} />
-        <meshStandardMaterial color="#030303" roughness={1} />
-      </mesh>
-
       {/* Decorative Regal Arch */}
       <mesh position={[0, 4, 0]} castShadow receiveShadow material={stoneMaterial}>
         <torusGeometry args={[2.2, 0.4, 16, 48, Math.PI]} />
@@ -321,34 +301,56 @@ export function DoorCastle3D({ onEnter }: { onEnter: () => void }) {
       <SoftShadows size={25} samples={10} focus={0.5} />
       <fog attach="fog" args={["#030303", 8, 25]} />
       
-      {/* Dramatic realistic lighting */}
-      <ambientLight intensity={1.2} color="#e0eaff" />
-      <directionalLight 
-        position={[8, 12, 12]} 
-        intensity={4.5} 
-        color="#e6edff" 
-        castShadow 
+      {/* Dramatic realistic lighting — kept low ambient so the key/rim
+          lights carve out real shadow depth instead of washing everything
+          flat, which is what made the previous version read as fake. */}
+      <ambientLight intensity={0.35} color="#1a1420" />
+      <directionalLight
+        position={[8, 12, 12]}
+        intensity={3.2}
+        color="#e6edff"
+        castShadow
         shadow-bias={-0.0005}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
       >
         <orthographicCamera attach="shadow-camera" args={[-10, 10, 10, -10]} />
       </directionalLight>
-      <spotLight 
-        position={[-8, 6, 10]} 
-        intensity={40} 
-        color="#ffaa77" 
-        angle={0.6} 
-        penumbra={1} 
-        decay={1.5} 
-        distance={40} 
+      <spotLight
+        position={[-8, 6, 10]}
+        intensity={40}
+        color="#ff8a3d"
+        angle={0.6}
+        penumbra={1}
+        decay={1.5}
+        distance={40}
       />
-      
+      {/* Cool rim light from behind to separate the door silhouette from
+          the wall instead of everything blending into one flat mass. */}
+      <spotLight
+        position={[0, 10, -6]}
+        intensity={18}
+        color="#5a6bff"
+        angle={0.9}
+        penumbra={1}
+        decay={1.5}
+        distance={30}
+      />
+
       <CameraController isOpen={isOpen} onEnter={onEnter} />
-      
+
       <Suspense fallback={null}>
         <CastleDoorModel isOpen={isOpen} onClick={() => setIsOpen(true)} />
-        <Environment preset="night" environmentIntensity={1.5} />
+        {/* Brand-matched environment: warm orange/gold Lightformers (same
+            palette as the page's BackgroundGlow and CTA accent) so the
+            gold/stone PBR reflections tie into the site instead of a
+            generic blue-tinted "night" HDRI that reads as an unrelated
+            stock castle scene. */}
+        <Environment resolution={256} environmentIntensity={1.1}>
+          <Lightformer form="rect" intensity={4} position={[6, 6, 8]} scale={[10, 10, 1]} target={[0, 3, 0]} color="#ff6b00" />
+          <Lightformer form="rect" intensity={2.5} position={[-6, 4, 8]} scale={[8, 8, 1]} target={[0, 3, 0]} color="#ffb800" />
+          <Lightformer form="circle" intensity={1.2} position={[0, 10, -4]} scale={[10, 10, 1]} target={[0, 3, 0]} color="#030303" />
+        </Environment>
       </Suspense>
 
       <ContactShadows

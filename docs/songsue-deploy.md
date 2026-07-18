@@ -101,18 +101,30 @@ Stacks → **+ Add Stack**):
     token be replayed against activecamt or vice versa.
   - `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` — same values as activecamt's (see
     step 1).
-- (Optional) Enable GitOps webhook + re-pull if you want merges to
-  auto-deploy — see "Updating later" below.
+- (Optional) Enable the GitOps webhook if you want — see "Updating later"
+  below for why it's best-effort only on this Portainer install, not
+  guaranteed auto-deploy.
 - **Deploy the stack.**
 
 `web` waits for `db`'s healthcheck before starting (same as activecamt).
 
 ## 4. Build the schema
 
-*Containers → `songsue_web` → Console → `/bin/sh` → Connect*:
+*Containers → `songsue_web` → Console → `/bin/sh` → Connect*, then run
+**both**, in order:
 ```sh
-npm run db:migrate:container
+npm run db:push               # bootstraps the FULL schema from src/db/schema.ts
+npm run db:migrate:container  # layers on incremental patches accumulated since
 ```
+`db:migrate:container` alone is NOT enough on a brand-new database — its own
+docstring says "safe to run on an existing DB": every step is an `ALTER
+TABLE ... ADD COLUMN IF NOT EXISTS` or similar, assuming the base tables
+(`users`, `houses`, `events`, …) already exist. Skipping `db:push` first
+fails immediately with `relation "users" does not exist`. `db:push` may show
+an interactive confirmation prompt (drizzle-kit); on a truly empty DB there's
+nothing ambiguous to resolve. Both commands read `DATABASE_URL` straight from
+the container's env — no `.env` file involved.
+
 This is a brand-new empty database — no data-only pg_dump step, no storage
 bucket migration, unlike the activecamt cutover. Nothing else to import.
 

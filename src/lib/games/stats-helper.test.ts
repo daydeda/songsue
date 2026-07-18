@@ -32,6 +32,7 @@ describe("OX Game Stats and Finalization", () => {
         nickname text,
         faculty text,
         major text,
+        position text,
         image_transform jsonb,
         religion text,
         phone text UNIQUE,

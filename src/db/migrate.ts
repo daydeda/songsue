@@ -1062,13 +1062,263 @@ async function migrate() {
   `;
   console.log("  ✅ inserted 12 new faculty houses (ON CONFLICT DO NOTHING)");
 
-  // 65. Backfill users.faculty for legacy rows (all existing students are CAMT),
-  // then reset the per-user current-house pointer so everyone re-derives their
-  // (now faculty-scoped) house at next check-in. The reset is intentional and
-  // non-destructive: house point history in score_history is preserved.
+  // 65. Backfill users.faculty for legacy rows (all existing students are CAMT).
+  //
+  // ⚠️ This step ORIGINALLY also ran `UPDATE users SET house_id = NULL` — a
+  // one-time reset intended for the four-faculty-houses cutover. That line is
+  // GONE. It ran unconditionally on every deploy (this script has no
+  // migrations-tracking table; every `db:migrate`/`db:migrate:container` run
+  // replays every step from the top), so it wiped EVERY user's house on every
+  // single deploy — nothing ever removed the reset, so it kept firing forever
+  // (songsue keeps the four-faculty model; this reset was never intentional
+  // long-term behavior even here). That's
+  // the "my house changed after a redeploy" bug (fixed 2026-07-06; see
+  // scripts/restore-houses-from-supabase.mjs for the one-time recovery of
+  // pre-reset assignments). DO NOT reintroduce an unconditional house_id
+  // reset here — it will immediately reproduce that bug on the next deploy.
   await sql`UPDATE users SET faculty = 'CAMT' WHERE faculty IS NULL`;
-  await sql`UPDATE users SET house_id = NULL`;
-  console.log("  ✅ backfilled users.faculty + reset users.house_id (re-derived at next check-in)");
+  console.log("  ✅ backfilled users.faculty");
+
+  // 66. No-show strike-out: users.no_show_count / users.registration_blocked.
+  // Students who pre-register for an event but never check in accumulate
+  // strikes; at 3 strikes registrationBlocked flips true, blocking new
+  // pre-registration until a staff member resets it. Additive, NOT NULL with
+  // a default so existing rows backfill to 0/false automatically — no data
+  // transformation, no drop. Idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS no_show_count integer NOT NULL DEFAULT 0
+  `;
+  await sql`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS registration_blocked boolean NOT NULL DEFAULT false
+  `;
+  console.log("  ✅ users.no_show_count + users.registration_blocked");
+
+  // 67. no_show_appeals — lets a registration-blocked student (see step 66)
+  // submit an appeal message instead of only ever waiting on a manual staff
+  // reset (see /api/admin/students/[id]/strikes/reset). no_show_count_at_appeal
+  // snapshots users.no_show_count at submission time so an admin reviewing later
+  // still sees the context even if the count has since changed. The partial
+  // unique index blocks a user from having more than one 'pending' appeal open
+  // at once (spam guard) — once it's approved/rejected they can submit again if
+  // blocked again. New table + CREATE INDEX IF NOT EXISTS ⇒ additive, idempotent,
+  // non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS no_show_appeals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      message text NOT NULL,
+      no_show_count_at_appeal integer NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      reviewed_by text,
+      reviewed_at timestamptz,
+      review_note text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS no_show_appeals_user_idx ON no_show_appeals (user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS no_show_appeals_status_idx ON no_show_appeals (status)`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS no_show_appeals_one_pending_per_user ON no_show_appeals (user_id) WHERE status = 'pending'`;
+  console.log("  ✅ no_show_appeals table + user/status indexes + one-pending-per-user partial unique index");
+
+  // 68. no_show_appeals.event_id — appeals become per-EVENT instead of one
+  // blanket appeal per account (see step 67): a student with multiple strikes
+  // can appeal each no-show event separately, and approving one only undoes
+  // that event's strike, not the whole count. Nullable so the ADD COLUMN stays
+  // additive against any pre-existing rows; the app layer requires it on every
+  // new appeal. Replaces the one-pending-per-user unique index with one scoped
+  // to (user_id, event_id) so concurrently-pending appeals for DIFFERENT
+  // events are allowed, just not two for the same event. Additive/idempotent:
+  // ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, DROP INDEX IF EXISTS.
+  await sql`
+    ALTER TABLE no_show_appeals
+    ADD COLUMN IF NOT EXISTS event_id uuid REFERENCES events(id) ON DELETE CASCADE
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS no_show_appeals_event_idx ON no_show_appeals (event_id)`;
+  await sql`DROP INDEX IF EXISTS no_show_appeals_one_pending_per_user`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS no_show_appeals_one_pending_per_user_event ON no_show_appeals (user_id, event_id) WHERE status = 'pending'`;
+  console.log("  ✅ no_show_appeals.event_id + event index; one-pending-per-user-event replaces one-pending-per-user");
+
+  // 69. events.staff_user_ids — explicit per-event staff roster (see schema.ts
+  // comment). Nullable, no default: additive/idempotent via ADD COLUMN IF NOT
+  // EXISTS on a populated table.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS staff_user_ids jsonb`;
+  console.log("  ✅ events.staff_user_ids");
+
+  // 70. attendance.is_staff — snapshot of staff status at check-in/registration
+  // time (see schema.ts comment), used to exempt staff from quota/no-show
+  // logic. NOT NULL DEFAULT false backfills existing rows to false in the same
+  // statement — additive/idempotent/non-destructive via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS is_staff boolean NOT NULL DEFAULT false`;
+  console.log("  ✅ attendance.is_staff");
+
+  // 71. event_proposals — lets a club_president request an event for a club they
+  // preside over without granting them write access to the real `events` table.
+  // Requested title/time/location/quota are non-binding; staff still sets
+  // pointsAwarded/allowedRoles/allowedMajors/managedByRoles/ownerClubIds/
+  // staffUserIds explicitly when creating the real event (mirrors the
+  // field-strip precedent for president-submitted edits in
+  // api/admin/events/[id]/route.ts). Lifecycle mirrors no_show_appeals:
+  // status 'pending'|'approved'|'rejected'|'withdrawn', reviewed_by has NO FK
+  // (matches no_show_appeals.reviewed_by exactly). club_id CASCADEs (deleting a
+  // club deletes its proposal history; the audit log keeps a free-text trail
+  // independent of the row). resulting_event_id is SET NULL so a later
+  // hard-delete of the created event doesn't FK-block the deletion. New table +
+  // CREATE INDEX IF NOT EXISTS ⇒ additive, idempotent, non-destructive.
+  await sql`
+    CREATE TABLE IF NOT EXISTS event_proposals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+      club_id uuid NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+      proposed_by text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title text NOT NULL,
+      description text,
+      start_time timestamptz NOT NULL,
+      end_time timestamptz NOT NULL,
+      location text,
+      quota integer,
+      status text NOT NULL DEFAULT 'pending',
+      reviewed_by text,
+      reviewed_at timestamptz,
+      review_note text,
+      resulting_event_id uuid REFERENCES events(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_club_idx ON event_proposals (club_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_status_idx ON event_proposals (status)`;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_proposed_by_idx ON event_proposals (proposed_by)`;
+  console.log("  ✅ event_proposals table + club/status/proposed_by indexes");
+
+  // 72. event_proposals — the full staff-create-event-parity field set (poster,
+  // registration window, walk-ins, target audience, first-year-only, registration
+  // mode, suggested staff). Mirrors the equivalent `events` columns exactly so a
+  // proposal converts 1:1 into a real event. Additive/idempotent via ADD COLUMN
+  // IF NOT EXISTS — see src/db/schema.ts's eventProposals table for field docs.
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS registration_open_time timestamptz`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS registration_close_time timestamptz`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS image_url text`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS image_urls jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS walk_ins_enabled boolean DEFAULT false`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS walk_ins_only boolean DEFAULT false`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS quota_walk_in integer`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS registration_mode text NOT NULL DEFAULT 'once'`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS sessions jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS target_thai boolean DEFAULT true`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS target_international boolean DEFAULT true`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS quota_thai integer`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS quota_international integer`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS first_year_only boolean DEFAULT false`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS staff_user_ids jsonb`;
+  console.log("  ✅ event_proposals poster/registration-window/walk-ins/audience/staff columns");
+
+  // 73. events.walk_ins_only — walk-ins-only events refuse pre-registration
+  // entirely (see api/events/[id]/register). Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS walk_ins_only boolean DEFAULT false`;
+  console.log("  ✅ events.walk_ins_only");
+
+  // 74. events.allowed_clubs — club-based participant eligibility (SEPARATE from
+  // owner_club_ids, which controls who MANAGES the event). null/[] = no club
+  // restriction. See api/events/[id]/register and src/lib/event-access.ts.
+  // Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS allowed_clubs jsonb`;
+  console.log("  ✅ events.allowed_clubs");
+
+  // 75. forms.show_respondent_identity — controls whether non-admin viewers
+  // (registration/organizer, later smo/club_president/major_president) see a
+  // form submission's respondent name/studentId/contact info, or a masked/
+  // anonymized view. super_admin/admin always see identity regardless of this
+  // flag (enforced in app code, not here). NOT NULL DEFAULT false backfills
+  // every existing form to anonymized-by-default; the creator opts in per form
+  // when identity is genuinely needed (app logic, not a DB-level conditional
+  // default). Additive/idempotent via ADD COLUMN IF NOT EXISTS.
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS show_respondent_identity boolean NOT NULL DEFAULT false`;
+  console.log("  ✅ forms.show_respondent_identity");
+
+  // 76. event_proposals — major-based proposals (major_president). club_id
+  // becomes nullable (a major-scoped proposal carries major_code instead —
+  // exactly one of the two is set, enforced in app code, see POST
+  // /api/admin/event-proposals). DROP NOT NULL is a no-op if already dropped,
+  // so this stays idempotent on repeat runs.
+  await sql`ALTER TABLE event_proposals ALTER COLUMN club_id DROP NOT NULL`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS major_code text`;
+  await sql`CREATE INDEX IF NOT EXISTS event_proposals_major_idx ON event_proposals (major_code)`;
+  console.log("  ✅ event_proposals.major_code (club_id now nullable)");
+
+  // 77. events — auto-re-review for club/major president direct edits (never
+  // blocked, see PUT /api/admin/events/[id]). DEFAULT 'pending' preserves
+  // today's "president can always edit their owned event" behavior for every
+  // existing row; re-review only starts once a president actually edits
+  // (see events.detailsReviewStatus in schema.ts). Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS details_review_status text NOT NULL DEFAULT 'pending'`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS details_reviewed_by text`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS details_reviewed_at timestamptz`;
+  console.log("  ✅ events.details_review_status/reviewed_by/reviewed_at");
+
+  // 78. forms — approve-then-lock for club/major president feedback forms.
+  // DEFAULT 'approved' backfills every existing form (all staff-created to
+  // date) as already-approved/unaffected; a president's create/edit always
+  // resets this to 'pending' in app code (see forms.reviewStatus in
+  // schema.ts and POST/PATCH /api/admin/events/[id]/form). Additive/idempotent.
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS review_status text NOT NULL DEFAULT 'approved'`;
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS reviewed_by text`;
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS reviewed_at timestamptz`;
+  await sql`ALTER TABLE forms ADD COLUMN IF NOT EXISTS review_note text`;
+  console.log("  ✅ forms.review_status/reviewed_by/reviewed_at/review_note");
+
+  // 79. event_proposals — suggested participant-eligibility ACL, mirrors
+  // events.allowedRoles/allowedMajors/allowedClubs exactly (non-binding: staff
+  // reviews/adjusts these explicitly when creating the real event from an
+  // approved proposal). Additive/idempotent.
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS allowed_roles jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS allowed_majors jsonb`;
+  await sql`ALTER TABLE event_proposals ADD COLUMN IF NOT EXISTS allowed_clubs jsonb`;
+  console.log("  ✅ event_proposals.allowed_roles/allowed_majors/allowed_clubs");
+
+  // 80. events — pending edit proposal for club/major president edits to an
+  // EXISTING event. A president's edit is no longer applied live; it's held
+  // as JSON here until staff approve or discard it (the live columns above
+  // are never touched by a president's edit anymore). All three nullable,
+  // no default — null means "no pending edit". Additive/idempotent.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS pending_details_changes jsonb`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS pending_details_submitted_by text`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS pending_details_submitted_at timestamptz`;
+  console.log("  ✅ events.pending_details_changes/submitted_by/submitted_at");
+
+  // 81. Fix false-positive "President edited this event" badge. Step 77's
+  // DEFAULT 'pending' NOT NULL retroactively stamped every event that already
+  // existed at that point as 'pending', even though no president ever
+  // touched it (pending_details_changes stayed NULL for those rows) — the
+  // admin UI's badge only checks detailsReviewStatus === 'pending', so those
+  // events show a permanent, false review badge with nothing to review.
+  // Flip back to 'approved' ONLY where there is no actual pending diff, so a
+  // genuine unreviewed president edit is never silently approved. Idempotent:
+  // re-running only touches rows still in the false state.
+  await sql`
+    UPDATE events
+    SET details_review_status = 'approved'
+    WHERE details_review_status = 'pending'
+      AND pending_details_changes IS NULL
+  `;
+  console.log("  ✅ backfilled false-positive events.details_review_status back to 'approved'");
+
+  // 82. Scoped staff-title columns, replacing the single global users.position
+  // (which silently clobbered a student's title across club/major/SMO/ANUSMO
+  // contexts — see src/lib/positions.ts and src/lib/admin-access.ts).
+  // club_members.position is the per-club analogue; users.majorPosition,
+  // users.smoPosition, users.anusmoPosition are each independently scoped (a
+  // student can hold both smo and anusmo with a different title in each).
+  // users.position itself is left untouched (legacy, no longer written) — no
+  // automated backfill, since a student active in more than one context makes
+  // the old value ambiguous; see scripts/list-legacy-positions.mjs for a
+  // read-only report to drive manual reassignment after this runs. All four
+  // nullable, no default. Additive/idempotent.
+  await sql`ALTER TABLE club_members ADD COLUMN IF NOT EXISTS position text`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS major_position text`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS smo_position text`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS anusmo_position text`;
+  console.log("  ✅ club_members.position, users.major_position/smo_position/anusmo_position");
 
   console.log("✅ Migration complete!");
   await sql.end();

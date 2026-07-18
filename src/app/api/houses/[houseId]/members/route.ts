@@ -5,6 +5,7 @@ import { houseIdFromParam } from "@/lib/houses";
 import { COLORS, colorGroupOfHouseId } from "@/lib/faculties";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 export async function GET(
   _req: Request,
@@ -33,7 +34,8 @@ export async function GET(
       where: eq(users.id, session.user.id),
       columns: { houseId: true },
     });
-    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "");
+    const isAdmin = ["super_admin", "admin", "registration", "organizer"].includes(session.user.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.smoPosition, session.user.anusmoPosition);
     if (!isAdmin && colorGroupOfHouseId(viewer?.houseId) !== colorGroup) {
       return NextResponse.json(
         { error: "Forbidden: you can only view your own house" },

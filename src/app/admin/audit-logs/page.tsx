@@ -73,14 +73,14 @@ export default function AdminAuditLogsPage() {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table className="data-table">
+            <table className="data-table" style={{ minWidth: 960 }}>
               <thead>
                 <tr>
-                  <th>{t.thTimestamp}</th>
-                  <th>{t.thActor}</th>
-                  <th>{t.thAction}</th>
-                  <th>{t.thTarget}</th>
-                  <th>{t.thIpAddress}</th>
+                  <th style={{ whiteSpace: "nowrap" }}>{t.thTimestamp}</th>
+                  <th style={{ whiteSpace: "nowrap" }}>{t.thActor}</th>
+                  <th style={{ minWidth: 260 }}>{t.thAction}</th>
+                  <th style={{ minWidth: 280, whiteSpace: "nowrap" }}>{t.thTarget}</th>
+                  <th style={{ whiteSpace: "nowrap" }}>{t.thIpAddress}</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,7 +128,7 @@ export default function AdminAuditLogsPage() {
                         {log.action}
                       </span>
                     </td>
-                    <td style={{ whiteSpace: "nowrap" }}>
+                    <td style={{ minWidth: 280, maxWidth: 420, whiteSpace: "normal", wordBreak: "break-word" }}>
                       <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>
                         {log.target?.name ?? "—"}
                       </span>

@@ -17,6 +17,10 @@ export function AdminLayoutWrapper({
     image?: string | null;
     role?: string | null;
     roles?: string[] | null;
+    hasStaffPosition?: boolean;
+    hasClubPosition?: boolean;
+    smoPosition?: string | null;
+    anusmoPosition?: string | null;
   };
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -90,7 +94,13 @@ export function AdminLayoutWrapper({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <AdminNav roles={roles} />
+          <AdminNav
+            roles={roles}
+            hasStaffPosition={user.hasStaffPosition}
+            hasClubPosition={user.hasClubPosition}
+            smoPosition={user.smoPosition}
+            anusmoPosition={user.anusmoPosition}
+          />
         </div>
 
         <div className="mt-auto pt-6 border-t border-[var(--border-subtle)]">

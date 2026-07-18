@@ -78,6 +78,55 @@
       "when": 1782951859243,
       "tag": "0010_giant_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783877344446,
+      "tag": "0026_worried_mockingbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1783882531695,
+      "tag": "0027_slimy_nightcrawler",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1783888698137,
+      "tag": "0028_condemned_maginty",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784036962043,
+      "tag": "0029_rapid_rawhide_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784045334500,
+      "tag": "0030_backfill_details_review_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784289336851,
+      "tag": "0031_wakeful_orphan",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784350129591,
+      "tag": "0032_cloudy_anthem",
+      "breakpoints": true
     }
   ]
 }

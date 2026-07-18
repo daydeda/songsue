@@ -7,6 +7,8 @@ import { validateMove, applyMove, checkResult, OXState } from "@/lib/games/ox";
 import { finalizeGameInDb } from "@/lib/games/stats-helper";
 import { getClientIp, AuditService } from "@/modules/audit/audit.service";
 import { captureException } from "@/lib/logger";
+import { effectiveRoles } from "@/lib/admin-access";
+import { canAccessBattle } from "@/lib/battle-access";
 import { z } from "zod";
 
 const moveSchema = z.object({
@@ -22,6 +24,10 @@ export async function POST(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!canAccessBattle(effectiveRoles(session.user.role, session.user.roles))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { code } = await params;

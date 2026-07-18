@@ -5,6 +5,7 @@ import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 
 const MANAGING_ROLES = ["super_admin", "admin", "registration", "organizer"];
 
@@ -49,7 +50,8 @@ export async function PUT(
 ) {
   try {
     const session = await auth();
-    const isManaging = MANAGING_ROLES.includes(session?.user?.role || "");
+    const isManaging = MANAGING_ROLES.includes(session?.user?.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isManaging) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -125,7 +127,8 @@ export async function DELETE(
 ) {
   try {
     const session = await auth();
-    const isManaging = MANAGING_ROLES.includes(session?.user?.role || "");
+    const isManaging = MANAGING_ROLES.includes(session?.user?.role || "")
+      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isManaging) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

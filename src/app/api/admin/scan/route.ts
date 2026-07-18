@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { canEnterAdminAny, canGiveIndividualScoreAny, effectiveRoles } from "@/lib/admin-access";
+import { canEnterAdminAny, canGiveIndividualScoreAny, effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { ScannerService } from "@/modules/events/scanner.service";
 import { EventsService } from "@/modules/events/events.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { captureException } from "@/lib/logger";
+import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 // Scanning must stay responsive during the event even under load.
@@ -55,25 +56,37 @@ export async function POST(req: Request) {
     // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
     // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
     const roles = effectiveRoles(session.user.role, session.user.roles);
-    if (!canEnterAdminAny(roles)) {
+    const smoPosition = session.user.smoPosition;
+    const anusmoPosition = session.user.anusmoPosition;
+    if (!canEnterAdminAny(roles, session.user.hasStaffPosition)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
     const { qrToken, eventId, sessionId, action, medsCheckOption, score, reason } = scanSchema.parse(body);
 
-    // President roles may only scan events they OWN (ownerClubIds/ownerMajors),
-    // mirroring the /api/admin/events list + attendance/report scoping. Staff and
-    // smo unscoped.
-    const isStaff = roles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    // President roles, and a club/major-scoped registration position, may only
+    // scan events they OWN (ownerClubIds/ownerMajors), mirroring the
+    // /api/admin/events list + attendance/report scoping. Staff, smo, and a
+    // GLOBAL registration position (smo/anusmo + position="registration") are
+    // unscoped — scoping the club/major case is deliberately STRICTER than the
+    // old flat "registration" role would have been (every club's every event),
+    // not looser, so this is safe to enable without a bake-in period like the
+    // rest of this rollout.
+    const isStaff = roles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
+      || isGlobalRegistrationPosition(roles, smoPosition, anusmoPosition);
     const presidentTags = roles.filter((r) => ["club_president", "major_president"].includes(r));
-    if (!isStaff && presidentTags.length > 0) {
+    const hasRegistrationScope = !isStaff && presidentTags.length === 0
+      && (await EventScopeService.hasRegistrationScope(session.user.id!, roles, smoPosition, anusmoPosition));
+    if (!isStaff && (presidentTags.length > 0 || hasRegistrationScope)) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
         columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const scope = await EventScopeService.getPresidentScope(session.user.id!, roles);
-      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
+      const access = await EventScopeService.resolveEventAccess({
+        userId: session.user.id!, roles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+      });
+      const managed = access.allowed && (access.unscoped || (ev ? EventScopeService.isEventManagedByScope(ev, access.scope) : false));
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
@@ -159,6 +172,14 @@ export async function POST(req: Request) {
       );
     }
 
+    // "success"/"success_walk_in" cover both a confirmed check-in (which may award
+    // per-attendee points) and the "score" action — bust the cached leaderboard so
+    // it reflects the change on the next poll instead of waiting out the cache TTL.
+    // "pending_confirmation" hasn't mutated anything yet, so it's excluded.
+    if (result.status === "success" || result.status === "success_walk_in") {
+      revalidateLeaderboards();
+    }
+
     // Success outcomes (success, success_walk_in, pending_confirmation)
     return NextResponse.json(result);
   } catch (error) {
@@ -200,7 +221,7 @@ export async function GET(req: Request) {
     // primary role resolves to a non-entry role (e.g. anusmo) must still be able to
     // scan. canEnterAdminAny matches the admin-entry roles (incl. scanner-only).
     const roles = effectiveRoles(session.user.role, session.user.roles);
-    if (!canEnterAdminAny(roles)) {
+    if (!canEnterAdminAny(roles, session.user.hasStaffPosition)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

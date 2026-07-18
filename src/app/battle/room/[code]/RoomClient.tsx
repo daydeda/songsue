@@ -3,7 +3,7 @@
 import { StudentNav } from "@/components/layout/StudentNav";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Swords, Trophy, AlertTriangle, ArrowLeft, Loader2, Zap, Hourglass, LogOut, Award, RefreshCcw, RotateCcw, Info } from "lucide-react";
+import { Swords, Trophy, AlertTriangle, ArrowLeft, Loader2, Zap, Hourglass, LogOut, Award, RefreshCcw, RotateCcw, Info, PartyPopper, Frown, Handshake } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
 import dynamic from "next/dynamic";
@@ -106,22 +106,22 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         const res = await fetch(`/api/battle/rooms/${roomCodeUpper}`);
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Room not found");
+          throw new Error(data.error || t.battleErrorRoomNotFound);
         }
         const data = await res.json();
         setRoomId(data.roomId);
         setStatus(data.status);
         setHost(data.host);
         setGuest(data.guest);
-        
+
         // If guest has already joined or I am the guest, we will be in connecting
         isInitiator.current = user?.id === data.host.id;
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Could not fetch room details");
+        setError(err instanceof Error ? err.message : t.battleErrorFetchRoom);
       }
     }
     checkRoom();
-  }, [roomCodeUpper, user?.id]);
+  }, [roomCodeUpper, user?.id, t]);
 
   // Main game state polling (dynamic interval, pauses on hidden tabs)
   useEffect(() => {
@@ -490,7 +490,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to make move");
+        throw new Error(errData.error || t.battleErrorMakeMove);
       }
 
       const freshData = await res.json();
@@ -519,7 +519,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         }
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Move verification failed");
+      setError(err instanceof Error ? err.message : t.battleErrorMoveVerification);
       // Rollback on error
       router.refresh();
     } finally {
@@ -529,20 +529,18 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
   // Resign
   const handleResign = async () => {
-    const confirm = window.confirm(
-      isInitiator.current ? "ต้องการยอมแพ้เกมนี้ใช่หรือไม่?" : "Do you want to resign from the game?"
-    );
+    const confirm = window.confirm(t.battleResignConfirm);
     if (!confirm) return;
 
     try {
       const res = await fetch(`/api/battle/rooms/${roomCodeUpper}/resign`, { method: "POST" });
-      if (!res.ok) throw new Error("Resignation failed");
+      if (!res.ok) throw new Error(t.battleErrorResignFailed);
       const freshData = await res.json();
       setStatus(freshData.status);
       setWinnerId(freshData.winnerId);
       setFinishReason(freshData.finishReason);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Resignation failed");
+      setError(err instanceof Error ? err.message : t.battleErrorResignFailed);
     }
   };
 
@@ -559,10 +557,10 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
   const getHouseName = (houseId: string | null | undefined) => {
     switch (houseId?.toLowerCase()) {
-      case "red": return "Mom";
-      case "blue": return "Luang";
-      case "green": return "Makara";
-      case "yellow": return "To";
+      case "red": return t.houseMom;
+      case "blue": return t.houseLuang;
+      case "green": return t.houseMakara;
+      case "yellow": return t.houseTo;
       default: return "";
     }
   };
@@ -595,7 +593,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
         {/* Back link */}
         <div style={{ marginBottom: 20 }}>
           <Link href="/battle" style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", color: "var(--text-secondary)", fontWeight: 600, fontSize: 14 }}>
-            <ArrowLeft size={16} /> ออกจากเกม
+            <ArrowLeft size={16} /> {t.battleLeaveGame}
           </Link>
         </div>
 
@@ -612,9 +610,9 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
             <div style={{ display: "inline-flex", padding: 12, borderRadius: "50%", background: "var(--accent-glow)", color: "var(--accent-primary)", marginBottom: 20 }}>
               <Swords size={32} className="pulse" />
             </div>
-            <h1 style={{ fontSize: "1.75rem", fontWeight: 900, marginBottom: 12 }}>รอผู้ท้าชิงเข้าร่วม...</h1>
+            <h1 style={{ fontSize: "1.75rem", fontWeight: 900, marginBottom: 12 }}>{t.battleWaitingTitle}</h1>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", maxWidth: 400, margin: "0 auto 16px" }}>
-              ให้ฝ่ายตรงข้ามเปิดกล้องสแกน QR Code นี้ หรือพิมพ์รหัสห้อง 4 ตัวอักษรเพื่อเริ่มการเชื่อมต่อ WebRTC P2P
+              {t.battleWaitingDesc}
             </p>
             {/* P2P privacy note (US-FIX-20i AC-2) */}
             <p style={{ display: "flex", alignItems: "flex-start", gap: 6, color: "var(--text-muted)", fontSize: "0.8rem", maxWidth: 400, margin: "0 auto 32px", textAlign: "left" }}>
@@ -633,7 +631,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
             {/* Room Code */}
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>รหัสห้อง (ROOM CODE)</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>{t.battleRoomCodeLabel}</span>
               <div style={{ fontSize: "2.25rem", fontWeight: 900, color: "var(--accent-primary)", border: "2px dashed var(--accent-primary)", padding: "8px 24px", borderRadius: "var(--radius-md)", letterSpacing: "0.1em", background: "var(--accent-glow)" }}>
                 {roomCodeUpper}
               </div>
@@ -641,7 +639,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--text-secondary)", fontSize: 14, marginTop: 32 }}>
               <Loader2 size={16} className="spinner" />
-              <span>รอผู้ท้าชิง...</span>
+              <span>{t.battleWaitingOpponent}</span>
             </div>
           </div>
         )}
@@ -652,16 +650,16 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
             <div style={{ display: "inline-flex", padding: 16, borderRadius: "50%", background: "rgba(59, 130, 246, 0.1)", color: "#3b82f6", marginBottom: 20 }}>
               <Loader2 size={36} className="spinner" />
             </div>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 8 }}>กำลังตั้งค่าการเชื่อมต่อ P2P...</h1>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 8 }}>{t.battleConnectingTitle}</h1>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", maxWidth: 400, margin: "0 auto 16px" }}>
-              ระบบกำลังเชื่อมโยง SDP & ICE Candidates ระหว่างสองเบราว์เซอร์
+              {t.battleConnectingDesc}
             </p>
             <div style={{ fontSize: 13, padding: "8px 16px", borderRadius: 20, background: "var(--bg-elevated)", color: "var(--text-secondary)", display: "inline-block" }}>
-              สถานะ WebRTC: <span style={{ fontWeight: 700, color: "#3b82f6" }}>{webrtcState.toUpperCase()}</span>
+              {t.battleWebrtcStatusLabel} <span style={{ fontWeight: 700, color: "#3b82f6" }}>{webrtcState.toUpperCase()}</span>
             </div>
 
             <div style={{ marginTop: 24, fontSize: 12, color: "var(--text-muted)" }}>
-              * หากใช้เวลาเชื่อมต่อเกิน 10 วินาที ระบบจะสลับไปเป็นโหมด HTTP Polling อัตโนมัติ เพื่อให้เริ่มประลองได้โดยไม่สะดุด
+              {t.battleConnectingFallbackNote}
             </div>
           </div>
         )}
@@ -679,7 +677,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                   </div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: 14 }}>{host.nickname || host.name}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{getHouseName(host.houseId)} House</p>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{getHouseName(host.houseId)}</p>
                   </div>
                 </div>
               )}
@@ -693,7 +691,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                     <span>{timeLeft}s</span>
                   </div>
                 ) : (
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>จบเกม</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>{t.battleGameOverLabel}</span>
                 )}
               </div>
 
@@ -702,14 +700,14 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, justifyContent: "flex-end", textAlign: "right" }}>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: 14 }}>{guest.nickname || guest.name}</p>
-                    <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{getHouseName(guest.houseId)} House</p>
+                    <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{getHouseName(guest.houseId)}</p>
                   </div>
                   <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--bg-elevated)", border: `3px solid ${getHouseColor(guest.houseId)}`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, color: "#3b82f6", fontSize: 18 }}>
                     O
                   </div>
                 </div>
               ) : (
-                <div style={{ flex: 1, textAlign: "right", color: "var(--text-muted)", fontSize: 13 }}>Waiting...</div>
+                <div style={{ flex: 1, textAlign: "right", color: "var(--text-muted)", fontSize: 13 }}>{t.battleWaitingPlayerLabel}</div>
               )}
             </div>
 
@@ -733,10 +731,10 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                 {myTurn ? (
                   <>
                     <Zap size={16} className="pulse" />
-                    <span>เทิร์นของคุณแล้ว! วางหมากในช่องว่างบนกระดาน</span>
+                    <span>{t.battleYourTurnMsg}</span>
                   </>
                 ) : (
-                  <span>รอผู้ท้าชิงประลองหมาก...</span>
+                  <span>{t.battleOpponentTurnMsg}</span>
                 )}
               </div>
             )}
@@ -744,13 +742,13 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
             {/* CONNECTION TYPE OVERLAY indicator */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 8px 12px", fontSize: 12 }}>
               <span style={{ color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                ชนิดการเชื่อมต่อ: 
+                {t.battleConnTypeLabel}
                 <span style={{ fontWeight: 700, color: connType === "webrtc" ? "#22c55e" : "#f59e0b" }}>
-                  {connType === "webrtc" ? "P2P WebRTC (เรียลไทม์)" : "HTTP Polling (สำรอง)"}
+                  {connType === "webrtc" ? t.battleConnTypeWebrtc : t.battleConnTypePolling}
                 </span>
               </span>
               <span style={{ color: "var(--text-muted)" }}>
-                รหัสห้อง: <span style={{ fontWeight: 700 }}>{roomCodeUpper}</span>
+                {t.battleRoomCodeShortLabel} <span style={{ fontWeight: 700 }}>{roomCodeUpper}</span>
               </span>
             </div>
 
@@ -844,7 +842,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                   }}
                 >
                   <LogOut size={16} style={{ marginRight: 8 }} />
-                  ยอมแพ้ (Resign)
+                  {t.battleResignBtn}
                 </button>
               </div>
             )}
@@ -868,11 +866,11 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                   <div style={{ display: "inline-flex", padding: 16, borderRadius: "50%", background: "rgba(34, 197, 94, 0.1)", color: "#22c55e", marginBottom: 16 }}>
                     <Award size={48} className="pulse" />
                   </div>
-                  <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#22c55e", marginBottom: 8, letterSpacing: "-0.03em" }}>
-                    🎉 คุณชนะ!
+                  <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#22c55e", marginBottom: 8, letterSpacing: "-0.03em", display: "inline-flex", alignItems: "center", gap: 10 }}>
+                    <PartyPopper size={28} /> {t.battleWinTitle}
                   </h2>
                   <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-                    {finishReason === "forfeit" ? "คุณชนะเนื่องจากคู่แข่งหมดเวลาเดินหมาก (Forfeit)" : "คุณได้รับชัยชนะด้วยความเก๋าและไหวพริบ!"}
+                    {finishReason === "forfeit" ? t.battleWinReasonForfeit : t.battleWinReasonNormal}
                   </p>
                 </div>
               ) : (
@@ -880,11 +878,11 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                   <div style={{ display: "inline-flex", padding: 16, borderRadius: "50%", background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", marginBottom: 16 }}>
                     <AlertTriangle size={48} />
                   </div>
-                  <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#ef4444", marginBottom: 8, letterSpacing: "-0.03em" }}>
-                    😔 คุณแพ้!
+                  <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#ef4444", marginBottom: 8, letterSpacing: "-0.03em", display: "inline-flex", alignItems: "center", gap: 10 }}>
+                    <Frown size={28} /> {t.battleLoseTitle}
                   </h2>
                   <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-                    {finishReason === "forfeit" ? "คุณแพ้เนื่องจากใช้เวลาเดินหมากหมดลง (Forfeit)" : "คู่แข่งชนะเกมนี้ไปแล้ว ยอมรับความพ่ายแพ้เพื่อกลับมาสู้ใหม่"}
+                    {finishReason === "forfeit" ? t.battleLoseReasonForfeit : t.battleLoseReasonNormal}
                   </p>
                 </div>
               )
@@ -893,28 +891,28 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                 <div style={{ display: "inline-flex", padding: 16, borderRadius: "50%", background: "rgba(107, 114, 128, 0.1)", color: "var(--text-secondary)", marginBottom: 16 }}>
                   <RotateCcw size={48} />
                 </div>
-                <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "var(--text-secondary)", marginBottom: 8, letterSpacing: "-0.03em" }}>
-                  🤝 เสมอ!
+                <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "var(--text-secondary)", marginBottom: 8, letterSpacing: "-0.03em", display: "inline-flex", alignItems: "center", gap: 10 }}>
+                  <Handshake size={28} /> {t.battleDrawTitle}
                 </h2>
                 <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-                  กระดานเต็มโดยไม่มีฝ่ายใดทำ 3 หมากเรียงกันสำเร็จ
+                  {t.battleDrawDesc}
                 </p>
               </div>
             )}
 
             <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 32 }}>
               <Link href="/battle" className="btn" style={{ background: "var(--text-primary)", color: "#fff", height: 48, padding: "0 24px" }}>
-                กลับหน้าหลักอารีน่า
+                {t.battleBackToArenaHomeBtn}
               </Link>
-              <button 
-                className="btn" 
+              <button
+                className="btn"
                 onClick={() => {
                   cleanupWebRTC();
                   router.push("/battle/create");
-                }} 
+                }}
                 style={{ background: "var(--accent-primary)", color: "#fff", height: 48, padding: "0 24px" }}
               >
-                ประลองต่อ (Rematch)
+                {t.battleRematchBtn}
               </button>
             </div>
           </div>

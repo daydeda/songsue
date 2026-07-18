@@ -80,3 +80,48 @@ export async function awardIndividualPoints(
 
   return { newPoints, housePointsAdded };
 }
+
+/**
+ * Subtracts `points` individual points from one student's `users.points`. May
+ * push the balance negative (matching houses.points, which has never floored
+ * at 0) — a strikeout applied to a student already at/near 0 should actually
+ * cost them, not silently no-op. Runs INSIDE the caller's transaction. Unlike
+ * `awardIndividualPoints`, this never touches the 100-point milestone house bonus:
+ * a no-show penalty should not claw back a house reward the student already earned
+ * from a separate, real attendance.
+ *
+ * @returns the student's new total.
+ */
+export async function deductIndividualPoints(
+  tx: Tx,
+  params: {
+    studentId: string;
+    houseId: string | null;
+    eventId: string | null;
+    points: number;
+    /** Ledger reason for the deduction row, e.g. `Deducted 10 points from X for no-show at …`. */
+    reason: string;
+  }
+): Promise<{ newPoints: number }> {
+  const { studentId, houseId, eventId, points, reason } = params;
+  if (!points || points <= 0) return { newPoints: 0 };
+
+  const [result] = await tx
+    .update(users)
+    .set({ points: sql`COALESCE(${users.points}, 0) - ${points}` })
+    .where(eq(users.id, studentId))
+    .returning({ newPoints: users.points });
+
+  const newPoints = result?.newPoints ?? 0;
+
+  if (houseId) {
+    await tx.insert(scoreHistory).values({
+      houseId,
+      eventId: eventId || null,
+      delta: 0,
+      reason,
+    });
+  }
+
+  return { newPoints };
+}

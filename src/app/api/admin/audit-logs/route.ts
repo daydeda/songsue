@@ -30,7 +30,17 @@ export async function GET(request: NextRequest) {
       db.$count(auditLogs),
     ]);
 
-    return NextResponse.json({ logs, total, page, pageSize });
+    // targetId has no FK to users (schema.ts) — most rows are a real user's id
+    // and resolve via the `target` relation above, but bulk-roster-read rows
+    // (see src/lib/audit-target-list.ts) store a free-text "who was in the
+    // response" list instead. When the relation doesn't resolve, fall back to
+    // showing that raw text so the Target column isn't blank for those rows.
+    const shaped = logs.map((log) => ({
+      ...log,
+      target: log.target ?? (log.targetId ? { id: log.targetId, name: log.targetId, studentId: undefined } : null),
+    }));
+
+    return NextResponse.json({ logs: shaped, total, page, pageSize });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

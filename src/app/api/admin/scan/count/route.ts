@@ -5,7 +5,7 @@ import { and, eq, count } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { captureException } from "@/lib/logger";
-import { canEnterAdminAny, effectiveRoles } from "@/lib/admin-access";
+import { canEnterAdminAny, effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 
 // GET /api/admin/scan/count?eventId=<uuid>&sessionId=<uuid>
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     // Mirror the scan POST gate: every scanner-capable role may see the count.
     // Gate on the whole role set so a president whose primary role resolves to a
     // non-entry role (e.g. anusmo) isn't wrongly blocked.
-    if (!session?.user || !canEnterAdminAny(effectiveRoles(session.user.role, session.user.roles))) {
+    if (!session?.user || !canEnterAdminAny(effectiveRoles(session.user.role, session.user.roles), session.user.hasStaffPosition)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -40,23 +40,33 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Invalid sessionId" }, { status: 400 });
     }
 
-    // President roles may only read events they OWN (ownerClubIds/ownerMajors),
-    // mirroring the /api/admin/scan and attendance scoping. Staff and smo are
-    // unscoped.
+    // President roles, and a club/major-scoped registration position, may only
+    // read events they OWN (ownerClubIds/ownerMajors), mirroring the
+    // /api/admin/scan and attendance scoping. Staff and a GLOBAL registration
+    // position are unscoped.
     const myRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
+    const smoPosition = session.user.smoPosition;
+    const anusmoPosition = session.user.anusmoPosition;
     const isStaff = myRoles.some((r) =>
       ["super_admin", "admin", "registration", "organizer"].includes(r),
-    );
+    ) || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
     const presidentTags = myRoles.filter((r) =>
       ["club_president", "major_president"].includes(r),
     );
-    if (!isStaff && presidentTags.length > 0) {
+    // Bare smo (no president tag, not staff, no registration-scoped title) stays
+    // unscoped — only check registration-position scope when it might actually
+    // matter, so a bare-smo poll doesn't pay for a club_members lookup it never needs.
+    const hasRegistrationScope = !isStaff && presidentTags.length === 0
+      && (await EventScopeService.hasRegistrationScope(session.user.id!, myRoles, smoPosition, anusmoPosition));
+    if (!isStaff && (presidentTags.length > 0 || hasRegistrationScope)) {
       const ev = await db.query.events.findFirst({
         where: eq(events.id, eventId),
         columns: { ownerClubIds: true, ownerMajors: true },
       });
-      const scope = await EventScopeService.getPresidentScope(session.user.id!, myRoles);
-      const managed = ev ? EventScopeService.isEventManagedByScope(ev, scope) : false;
+      const access = await EventScopeService.resolveEventAccess({
+        userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,
+      });
+      const managed = access.allowed && (access.unscoped || (ev ? EventScopeService.isEventManagedByScope(ev, access.scope) : false));
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

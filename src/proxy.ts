@@ -48,8 +48,9 @@ export async function proxy(req: NextRequest) {
   // (else a president whose primary resolves to a non-entry role is wrongly blocked).
   const roles = effectiveRoles(user.role, user.roles);
   // Scanner-only roles (smo, club/major president) may enter /admin but are confined
-  // to the QR scanner.
-  const isScannerOnly = isScannerOnlyAny(roles);
+  // to the QR scanner. A registration position (users.smoPosition/anusmoPosition,
+  // distinct from role/roles) additively widens entry the same way — see admin-access.ts.
+  const isScannerOnly = isScannerOnlyAny(roles, user.hasStaffPosition, user.smoPosition, user.anusmoPosition);
 
   // Authenticated but profile not complete → force onboarding
   // (except for the /onboarding page itself, and API routes)
@@ -68,7 +69,7 @@ export async function proxy(req: NextRequest) {
 
   // Admin routes — block anyone who can't enter the admin area at all. (SMO is
   // allowed in but is confined to the scanner by the rule below.)
-  if (pathname.startsWith("/admin") && !canEnterAdminAny(roles)) {
+  if (pathname.startsWith("/admin") && !canEnterAdminAny(roles, user.hasStaffPosition)) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
@@ -82,6 +83,12 @@ export async function proxy(req: NextRequest) {
   ) {
     return NextResponse.redirect(new URL(SCANNER_HREF, req.url));
   }
+
+  // P2P Battle is staged for SMO/ANUSMO/Admin testing on prod — everyone else
+  // still reaches /battle (no redirect here), but src/app/battle/layout.tsx
+  // renders an "in testing" notice instead of the real UI, so a shared room
+  // link doesn't look like a broken link. API routes under /api/battle are the
+  // real gate (this proxy never runs on /api/*).
 
   // Organizer cannot access students list. Gate on the role SET (like the rest of
   // this proxy) so it can't desync from ROLE_PRIORITY: redirect only when the user

@@ -5,6 +5,8 @@ import { auth } from "@/auth";
 import { createInitialState } from "@/lib/games/ox";
 import { getClientIp, AuditService } from "@/modules/audit/audit.service";
 import { captureException } from "@/lib/logger";
+import { effectiveRoles } from "@/lib/admin-access";
+import { canAccessBattle } from "@/lib/battle-access";
 import { z } from "zod";
 
 const createRoomSchema = z.object({
@@ -24,6 +26,12 @@ export async function POST(req: Request) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Staged rollout: P2P Battle is SMO/ANUSMO/Admin-only for prod testing —
+    // this is the real gate, the proxy/layout redirects are UX only.
+    if (!canAccessBattle(effectiveRoles(session.user.role, session.user.roles))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const hostId = session.user.id;

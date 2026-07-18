@@ -1,13 +1,14 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { events, attendance, eventSessions } from "@/db/schema";
+import { events, attendance, eventSessions, eventProposals } from "@/db/schema";
+import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { sessionInputSchema } from "@/lib/event-schema";
+import { sessionInputSchema, sessionsHaveInvalidSpan } from "@/lib/event-schema";
 
 const eventSchema = z.object({
   title: z.string().min(1),
@@ -23,6 +24,9 @@ const eventSchema = z.object({
   imageUrl: z.string().optional().nullable(),
   imageUrls: z.array(z.string()).optional().nullable(),
   walkInsEnabled: z.boolean().optional(),
+  // Walk-ins-only: no pre-registration is accepted at all (see the register
+  // route). Implies walkInsEnabled — enforced below, not just trusted from the client.
+  walkInsOnly: z.boolean().optional(),
   quotaWalkIn: z.number().int().min(0).optional().nullable(),
   registrationMode: z.enum(["once", "per_session"]).optional(),
   // Multi-day sessions. Omitted/empty → one default session mirroring the
@@ -34,6 +38,9 @@ const eventSchema = z.object({
   quotaInternational: z.number().int().min(0).optional().nullable(),
   allowedRoles: z.array(z.string()).optional().nullable(),
   allowedMajors: z.array(z.string()).optional().nullable(),
+  // Club-based participant eligibility (SEPARATE from ownerClubIds below, which
+  // controls who MANAGES the event) — see events.allowedClubs in schema.ts.
+  allowedClubs: z.array(z.string().uuid()).optional().nullable(),
   // Restrict the event to the current first-year intake (id-prefix derived).
   firstYearOnly: z.boolean().optional(),
   // Which president role(s) MANAGE this event (club_president / major_president).
@@ -44,10 +51,30 @@ const eventSchema = z.object({
   // left empty it stays hidden from every president until staff assigns an owner.
   ownerClubIds: z.array(z.string().uuid()).optional().nullable(),
   ownerMajors: z.array(z.string()).optional().nullable(),
+  // Specific user IDs assigned as staff for THIS event (as opposed to the
+  // role-based fields above) — exempts their attendance from quota counts and
+  // no-show strikes. See events.staffUserIds in schema.ts.
+  staffUserIds: z.array(z.string()).optional().nullable(),
+  // Present when this event is being created FROM a club_president's proposal
+  // (see /api/admin/event-proposals). Purely a linkage marker — staff still
+  // fills in every field above explicitly; this just flips the source proposal
+  // to 'approved' in the same transaction. See the POST handler below.
+  proposalId: z.string().uuid().optional(),
 }).refine((d) => new Date(d.endTime) > new Date(d.startTime), {
   message: "endTime must be after startTime",
   path: ["endTime"],
-});
+}).refine(
+  (d) => !d.sessions || !sessionsHaveInvalidSpan(d.sessions),
+  {
+    // Only fires with an EXPLICIT per-day schedule (2+ session rows) where one
+    // row itself spans multiple days — a single session (incl. the implicit
+    // one mirroring startTime/endTime when no sessions are sent) may
+    // legitimately span several days, e.g. a multi-day camp with one combined
+    // check-in for the whole event. See sessionsHaveInvalidSpan.
+    message: "Each day in a per-day schedule must start and end on the same calendar day — add each additional day as its own session instead of stretching one across several dates",
+    path: ["endTime"],
+  },
+);
 
 // Per-event distinct-attendee counts. This GROUP BY over the whole (event-time-
 // growing) attendance table is the costly part of this endpoint, which is polled
@@ -62,6 +89,9 @@ const getAttendeeCounts = unstable_cache(
         count: sql<number>`count(distinct ${attendance.studentId})`,
       })
       .from(attendance)
+      // Staff rows don't count toward the displayed "X registered" headcount —
+      // mirrors the quota exemption in register/route.ts and scanner.service.ts.
+      .where(eq(attendance.isStaff, false))
       .groupBy(attendance.eventId),
   ["admin-events-attendee-counts"],
   { revalidate: 15, tags: ["admin-events-attendee-counts"] },
@@ -75,7 +105,11 @@ export async function GET() {
     // (read-only list) because the QR Scanner's event picker fetches this endpoint;
     // write handlers (POST/PUT/DELETE) deliberately exclude them.
     const myRoles = session?.user?.roles ?? (session?.user?.role ? [session.user.role] : []);
-    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
+    const smoPosition = session?.user?.smoPosition;
+    const anusmoPosition = session?.user?.anusmoPosition;
+    const isRoleAdmin = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer", "smo", "club_president", "major_president"].includes(r));
+    const isAdminRole = isRoleAdmin || (!!session?.user?.id
+      && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition)));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -84,14 +118,18 @@ export async function GET() {
     // events they own (ownerClubIds/ownerMajors match their own club membership /
     // major — see EventScopeService), not merely events tagged with the generic
     // managedByRoles president tag. This is independent of allowedRoles (participant
-    // visibility). Staff roles and smo are unscoped (see all). This drives both the
-    // admin events page AND the scanner's event picker, which share this endpoint.
-    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r));
+    // visibility). Staff roles, smo, and a global registration position (smo/anusmo
+    // + position="registration") are unscoped (see all). A club/major-scoped
+    // registration position (case 2/3) is scoped the same way presidents are. This
+    // drives both the admin events page AND the scanner's event picker, which
+    // share this endpoint.
+    const isStaff = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
+      || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
     const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
-    const scopeToPresidentTags = !isStaff && presidentTags.length > 0;
-    const presidentScope = scopeToPresidentTags
-      ? await EventScopeService.getPresidentScope(session.user.id!, myRoles)
-      : null;
+    const access = await EventScopeService.resolveEventAccess({
+      userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: isStaff, hasPresidentTag: presidentTags.length > 0,
+    });
+    const presidentScope = access.allowed && !access.unscoped ? access.scope : null;
 
     // Award runs deliberately do NOT live on this polled read path — they run on
     // their own isolated, advisory-locked endpoints (/api/admin/award-check and
@@ -100,6 +138,11 @@ export async function GET() {
 
     const list = await db.query.events.findMany({
       orderBy: (events, { desc }) => [desc(events.startTime)],
+      with: {
+        // Joined so the pending-changes review banner can show who submitted
+        // the edit, not just when — see events.pendingDetailsSubmittedBy.
+        pendingSubmitter: { columns: { id: true, name: true } },
+      },
     });
 
     // Attendee counts via a single grouped aggregate (DISTINCT students — a multi-day
@@ -142,7 +185,17 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "");
+    // effectiveRoles, not the singular session.user.role — otherwise a staffer
+    // whose PRIMARY role isn't in this admin set (e.g. a registration officer
+    // who is also tagged club_president elsewhere) gets wrongly rejected here,
+    // matching how PUT /api/admin/events/[id] already resolves roles.
+    const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
+    // Creating a brand-new event has no existing ownerClubIds/ownerMajors to scope
+    // against, so a club/major-scoped registration position (case 2/3) does NOT
+    // get this — only a GLOBAL registration position (smo/anusmo, case 1) does,
+    // matching the org-wide-capability split used elsewhere in this rollout.
+    const isAdminRole = myRoles.some((r) => ["super_admin", "admin", "registration", "organizer"].includes(r))
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -180,7 +233,10 @@ export async function POST(req: Request) {
           individualPointsAwarded: data.individualPointsAwarded ?? 0,
           imageUrl: cover,
           imageUrls: posters,
-          walkInsEnabled: data.walkInsEnabled ?? false,
+          // walkInsOnly implies walkInsEnabled regardless of what the client sent —
+          // an event that only accepts walk-ins obviously must accept walk-ins.
+          walkInsEnabled: data.walkInsOnly ? true : (data.walkInsEnabled ?? false),
+          walkInsOnly: data.walkInsOnly ?? false,
           quotaWalkIn: data.quotaWalkIn,
           registrationMode: data.registrationMode ?? "once",
           targetThai: data.targetThai ?? true,
@@ -189,10 +245,21 @@ export async function POST(req: Request) {
           quotaInternational: data.quotaInternational,
           allowedRoles: data.allowedRoles && data.allowedRoles.length > 0 ? data.allowedRoles : null,
           allowedMajors: data.allowedMajors && data.allowedMajors.length > 0 ? data.allowedMajors : null,
+          allowedClubs: data.allowedClubs && data.allowedClubs.length > 0 ? data.allowedClubs : null,
           firstYearOnly: data.firstYearOnly ?? false,
           managedByRoles: data.managedByRoles && data.managedByRoles.length > 0 ? data.managedByRoles : null,
           ownerClubIds: data.ownerClubIds && data.ownerClubIds.length > 0 ? data.ownerClubIds : null,
           ownerMajors: data.ownerMajors && data.ownerMajors.length > 0 ? data.ownerMajors : null,
+          staffUserIds: data.staffUserIds && data.staffUserIds.length > 0 ? data.staffUserIds : null,
+          // Staff is creating (and has therefore already reviewed) every field
+          // right now — unlike the DB column default of 'pending', which exists
+          // for the president-edit-triggers-re-review case (see PUT
+          // /api/admin/events/[id]). Without this, every brand-new event opened
+          // in the editor showed a "pending review" banner with nothing to
+          // review yet.
+          detailsReviewStatus: "approved",
+          detailsReviewedBy: session.user!.id!,
+          detailsReviewedAt: new Date(),
         })
         .returning();
 
@@ -213,6 +280,34 @@ export async function POST(req: Request) {
         action: `Created Event: ${created.title} (${sessionsInput.length} session${sessionsInput.length > 1 ? "s" : ""})`,
         ipAddress: ip,
       });
+
+      // Approving a club_president's proposal is a SIDE EFFECT of staff creating
+      // the real event from it, not a separate mutation — this rides the
+      // already-audited create transaction instead of adding a second
+      // privileged write path. The WHERE status='pending' guard means a
+      // proposal that was concurrently withdrawn/rejected/already-approved is
+      // simply left untouched; event creation still succeeds either way.
+      if (data.proposalId) {
+        const [linked] = await tx
+          .update(eventProposals)
+          .set({
+            status: "approved",
+            reviewedBy: session.user!.id!,
+            reviewedAt: new Date(),
+            resultingEventId: created.id,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(eventProposals.id, data.proposalId), eq(eventProposals.status, "pending")))
+          .returning({ id: eventProposals.id });
+
+        await AuditService.logActionInternal(tx, {
+          actorId: session.user!.id!,
+          action: linked
+            ? `Approved event proposal ${data.proposalId} -> created event ${created.id}`
+            : `Created event ${created.id} from proposal ${data.proposalId} (proposal was no longer pending; left untouched)`,
+          ipAddress: ip,
+        });
+      }
 
       return created;
     });

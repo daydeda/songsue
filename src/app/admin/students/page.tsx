@@ -4,13 +4,16 @@ import { useEffect, useState, useRef } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { useSession } from "next-auth/react";
 import { yearOfStudy } from "@/lib/event-access";
+import { effectiveRoles } from "@/lib/admin-access";
 import {
   Search, Users, ShieldAlert, Heart, Phone,
   X, ShieldCheck, User as UserIcon,
   Activity, GraduationCap, ChevronDown,
   Edit2, Trash2, Check, Home, Shield,
-  BookOpen, Briefcase, Award
+  BookOpen, Briefcase, Award, AlertTriangle, RotateCcw
 } from "lucide-react";
+import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
+import { POSITION_IDS, POSITION_I18N_KEY } from "@/lib/positions";
 
 type Student = {
   id: string;
@@ -19,12 +22,26 @@ type Student = {
   name: string;
   nickname?: string;
   major?: string;
+  // SMO/ANUSMO staff titles (src/lib/positions.ts), scoped independently — a
+  // student can hold both roles at once with a different title in each. Club
+  // titles live on club_members.position (edited in admin/clubs's Members
+  // modal) and major titles on users.majorPosition (admin/majors's Team
+  // panel) — neither is edited from this page.
+  smoPosition?: string | null;
+  anusmoPosition?: string | null;
+  email?: string;
   phone?: string;
+  // Both email and phone are only ever present on this Student object when the
+  // requester is super_admin — see GET /api/admin/students, which strips
+  // these columns for every other role (PDPA minimization).
+  contactChannels?: string | null;
   houseId?: string;
   house?: { id: string; name: string; color?: string } | null;
   profileCompleted?: boolean;
   role?: string;
   roles?: string[];
+  noShowCount?: number;
+  registrationBlocked?: boolean;
   chronicDiseases?: string | null;
   medicalHistory?: string | null;
   drugAllergies?: string | null;
@@ -203,9 +220,15 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
 export default function AdminStudentsDirectory() {
   const { data: session } = useSession();
   const userRole = session?.user?.role || "student";
+  const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
 
   const canViewMedicalLog = userRole === "super_admin";
-  const canEditOrDelete = userRole === "super_admin" || userRole === "admin";
+  // UI-only mirror of RESET_STRIKES_ROLES (src/lib/strikes.ts) — the server
+  // route (/api/admin/students/[id]/strikes/reset) independently re-checks it,
+  // this just decides whether to show the edit/delete/reset-strikes buttons.
+  // Uses the full role set (not just the primary role) so a user whose
+  // admin/super_admin grant isn't their primary role still sees the buttons.
+  const canEditOrDelete = myRoles.some((r) => (RESET_STRIKES_ROLES as readonly string[]).includes(r));
 
   const { t, lang } = useLanguage();
   const [students, setStudents] = useState<Student[]>([]);
@@ -218,6 +241,7 @@ export default function AdminStudentsDirectory() {
   const [sensitiveData, setSensitiveData] = useState<Student | null>(null);
   const [loadingSensitive, setLoadingSensitive] = useState(false);
   const [sensitiveError, setSensitiveError] = useState<string | null>(null);
+  const [resettingStrikesId, setResettingStrikesId] = useState<string | null>(null);
 
   const [houses, setHouses] = useState<{ id: string; name: string; faculty?: string; colorGroup?: string }[]>([]);
   const [clubs, setClubs] = useState<{ id: string; name: string; isArchived: boolean }[]>([]);
@@ -446,6 +470,24 @@ export default function AdminStudentsDirectory() {
       setSensitiveError("Failed to load health records.");
     } finally {
       setLoadingSensitive(false);
+    }
+  };
+
+  // Clears a student's no-show strikes/block (super_admin/admin only, see
+  // canEditOrDelete below — narrower RESET_STRIKES_ROLES enforced server-side
+  // at /api/admin/students/[id]/strikes/reset). Does not refund deducted
+  // points; that penalty already stands as served.
+  const resetStrikes = async (s: Student) => {
+    if (!confirm(`Reset ${s.name}'s no-show strikes (${s.noShowCount ?? 0}/3)${s.registrationBlocked ? " and unblock registration" : ""}?`)) return;
+    setResettingStrikesId(s.id);
+    try {
+      const res = await fetch(`/api/admin/students/${s.id}/strikes/reset`, { method: "POST" });
+      if (res.ok) refreshData();
+      else alert("Failed to reset strikes. Check permissions.");
+    } catch {
+      alert("Failed to reset strikes.");
+    } finally {
+      setResettingStrikesId(null);
     }
   };
 
@@ -678,6 +720,17 @@ export default function AdminStudentsDirectory() {
                             <span style={{ fontWeight: 800, fontSize: 12, textTransform: "uppercase" }}>Pending</span>
                           </div>
                         )}
+                        {(s.noShowCount ?? 0) > 0 && (
+                          <div
+                            style={{ display: "flex", alignItems: "center", gap: 6, color: (s.registrationBlocked || (s.noShowCount ?? 0) >= NO_SHOW_STRIKE_THRESHOLD - 1) ? "#ef4444" : "#f59e0b", marginTop: 6 }}
+                            title={s.registrationBlocked ? "Pre-registration blocked due to repeated no-shows" : "Has recorded no-show strike(s)"}
+                          >
+                            <AlertTriangle size={14} />
+                            <span style={{ fontWeight: 800, fontSize: 11, textTransform: "uppercase" }}>
+                              No-show {s.noShowCount}/{NO_SHOW_STRIKE_THRESHOLD}{s.registrationBlocked ? " · Blocked" : ""}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td style={{ textAlign: "right", paddingRight: 32 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
@@ -756,6 +809,26 @@ export default function AdminStudentsDirectory() {
                                 <ShieldAlert size={13} /> Medical Log
                               </button>
                             </>
+                          )}
+                          {canEditOrDelete && (s.noShowCount ?? 0) > 0 && (
+                            <button
+                              className="btn btn-sm"
+                              style={{
+                                borderRadius: 10,
+                                background: "rgba(245,158,11,0.08)",
+                                border: "1px solid rgba(245,158,11,0.15)",
+                                fontWeight: 700,
+                                color: "#f59e0b",
+                                fontSize: 12,
+                                gap: 6,
+                                opacity: resettingStrikesId === s.id ? 0.6 : 1,
+                              }}
+                              disabled={resettingStrikesId === s.id}
+                              onClick={() => resetStrikes(s)}
+                              title="Reset no-show strikes and unblock registration"
+                            >
+                              <RotateCcw size={13} /> Reset Strikes
+                            </button>
                           )}
                         </div>
                       </td>
@@ -1206,6 +1279,91 @@ export default function AdminStudentsDirectory() {
                   placeholder="e.g. SE, ANI, MMIT"
                 />
               </div>
+
+              {/* SMO/ANUSMO titles are scoped independently (src/lib/positions.ts) —
+                  a student holding both roles at once (the role checkboxes above
+                  are a multi-select, not mutually exclusive) gets one dropdown per
+                  role, each with its own title. Club titles are edited per-club in
+                  admin/clubs's Members modal; major titles in admin/majors's Team
+                  panel — neither lives on this page. */}
+              {(editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])).includes("smo") && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.positionSMO || "SMO Position"}</label>
+                  <CustomDropdown
+                    value={editingStudent.smoPosition || ""}
+                    options={[
+                      { value: "", label: "—", icon: <X size={16} className="text-muted" /> },
+                      ...POSITION_IDS.map(id => ({
+                        value: id,
+                        label: t[POSITION_I18N_KEY[id] as keyof typeof t] as string,
+                        icon: <Briefcase size={16} className="text-[var(--accent-primary)]" />,
+                      })),
+                    ]}
+                    onChange={val => setEditingStudent({ ...editingStudent, smoPosition: val || null })}
+                    icon={<Briefcase size={18} />}
+                  />
+                </div>
+              )}
+
+              {(editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])).includes("anusmo") && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.positionANUSMO || "ANUSMO Position"}</label>
+                  <CustomDropdown
+                    value={editingStudent.anusmoPosition || ""}
+                    options={[
+                      { value: "", label: "—", icon: <X size={16} className="text-muted" /> },
+                      ...POSITION_IDS.map(id => ({
+                        value: id,
+                        label: t[POSITION_I18N_KEY[id] as keyof typeof t] as string,
+                        icon: <Briefcase size={16} className="text-[var(--accent-primary)]" />,
+                      })),
+                    ]}
+                    onChange={val => setEditingStudent({ ...editingStudent, anusmoPosition: val || null })}
+                    icon={<Briefcase size={18} />}
+                  />
+                </div>
+              )}
+
+              {/* Contact info — email/phone/contactChannels are only ever
+                  present on editingStudent for a super_admin requester (the
+                  API strips them for everyone else), so this section is
+                  naturally invisible to admin/registration/organizer too. */}
+              {userRole === "super_admin" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 16, background: "var(--bg-elevated)", borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <ShieldAlert size={14} style={{ color: "#ef4444" }} />
+                    <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      {lang === "th" ? "ข้อมูลติดต่อ (Super Admin เท่านั้น)" : "Contact Info (Super Admin only)"}
+                    </span>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.email}</label>
+                    <input
+                      className="input"
+                      value={editingStudent.email || ""}
+                      disabled
+                      readOnly
+                      style={{ opacity: 0.7, cursor: "not-allowed" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.phone}</label>
+                    <input
+                      className="input"
+                      value={editingStudent.phone || ""}
+                      onChange={e => setEditingStudent({ ...editingStudent, phone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>{t.contactChannels}</label>
+                    <input
+                      className="input"
+                      value={editingStudent.contactChannels || ""}
+                      onChange={e => setEditingStudent({ ...editingStudent, contactChannels: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ flexShrink: 0, padding: "16px clamp(20px, 5vw, 32px)", background: "var(--bg-elevated)", borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button className="btn btn-ghost" onClick={() => setEditingStudent(null)}>{t.cancel}</button>

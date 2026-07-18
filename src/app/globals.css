@@ -219,10 +219,18 @@ select.input { cursor: pointer; }
    Safari still refuses to shrink the control to the field's width (see the
    datetime-local note above), it scrolls within its own field instead of
    blowing out the grid row or the page. Scoped via :has() so ordinary text/
-   number/select fields elsewhere don't get their focus-glow box-shadow clipped. */
-.field:has(input[type="datetime-local"]),
-.field:has(input[type="date"]),
-.field:has(input[type="time"]) {
+   number/select fields elsewhere don't get their focus-glow box-shadow clipped.
+   Must be `> input` (direct child only): a `.field` that merely CONTAINS a
+   nested date/time field several levels down (e.g. a multi-day sessions list
+   wrapper, where each day's own `.field` holds the real input) would otherwise
+   match too. Matching there sets overflow-x, and per the CSS overflow spec a
+   non-"visible" overflow-x forces overflow-y to compute as "auto" as well —
+   which for a flex column item flips min-height from `auto` to `0`, letting
+   the whole section collapse to zero height and vanish (reported as "the
+   +Add day button disappears and nothing happens"). */
+.field:has(> input[type="datetime-local"]),
+.field:has(> input[type="date"]),
+.field:has(> input[type="time"]) {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }

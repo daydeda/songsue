@@ -34,6 +34,7 @@ import {
   Settings,
   X,
   AlertCircle,
+  AlertTriangle,
   Megaphone,
   ChevronLeft,
   ChevronRight,
@@ -43,7 +44,8 @@ import {
   Users,
   DoorOpen,
   Share2,
-  Check
+  Check,
+  CalendarX2
 } from "lucide-react";
 import { parseRichText } from "@/lib/rich-text";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -52,6 +54,7 @@ import { NotificationModal } from "@/components/NotificationModal";
 import { FormsDueBanner } from "@/components/FormsDueBanner";
 import { useNotifications } from "@/lib/useNotifications";
 import { useRouter } from "next/navigation";
+import { NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 
 // House mascot logos (background removed). Keyed by both the house id (color) and
 // its name so it resolves whichever identifier the API returns.
@@ -80,6 +83,8 @@ type Event = {
   // Whether the event accepts walk-ins (unregistered students scanned in at the
   // door), and the optional extra walk-in seat sub-cap on top of `quota`.
   walkInsEnabled?: boolean;
+  // Walk-ins-only: no pre-registration accepted, see api/events/[id]/register.
+  walkInsOnly?: boolean;
   quotaWalkIn?: number | null;
   isRegistered?: boolean;
   attendanceStatus?: string | null;
@@ -419,6 +424,24 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // Admin-editable dashboard announcement. null = not loaded yet or fetch failed
   // → fall back to the built-in text so the banner never disappears unexpectedly.
   const [announcement, setAnnouncement] = useState<{ body: string; enabled: boolean } | null>(null);
+  // No-show strike-out (US-STRI-15c): the student's own strike count / block
+  // state, polled alongside events/houses so the badge and the blocked notice
+  // stay live if staff apply or reset strikes while the dashboard is open.
+  const [strikes, setStrikes] = useState<{ noShowCount: number; registrationBlocked: boolean } | null>(null);
+  // Which events caused the strikes currently on the account (US-STRI-15c),
+  // each carrying its OWN appeal (if any) — appeals are per-event, not one
+  // blanket appeal for the account, so a student with 2 strikes can appeal
+  // just one of them and leave the other untouched.
+  type NoShowEvent = {
+    id: string;
+    title: string;
+    endTime: string;
+    appeal: { id: string; status: "pending" | "approved" | "rejected"; message: string; reviewNote: string | null; createdAt: string } | null;
+  };
+  const [noShowEvents, setNoShowEvents] = useState<NoShowEvent[]>([]);
+  const [appealModal, setAppealModal] = useState<{ eventId: string; eventTitle: string } | null>(null);
+  const [appealMessage, setAppealMessage] = useState("");
+  const [submittingAppeal, setSubmittingAppeal] = useState(false);
   // Fullscreen poster viewer — carries the whole poster list + which one was tapped
   // so the user can keep swiping at full size.
   const [previewImage, setPreviewImage] = useState<{ posters: string[]; index: number } | null>(null);
@@ -500,6 +523,24 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       .then((d) => { setAnnouncement(d && typeof d.body === "string" ? d : null); })
       .catch(() => {});
 
+  const fetchStrikes = (signal?: AbortSignal) =>
+    fetch("/api/profile", { signal })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && typeof d.noShowCount === "number") {
+          setStrikes({ noShowCount: d.noShowCount, registrationBlocked: !!d.registrationBlocked });
+        }
+      })
+      .catch(() => {});
+
+  const fetchAppeal = (signal?: AbortSignal) =>
+    fetch("/api/appeals", { signal })
+      .then((r) => r.json())
+      .then((d) => {
+        setNoShowEvents(Array.isArray(d?.noShowEvents) ? d.noShowEvents : []);
+      })
+      .catch(() => {});
+
   // Live check-in / score toasts. The student's primary scan surface is the
   // Digital ID page (immediate modal); here on the dashboard a gentle toast on
   // the same 60s cadence catches anything that happened while they were
@@ -515,7 +556,35 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // Vercel free-tier invocation budget. Polling also avoids the Supabase free-tier
   // 200 concurrent-connection cap and pauses while the tab is hidden. Return the
   // combined promise so the poller awaits both and never stacks requests.
-  usePolling((signal) => Promise.all([fetchEvents(signal), fetchHouses(signal), fetchAnnouncement(signal)]), 60000);
+  usePolling((signal) => Promise.all([fetchEvents(signal), fetchHouses(signal), fetchAnnouncement(signal), fetchStrikes(signal), fetchAppeal(signal)]), 60000);
+
+  const submitAppeal = async () => {
+    if (!appealModal) return;
+    setSubmittingAppeal(true);
+    try {
+      const res = await fetch("/api/appeals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: appealModal.eventId, message: appealMessage.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setErrorModal({
+          show: true,
+          title: t.registrationFailed,
+          message: res.status === 409 ? t.appealAlreadyPendingMessage : (d?.error || t.appealSubmitFailedMessage),
+        });
+        return;
+      }
+      setAppealModal(null);
+      setAppealMessage("");
+      fetchAppeal();
+    } catch {
+      setErrorModal({ show: true, title: t.registrationFailed, message: t.appealSubmitFailedMessage });
+    } finally {
+      setSubmittingAppeal(false);
+    }
+  };
 
   const handleRegister = async (eventId: string, registered: boolean) => {
     if (!session?.user) {
@@ -576,7 +645,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         }
       } else {
         const errorData = await res.json().catch(() => ({}));
-        const errorMsg = errorData.error || t.registrationFailed;
+        const errorMsg = errorData.registrationBlocked
+          ? t.registrationBlockedMessage.replace("{n}", String(NO_SHOW_STRIKE_THRESHOLD))
+          : errorData.error || t.registrationFailed;
         setErrorModal({
           show: true,
           title: t.registrationFailed,
@@ -741,9 +812,12 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   const quotaWalkInRows = (ev: Event) => {
     const allowed = !!ev.walkInsEnabled;
     const registered = ev.registeredCount ?? 0;
+    // A quota of 0 means unlimited (mirrors the register route's own
+    // `quota !== null && quota > 0` convention) — treat it exactly like null.
+    const hasQuota = ev.quota != null && ev.quota > 0;
     // "Full" only means something when a quota is set. When full, colour the count
     // red so a student can see at a glance the seats are gone.
-    const isFull = ev.quota != null && registered >= ev.quota;
+    const isFull = hasQuota && registered >= ev.quota!;
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
@@ -752,7 +826,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
           </div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>
             <span style={{ fontWeight: 800, color: isFull ? "#ef4444" : "var(--text-primary)" }}>
-              {ev.quota != null ? `${registered} / ${ev.quota}` : registered}
+              {hasQuota ? `${registered} / ${ev.quota}` : registered}
             </span>
             <span style={{ color: "var(--text-muted)", fontWeight: 600 }}> {t.registered}</span>
           </div>
@@ -762,10 +836,15 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             <DoorOpen size={16} />
           </div>
           <div style={{ fontSize: 13, color: allowed ? "#10b981" : "var(--text-muted)", fontWeight: 700 }}>
-            {allowed ? t.walkInsAllowedLabel : t.walkInsDisabledLabel}
-            {allowed && ev.quotaWalkIn != null ? ` (${ev.quotaWalkIn})` : ""}
+            {ev.walkInsOnly ? t.walkInsOnlyBadge : allowed ? t.walkInsAllowedLabel : t.walkInsDisabledLabel}
+            {allowed && !ev.walkInsOnly && ev.quotaWalkIn != null ? ` (${ev.quotaWalkIn})` : ""}
           </div>
         </div>
+        {ev.walkInsOnly && (
+          <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, lineHeight: 1.5, marginTop: -4 }}>
+            {t.walkInsOnlyNotice}
+          </p>
+        )}
       </>
     );
   };
@@ -823,6 +902,164 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
         {/* Outstanding forms (pre-test / post-test / feedback) — persists until done. */}
         <FormsDueBanner userId={session?.user?.id} />
+
+        {/* No-show strike-out (US-STRI-15c): visible from strike 1, escalates to a
+            hard block notice at the threshold. registrationBlocked also surfaces at
+            the point of attempting to register (server 403), but this banner warns
+            proactively so a student isn't surprised mid-registration. */}
+        {strikes && strikes.noShowCount > 0 && (() => {
+          // Danger (red) from one strike before the block onward, not just once
+          // actually blocked — a student on the last warning should already feel
+          // the urgency, not be soothed by amber until it's too late.
+          const isDanger = strikes.registrationBlocked || strikes.noShowCount >= NO_SHOW_STRIKE_THRESHOLD - 1;
+          return (
+            <div
+              className="alert"
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 14,
+                borderRadius: "var(--radius-lg)",
+                padding: 20,
+                background: isDanger ? "rgba(239,68,68,0.06)" : "rgba(245,158,11,0.06)",
+                border: `1px solid ${isDanger ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)"}`,
+                minWidth: 0,
+              }}
+            >
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "var(--bg-surface)", padding: 8, borderRadius: 12,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                color: isDanger ? "#ef4444" : "#f59e0b",
+                width: 40, height: 40, flexShrink: 0,
+              }}>
+                <AlertTriangle size={22} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontWeight: 800, fontSize: 15, color: isDanger ? "#ef4444" : "#f59e0b" }}>
+                  {lang === "th"
+                    ? `ไม่มาเช็คอิน: ${strikes.noShowCount}/${NO_SHOW_STRIKE_THRESHOLD}`
+                    : lang === "cn"
+                    ? `缺席次数：${strikes.noShowCount}/${NO_SHOW_STRIKE_THRESHOLD}`
+                    : lang === "mm"
+                    ? `မလာသူ: ${strikes.noShowCount}/${NO_SHOW_STRIKE_THRESHOLD}`
+                    : `No-show strikes: ${strikes.noShowCount}/${NO_SHOW_STRIKE_THRESHOLD}`}
+                </p>
+                <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: 2 }}>
+                  {strikes.registrationBlocked
+                    ? t.registrationBlockedMessage.replace("{n}", String(NO_SHOW_STRIKE_THRESHOLD))
+                    : (lang === "th"
+                        ? `หากลงทะเบียนแล้วไม่มาเช็คอินครบ ${NO_SHOW_STRIKE_THRESHOLD} ครั้ง คุณจะถูกระงับสิทธิ์ลงทะเบียนล่วงหน้าชั่วคราว`
+                        : lang === "cn"
+                        ? `如果您连续${NO_SHOW_STRIKE_THRESHOLD}次注册活动但未签到，您的预注册权限将被暂时封锁。`
+                        : lang === "mm"
+                        ? `${NO_SHOW_STRIKE_THRESHOLD} ကြိမ်ပြည့်လျှင် ကြိုတင်စာရင်းသွင်းခြင်းကို ယာယီပိတ်ပါမည်။`
+                        : `Registering but not checking in ${NO_SHOW_STRIKE_THRESHOLD} times will temporarily block your pre-registration.`)}
+                </p>
+                {/* Which event(s) triggered these strikes — each gets its OWN appeal
+                    action (US-STRI-15c: per-event appeals). A student with 2 strikes
+                    can appeal just one and leave the other untouched. */}
+                {noShowEvents.length > 0 && (
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <p style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {t.noShowStrikeEventsLabel}
+                    </p>
+                    {noShowEvents.map((e) => (
+                      <div
+                        key={e.id}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                          background: "var(--bg-surface)", borderRadius: 10, padding: "8px 12px",
+                          minWidth: 0,
+                        }}
+                      >
+                        <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1 }}>
+                          <CalendarX2 size={13} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{e.title}</span>
+                        </span>
+                        {e.appeal?.status === "pending" ? (
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b", flexShrink: 0 }}>{t.appealStatusPendingBadge}</span>
+                        ) : (
+                          <button
+                            onClick={() => setAppealModal({ eventId: e.id, eventTitle: e.title })}
+                            className="btn btn-primary btn-sm"
+                            style={{ fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 8, flexShrink: 0 }}
+                          >
+                            {t.appealButtonLabel}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {noShowEvents
+                      .filter((e) => e.appeal?.status === "rejected")
+                      .map((e) => (
+                        <p key={`${e.id}-rejected`} style={{ fontSize: 12, color: "#ef4444", fontWeight: 700 }}>
+                          {t.appealRejectedNotice} ({e.title})
+                          {e.appeal?.reviewNote ? ` ${t.appealStaffNoteLabel} ${e.appeal.reviewNote}` : ""}
+                        </p>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* No-show appeal submission modal — kept outside the banner so it isn't
+            unmounted if strikes/appeal state changes mid-write. */}
+        {appealModal && (
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+            onClick={() => !submittingAppeal && setAppealModal(null)}
+          >
+            <div
+              style={{ background: "var(--bg-surface)", borderRadius: "var(--radius-lg)", padding: 24, maxWidth: 480, width: "100%" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{t.appealModalTitle}</p>
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 6, overflowWrap: "anywhere" }}>
+                {t.appealModalEventLabel} {appealModal.eventTitle}
+              </p>
+              <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 14 }}>{t.appealModalDescription}</p>
+              <textarea
+                value={appealMessage}
+                onChange={(e) => setAppealMessage(e.target.value)}
+                rows={5}
+                maxLength={1000}
+                placeholder={t.appealMessagePlaceholder}
+                style={{
+                  width: "100%",
+                  padding: 14,
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border-subtle)",
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                  background: "var(--bg-base)",
+                }}
+              />
+              <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                <button
+                  onClick={() => setAppealModal(null)}
+                  disabled={submittingAppeal}
+                  className="btn btn-ghost"
+                  style={{ flex: 1 }}
+                >
+                  {t.appealCancelButton}
+                </button>
+                <button
+                  onClick={submitAppeal}
+                  disabled={submittingAppeal || appealMessage.trim().length < 10}
+                  className="btn btn-primary"
+                  style={{ flex: 2 }}
+                >
+                  {submittingAppeal ? <span className="spinner" style={{ width: 16, height: 16 }} /> : t.appealSubmitButton}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8 items-start">
@@ -1200,9 +1437,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
                             const notYetOpen = !e.isRegistered && !!regOpenAt && nowTs < regOpenAt;
                             const regClosed = !e.isRegistered && regWindowClosed;
-                            const windowBlocked = notYetOpen || regClosed;
+                            const walkInsOnlyMode = !e.isRegistered && !!e.walkInsOnly;
+                            const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;
                             const isDisabled = (e.isRegistered && !canCancel) || windowBlocked || registeringId === e.id;
-                            const greyed = regClosed || (e.isRegistered && !canCancel);
+                            const greyed = regClosed || walkInsOnlyMode || (e.isRegistered && !canCancel);
 
                             return (
                               <button
@@ -1238,6 +1476,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                                   <><Clock size={18} /> {t.registrationNotOpen}</>
                                 ) : regClosed ? (
                                   <><AlertCircle size={18} /> {t.registrationClosed}</>
+                                ) : walkInsOnlyMode ? (
+                                  <><DoorOpen size={18} /> {t.walkInsOnlyBadge}</>
                                 ) : (
                                   t.registerNow || "Register Now"
                                 )}
@@ -1868,8 +2108,9 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
         const notYetOpen = !liveEvent.isRegistered && !!regOpenAt && nowTs < regOpenAt;
         const regClosed = !liveEvent.isRegistered && regWindowClosed;
-        const windowBlocked = notYetOpen || regClosed;
-        const greyed = regClosed || (liveEvent.isRegistered && !canCancel);
+        const walkInsOnlyMode = !liveEvent.isRegistered && !!liveEvent.walkInsOnly;
+        const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;
+        const greyed = regClosed || walkInsOnlyMode || (liveEvent.isRegistered && !canCancel);
         const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
         const previewPosters = getPosters(liveEvent);
 
@@ -2229,6 +2470,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     <><Clock size={18} /> {t.registrationNotOpen}</>
                   ) : regClosed ? (
                     <><AlertCircle size={18} /> {t.registrationClosed}</>
+                  ) : walkInsOnlyMode ? (
+                    <><DoorOpen size={18} /> {t.walkInsOnlyBadge}</>
                   ) : (
                     t.registerNow || "Register Now"
                   )}

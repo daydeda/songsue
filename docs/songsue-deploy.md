@@ -142,20 +142,34 @@ since each has its own env vars.
 - Confirm `https://songsue.camt.cmu.ac.th` resolves through the CAMT proxy to
   `10781` (IT-mediated, same as step 0).
 
-## Updating later (optional auto-deploy)
+## Updating later
 
-Same mechanism as activecamt, but must use a **separate** webhook/secret so
-songsue's CI can never touch activecamt's stack:
-1. After deploying (step 3) with the stack's webhook enabled, copy its webhook
-   URL from Portainer.
+**The webhook alone is NOT reliable auto-deploy on this Portainer install.**
+In the stack's *Editor → GitOps updates* panel, `Re-pull image` and `Force
+redeployment` are both greyed out behind a **"Business Feature"** badge — this
+dev2 instance is Community Edition, which doesn't license that toggle.
+Without it, firing the webhook redeploys the stack's git-defined spec but
+doesn't force Swarm to actually pull a fresh `ghcr.io/daydeda/songsue:latest`
+from the registry — it can end up just re-using whatever image is already
+cached under that tag on the node, i.e. stale code, silently.
+
+**Reliable path (confirmed free-tier, from the dev2 PDF):** *Stacks →
+songsue → Editor → "Update the stack" → toggle "Pull latest image version"
+(this one is NOT gated) → Update.* Do this by hand after every merge until/
+unless you've actually verified the webhook path re-pulls in practice.
+
+Optional, in addition (harmless, but don't rely on it alone): enable
+`GitOps updates` → `Webhook` on the stack and copy its URL — must use a
+**separate** webhook/secret so songsue's CI can never touch activecamt's
+stack:
+1. Copy the webhook URL from Portainer (the "Copy link" button next to it).
 2. Add it as a GitHub repo secret on `daydeda/songsue` — name it something
    distinct like `SONGSUE_PORTAINER_WEBHOOK_URL` (not
    `PORTAINER_WEBHOOK_URL`, which is reserved for activecamt's own workflow in
    the other repo). `docker-publish.yml` doesn't call this yet; wiring the
-   final "notify Portainer" step is a small follow-up once you want it.
-
-Manual fallback: *Stacks → songsue → Editor → Update the stack → enable "Pull
-latest image version" → Update* — exactly the update flow in the dev2 PDF.
+   final "notify Portainer" step is a small follow-up if you want it, but
+   given the Re-pull gating above, treat it as "redeploy the spec" only, not
+   "guarantees fresh code."
 
 ## Backups (optional, deferred)
 

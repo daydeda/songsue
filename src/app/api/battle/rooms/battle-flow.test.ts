@@ -69,6 +69,7 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
         nickname text,
         faculty text,
         major text,
+        position text,
         image_transform jsonb,
         religion text,
         phone text UNIQUE,

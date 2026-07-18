@@ -130,14 +130,20 @@ bucket migration, unlike the activecamt cutover. Nothing else to import.
 
 ## 5. Promote your admin account
 
-Sign in once at `https://songsue.camt.cmu.ac.th` via Google, then in the
-`songsue_web` console:
-```sh
-CONFIRM=yes npx tsx elevate-admin.ts <your-email>
-```
-Note `SUPER_ADMIN_EMAILS` (if set as a stack env var) also auto-promotes on
-every session refresh — same mechanism as activecamt, independent per stack
-since each has its own env vars.
+Two separate mechanisms, pick one depending on the role you need:
+
+- **`admin`:** sign in once at `https://songsue.camt.cmu.ac.th` via Google,
+  then in the `songsue_web` console:
+  ```sh
+  CONFIRM=yes npx tsx elevate-admin.ts <your-email>
+  ```
+  (`elevate-admin.ts` only ever sets `role: "admin"` — there's no CLI path to
+  `super_admin`.)
+- **`super_admin`:** set `SUPER_ADMIN_EMAILS` (comma-separated) as a stack env
+  var in Portainer (already wired into `docker-stack.songsue.yml`) and
+  redeploy. `src/auth.ts` force-promotes any matching email to `super_admin`
+  on every sign-in/session refresh — no script needed, independent per stack
+  since each has its own env vars, same mechanism as activecamt.
 
 ## 6. Verify before announcing
 
@@ -156,32 +162,32 @@ since each has its own env vars.
 
 ## Updating later
 
-**The webhook alone is NOT reliable auto-deploy on this Portainer install.**
-In the stack's *Editor → GitOps updates* panel, `Re-pull image` and `Force
-redeployment` are both greyed out behind a **"Business Feature"** badge — this
-dev2 instance is Community Edition, which doesn't license that toggle.
-Without it, firing the webhook redeploys the stack's git-defined spec but
-doesn't force Swarm to actually pull a fresh `ghcr.io/daydeda/songsue:latest`
-from the registry — it can end up just re-using whatever image is already
-cached under that tag on the node, i.e. stale code, silently.
+**Auto-deploy is now wired** (`docker-publish.yml`'s "Trigger Portainer
+redeploy" step) — same pattern `smocamt-website`'s own CI already uses in
+real production, copied here with a **separate** secret/webhook so songsue's
+CI can never touch activecamt's stack. One-time setup:
+1. Portainer → Stacks → songsue → Editor → **GitOps updates** → enable
+   **Webhook** → copy its URL.
+2. Add it as a GitHub repo secret on `daydeda/songsue` named
+   `SONGSUE_PORTAINER_WEBHOOK_URL` (not `PORTAINER_WEBHOOK_URL`, which is
+   reserved for activecamt's own workflow in the other repo). Until this
+   secret exists the CI step just no-ops — builds never fail for a missing
+   webhook.
 
-**Reliable path (confirmed free-tier, from the dev2 PDF):** *Stacks →
-songsue → Editor → "Update the stack" → toggle "Pull latest image version"
-(this one is NOT gated) → Update.* Do this by hand after every merge until/
-unless you've actually verified the webhook path re-pulls in practice.
+**Caveat — unconfirmed on this specific dev2 instance:** in that same GitOps
+updates panel, `Re-pull image` and `Force redeployment` are greyed out behind
+a **"Business Feature"** badge (this dev2 install is Community Edition). It's
+untested whether firing the plain webhook still forces Swarm to pull a fresh
+`ghcr.io/daydeda/songsue:latest`, or just redeploys the git-defined spec while
+silently reusing whatever image is already cached under that tag — i.e.
+possibly stale code with no error. **Verify after the first real push:**
+check the `songsue_web` container's start time in Portainer right after CI
+finishes; if it didn't restart (or restarted but the change isn't visible),
+the webhook isn't actually re-pulling and you're back to the manual fallback.
 
-Optional, in addition (harmless, but don't rely on it alone): enable
-`GitOps updates` → `Webhook` on the stack and copy its URL — must use a
-**separate** webhook/secret so songsue's CI can never touch activecamt's
-stack:
-1. Copy the webhook URL from Portainer (the "Copy link" button next to it).
-2. Add it as a GitHub repo secret on `daydeda/songsue` — name it something
-   distinct like `SONGSUE_PORTAINER_WEBHOOK_URL` (not
-   `PORTAINER_WEBHOOK_URL`, which is reserved for activecamt's own workflow in
-   the other repo). `docker-publish.yml` doesn't call this yet; wiring the
-   final "notify Portainer" step is a small follow-up if you want it, but
-   given the Re-pull gating above, treat it as "redeploy the spec" only, not
-   "guarantees fresh code."
+**Reliable manual fallback (confirmed free-tier, from the dev2 PDF):** *Stacks
+→ songsue → Editor → "Update the stack" → toggle "Pull latest image version"
+(this one is NOT gated) → Update.*
 
 ## Backups (optional, deferred)
 

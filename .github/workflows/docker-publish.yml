@@ -49,7 +49,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # No Portainer auto-deploy step here on purpose: this repo doesn't own the
-      # production stack, so its CI must never be able to trigger a redeploy of
-      # it. If a standalone songsue deployment is needed later, wire a redeploy
-      # step to that deployment's own webhook — not the smocamt-website one.
+      # Auto-deploy: tell songsue's OWN Portainer stack to re-pull and redeploy.
+      # Deliberately a DIFFERENT secret name/value than smocamt-website's
+      # PORTAINER_WEBHOOK_URL (that one points at the real activecamt
+      # production stack) — this repo's CI must never be able to trigger a
+      # redeploy of that stack. Runs only once SONGSUE_PORTAINER_WEBHOOK_URL is
+      # set as a repo secret (until then this step no-ops, so the build never
+      # fails for a missing webhook). Get the URL from: Portainer → Stacks →
+      # songsue → Editor → GitOps updates → enable "Webhook" → copy link.
+      #
+      # Caveat (see docs/songsue-deploy.md "Updating later"): on this dev2
+      # instance, the GitOps panel's "Re-pull image"/"Force redeployment"
+      # toggles are greyed out behind a Portainer Business Edition badge. It's
+      # unconfirmed whether hitting this webhook alone actually forces a fresh
+      # pull of the `:latest` tag vs. silently redeploying stale cached image —
+      # verify after the first real push (check the web container's start time
+      # in Portainer) before trusting this over the documented manual fallback.
+      - name: Trigger Portainer redeploy
+        env:
+          WEBHOOK: ${{ secrets.SONGSUE_PORTAINER_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "SONGSUE_PORTAINER_WEBHOOK_URL secret not set — skipping auto-redeploy."
+            exit 0
+          fi
+          echo "Triggering Portainer redeploy…"
+          curl -fsS -X POST "$WEBHOOK"

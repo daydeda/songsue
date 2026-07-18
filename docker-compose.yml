@@ -3,8 +3,9 @@ version: '3.8'
 # =============================================================================
 # LOCAL DEVELOPMENT stack (build from source + host bind mounts).
 # For the university server (Portainer / Docker Swarm on dev2.camt.cmu.ac.th)
-# use docker-stack.yml instead — that one runs a pre-built GHCR image and named
-# volumes, because Portainer's stack editor can't build and has no host paths.
+# use docker-stack.songsue.yml instead — that one runs a pre-built GHCR image
+# and named volumes, because Portainer's stack editor can't build and has no
+# host paths. See docs/songsue-deploy.md for the full deploy runbook.
 # =============================================================================
 
 services:

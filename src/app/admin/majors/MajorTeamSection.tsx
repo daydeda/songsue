@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { NON_SMO_POSITION_IDS, POSITION_I18N_KEY } from "@/lib/positions";
-import { Download, Users, HeartPulse, ChevronDown, ChevronUp } from "lucide-react";
+import { Download, Users, HeartPulse, ChevronDown, ChevronUp, Plus } from "lucide-react";
 
 type MajorTeamMember = {
   id: string;
@@ -37,16 +37,31 @@ type MajorTeamMemberMedical = {
 };
 
 // major_president-only "Team" panel — the major analogue of admin/clubs's
-// Members modal, except majors have no roster to add/remove (membership is
-// just users.major, see MajorsService), so this only ever ANNOTATES existing
-// members with a position, never adds/removes them. GET is already scoped
-// server-side to the signed-in president's own major (see
-// api/admin/majors/[code]/members/route.ts); PATCH re-verifies the same scope.
+// Members modal. Majors have no roster table to add/remove from (membership
+// is just users.major, see MajorsService) — GET already returns EVERY student
+// in the major, which could be the whole cohort. So "the team" here is
+// defined client-side as whoever already carries a position (or is the
+// president): the roster below only ever shows that subset, and "adding" a
+// team member means picking one of the REMAINING major students (via the
+// search box, filtered from the same already major-scoped `members` array —
+// never a separate broader endpoint) and assigning them a position, which is
+// the same PATCH used to edit an existing team member's position. GET/PATCH
+// are scoped server-side to the signed-in president's own major (see
+// api/admin/majors/[code]/members/route.ts).
 export function MajorTeamSection({ major }: { major: string }) {
   const { t } = useLanguage();
   const [members, setMembers] = useState<MajorTeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Add-to-team search — filters the already major-scoped `members` array
+  // client-side (no separate search endpoint, so there's no way to leak a
+  // student outside this major into the results). Only candidates without a
+  // position yet (not already on the team) are offered.
+  const [addSearch, setAddSearch] = useState("");
+  // Draft position picked for each add-candidate row, keyed by user id, so
+  // switching the dropdown on one search result doesn't affect the others.
+  const [addPositionDraft, setAddPositionDraft] = useState<Record<string, string>>({});
+  const [addingUserId, setAddingUserId] = useState<string | null>(null);
   // Which member's Medical & Emergency panel is expanded — one at a time,
   // collapsed by default. Unlike the rest of the row, this data is NOT in
   // `members` — it's fetched (and audit-logged) per student, on first
@@ -105,6 +120,8 @@ export function MajorTeamSection({ major }: { major: string }) {
       setMedicalById({});
       setLoadingMedicalId(null);
       setMedicalError(null);
+      setAddSearch("");
+      setAddPositionDraft({});
       loadMembers();
     }, 0);
     return () => clearTimeout(timer);
@@ -139,6 +156,49 @@ export function MajorTeamSection({ major }: { major: string }) {
       loadMembers();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update position");
+    }
+  };
+
+  // "The team" = major students who already carry a position (or are the
+  // president) — everyone else in the major stays out of this list until
+  // explicitly added below.
+  const teamMembers = useMemo(
+    () => members.filter((m) => m.isPresident || !!m.position),
+    [members]
+  );
+
+  // Add-to-team candidates — filtered from the SAME major-scoped `members`
+  // array, so results can never include a student outside this major. Only
+  // students not already on the team are offered, and only once the
+  // president has typed something (never a "browse everyone" list).
+  const addQuery = addSearch.trim().toLowerCase();
+  const addCandidates = useMemo(() => {
+    if (!addQuery) return [];
+    return members
+      .filter((m) => !m.isPresident && !m.position)
+      .filter((m) =>
+        (m.name || "").toLowerCase().includes(addQuery) ||
+        (m.nickname || "").toLowerCase().includes(addQuery) ||
+        (m.studentId || "").toLowerCase().includes(addQuery)
+      )
+      .slice(0, 20);
+  }, [members, addQuery]);
+
+  // Adding a team member IS assigning them a position — there's no separate
+  // roster row to create (see the component-level comment above), so this
+  // just reuses updatePosition and then clears the search.
+  const addTeamMember = async (userId: string, position: string) => {
+    setAddingUserId(userId);
+    try {
+      await updatePosition(userId, position);
+      setAddSearch("");
+      setAddPositionDraft((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+    } finally {
+      setAddingUserId(null);
     }
   };
 
@@ -177,13 +237,84 @@ export function MajorTeamSection({ major }: { major: string }) {
         </div>
       ) : error ? (
         <p style={{ color: "#ef4444", fontWeight: 600, fontSize: 13 }}>{error}</p>
-      ) : members.length === 0 ? (
-        <p style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 13 }}>
-          {t.noTeamMembers || "No students in your major yet."}
-        </p>
       ) : (
+        <>
+          {/* Add-to-team search — scoped to `members`, which is already this
+              president's own major only (see the component-level comment).
+              Only students without a position yet are offered as candidates. */}
+          <div style={{ marginBottom: 16 }}>
+            <input
+              className="input"
+              placeholder={t.addTeamMemberSearchPlaceholder || "Search your major's students by name, nickname, or student ID to add…"}
+              value={addSearch}
+              onChange={(e) => setAddSearch(e.target.value)}
+            />
+            {addQuery && (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                {addCandidates.length === 0 ? (
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, padding: "4px 2px" }}>
+                    {t.addTeamMemberNoResults || "No matching students found in your major."}
+                  </p>
+                ) : (
+                  addCandidates.map((c) => {
+                    const draft = addPositionDraft[c.id] || "";
+                    return (
+                      <div
+                        key={c.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          background: "var(--bg-elevated)",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
+                            {c.name || "Unnamed"}{c.nickname ? ` (${c.nickname})` : ""}
+                          </div>
+                          {c.studentId && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.studentId}</div>}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          <select
+                            className="input"
+                            style={{ width: 150, fontSize: 12, padding: "4px 8px" }}
+                            value={draft}
+                            onChange={(e) => setAddPositionDraft((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                          >
+                            <option value="">—</option>
+                            {NON_SMO_POSITION_IDS.map((id) => (
+                              <option key={id} value={id}>{t[POSITION_I18N_KEY[id] as keyof typeof t]}</option>
+                            ))}
+                          </select>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            disabled={!draft || addingUserId === c.id}
+                            onClick={() => addTeamMember(c.id, draft)}
+                          >
+                            {addingUserId === c.id ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <Plus size={12} />}
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+
+          {teamMembers.length === 0 ? (
+            <p style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 13 }}>
+              {members.length === 0
+                ? (t.noTeamMembers || "No students in your major yet.")
+                : (t.noTeamMembersYet || "No team members yet — search below to add one.")}
+            </p>
+          ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {members.map((m) => {
+          {teamMembers.map((m) => {
             const isExpanded = expandedMemberId === m.id;
             const medical = medicalById[m.id];
             const isLoadingMedical = loadingMedicalId === m.id;
@@ -292,6 +423,8 @@ export function MajorTeamSection({ major }: { major: string }) {
             );
           })}
         </div>
+          )}
+        </>
       )}
     </div>
   );

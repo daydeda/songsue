@@ -1,9 +1,11 @@
 import { db } from "@/db";
 import { webrtcSignals } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { captureException } from "@/lib/logger";
+import { effectiveRoles } from "@/lib/admin-access";
+import { canAccessBattle } from "@/lib/battle-access";
 import { z } from "zod";
 
 const iceCandidateSchema = z.object({
@@ -30,6 +32,10 @@ export async function POST(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!canAccessBattle(effectiveRoles(session.user.role, session.user.roles))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { code } = await params;
@@ -64,66 +70,57 @@ export async function POST(
       return NextResponse.json({ error: "Invalid role for this user" }, { status: 400 });
     }
 
-    const existing = await db.query.webrtcSignals.findFirst({
-      where: (s, { eq, and }) => and(eq(s.roomId, room.id), eq(s.role, role)),
-    });
-
+    // Browsers fire onicecandidate in rapid bursts, so concurrent POSTs for the
+    // same (room, role) are the common case, not the exception. A check-then-insert
+    // (SELECT existing, then INSERT if missing) races: two concurrent requests can
+    // both see "no row" and both INSERT, and the second violates the
+    // idx_webrtc_signals_room_role unique constraint. Upsert via ON CONFLICT makes
+    // the read-modify-write atomic at the DB level instead.
     if (iceCandidate !== undefined) {
-      if (!existing) {
-        await db.insert(webrtcSignals).values({
+      const result = await db.insert(webrtcSignals)
+        .values({
           roomId: room.id,
           role,
           iceCandidates: [iceCandidate],
-        });
-      } else {
-        const candidates = (existing.iceCandidates as unknown[] | null) ?? [];
-        if (candidates.length >= 30) {
-          return NextResponse.json({ error: "ICE candidates limit (30) reached" }, { status: 400 });
-        }
-
-        const result = await db.update(webrtcSignals)
-          .set({
-            iceCandidates: sql`
-              CASE 
-                WHEN jsonb_typeof(ice_candidates) = 'array' AND jsonb_array_length(ice_candidates) < 30 
-                THEN ice_candidates || ${JSON.stringify(iceCandidate)}::jsonb
-                ELSE ice_candidates
-              END
-            `,
+        })
+        .onConflictDoUpdate({
+          target: [webrtcSignals.roomId, webrtcSignals.role],
+          set: {
+            // Table-qualified: "excluded" (the proposed insert row) also has an
+            // ice_candidates column, so the bare name is ambiguous inside
+            // ON CONFLICT DO UPDATE and Postgres rejects the whole query.
+            iceCandidates: sql`webrtc_signals.ice_candidates || ${JSON.stringify(iceCandidate)}::jsonb`,
             updatedAt: new Date(),
-          })
-          .where(and(eq(webrtcSignals.id, existing.id), sql`jsonb_array_length(ice_candidates) < 30`))
-          .returning();
+          },
+          setWhere: sql`jsonb_typeof(webrtc_signals.ice_candidates) = 'array' AND jsonb_array_length(webrtc_signals.ice_candidates) < 30`,
+        })
+        .returning();
 
-        if (result.length === 0) {
-          return NextResponse.json({ error: "ICE candidates limit (30) reached" }, { status: 400 });
-        }
+      if (result.length === 0) {
+        return NextResponse.json({ error: "ICE candidates limit (30) reached" }, { status: 400 });
       }
     } else {
-      if (existing) {
-        if (iceCandidates !== undefined && iceCandidates.length > 30) {
-          return NextResponse.json({ error: "ICE candidates limit (30) exceeded" }, { status: 400 });
-        }
-        await db.update(webrtcSignals)
-          .set({
-            sdpOffer: sdpOffer !== undefined ? sdpOffer : existing.sdpOffer,
-            sdpAnswer: sdpAnswer !== undefined ? sdpAnswer : existing.sdpAnswer,
-            iceCandidates: iceCandidates !== undefined ? iceCandidates : existing.iceCandidates,
-            updatedAt: new Date(),
-          })
-          .where(eq(webrtcSignals.id, existing.id));
-      } else {
-        if (iceCandidates !== undefined && iceCandidates.length > 30) {
-          return NextResponse.json({ error: "ICE candidates limit (30) exceeded" }, { status: 400 });
-        }
-        await db.insert(webrtcSignals).values({
+      if (iceCandidates !== undefined && iceCandidates.length > 30) {
+        return NextResponse.json({ error: "ICE candidates limit (30) exceeded" }, { status: 400 });
+      }
+
+      await db.insert(webrtcSignals)
+        .values({
           roomId: room.id,
           role,
           sdpOffer: sdpOffer || null,
           sdpAnswer: sdpAnswer || null,
           iceCandidates: iceCandidates || [],
+        })
+        .onConflictDoUpdate({
+          target: [webrtcSignals.roomId, webrtcSignals.role],
+          set: {
+            ...(sdpOffer !== undefined ? { sdpOffer } : {}),
+            ...(sdpAnswer !== undefined ? { sdpAnswer } : {}),
+            ...(iceCandidates !== undefined ? { iceCandidates } : {}),
+            updatedAt: new Date(),
+          },
         });
-      }
     }
 
     return NextResponse.json({ success: true });
@@ -143,6 +140,10 @@ export async function GET(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!canAccessBattle(effectiveRoles(session.user.role, session.user.roles))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { code } = await params;

@@ -5,6 +5,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { finalizeGameInDb } from "@/lib/games/stats-helper";
 import { captureException } from "@/lib/logger";
+import { effectiveRoles } from "@/lib/admin-access";
+import { canAccessBattle } from "@/lib/battle-access";
 
 // GET /api/battle/rooms/[code]/state - Get current game/board state + lazy evaluations
 export async function GET(
@@ -15,6 +17,10 @@ export async function GET(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!canAccessBattle(effectiveRoles(session.user.role, session.user.roles))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { code } = await params;

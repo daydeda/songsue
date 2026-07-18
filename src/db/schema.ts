@@ -46,6 +46,10 @@ export const clubMembers = pgTable("club_members", {
   clubId: uuid("club_id").notNull().references(() => clubs.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("member"), // 'president' | 'member'
+  // Per-club staff title (e.g. 'president', 'club_affairs') from src/lib/positions.ts.
+  // The per-club analogue of the (now-legacy) `users.position` — distinct from this
+  // row's own `role` ('member' | 'president'), which is about system membership tier.
+  position: text("position"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ([
   uniqueIndex("club_members_club_user_unique").on(table.clubId, table.userId),
@@ -64,6 +68,11 @@ export const users = pgTable("users", {
   roles: jsonb("roles").$type<string[]>().default(["student"]),
   houseId: text("house_id").references(() => houses.id),
   points: integer("points").notNull().default(0),
+  // No-show strike-out: counts confirmed no-show strikes (registered but never
+  // checked in). At 3 strikes, registrationBlocked flips to true, preventing
+  // new event pre-registration until a staff member resets it.
+  noShowCount: integer("no_show_count").notNull().default(0),
+  registrationBlocked: boolean("registration_blocked").notNull().default(false),
   // QR Token for secure check-in (FE-13)
   qrToken: text("qr_token").unique(),
   // Profile specifics
@@ -71,6 +80,22 @@ export const users = pgTable("users", {
   nickname: text("nickname"),
   faculty: text("faculty"), // 'CAMT' | 'MASSCOM' | 'ARCH' | 'ARTS' (null treated as CAMT)
   major: text("major"), // faculty-specific major code (e.g. CAMT: ANI, DG, DII, MMIT, SE)
+  // LEGACY/DEPRECATED: used to store a single SMO/club/major title shared across
+  // all three contexts (club membership, major team, SMO/ANUSMO), which silently
+  // clobbered each other. Superseded by clubMembers.position, majorPosition,
+  // smoPosition, and anusmoPosition below — no longer written. Kept (not dropped)
+  // because migrations here must be non-destructive (see CLAUDE.md); dropping it
+  // is a separate future cleanup once the new columns are verified in prod.
+  position: text("position"),
+  // Major-team staff title (e.g. 'president', 'secretary') from src/lib/positions.ts,
+  // scoped to the user's one major. Replaces the legacy `position` column above.
+  majorPosition: text("major_position"),
+  // SMO staff title from src/lib/positions.ts, scoped to holding the 'smo' role.
+  // A user can hold both smo and anusmo roles at once with different titles in each.
+  smoPosition: text("smo_position"),
+  // ANUSMO staff title from src/lib/positions.ts, scoped to holding the 'anusmo' role.
+  // A user can hold both smo and anusmo roles at once with different titles in each.
+  anusmoPosition: text("anusmo_position"),
   imageTransform: jsonb("image_transform"), // { scale: number, x: number, y: number }
   religion: text("religion"),
   phone: text("phone").unique(),
@@ -183,6 +208,10 @@ export const events = pgTable("events", {
   // legacy events — read them as `imageUrls ?? (imageUrl ? [imageUrl] : [])`.
   imageUrls: jsonb("image_urls").$type<string[]>(),
   walkInsEnabled: boolean("walk_ins_enabled").default(false),
+  // When true, pre-registration is refused entirely (see POST /api/events/[id]/
+  // register) — students may only attend via a walk-in scan at the door.
+  // Implies walkInsEnabled; the UI forces that toggle on together with this one.
+  walkInsOnly: boolean("walk_ins_only").default(false),
   quotaWalkIn: integer("quota_walk_in"),
   // Multi-day / multi-session check-in. 'once' = student registers once at the
   // event level and that registration is attendable at any/all sessions.
@@ -210,6 +239,15 @@ export const events = pgTable("events", {
   // majors (ANI, DG, DII, MMIT, SE). Combined with allowedRoles as AND — a user
   // must satisfy both. Admin roles always bypass.
   allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  // Club-based access control (participant eligibility, SEPARATE from ownerClubIds
+  // below, which controls who MANAGES the event): which club(s) a student must
+  // belong to (via club_members, ANY role — 'member' or 'president') to see/register
+  // for this event. Club UUIDs (as strings) referencing clubs.id. null or [] means
+  // no club restriction — open to everyone. Combined with allowedRoles/allowedMajors
+  // as AND — a user must satisfy all set restrictions. Admin roles always bypass
+  // (bypass logic lives in application code, not here). Mirrors the allowedMajors
+  // jsonb string[] pattern above.
+  allowedClubs: jsonb("allowed_clubs").$type<string[]>(),
   // President ownership scope (SEPARATE from managedByRoles, which only answers "is
   // a president role involved at all"). These answer "president of WHICH club/major":
   //   ownerClubIds — club UUIDs (as strings) that own this event; a club_president
@@ -221,6 +259,32 @@ export const events = pgTable("events", {
   // always bypass). Mirrors the allowedMajors jsonb string[] pattern above.
   ownerClubIds: jsonb("owner_club_ids").$type<string[]>(),
   ownerMajors: jsonb("owner_majors").$type<string[]>(),
+  // Details auto-re-review: a president's edit is NEVER blocked (see PUT
+  // /api/admin/events/[id]) — but any edit by a president always resets this
+  // back to 'pending', so staff re-reviews it before it counts as approved
+  // again. Staff themselves always write 'approved' (self-reviewed on the
+  // spot). Default 'pending' is deliberate (unlike forms.reviewStatus's
+  // 'approved' default): it preserves today's "president can always edit
+  // their owned event's details" behavior for every existing event — nothing
+  // retroactively flags; re-review only starts once a president actually edits.
+  detailsReviewStatus: text("details_review_status").notNull().default("pending"), // 'pending' | 'approved'
+  detailsReviewedBy: text("details_reviewed_by"), // no FK — mirrors noShowAppeals.reviewedBy
+  detailsReviewedAt: timestamp("details_reviewed_at", { withTimezone: true }),
+  // Pending edit proposal: a club/major president's edit to an EXISTING event's
+  // details (title/dates/quota/etc.) is no longer applied live — it's held here
+  // until staff approve or discard it. The live event columns above are never
+  // touched by a president's edit anymore; this JSON blob is the only place
+  // their submitted values live until approval.
+  pendingDetailsChanges: jsonb("pending_details_changes").$type<Record<string, unknown>>(),
+  pendingDetailsSubmittedBy: text("pending_details_submitted_by"), // no FK — mirrors detailsReviewedBy's no-FK pattern
+  pendingDetailsSubmittedAt: timestamp("pending_details_submitted_at", { withTimezone: true }),
+  // Explicit event-staff roster: user ids assigned to staff THIS event (distinct
+  // from managedByRoles/ownerClubIds/ownerMajors, which answer "who MANAGES the
+  // event configuration" — this answers "who is working it on the ground", e.g.
+  // scanning/checking people in). Nullable/no default, matching the
+  // allowedRoles/managedByRoles/ownerClubIds/ownerMajors jsonb string[] pattern.
+  // null/[] = no explicit staff assigned.
+  staffUserIds: jsonb("staff_user_ids").$type<string[]>(),
   // When true, only FIRST-YEAR students may see/register for this event — derived
   // from the student-id prefix (CMU Buddhist-era admission year, e.g. ids starting
   // with "69" for the 2026 intake). The current first-year prefix is computed at
@@ -267,6 +331,12 @@ export const attendance = pgTable("attendance", {
   status: text("status").default("registered"), // 'registered', 'attended'
   scannedBy: text("scanned_by").references(() => users.id, { onDelete: "set null" }),
   medsCheckOption: text("meds_check_option"),
+  // Snapshot (at insert time) of whether this student was on the event's
+  // staffUserIds list when they registered/checked in — used to exempt staff
+  // from quota counts and no-show strikes. Deliberately NOT re-derived later if
+  // events.staffUserIds subsequently changes (historical accuracy for
+  // already-recorded attendance rows).
+  isStaff: boolean("is_staff").notNull().default(false),
 }, (table) => ([
   // One row per student per SESSION. For a single-session 'once' event this is
   // behaviourally identical to the old (event_id, student_id) uniqueness.
@@ -370,10 +440,11 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   gameStats: many(gameStats),
 }));
 
-export const eventsRelations = relations(events, ({ many }) => ({
+export const eventsRelations = relations(events, ({ one, many }) => ({
   sessions: many(eventSessions),
   attendances: many(attendance),
   scoreHistory: many(scoreHistory),
+  pendingSubmitter: one(users, { fields: [events.pendingDetailsSubmittedBy], references: [users.id], relationName: "eventPendingDetailsSubmitter" }),
 }));
 
 export const eventSessionsRelations = relations(eventSessions, ({ one, many }) => ({
@@ -445,6 +516,11 @@ export const forms = pgTable("forms", {
   individualPointsAwarded: integer("individual_points_awarded").default(0),
   isActive: boolean("is_active").default(true),
   isAwarded: boolean("is_awarded").default(false),
+  // Whether non-admin viewers (registration/organizer, later smo/club_president/major_president)
+  // see respondent name/studentId/contact on submissions, vs a masked view; super_admin/admin
+  // always see identity regardless (enforced in app code). Defaults false (anonymized) for every
+  // form type — the creator opts in per form when identity is genuinely needed.
+  showRespondentIdentity: boolean("show_respondent_identity").notNull().default(false),
   // Optional auto open/close window. NULL on either side = unbounded that side.
   // isActive stays the manual master override on top of this window.
   opensAt: timestamp("opens_at", { withTimezone: true }),
@@ -454,6 +530,16 @@ export const forms = pgTable("forms", {
   // their id is in assignedUserIds.
   assignedRoles: jsonb("assigned_roles").$type<string[]>().notNull().default([]),
   assignedUserIds: jsonb("assigned_user_ids").$type<string[]>().notNull().default([]),
+  // Review gate for forms created/edited by club_president/major_president (who own
+  // the event): staff (super_admin/admin/registration/organizer) edits are always
+  // auto-approved, but a president's create/edit always resets reviewStatus to
+  // 'pending' until staff explicitly approves it again. Default 'approved' is what
+  // makes this backward-compatible — every form created before this review step
+  // existed (all staff-created to date) is unaffected by this migration.
+  reviewStatus: text("review_status").notNull().default("approved"), // 'pending' | 'approved'
+  reviewedBy: text("reviewed_by"), // no FK — mirrors noShowAppeals.reviewedBy
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ([
@@ -855,5 +941,153 @@ export const gameStatsRelations = relations(gameStats, ({ one }) => ({
     fields: [gameStats.userId],
     references: [users.id],
   }),
+}));
+
+// ============================================================================
+// NO-SHOW APPEALS
+// A student appeals ONE specific no-show event at a time (eventId), instead of
+// only ever waiting on a manual staff reset (see .../strikes/reset/route.ts) or
+// filing one blanket appeal that would clear every strike on the account.
+// Approving an appeal only undoes THAT event's strike — decrements
+// users.noShowCount by 1 and flips that event's attendance row(s) from
+// 'no_show' to 'excused' (see api/admin/appeals/[id]/route.ts) — leaving any
+// other, separately-earned strikes untouched. A student can therefore have
+// several pending appeals open at once, one per no-show event.
+// noShowCountAtAppeal snapshots the strike count at submission time so an
+// admin reviewing later sees the context even if the count has since changed.
+// eventId is nullable only so the column addition stays additive/non-destructive
+// against any pre-existing rows; every new appeal is required to set it.
+// ============================================================================
+export const noShowAppeals = pgTable("no_show_appeals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
+  noShowCountAtAppeal: integer("no_show_count_at_appeal").notNull(),
+  // 'pending' | 'approved' | 'rejected'
+  status: text("status").notNull().default("pending"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ([
+  index("no_show_appeals_user_idx").on(table.userId),
+  index("no_show_appeals_status_idx").on(table.status),
+  index("no_show_appeals_event_idx").on(table.eventId),
+  // Prevents spam: a user may have only one pending appeal per EVENT open at
+  // once (not one per account — a student with 2 strikes may appeal both
+  // events concurrently). Once an appeal is approved/rejected they're free to
+  // submit a new one for that same event if struck again.
+  uniqueIndex("no_show_appeals_one_pending_per_user_event").on(table.userId, table.eventId).where(sql`${table.status} = 'pending'`),
+]));
+
+export const noShowAppealsRelations = relations(noShowAppeals, ({ one }) => ({
+  user: one(users, {
+    fields: [noShowAppeals.userId],
+    references: [users.id],
+    relationName: "appealStudent",
+  }),
+  event: one(events, {
+    fields: [noShowAppeals.eventId],
+    references: [events.id],
+  }),
+  reviewer: one(users, {
+    fields: [noShowAppeals.reviewedBy],
+    references: [users.id],
+    relationName: "appealReviewer",
+  }),
+}));
+
+// ============================================================================
+// EVENT PROPOSALS (club-president feature)
+// A club president proposes a candidate event; staff review and either approve
+// (creating the real row in `events`) or reject/leave it withdrawn. Requested
+// values (quota, etc.) are non-binding — staff sets pointsAwarded/allowedRoles/
+// allowedMajors/managedByRoles/ownerClubIds/staffUserIds explicitly when
+// creating the real event, mirroring the field-strip precedent for
+// president-submitted edits in api/admin/events/[id]/route.ts.
+// clubId cascades on delete: deleting a club deletes its proposal history (the
+// append-only audit log already keeps a free-text trail independent of the row).
+// reviewedBy intentionally has NO FK — mirrors noShowAppeals.reviewedBy above.
+// resultingEventId is set only as a side effect of POST /api/admin/events{proposalId}
+// approving the proposal; "set null" so a later hard-delete of the created event
+// doesn't FK-block, and the proposal survives as a historical record.
+// clubId/majorCode: exactly one of the two is set per proposal (club_president
+// proposals set clubId, major_president proposals set majorCode) — enforced in
+// application code (the POST handler), not a DB constraint, to keep this migration
+// simple. clubId is nullable (rather than a NOT NULL FK) to allow major_president
+// proposals, which have no club at all. majorCode is a fixed code string (ANI/DG/
+// DII/MMIT/SE), no FK — majors aren't a table, mirroring events.ownerMajors above.
+// ============================================================================
+export const eventProposals = pgTable("event_proposals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clubId: uuid("club_id").references(() => clubs.id, { onDelete: "cascade" }),
+  majorCode: text("major_code"),
+  proposedBy: text("proposed_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+
+  title: text("title").notNull(),
+  description: text("description"),
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }).notNull(),
+  registrationOpenTime: timestamp("registration_open_time", { withTimezone: true }),
+  registrationCloseTime: timestamp("registration_close_time", { withTimezone: true }),
+  location: text("location"),
+  quota: integer("quota"),
+  imageUrl: text("image_url"),
+  imageUrls: jsonb("image_urls").$type<string[]>(),
+  walkInsEnabled: boolean("walk_ins_enabled").default(false),
+  walkInsOnly: boolean("walk_ins_only").default(false),
+  quotaWalkIn: integer("quota_walk_in"),
+  registrationMode: text("registration_mode").$type<"once" | "per_session">().notNull().default("once"),
+  // Suggested multi-day schedule (mirrors eventSessions, but as plain jsonb —
+  // proposals have no attendance to join against, so a real join table would be
+  // pure overhead). Null/empty = single-day event; the top-level start/end above
+  // cover it. Staff turns these into real eventSessions rows at conversion time.
+  sessions: jsonb("sessions").$type<{ title: string | null; startTime: string; endTime: string }[]>(),
+  targetThai: boolean("target_thai").default(true),
+  targetInternational: boolean("target_international").default(true),
+  quotaThai: integer("quota_thai"),
+  quotaInternational: integer("quota_international"),
+  firstYearOnly: boolean("first_year_only").default(false),
+  // Suggested helpers only — from the proposer's OWN club roster (see
+  // EventProposalsService/GET .../clubs/[id]/members), never the global
+  // student directory. Staff can add/remove freely when creating the event.
+  staffUserIds: jsonb("staff_user_ids").$type<string[]>(),
+  // Suggested participant-eligibility ACL — mirrors events.allowedRoles/
+  // allowedMajors/allowedClubs exactly (same "null/[] = no restriction"
+  // convention). Non-binding, like every other field here: staff explicitly
+  // reviews/adjusts these when creating the real event (see the fromProposal
+  // prefill in admin/events/page.tsx) rather than them taking effect directly.
+  allowedRoles: jsonb("allowed_roles").$type<string[]>(),
+  allowedMajors: jsonb("allowed_majors").$type<string[]>(),
+  allowedClubs: jsonb("allowed_clubs").$type<string[]>(),
+  // Requested values only — non-binding. Staff sets pointsAwarded/
+  // managedByRoles/ownerClubIds explicitly when creating the real
+  // event, mirroring the field-strip precedent for president-submitted edits in
+  // api/admin/events/[id]/route.ts.
+
+  status: text("status").notNull().default("pending"), // 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  reviewedBy: text("reviewed_by"), // no FK — mirrors noShowAppeals.reviewedBy
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+  // Set only as a side effect of POST /api/admin/events{proposalId}. "set null"
+  // so a later hard-delete of the created event doesn't FK-block, and the
+  // proposal survives as a historical record.
+  resultingEventId: uuid("resulting_event_id").references(() => events.id, { onDelete: "set null" }),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ([
+  index("event_proposals_club_idx").on(table.clubId),
+  index("event_proposals_major_idx").on(table.majorCode),
+  index("event_proposals_status_idx").on(table.status),
+  index("event_proposals_proposed_by_idx").on(table.proposedBy),
+]));
+
+export const eventProposalsRelations = relations(eventProposals, ({ one }) => ({
+  club: one(clubs, { fields: [eventProposals.clubId], references: [clubs.id] }),
+  proposer: one(users, { fields: [eventProposals.proposedBy], references: [users.id], relationName: "proposalProposer" }),
+  reviewer: one(users, { fields: [eventProposals.reviewedBy], references: [users.id], relationName: "proposalReviewer" }),
+  resultingEvent: one(events, { fields: [eventProposals.resultingEventId], references: [events.id] }),
 }));
 

@@ -37,16 +37,26 @@ if (process.env.DB_TYPE === "pglite") {
   // Cast to PostgresJsDatabase to maintain type consistency across the app
   dbInstance = drizzlePglite(client, { schema }) as unknown as PostgresJsDatabase<typeof schema>;
 } else {
-  if (!process.env.DATABASE_URL) {
+  // `next build` imports every route module (incl. this one, transitively) to
+  // collect page data, even for purely dynamic API routes with no real DB
+  // access at build time. Docker builds have no DATABASE_URL (it's injected at
+  // container runtime by docker-compose/docker-stack, never baked into the
+  // image) — mirrors the NEXT_PHASE guard already used for AUTH_URL in
+  // src/auth.ts. A placeholder connection string is fine here: postgres-js
+  // doesn't open a socket until a query actually runs, and this module is
+  // never invoked during the static build itself.
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+  if (!process.env.DATABASE_URL && !isBuildPhase) {
     throw new Error("DATABASE_URL environment variable is required when DB_TYPE is not 'pglite'");
   }
+  const databaseUrl = process.env.DATABASE_URL || "postgres://build:build@localhost:5432/build";
 
-  const usingTransactionPooler = (process.env.DATABASE_URL ?? "").includes(":6543");
+  const usingTransactionPooler = databaseUrl.includes(":6543");
   const poolMax = Number(process.env.DB_POOL_MAX) || (usingTransactionPooler ? 5 : 15);
 
   const conn =
     globalForDb.conn ??
-    postgres(process.env.DATABASE_URL, {
+    postgres(databaseUrl, {
       max: poolMax,
       prepare: !usingTransactionPooler,
       idle_timeout: 20,

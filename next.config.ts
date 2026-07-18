@@ -23,7 +23,10 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' https:${process.env.NODE_ENV === "development" ? " ws: wss:" : ""}`,
+  // blob: is needed for GLTFLoader's internal texture decoding (it fetches
+  // embedded glTF images via blob: URLs, which counts as connect-src, not
+  // img-src, in the eyes of the CSP).
+  `connect-src 'self' https: blob:${process.env.NODE_ENV === "development" ? " ws: wss:" : ""}`,
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
   "object-src 'none'",
@@ -33,20 +36,6 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
-  async redirects() {
-    return [
-      {
-        source: "/battle/:path*",
-        destination: "/dashboard",
-        permanent: false,
-      },
-      {
-        source: "/battle",
-        destination: "/dashboard",
-        permanent: false,
-      },
-    ];
-  },
   // Runtime-uploaded images are written to public/uploads, but `next start` only
   // serves files that existed in public/ at build time — so /uploads/<file> 404s
   // in production. This afterFiles rewrite (runs only when no real static file

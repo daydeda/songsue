@@ -31,4 +31,4 @@ Use `/db-local` to bring up `activecamt-db` and `seed-author` for fake students/
 - The PDPA check (#4) must inspect the network response per role, because a leak can be invisible in the UI but present in the JSON.
 
 ## Output
-Pass/fail per case (1–6), with case #4 (medical gating by role) and #2 (quota race) called out explicitly. For deeper coverage, pair with `test-author` (unit tests for `qr-token` + `admin-access`) and `pdpa-access-guard` / `route-gate-auditor` (static review). `/verify` is the general live-run skill; this is its scanner-specialized recipe.
+Pass/fail per case (1–6), with case #4 (medical gating by role) and #2 (quota race) called out explicitly. For deeper coverage, pair with `test-author` (unit tests for `qr-token` + `admin-access`) and `pdpa-access-guard` (static review, including its route+audit checklist). `/verify` is the general live-run skill; this is its scanner-specialized recipe.

@@ -1,11 +1,25 @@
 import { auth } from "@/auth";
+import { db } from "@/db";
+import { clubs } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { ClubsService } from "@/modules/clubs/clubs.service";
 import { effectiveRoles } from "@/lib/admin-access";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { NON_SMO_POSITION_IDS } from "@/lib/positions";
+import { formatAuditTargetList } from "@/lib/audit-target-list";
+import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 
 const memberBodySchema = z.object({
   userId: z.string().trim().min(1, "userId is required"),
+});
+
+const memberPositionSchema = z.object({
+  userId: z.string().trim().min(1, "userId is required"),
+  // Hardcoded to the 12 non-SMO ids — this surface's population is never
+  // smo/anusmo by construction (club membership, not SMO staff), so
+  // club_affairs is simply never offered here.
+  position: z.enum(NON_SMO_POSITION_IDS).nullable(),
 });
 
 // Shared by POST/DELETE: super_admin/admin may manage any club; a
@@ -25,13 +39,27 @@ async function canManageClubMembers(
   return ownClubIds.includes(clubId);
 }
 
-// GET /api/admin/clubs/[id]/members — List a club's members (name, studentId,
-// role). Gate: super_admin/admin, OR a club_president viewing THEIR OWN club
-// (verified server-side against club_members — never trust the client-supplied
-// :id alone). A member roster carries identity PII (name + studentId) for every
-// club, so it must not be visible to another club's president or to any role
-// beyond the two that already manage club identities plus the club's own
-// president.
+// GET /api/admin/clubs/[id]/members — List a club's members: identity, contact
+// info, house, position. Medical detail/emergency contacts are deliberately
+// NOT included here (data minimization) — see GET .../members/[memberId]/medical,
+// fetched + audit-logged per member only when a president actually expands
+// that member's panel (ClubsService.getClubMembers). Gate:
+// super_admin/admin, OR a club_president viewing THEIR OWN club (verified
+// server-side against club_members — never trust the client-supplied :id
+// alone). A member roster carries substantial PII for every club, so it must
+// not be visible to another club's president or to any role beyond the two
+// that already manage club identities plus the club's own president. PDPA:
+// the accountability mechanism for this broader-than-usual grant is the audit
+// log below — every read is recorded, mirroring the event attendance-list read.
+//
+// Below that sits a THIRD, narrower tier: a non-president staff-position
+// holder (e.g. secretary, finance — any NON_SMO_POSITION_IDS title short of
+// "president") viewing THEIR OWN club as a plain member (verified against
+// club_members' role='member' rows, same never-trust-the-client-id pattern)
+// gets ClubsService.getClubMembersLimited instead — identity, major, house,
+// position, but no phone/contactChannels, and no medical/export access at
+// all (those routes' own gates are untouched, so this tier never reaches
+// them regardless of what the client renders).
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -45,7 +73,8 @@ export async function GET(
     const { id } = await params;
     const isAdminRole = ["super_admin", "admin"].includes(session.user.role || "");
 
-    if (!isAdminRole) {
+    let isOwnClub = isAdminRole;
+    if (!isOwnClub) {
       // Gate on the full role SET, not just the primary role — see the matching
       // comment in GET /api/admin/clubs for why (a club_president who is also
       // e.g. smo resolves session.user.role to "smo").
@@ -53,12 +82,43 @@ export async function GET(
       const ownClubIds = isClubPresident
         ? await ClubsService.getPresidentClubIds(session.user.id!)
         : [];
-      if (!ownClubIds.includes(id)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+      isOwnClub = ownClubIds.includes(id);
     }
 
-    const members = await ClubsService.getClubMembers(id);
+    if (isOwnClub) {
+      const members = await ClubsService.getClubMembers(id);
+      const club = await db.query.clubs.findFirst({ where: eq(clubs.id, id), columns: { name: true } });
+
+      await AuditService.logAction({
+        actorId: session.user.id!,
+        targetId: formatAuditTargetList(members.map((m) => ({ name: m.userName, studentId: m.studentId }))),
+        action: `Viewed club member roster for club "${club?.name ?? id}" (${id}) — ${members.length} member(s) (identity + contact info; medical detail/emergency contacts are fetched — and logged — per member on expand)`,
+        ipAddress: getClientIp(req),
+      });
+
+      return NextResponse.json(members);
+    }
+
+    // Not admin-tier and not this club's president: fall through to the
+    // narrower staff-position tier, scoped to their own plain membership.
+    const hasStaffPosition = !!session.user.hasClubPosition;
+    const staffClubIds = hasStaffPosition
+      ? await ClubsService.getStaffMemberClubIds(session.user.id!)
+      : [];
+    if (!staffClubIds.includes(id)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const members = await ClubsService.getClubMembersLimited(id);
+    const club = await db.query.clubs.findFirst({ where: eq(clubs.id, id), columns: { name: true } });
+
+    await AuditService.logAction({
+      actorId: session.user.id!,
+      targetId: formatAuditTargetList(members.map((m) => ({ name: m.userName, studentId: m.studentId }))),
+      action: `Viewed club member roster (limited view — no contact info, no medical/export access) for club "${club?.name ?? id}" (${id}) — ${members.length} member(s)`,
+      ipAddress: getClientIp(req),
+    });
+
     return NextResponse.json(members);
   } catch (error) {
     console.error("Failed to fetch club members:", error);
@@ -92,6 +152,13 @@ export async function POST(
     if (!member) {
       return NextResponse.json({ error: "User or club not found" }, { status: 404 });
     }
+
+    await AuditService.logAction({
+      actorId: session!.user!.id!,
+      targetId: data.userId,
+      action: `Added club member ${data.userId} to club ${id}`,
+      ipAddress: getClientIp(req),
+    });
 
     return NextResponse.json({ success: true, member }, { status: 201 });
   } catch (error) {
@@ -145,6 +212,14 @@ export async function DELETE(
     }
 
     await ClubsService.removeClubMember(id, data.userId);
+
+    await AuditService.logAction({
+      actorId: session!.user!.id!,
+      targetId: data.userId,
+      action: `Removed club member ${data.userId} from club ${id}`,
+      ipAddress: getClientIp(req),
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -154,6 +229,49 @@ export async function DELETE(
     }
 
     console.error("Failed to remove club member:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}
+
+// PATCH /api/admin/clubs/[id]/members — Set a club member's `position`
+// (staff title, src/lib/positions.ts — distinct from this row's 'member'/
+// 'president' club role). Gate: identical to POST/DELETE — super_admin/admin
+// (any club), or a club_president managing THEIR OWN club.
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    const { id } = await params;
+    if (!(await canManageClubMembers(session, id))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json().catch(() => null);
+    const data = memberPositionSchema.parse(body);
+
+    const updated = await ClubsService.setMemberPosition(id, data.userId, data.position);
+    if (!updated) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
+    await AuditService.logAction({
+      actorId: session!.user!.id!,
+      targetId: data.userId,
+      action: `Updated club member position: ${data.position ?? "none"} (club ${id})`,
+      ipAddress: getClientIp(req),
+    });
+
+    return NextResponse.json({ success: true, member: updated });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({
+        error: error.issues.map((e: z.ZodIssue) => `${e.path.join(".")}: ${e.message}`).join(", "),
+      }, { status: 400 });
+    }
+
+    console.error("Failed to update club member position:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

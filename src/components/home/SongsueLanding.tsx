@@ -1,21 +1,34 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import {
   motion,
-  useMotionTemplate,
   useReducedMotion,
   useScroll,
   useTransform,
-  type Variants,
+  AnimatePresence,
 } from "framer-motion";
 import { signIn } from "next-auth/react";
-import { Aperture, AlertTriangle, ChevronDown, Film, Lock } from "lucide-react";
+import { AlertTriangle, ChevronDown, ImageOff, Lock, Sparkles } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { songsueCopy, type SongsueCopy } from "./songsue-copy";
+import { houses, type HouseInfo } from "./houses-data";
 
-// Registration opens 24 July 2026, 00:00 Bangkok time.
-const REGISTRATION_OPENS_AT = new Date("2026-07-24T00:00:00+07:00").getTime();
+// three.js touches the DOM/WebGL — must never run during SSR.
+const FlagFlutter3D = dynamic(
+  () => import("./FlagFlutter3D").then((mod) => mod.FlagFlutter3D),
+  { ssr: false }
+);
+
+const DoorCastle3D = dynamic(
+  () => import("./DoorCastle3D").then((mod) => mod.DoorCastle3D),
+  { ssr: false }
+);
+
+// Registration opens 23 July 2026, 00:00 Bangkok time.
+const REGISTRATION_OPENS_AT = new Date("2026-07-23T00:00:00+07:00").getTime();
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
@@ -107,172 +120,6 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
   );
 }
 
-// Placeholder art standing in for real event photography/footage — swap for a
-// still + motion still of the actual event once assets exist. The diagonal
-// split (grain vs. motion streaks) visualizes "two media" without needing a
-// real asset yet.
-function TwoMediaMockup() {
-  return (
-    <div
-      className="relative overflow-hidden"
-      style={{
-        width: "min(88vw, 620px)",
-        aspectRatio: "16 / 10",
-        borderRadius: 24,
-        border: "1px solid rgba(255,255,255,0.1)",
-        boxShadow: "0 60px 140px -30px rgba(255,107,0,0.25), 0 0 0 1px rgba(255,255,255,0.04) inset",
-      }}
-    >
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 48%, #0a0a0a 52%, #1f1108 100%)",
-        }}
-      />
-      {/* left half — "still" texture */}
-      <div
-        className="absolute inset-0"
-        style={{
-          clipPath: "polygon(0 0, 52% 0, 48% 100%, 0 100%)",
-          backgroundImage: "radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1.4px)",
-          backgroundSize: "14px 14px",
-          opacity: 0.7,
-        }}
-      />
-      {/* right half — "motion" streaks */}
-      <div
-        className="absolute inset-0"
-        style={{
-          clipPath: "polygon(52% 0, 100% 0, 100% 100%, 48% 100%)",
-          backgroundImage:
-            "repeating-linear-gradient(100deg, rgba(255,107,0,0.22) 0px, rgba(255,107,0,0.22) 2px, transparent 2px, transparent 18px)",
-        }}
-      />
-      <div
-        className="absolute"
-        style={{ left: "50%", top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.15)" }}
-      />
-      <div className="absolute inset-0 flex items-center justify-center gap-10">
-        <Aperture size={34} color="rgba(255,255,255,0.75)" strokeWidth={1.5} />
-        <Film size={34} color="var(--accent-primary)" strokeWidth={1.5} />
-      </div>
-      <div
-        className="absolute bottom-4 left-0 right-0 flex items-center justify-center"
-        style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)" }}
-      >
-        สองสื่อ · Songsue
-      </div>
-    </div>
-  );
-}
-
-const wordContainer: Variants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.028 } },
-};
-
-const wordItem: Variants = {
-  hidden: { opacity: 0, y: 14, filter: "blur(8px)" },
-  visible: {
-    opacity: 1,
-    y: 0,
-    filter: "blur(0px)",
-    transition: { duration: 0.55, ease: EASE_OUT },
-  },
-};
-
-function StaggerText({
-  text,
-  as = "p",
-  className,
-  style,
-}: {
-  text: string;
-  as?: "p" | "h2";
-  className?: string;
-  style?: CSSProperties;
-}) {
-  const prefersReducedMotion = useReducedMotion();
-  const words = text.split(" ");
-  const Tag = motion[as];
-
-  if (prefersReducedMotion) {
-    const Plain = as;
-    return (
-      <Plain className={className} style={style}>
-        {text}
-      </Plain>
-    );
-  }
-
-  return (
-    <Tag
-      className={className}
-      style={style}
-      initial="hidden"
-      whileInView="visible"
-      viewport={{ once: true, amount: 0.5 }}
-      variants={wordContainer}
-    >
-      {words.map((word, i) => (
-        <motion.span key={i} variants={wordItem} style={{ display: "inline-block" }}>
-          {word}
-          {i < words.length - 1 ? " " : ""}
-        </motion.span>
-      ))}
-    </Tag>
-  );
-}
-
-function StickyMockupReveal({ section }: { section: SongsueCopy["sections"][number] }) {
-  const prefersReducedMotion = useReducedMotion();
-  const ref = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
-
-  const mockupScale = useTransform(scrollYProgress, [0, 0.3, 0.7, 1], [0.8, 1, 1, 1.08]);
-  const mockupOpacity = useTransform(scrollYProgress, [0, 0.16], [0, 1]);
-  const mockupBlurPx = useTransform(scrollYProgress, [0, 0.16], [14, 0]);
-  const mockupFilter = useMotionTemplate`blur(${mockupBlurPx}px)`;
-  const textOpacity = useTransform(scrollYProgress, [0.14, 0.3, 0.78, 0.96], [0, 1, 1, 0]);
-  const textY = useTransform(scrollYProgress, [0.14, 0.3], [26, 0]);
-
-  if (prefersReducedMotion) {
-    return (
-      <section className="relative flex flex-col items-center justify-center text-center px-6 py-24 gap-10">
-        <div className="max-w-xl flex flex-col gap-4">
-          <span style={kickerStyle}>{section.kicker}</span>
-          <h2 className="landing-title" style={sectionTitleStyle}>{section.title}</h2>
-          <p style={sectionBodyStyle}>{section.body}</p>
-        </div>
-        <TwoMediaMockup />
-      </section>
-    );
-  }
-
-  return (
-    <section ref={ref} className="relative" style={{ height: "240vh" }}>
-      <div className="sticky top-0 h-screen flex flex-col items-center justify-center overflow-hidden px-6">
-        <motion.div
-          style={{ opacity: textOpacity, y: textY }}
-          className="flex flex-col items-center gap-4 text-center max-w-xl mb-10"
-        >
-          <span style={kickerStyle}>{section.kicker}</span>
-          <h2 className="landing-title" style={sectionTitleStyle}>{section.title}</h2>
-        </motion.div>
-
-        <motion.div style={{ scale: mockupScale, opacity: mockupOpacity, filter: mockupFilter }}>
-          <TwoMediaMockup />
-        </motion.div>
-
-        <motion.p style={{ opacity: textOpacity }} className="mt-10 max-w-lg text-center" >
-          <span style={sectionBodyStyle}>{section.body}</span>
-        </motion.p>
-      </div>
-    </section>
-  );
-}
-
 const kickerStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
@@ -288,11 +135,176 @@ const sectionTitleStyle: CSSProperties = {
   letterSpacing: "-0.02em",
 };
 
-const sectionBodyStyle: CSSProperties = {
-  fontSize: "clamp(16px, 2vw, 20px)",
-  color: "rgba(255,255,255,0.62)",
-  lineHeight: 1.75,
-};
+function HousesCarousel({
+  houses,
+  storyLang,
+  prefersReducedMotion,
+  copy,
+  phase,
+  flash,
+  onEnter
+}: {
+  houses: HouseInfo[];
+  storyLang: "th" | "en";
+  prefersReducedMotion: boolean;
+  copy: SongsueCopy;
+  phase: "door" | "carousel";
+  flash: boolean;
+  onEnter: () => void;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [direction, setDirection] = useState(0);
+
+  const nextHouse = () => {
+    setDirection(1);
+    setActiveIndex((prev) => (prev + 1) % houses.length);
+  };
+  const prevHouse = () => {
+    setDirection(-1);
+    setActiveIndex((prev) => (prev - 1 + houses.length) % houses.length);
+  };
+  const goToHouse = (idx: number) => {
+    if (idx === activeIndex) return;
+    setDirection(idx > activeIndex ? 1 : -1);
+    setActiveIndex(idx);
+  };
+
+  const house = houses[activeIndex];
+
+  return (
+    <section className="relative flex flex-col items-center justify-center px-6 py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+      {/* Flash overlay */}
+      <div 
+        className="fixed inset-0 bg-white z-[100] pointer-events-none transition-opacity" 
+        style={{ opacity: flash ? 1 : 0, transitionDuration: "1000ms" }} 
+      />
+
+      <div className="max-w-xl flex flex-col items-center gap-3 text-center mb-12 z-10">
+        <span style={kickerStyle}>{copy.houses.kicker}</span>
+        <h2 className="landing-title" style={sectionTitleStyle}>{copy.houses.title}</h2>
+      </div>
+
+      <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: "80svh" }}>
+        
+        {phase === "door" && (
+          <div className="relative w-full flex flex-col items-center justify-center" style={{ height: "80svh" }}>
+             <div className="w-full h-full">
+               <DoorCastle3D onEnter={onEnter} />
+             </div>
+             <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full">
+               {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
+             </p>
+          </div>
+        )}
+
+        {phase === "carousel" && (
+          <div className="w-full flex flex-col items-center">
+            <div className="w-full relative overflow-hidden flex items-center justify-center" style={{ minHeight: "80svh" }}>
+              <AnimatePresence mode="popLayout" custom={direction}>
+                <motion.div
+                  key={activeIndex}
+                  custom={direction}
+                  initial={{ opacity: 0, x: direction === 0 ? 0 : direction * 50, y: direction === 0 ? 20 : 0 }}
+                  animate={{ opacity: 1, x: 0, y: 0 }}
+                  exit={{ opacity: 0, x: direction * -50 }}
+                  transition={{
+                    duration: 0.4,
+                    ease: "easeOut",
+                    delay: direction === 0 ? 0.5 : 0
+                  }}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.15}
+                  dragMomentum={false}
+                  onDragEnd={(e, { offset, velocity }) => {
+                    if (offset.x < -60 || velocity.x < -400) {
+                      nextHouse();
+                    } else if (offset.x > 60 || velocity.x > 400) {
+                      prevHouse();
+                    }
+                  }}
+                  className="w-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-24 h-full cursor-grab active:cursor-grabbing"
+                >
+                  {/* Left: Caption & Name */}
+                  <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4" style={{ minWidth: 280, maxWidth: 400 }}>
+                    <span style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
+                      {house.faculty[storyLang]}
+                    </span>
+                    {house.houseName && (
+                      <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-primary)" }}>
+                        {house.houseName}
+                      </span>
+                    )}
+                    {house.caption && (
+                      <p style={{ fontSize: "clamp(15px, 2vw, 18px)", fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.6 }}>
+                        {house.caption[storyLang]}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 mt-4" style={{ color: "rgba(255,255,255,0.25)" }}>
+                      <Sparkles size={13} strokeWidth={1.5} />
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>
+                        {storyLang === "th" ? "ภาพตัวละครเร็ว ๆ นี้" : "Character art coming soon"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right: Flag */}
+                  <div 
+                    className="flex-1 w-full flex items-center justify-center lg:justify-end translate-x-8 translate-y-12 lg:translate-x-24 lg:translate-y-16" 
+                    style={{ height: "80svh", minHeight: 400, filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.55))" }}
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        delay: direction === 0 ? 0.7 : 0,
+                        duration: 0.4, ease: "easeOut"
+                      }}
+                      className="w-full h-full flex items-center justify-center relative"
+                    >
+                      {house.flagModelSrc ? (
+                        <FlagFlutter3D src={house.flagModelSrc} prefersReducedMotion={prefersReducedMotion} />
+                      ) : house.flagSrc ? (
+                        <div className="relative w-full h-full max-w-[300px]">
+                          <Image src={house.flagSrc} alt={`${house.faculty.en} flag`} fill style={{ objectFit: "contain" }} sizes="(max-width: 768px) 90vw, 300px" />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2" style={{ color: "rgba(255,255,255,0.3)" }}>
+                          <ImageOff size={26} strokeWidth={1.5} />
+                          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                            {storyLang === "th" ? "เร็ว ๆ นี้" : "Coming soon"}
+                          </span>
+                        </div>
+                      )}
+                    </motion.div>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            {/* Pagination Dots */}
+            <div className="flex gap-3 mt-8 z-20">
+              {houses.map((h, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => goToHouse(idx)}
+                  aria-label={`${storyLang === "th" ? "ไปที่บ้าน" : "Go to house"} ${h.faculty[storyLang]}`}
+                  aria-current={idx === activeIndex}
+                  className="touch-target flex items-center justify-center"
+                  style={{ width: 32, height: 32 }}
+                >
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === activeIndex ? "bg-white scale-125" : "bg-white/20"}`}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export function SongsueLanding({
   variant = "home",
@@ -309,6 +321,17 @@ export function SongsueLanding({
   const copy = songsueCopy[storyLang];
   const prefersReducedMotion = useReducedMotion();
   const countdown = useCountdown(REGISTRATION_OPENS_AT);
+  
+  const [doorPhase, setDoorPhase] = useState<"door" | "carousel">("door");
+  const [flash, setFlash] = useState(false);
+
+  const handleEnter = () => {
+    setFlash(true);
+    setTimeout(() => {
+      setDoorPhase("carousel");
+      setFlash(false);
+    }, 1000);
+  };
 
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -320,10 +343,8 @@ export function SongsueLanding({
   const heroScale = useTransform(scrollYProgress, [0, 1], [1, prefersReducedMotion ? 1 : 0.92]);
 
   const reveal = prefersReducedMotion
-    ? { initial: { opacity: 0 }, whileInView: { opacity: 1 }, viewport: { once: true, amount: 0.4 }, transition: { duration: 0.5 } }
-    : { initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: 0.4 }, transition: { duration: 0.7, ease: EASE_OUT } };
-
-  const [middleSection, joinSection] = [copy.sections[1], copy.sections[2]];
+    ? { initial: { opacity: 0 }, whileInView: { opacity: 1 }, viewport: { once: false, amount: 0.4 }, transition: { duration: 0.5 } }
+    : { initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: false, amount: 0.4 }, transition: { duration: 0.7, ease: EASE_OUT } };
 
   return (
     <div className="relative min-h-screen overflow-x-hidden" style={{ background: "#030303" }}>
@@ -355,7 +376,7 @@ export function SongsueLanding({
       </button>
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div ref={heroRef} className="relative flex flex-col items-center justify-center text-center px-6" style={{ minHeight: "100vh" }}>
+      <div ref={heroRef} className="relative flex flex-col items-center justify-center text-center px-6" style={{ minHeight: "100svh" }}>
         <motion.div
           style={prefersReducedMotion ? undefined : { opacity: heroOpacity, y: heroY, scale: heroScale }}
           initial={{ opacity: 0, y: 24 }}
@@ -363,7 +384,6 @@ export function SongsueLanding({
           transition={{ duration: 0.9, ease: EASE_OUT }}
           className="flex flex-col items-center gap-6 max-w-3xl"
         >
-          <span style={kickerStyle}>{copy.hero.kicker}</span>
           <h1
             className="landing-title"
             style={{
@@ -394,30 +414,23 @@ export function SongsueLanding({
         </motion.div>
       </div>
 
-      {/* ── §1 — pinned scroll reveal with placeholder two-media mockup ───── */}
-      <StickyMockupReveal section={copy.sections[0]} />
-
-      {/* ── §2 / §3 — staggered text reveal ─────────────────────────────── */}
-      {[middleSection, joinSection].map((section, i) => (
-        <motion.section
-          key={i}
-          {...reveal}
-          className="relative flex flex-col items-center justify-center text-center px-6"
-          style={{ minHeight: "80vh" }}
-        >
-          <div className="max-w-2xl flex flex-col gap-5">
-            <span style={kickerStyle}>{section.kicker}</span>
-            <StaggerText as="h2" text={section.title} className="landing-title" style={sectionTitleStyle} />
-            <StaggerText text={section.body} style={sectionBodyStyle} />
-          </div>
-        </motion.section>
-      ))}
+      {/* Section 2 - Carousel of houses */}
+      <HousesCarousel
+        houses={houses}
+        storyLang={storyLang}
+        prefersReducedMotion={!!prefersReducedMotion}
+        copy={copy}
+        phase={doorPhase}
+        flash={flash}
+        onEnter={handleEnter}
+      />
 
       {/* ── CTA / Register ───────────────────────────────────────────────── */}
+      {doorPhase === "carousel" && (
       <motion.section
         {...reveal}
         className="relative flex flex-col items-center justify-center text-center px-6 py-24"
-        style={{ minHeight: "90vh" }}
+        style={{ minHeight: "90svh" }}
       >
         <div
           className="flex flex-col items-center gap-8 w-full"
@@ -433,7 +446,7 @@ export function SongsueLanding({
           }}
         >
           <div className="flex flex-col gap-3">
-            <span style={kickerStyle}>{variant === "login" ? copy.hero.kicker : copy.cta.kicker}</span>
+            {variant !== "login" && <span style={kickerStyle}>{copy.cta.kicker}</span>}
             <h2 style={{ fontSize: "clamp(28px, 4.5vw, 40px)", fontWeight: 900, color: "rgba(255,255,255,0.96)", letterSpacing: "-0.02em" }}>
               {variant === "login" ? t.welcome : copy.cta.title}
             </h2>
@@ -506,6 +519,7 @@ export function SongsueLanding({
           )}
         </div>
       </motion.section>
+      )}
     </div>
   );
 }

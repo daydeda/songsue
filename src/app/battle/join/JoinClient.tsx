@@ -54,12 +54,12 @@ export function JoinClient({ initialSession }: JoinClientProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to join room");
+        throw new Error(data.error || t.battleErrorJoinRoom);
       }
 
       router.push(`/battle/room/${roomCode}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not join the room");
+      setError(err instanceof Error ? err.message : t.battleErrorJoinRoomFallback);
       setLoading(false);
     }
   };
@@ -156,7 +156,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
       // 1. Check navigator/camera API
       if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
         if (isCurrentEffect) {
-          setScannerError("Camera not available or blocked. HTTPS/localhost is required.");
+          setScannerError(t.battleErrorCameraUnavailable);
           setIsScanning(false);
         }
         return;
@@ -172,7 +172,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
       const verifiedContainer = document.getElementById("join-qr-reader");
       if (!verifiedContainer) {
         if (isCurrentEffect) {
-          setScannerError("Camera container element not found.");
+          setScannerError(t.battleErrorCameraContainerMissing);
           setIsScanning(false);
         }
         return;
@@ -200,7 +200,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
                 setCode(chars);
                 handleJoinRoom(roomVal.toUpperCase());
               } else {
-                setScannerError("Invalid QR Code content. Make sure it's an ActiveCAMT battle QR code.");
+                setScannerError(t.battleErrorInvalidQrContent);
               }
             } catch {
               const cleanText = decodedText.trim().toUpperCase().replace(/[^A-Z2-9]/g, "");
@@ -210,7 +210,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
                 setCode(chars);
                 handleJoinRoom(cleanText);
               } else {
-                setScannerError("Could not read room code from QR.");
+                setScannerError(t.battleErrorQrReadFailed);
               }
             }
           },
@@ -219,9 +219,9 @@ export function JoinClient({ initialSession }: JoinClientProps) {
       } catch (err: unknown) {
         console.error(err);
         if (isCurrentEffect) {
-          let msg = "Could not initialize camera scanner.";
+          let msg = t.battleErrorCameraInitFailed;
           if (err instanceof Error && (err.name === "NotAllowedError" || /permission/i.test(err.message))) {
-            msg = "Camera permission denied. Please allow camera access in browser settings.";
+            msg = t.battleErrorCameraPermissionDenied;
           }
           setScannerError(msg);
           setIsScanning(false);
@@ -238,7 +238,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
         activeScanner.stop().catch(() => {});
       }
     };
-  }, [isScanning]);
+  }, [isScanning, t]);
 
   const startScanner = () => {
     setError(null);
@@ -256,7 +256,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
         {/* Back Button */}
         <div style={{ marginBottom: 20 }}>
           <Link href="/battle" style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", color: "var(--text-secondary)", fontWeight: 600, fontSize: 14 }}>
-            <ArrowLeft size={16} /> กลับอารีน่า
+            <ArrowLeft size={16} /> {t.battleBackToArenaBtn}
           </Link>
         </div>
 
@@ -267,10 +267,10 @@ export function JoinClient({ initialSession }: JoinClientProps) {
               <Swords size={28} />
             </div>
             <h1 style={{ fontSize: "1.75rem", fontWeight: 900, marginBottom: 8, letterSpacing: "-0.03em" }}>
-              เข้าร่วมห้องประลอง
+              {t.battleJoinRoomTitle}
             </h1>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-              พิมพ์รหัสห้อง 4 หลัก หรือสแกน QR Code เพื่อเชื่อมต่อกับเพื่อนผู้ท้าชิง
+              {t.battleJoinRoomDesc}
             </p>
             {/* P2P privacy note (US-FIX-20i AC-2) */}
             <p style={{ display: "flex", alignItems: "flex-start", gap: 6, color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 12, textAlign: "left" }}>
@@ -283,7 +283,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* 4 Block Input */}
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-              <label style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>พิมพ์รหัสห้อง (Room Code)</label>
+              <label style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{t.battleTypeRoomCodeLabel}</label>
               
               <div style={{ display: "flex", gap: 12 }}>
                 {code.map((char, index) => (
@@ -346,17 +346,17 @@ export function JoinClient({ initialSession }: JoinClientProps) {
               {loading ? (
                 <>
                   <Loader2 className="spinner" size={20} />
-                  กำลังเข้าร่วม...
+                  {t.battleJoiningRoomBtn}
                 </>
               ) : (
-                "เข้าร่วมห้องประลอง"
+                t.battleJoinRoomTitle
               )}
             </button>
 
             {/* Divider */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "12px 0" }}>
               <div style={{ flexGrow: 1, height: 1, background: "var(--border-subtle)" }}></div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>หรือ</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>{t.battleOrDivider}</span>
               <div style={{ flexGrow: 1, height: 1, background: "var(--border-subtle)" }}></div>
             </div>
 
@@ -380,7 +380,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
                 }}
               >
                 <Camera size={18} />
-                สแกน QR Code ด้วยกล้อง
+                {t.battleScanQrCameraBtn}
               </button>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
@@ -414,7 +414,7 @@ export function JoinClient({ initialSession }: JoinClientProps) {
                   }}
                 >
                   <CameraOff size={16} style={{ marginRight: 6 }} />
-                  ปิดกล้องสแกน
+                  {t.battleStopScannerBtn}
                 </button>
               </div>
             )}

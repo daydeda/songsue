@@ -63,6 +63,12 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/elevate-admin.ts ./elevate-admin.ts
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
+# Required for `npm run db:push` (drizzle-kit push) to bootstrap a brand-new,
+# empty database from src/db/schema.ts — e.g. a fresh deploy's first-ever
+# schema creation, before migrate.ts's incremental ADD COLUMN IF NOT EXISTS
+# steps have anything to build on. Without this file present, drizzle-kit
+# can't find its config and fails immediately.
+COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 
 USER nextjs
 

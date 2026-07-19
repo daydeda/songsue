@@ -1,43 +1,38 @@
 ---
 name: safe-deploy
-description: Safe deploy + DB migration checklist for ActiveCAMT (Next.js; self-hosted Docker+Postgres via Portainer, or legacy Vercel+Supabase). Use before deploying any change that touches the database schema, or before deploying code that reads a new or changed column. Enforces feature branch (never main), idempotent and non-destructive migrations, and migrating prod before deploying code that reads it — including the Portainer container-console migration step for the self-hosted deploy.
+description: Safe deploy + DB migration checklist for songsue (Next.js; Vercel + Supabase). Use before deploying any change that touches the database schema, or before deploying code that reads a new or changed column. Enforces feature branch (never main), idempotent and non-destructive migrations, and migrating prod before deploying code that reads it.
 ---
 
-# Safe Deploy (ActiveCAMT)
+# Safe Deploy (songsue)
 
-A guided checklist to ship a change without breaking prod. This codebase has bitten
-us twice before: a `DELETE` step once wiped the whole activity feed, and code that
-read a new column was deployed before the column existed in prod. This skill exists
-to make both impossible to repeat.
+A guided checklist to ship a change without breaking prod. The shared parent codebase
+(ActiveCAMT) has been bitten before: a `DELETE` step once wiped a whole activity feed,
+and code that read a new column was deployed before the column existed in prod. This
+skill exists to make both impossible to repeat in songsue.
 
-## Know your deploy target FIRST
+## Prod target: Vercel + Supabase
 
-There are two prod targets, and **the migration command differs**:
+Decision: 2026-07-19 (see `docs/songsue-deploy.md`). Songsue has its **own** Supabase
+project and Vercel project — separate from `smocamt-website`/ActiveCAMT's self-hosted
+Portainer deploy, which this repo does not touch and this skill does not cover.
 
-- **Self-hosted (current, as of 2026-06-24):** university server running the
-  `docker-compose.yml` stack (`activecamt-app` + `activecamt-db`), managed via
-  **Portainer**. The Postgres `db` service has **no public `ports:`** — it is reachable
-  only by the `web` service inside the Docker network, so you **cannot** migrate it from
-  your laptop. Migrations are run **from the Portainer container console** with
-  `npm run db:migrate:container` (reads `DATABASE_URL` from the container env → internal
-  `db:5432`). Nothing migrates automatically on container start (`CMD` is `npm run start`).
-- **Legacy Vercel + Supabase:** `npm run db:migrate` (`--env-file=.env`) migrates the
-  Supabase pooler that `.env` points at. Only use this if that DB is still live.
+`npm run db:migrate` runs `tsx --env-file=.env src/db/migrate.ts`. There is **no `.env`
+committed to this repo** — create a local, gitignored `.env` pointing `DATABASE_URL` at
+songsue's Supabase **transaction pooler** connection string (port `6543`) before running
+it. `src/db/index.ts` auto-detects `:6543` and disables prepared statements / lowers pool
+size accordingly.
 
-⚠️ `.env`'s active `DATABASE_URL` is still the **Supabase** pooler. So `npm run db:migrate`
-does NOT touch the self-hosted/Portainer DB. For the self-hosted deploy, use the Portainer
-step in §3 — `npm run db:migrate` is the wrong target.
+`src/db/guard.ts` refuses `db:reset`/`db:seed`/promote-admin scripts against anything
+that looks remote (`supabase.co`, `:6543`, or otherwise not localhost) unless
+`CONFIRM=yes` is set. Only add `CONFIRM=yes` once you're sure `.env`'s `DATABASE_URL`
+is pointed at the right project.
 
 ## Hard rules (never violate)
 
 1. **Never push to `main`.** Always work on a feature branch and open a PR.
-2. **`npm run db:migrate` ALWAYS writes whatever `.env` points at — currently Supabase.**
-   It runs `tsx --env-file=.env src/db/migrate.ts`, and `.env`'s active `DATABASE_URL` is
-   the **Supabase** pooler. `.env.local` is localhost. Treat every `db:migrate` as a prod
-   write. For the **self-hosted (Portainer)** deploy the migration is a *different command*
-   run *inside the container* — `npm run db:migrate:container` — because that DB isn't
-   reachable from your machine (see "Know your deploy target FIRST"). There is no separate
-   "migrate staging" command.
+2. **`npm run db:migrate` writes whatever your local `.env` points at.** Treat every
+   `db:migrate` run as a prod write once `.env` is pointed at Supabase. Use
+   `--env-file=.env.local` (localhost) for local rehearsal instead — see `/db-local`.
 3. **Migrations must be idempotent.** Re-running `src/db/migrate.ts` from scratch
    must be a no-op on an already-migrated DB. Use `IF NOT EXISTS`,
    `ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, guarded `ALTER`, and
@@ -52,12 +47,12 @@ step in §3 — `npm run db:migrate` is the wrong target.
 ## The DELETE rule
 
 `src/db/migrate.ts` runs against prod. A `DELETE` here is the single most dangerous
-thing in this repo (it has wiped a feed before).
+thing in this codebase (it has wiped a feed before, on the parent ActiveCAMT app).
 
 - Default answer: **don't.** Achieve the goal by converting in place
-  (e.g. set `house_id = NULL` instead of deleting the row, as migration step 32 does).
+  (e.g. set `house_id = NULL` instead of deleting the row).
 - If a `DELETE` is genuinely unavoidable (e.g. de-duplication before adding a unique
-  index, like step 24), it MUST be:
+  index), it MUST be:
   - **Tightly scoped** by an explicit `WHERE` that can match only the intended rows,
   - **Self-joined to keep a survivor** (delete only the *extra* duplicates, never all),
   - Reviewed against the rule below, and called out explicitly in the PR description.
@@ -73,7 +68,7 @@ git status                        # working tree state
 ```
 
 If on `main`, create a feature branch first (`git switch -c <type>/<short-desc>`,
-e.g. `feat/`, `fix/`, `chore/`). See the branch policy memory.
+e.g. `feat/`, `fix/`, `chore/`).
 
 ### 2. If the change touches the schema
 
@@ -87,8 +82,6 @@ but `migrate.ts` is what has actually been applied to prod).
 - Update `src/db/schema.ts` to match, so Drizzle types line up with the new column.
 - Write a comment above the step explaining the SAFETY reasoning (idempotency +
   why it's non-destructive), matching the style of the existing steps.
-- Note the Supabase transaction pooler caveat already handled at the top of the
-  file: port `:6543` disables prepared statements. Don't undo that.
 
 Self-check the new step against the Hard Rules and the DELETE rule above before
 running anything.
@@ -97,63 +90,34 @@ running anything.
 
 Run the exact same `migrate.ts` against the local DB before touching prod. Because
 the script is idempotent, this is safe to run anytime and it surfaces SQL errors
-without risk. There is **no npm script** for this — `db:migrate` is hard-wired to
-`.env` (prod), so invoke `tsx` directly with `.env.local`:
+without risk. See `/db-local` for starting the local DB container; then:
 
 ```bash
-# The local DB is a Docker container (postgres:16-alpine) that is often stopped.
-docker start activecamt-db
-# Wait until it accepts connections:
-until docker exec activecamt-db pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
-
-# Run the SAME migration script, but against localhost (.env.local):
 npx tsx --env-file=.env.local src/db/migrate.ts
 ```
 
-Gotchas learned the hard way:
-- `.env` has the localhost `DATABASE_URL` **commented out**; its active line is the
-  prod Supabase pooler. So `--env-file=.env` = prod. Use `--env-file=.env.local`
-  (localhost, user `postgres`, db `activecamt`, port `5432`) for local.
-- The container name is `activecamt-db`. It maps host `5432:5432` (a standalone
-  `docker run`, NOT the `db` service in `docker-compose.yml` — that one deliberately
-  does **not** expose 5432 and uses different creds). If `docker ps` doesn't list it,
-  it's stopped: `docker start activecamt-db`.
-- A clean run on an up-to-date DB is mostly `⚠️ already exists` NOTICEs ending in
-  `✅ Migration complete!` — that means nothing changed, which is the expected result
-  when the change added no new columns.
+A clean run on an up-to-date DB is mostly `⚠️ already exists` NOTICEs ending in
+`✅ Migration complete!` — that means nothing changed, which is the expected result
+when the change added no new columns.
 
-### 3. Apply the migration to PROD first
+### 3. Apply the migration to Supabase (prod) first
 
-Pick the path for your deploy target (see "Know your deploy target FIRST" above).
-
-**Self-hosted (Portainer) — current:** the DB isn't reachable from your laptop, so run
-the migration **inside the running app container**, BEFORE redeploying the new image (so
-the new code never queries a table that doesn't exist yet — this is the same window that
-500'd the calendar page locally):
-
-1. Portainer → Containers → `activecamt-app` → **Console** → Connect (`/bin/sh`).
-2. Run the container migration (no `.env` file — reads `DATABASE_URL` from the container
-   env, which compose sets to the internal `db:5432`):
-
-   ```bash
-   npm run db:migrate:container      # = tsx src/db/migrate.ts
-   ```
-
-3. Read the full output — every step should print `✅` (or a benign `⚠️ already exists`).
-   Then redeploy/pull the new `activecamt-app` image (Portainer → Recreate / Update stack).
-
-Note: the runtime image bakes in `src/`, `scripts/`, and `tsx` precisely so migrate / seed /
-elevate can be run from the Portainer console (there is no host shell on the swarm).
-
-**Legacy Vercel + Supabase** (only if that DB is still live):
+Supabase is publicly reachable (a real difference from ActiveCAMT's self-hosted DB) —
+run this from your own machine, with a local `.env` pointing `DATABASE_URL` at
+songsue's Supabase pooler string.
 
 ```bash
-npm run db:migrate
+npm run db:push       # only needed once, on a brand-new/empty database —
+                       # bootstraps the FULL schema from src/db/schema.ts
+npm run db:migrate    # layers on incremental patches from src/db/migrate.ts
 ```
 
-- Read the full output. Every step should print `✅` (or a benign `⚠️ already
-  exists`). Any `❌` means it failed — stop and fix before going further.
-- This is the step that must happen **before** the code deploy, per Hard Rule 5.
+`db:migrate` alone is not enough on a brand-new database — every step there is an
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` or similar, assuming base tables already
+exist. On an already-live songsue DB, `db:push` is not part of the normal flow —
+just run `db:migrate`. Read the full output; every step should print `✅` (or a
+benign `⚠️ already exists`). Any `❌` means it failed — stop and fix before going
+further. This is the step that must happen **before** the code deploy, per Hard Rule 5.
 
 ### 4. Verify locally against the deployed schema (optional but preferred)
 
@@ -172,34 +136,27 @@ git push -u origin HEAD     # feature branch, never main
 gh pr create                # open PR; mention any DELETE/data-conversion in the body
 ```
 
-Because prod is already migrated, the new code reads a schema that exists.
-
-- **Self-hosted (Portainer):** after merge, rebuild/pull the `activecamt-app` image and
-  recreate the service in Portainer (or `docker compose up -d --build` on the server).
-  The migration from §3 has already run inside the container, so the new image comes up
-  against an existing schema.
-- **Legacy Vercel:** deploys on merge (region `sin1`).
+Vercel auto-deploys on merge to `main` via its native GitHub integration. Because
+prod is already migrated (step 3), the new code reads a schema that exists.
 
 Done.
 
 ## Rollback note
 
-Since migrations are additive + idempotent, a code rollback (revert the deploy)
-generally does NOT require a DB rollback — the extra column/table simply goes unused.
-Do **not** try to "undo" a migration by dropping the new column on prod; that's a
-destructive step and violates the DELETE rule. Leave the schema; revert the code.
+Since migrations are additive + idempotent, a code rollback (revert the deploy or
+redeploy a previous Vercel deployment) generally does NOT require a DB rollback —
+the extra column/table simply goes unused. Do **not** try to "undo" a migration by
+dropping the new column on prod; that's a destructive step and violates the DELETE
+rule. Leave the schema; revert the code.
 
 ## Quick reference
 
 | Thing | Value |
 | --- | --- |
-| Prod target (current) | Self-hosted Docker stack via **Portainer** (`activecamt-app` + `activecamt-db`); DB not exposed off the Docker network |
-| **Migrate prod (self-hosted)** | Portainer → `activecamt-app` → Console → `npm run db:migrate:container` (reads `DATABASE_URL` from container env → internal `db:5432`) |
-| Migrate prod (legacy Supabase) | `npm run db:migrate` (runs `src/db/migrate.ts` against `.env` → Supabase pooler) — only if that DB is still live |
-| Self-hosted prod DB | compose `db` service `activecamt-db` (user `activeuser`, db `activedb`), internal `db:5432`, no public port |
-| Legacy Supabase DB | `.env` → Supabase pooler, port `:6543` (localhost line commented out) |
-| Local DB | `.env.local` → localhost `:5432`, Docker container `activecamt-db` (user `postgres`, db `activecamt`) |
-| Migrate localhost | `docker start activecamt-db` then `npx tsx --env-file=.env.local src/db/migrate.ts` |
-| Start local DB | `docker start activecamt-db` (it's often stopped) |
+| Prod target | **Vercel + Supabase** (songsue's own project — see `docs/songsue-deploy.md`) |
+| Migrate prod | Point a local, uncommitted `.env` at Supabase's pooler `DATABASE_URL`, then `npm run db:migrate` (brand-new DB: `npm run db:push` first) |
+| Local DB | `.env.local` → localhost `:5433`, db `songsue`. See `/db-local`. |
+| Migrate localhost | `npx tsx --env-file=.env.local src/db/migrate.ts` |
 | Schema types | `src/db/schema.ts` (keep in sync with migrate.ts) |
 | Branch | feature branch only — never push to `main` |
+| Not covered here | `smocamt-website`/ActiveCAMT's separate self-hosted Portainer deploy — different repo, different remote, untouched by anything in this file |

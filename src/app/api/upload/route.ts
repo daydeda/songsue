@@ -110,6 +110,13 @@ export async function POST(req: Request) {
         .upload(filename, buffer, {
           contentType: outputContentType,
           upsert: false,
+          // Filenames are server-generated UUIDs and never overwritten (upsert:
+          // false), so the bytes at this key never change — cache hard. Without
+          // this Supabase defaults to a 1hr cache, and this bucket is served
+          // straight from Supabase's own CDN via getPublicUrl (no Vercel
+          // function in the path), so a short cache directly burns into the
+          // free-tier 5GB/mo egress cap on every repeat view past an hour.
+          cacheControl: "31536000",
         });
 
       if (error) {

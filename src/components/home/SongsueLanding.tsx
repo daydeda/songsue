@@ -11,7 +11,7 @@ import {
   AnimatePresence,
 } from "framer-motion";
 import { signIn } from "next-auth/react";
-import { AlertTriangle, ChevronDown, ImageOff, Lock, Sparkles } from "lucide-react";
+import { AlertTriangle, ChevronDown, ImageOff, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { songsueCopy, type SongsueCopy } from "./songsue-copy";
 import { houses, type HouseInfo } from "./houses-data";
@@ -84,7 +84,7 @@ function BackgroundGlow() {
           width: 900,
           height: 900,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(255,107,0,0.16) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%)",
           top: "-20%",
           right: "-10%",
           animationDuration: "9s",
@@ -96,7 +96,7 @@ function BackgroundGlow() {
           width: 700,
           height: 700,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(255,184,0,0.08) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(156,163,175,0.06) 0%, transparent 70%)",
           bottom: "-10%",
           left: "-10%",
           animationDuration: "13s",
@@ -125,7 +125,7 @@ const kickerStyle: CSSProperties = {
   fontWeight: 800,
   letterSpacing: "0.1em",
   textTransform: "uppercase",
-  color: "var(--accent-primary)",
+  color: "#9ca3af",
 };
 
 const sectionTitleStyle: CSSProperties = {
@@ -135,22 +135,20 @@ const sectionTitleStyle: CSSProperties = {
   letterSpacing: "-0.02em",
 };
 
-function HousesCarousel({
+// Section 2 — the animated 3D flag, one house at a time. This is the only
+// place the flutter animation appears (moved here from the door-carousel
+// below, which is now gated behind a click and shouldn't be where the
+// headline motion lives) — so only ever one WebGL canvas is mounted.
+function FlagsCarousel({
   houses,
   storyLang,
   prefersReducedMotion,
   copy,
-  phase,
-  flash,
-  onEnter
 }: {
   houses: HouseInfo[];
   storyLang: "th" | "en";
   prefersReducedMotion: boolean;
   copy: SongsueCopy;
-  phase: "door" | "carousel";
-  flash: boolean;
-  onEnter: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -172,136 +170,164 @@ function HousesCarousel({
   const house = houses[activeIndex];
 
   return (
-    <section className="relative flex flex-col items-center justify-center px-6 py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+    <section className="relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+      <div className="max-w-xl flex flex-col items-center gap-3 text-center mb-6 lg:mb-12 z-10">
+        <span style={kickerStyle}>{copy.flags.kicker}</span>
+        <h2 className="landing-title" style={sectionTitleStyle}>
+          {copy.flags.title}
+        </h2>
+      </div>
+
+      <div className="relative w-full max-w-7xl mx-auto flex flex-col items-center min-h-[70svh] lg:min-h-[80svh]">
+        <div className="w-full relative overflow-hidden flex items-center justify-center min-h-[70svh] lg:min-h-[80svh]">
+          <AnimatePresence mode="popLayout" custom={direction}>
+            <motion.div
+              key={activeIndex}
+              custom={direction}
+              initial={{ opacity: 0, x: direction === 0 ? 0 : direction * 50 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: direction * -50 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.15}
+              dragMomentum={false}
+              onDragEnd={(e, { offset, velocity }) => {
+                if (offset.x < -60 || velocity.x < -400) {
+                  nextHouse();
+                } else if (offset.x > 60 || velocity.x > 400) {
+                  prevHouse();
+                }
+              }}
+              className="w-full flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-24 h-full cursor-grab active:cursor-grabbing"
+            >
+              {/* Left: House Name, Faculty, Caption */}
+              <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4 px-2" style={{ minWidth: 280, maxWidth: 400 }}>
+                <span style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
+                  {house.faculty[storyLang]}
+                </span>
+                {house.houseName && (
+                  <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#9ca3af" }}>
+                    {house.houseName}
+                  </span>
+                )}
+                {house.caption && (
+                  <p style={{ fontSize: "clamp(15px, 2vw, 18px)", fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.6 }}>
+                    {house.caption[storyLang]}
+                  </p>
+                )}
+              </div>
+
+              {/* Right: Flag — rightmost, big on desktop; centered and
+                  shorter on mobile so the section fits closer to one
+                  viewport instead of forcing a long scroll past a
+                  desktop-sized flag box. */}
+              <div
+                className="flex-1 w-full flex items-center justify-center lg:justify-end h-[48svh] min-h-[300px] lg:h-[80svh] lg:min-h-[400px] lg:translate-x-24 lg:translate-y-16"
+                style={{ filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.55))" }}
+              >
+                {house.flagModelSrc ? (
+                  <FlagFlutter3D src={house.flagModelSrc} prefersReducedMotion={prefersReducedMotion} />
+                ) : house.flagSrc ? (
+                  <div className="relative w-full h-full max-w-[300px]">
+                    <Image src={house.flagSrc} alt={`${house.faculty.en} flag`} fill style={{ objectFit: "contain" }} sizes="(max-width: 768px) 90vw, 300px" />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2" style={{ color: "rgba(255,255,255,0.3)" }}>
+                    <ImageOff size={26} strokeWidth={1.5} />
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                      {storyLang === "th" ? "เร็ว ๆ นี้" : "Coming soon"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Pagination Dots */}
+        <div className="flex gap-3 mt-4 lg:mt-8 z-20">
+          {houses.map((h, idx) => (
+            <button
+              key={idx}
+              onClick={() => goToHouse(idx)}
+              aria-label={`${storyLang === "th" ? "ไปที่ธง" : "Go to flag"} ${h.faculty[storyLang]}`}
+              aria-current={idx === activeIndex}
+              className="touch-target flex items-center justify-center"
+              style={{ width: 32, height: 32 }}
+            >
+              <span
+                className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === activeIndex ? "bg-white scale-125" : "bg-white/20"}`}
+              />
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HousesCarousel({
+  storyLang,
+  phase,
+  flash,
+  onEnter
+}: {
+  storyLang: "th" | "en";
+  phase: "door" | "carousel";
+  flash: boolean;
+  onEnter: () => void;
+}) {
+  return (
+    <section
+      className={
+        phase === "carousel"
+          ? "relative flex items-center justify-center w-full overflow-hidden"
+          : "relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
+      }
+      style={phase === "door" ? { minHeight: "100svh" } : undefined}
+    >
       {/* Flash overlay */}
-      <div 
-        className="fixed inset-0 bg-white z-[100] pointer-events-none transition-opacity" 
-        style={{ opacity: flash ? 1 : 0, transitionDuration: "1000ms" }} 
+      <div
+        className="fixed inset-0 bg-white z-[100] pointer-events-none transition-opacity"
+        style={{ opacity: flash ? 1 : 0, transitionDuration: "1000ms" }}
       />
 
-      <div className="max-w-xl flex flex-col items-center gap-3 text-center mb-12 z-10">
-        <span style={kickerStyle}>{copy.houses.kicker}</span>
-        <h2 className="landing-title" style={sectionTitleStyle}>{copy.houses.title}</h2>
-      </div>
-
-      <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: "80svh" }}>
-        
-        {phase === "door" && (
+      {phase === "door" && (
+        <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: "80svh" }}>
           <div className="relative w-full flex flex-col items-center justify-center" style={{ height: "80svh" }}>
-             <div className="w-full h-full">
-               <DoorCastle3D onEnter={onEnter} />
-             </div>
-             <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full">
-               {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
-             </p>
-          </div>
-        )}
-
-        {phase === "carousel" && (
-          <div className="w-full flex flex-col items-center">
-            <div className="w-full relative overflow-hidden flex items-center justify-center" style={{ minHeight: "80svh" }}>
-              <AnimatePresence mode="popLayout" custom={direction}>
-                <motion.div
-                  key={activeIndex}
-                  custom={direction}
-                  initial={{ opacity: 0, x: direction === 0 ? 0 : direction * 50, y: direction === 0 ? 20 : 0 }}
-                  animate={{ opacity: 1, x: 0, y: 0 }}
-                  exit={{ opacity: 0, x: direction * -50 }}
-                  transition={{
-                    duration: 0.4,
-                    ease: "easeOut",
-                    delay: direction === 0 ? 0.5 : 0
-                  }}
-                  drag="x"
-                  dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={0.15}
-                  dragMomentum={false}
-                  onDragEnd={(e, { offset, velocity }) => {
-                    if (offset.x < -60 || velocity.x < -400) {
-                      nextHouse();
-                    } else if (offset.x > 60 || velocity.x > 400) {
-                      prevHouse();
-                    }
-                  }}
-                  className="w-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-24 h-full cursor-grab active:cursor-grabbing"
-                >
-                  {/* Left: Caption & Name */}
-                  <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4" style={{ minWidth: 280, maxWidth: 400 }}>
-                    <span style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
-                      {house.faculty[storyLang]}
-                    </span>
-                    {house.houseName && (
-                      <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-primary)" }}>
-                        {house.houseName}
-                      </span>
-                    )}
-                    {house.caption && (
-                      <p style={{ fontSize: "clamp(15px, 2vw, 18px)", fontWeight: 600, color: "rgba(255,255,255,0.85)", lineHeight: 1.6 }}>
-                        {house.caption[storyLang]}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2 mt-4" style={{ color: "rgba(255,255,255,0.25)" }}>
-                      <Sparkles size={13} strokeWidth={1.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600 }}>
-                        {storyLang === "th" ? "ภาพตัวละครเร็ว ๆ นี้" : "Character art coming soon"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Right: Flag */}
-                  <div 
-                    className="flex-1 w-full flex items-center justify-center lg:justify-end translate-x-8 translate-y-12 lg:translate-x-24 lg:translate-y-16" 
-                    style={{ height: "80svh", minHeight: 400, filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.55))" }}
-                  >
-                    <motion.div
-                      initial={{ opacity: 0, y: 30 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: direction === 0 ? 0.7 : 0,
-                        duration: 0.4, ease: "easeOut"
-                      }}
-                      className="w-full h-full flex items-center justify-center relative"
-                    >
-                      {house.flagModelSrc ? (
-                        <FlagFlutter3D src={house.flagModelSrc} prefersReducedMotion={prefersReducedMotion} />
-                      ) : house.flagSrc ? (
-                        <div className="relative w-full h-full max-w-[300px]">
-                          <Image src={house.flagSrc} alt={`${house.faculty.en} flag`} fill style={{ objectFit: "contain" }} sizes="(max-width: 768px) 90vw, 300px" />
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center gap-2" style={{ color: "rgba(255,255,255,0.3)" }}>
-                          <ImageOff size={26} strokeWidth={1.5} />
-                          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                            {storyLang === "th" ? "เร็ว ๆ นี้" : "Coming soon"}
-                          </span>
-                        </div>
-                      )}
-                    </motion.div>
-                  </div>
-                </motion.div>
-              </AnimatePresence>
+            <div className="w-full h-full">
+              <DoorCastle3D onEnter={onEnter} />
             </div>
-
-            {/* Pagination Dots */}
-            <div className="flex gap-3 mt-8 z-20">
-              {houses.map((h, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => goToHouse(idx)}
-                  aria-label={`${storyLang === "th" ? "ไปที่บ้าน" : "Go to house"} ${h.faculty[storyLang]}`}
-                  aria-current={idx === activeIndex}
-                  className="touch-target flex items-center justify-center"
-                  style={{ width: 32, height: 32 }}
-                >
-                  <span
-                    className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${idx === activeIndex ? "bg-white scale-125" : "bg-white/20"}`}
-                  />
-                </button>
-              ))}
-            </div>
+            <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full">
+              {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
+            </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {phase === "carousel" && (
+        // Full-bleed banner reveal — replaces the old per-house carousel/grid
+        // entirely. Sized to the image's own 3240x1350 aspect ratio (not a
+        // forced 100svh box) so a mobile portrait viewport doesn't letterbox
+        // this wide/short banner into a thin strip with huge empty bars.
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
+          className="relative w-full"
+        >
+          <Image
+            src="/songsue-banner.webp"
+            alt={storyLang === "th" ? "แบนเนอร์ สองสื่อ" : "Songsue banner"}
+            width={3240}
+            height={1350}
+            className="w-full h-auto"
+            sizes="100vw"
+            priority
+          />
+        </motion.div>
+      )}
     </section>
   );
 }
@@ -324,6 +350,7 @@ export function SongsueLanding({
   
   const [doorPhase, setDoorPhase] = useState<"door" | "carousel">("door");
   const [flash, setFlash] = useState(false);
+  const houseSectionRef = useRef<HTMLDivElement>(null);
 
   const handleEnter = () => {
     setFlash(true);
@@ -332,6 +359,17 @@ export function SongsueLanding({
       setFlash(false);
     }, 1000);
   };
+
+  // FlagsCarousel (section 2) unmounts and the door section collapses from
+  // 100svh down to the banner's natural (much shorter) height the instant
+  // doorPhase flips — with no scroll compensation the browser clamps the
+  // scroll offset to the new, shorter page and the banner ends up scrolled
+  // past. Recenter on the section so the banner actually appears in view.
+  useEffect(() => {
+    if (doorPhase === "carousel") {
+      houseSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [doorPhase]);
 
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -387,14 +425,20 @@ export function SongsueLanding({
           <h1
             className="landing-title"
             style={{
-              fontSize: "clamp(56px, 14vw, 140px)",
+              fontSize: "clamp(32px, 14vw, 140px)",
               fontWeight: 950,
               color: "rgba(255,255,255,0.97)",
               lineHeight: 0.95,
               letterSpacing: "-0.03em",
+              whiteSpace: "nowrap",
             }}
           >
-            <span className="gradient-text">{copy.hero.titleTh}</span>
+            <span
+              className="gradient-text"
+              style={{ backgroundImage: "linear-gradient(135deg, #111827 0%, #ffffff 100%)" }}
+            >
+              {copy.hero.titleTh}
+            </span>
           </h1>
           <p style={{ fontSize: "clamp(14px, 2vw, 18px)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
             {copy.hero.titleEn}
@@ -414,16 +458,27 @@ export function SongsueLanding({
         </motion.div>
       </div>
 
-      {/* Section 2 - Carousel of houses */}
-      <HousesCarousel
-        houses={houses}
-        storyLang={storyLang}
-        prefersReducedMotion={!!prefersReducedMotion}
-        copy={copy}
-        phase={doorPhase}
-        flash={flash}
-        onEnter={handleEnter}
-      />
+      {/* Section 2 - Animated 3D flag carousel, one house at a time.
+          Hidden once the door has been entered — it's a pre-castle tease,
+          not something that should stick around once section 03 takes over. */}
+      {doorPhase === "door" && (
+        <FlagsCarousel
+          houses={houses}
+          storyLang={storyLang}
+          prefersReducedMotion={!!prefersReducedMotion}
+          copy={copy}
+        />
+      )}
+
+      {/* Section 3 - Door intro, then the full-bleed songsue-banner.png reveal */}
+      <div ref={houseSectionRef}>
+        <HousesCarousel
+          storyLang={storyLang}
+          phase={doorPhase}
+          flash={flash}
+          onEnter={handleEnter}
+        />
+      </div>
 
       {/* ── CTA / Register ───────────────────────────────────────────────── */}
       {doorPhase === "carousel" && (
@@ -478,12 +533,11 @@ export function SongsueLanding({
           {variant === "login" || countdown.isOpen ? (
             <button
               onClick={() => signIn("google", { callbackUrl: "/" })}
-              className="btn btn-primary btn-full touch-target"
+              className="btn songsue-cta-btn btn-full touch-target"
               style={{
                 height: "clamp(60px, 7vw, 72px)",
                 borderRadius: "clamp(18px, 2vw, 22px)",
                 fontSize: "clamp(16px, 2vw, 18px)",
-                boxShadow: "0 28px 56px var(--accent-glow)",
                 gap: 14,
               }}
             >
@@ -504,7 +558,7 @@ export function SongsueLanding({
               </div>
               <button
                 disabled
-                className="btn btn-primary btn-full touch-target"
+                className="btn songsue-cta-btn btn-full touch-target"
                 style={{
                   height: "clamp(56px, 6.5vw, 64px)",
                   borderRadius: "clamp(16px, 2vw, 20px)",
@@ -520,6 +574,25 @@ export function SongsueLanding({
         </div>
       </motion.section>
       )}
+
+      {/* Scoped to this page only — the shared .btn-primary class elsewhere in
+          the app stays on the brand orange; this landing page alone uses a
+          monochrome black/white/grey palette. */}
+      <style jsx>{`
+        .songsue-cta-btn {
+          background: #f3f4f6;
+          color: #0a0a0a;
+          box-shadow: 0 28px 56px rgba(255, 255, 255, 0.14);
+        }
+        .songsue-cta-btn:hover:not(:disabled) {
+          background: #ffffff;
+          box-shadow: 0 28px 56px rgba(255, 255, 255, 0.22), 0 4px 12px rgba(0, 0, 0, 0.4);
+          transform: translateY(-1px);
+        }
+        .songsue-cta-btn:active:not(:disabled) {
+          transform: scale(0.97);
+        }
+      `}</style>
     </div>
   );
 }

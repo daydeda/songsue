@@ -14,16 +14,18 @@ console.warn = (...args) => {
   origConsoleWarn(...args);
 };
 
-// The flag cloth mesh in flag_fineart.glb is a densely subdivided plane
-// (957 verts) authored flat, thin along local Y — that's the axis we push
-// a wind ripple through. Local Z is the axis running from the top/pole attachment
-// (near z = min) down to the bottom (near z = max), so ripple
-// amplitude tapers from 0 at the pole (z = min) to full strength at the bottom
-// (z = max), like a real banner pinned at the top.
-// glTF scene-graph objects are named after their *node*, not the mesh
-// they reference — the mesh named "Plane.004" is wrapped by a node named
-// "Plane", so that's the name that shows up on the loaded Object3D.
-const FLAG_MESH_NAME = "Plane";
+// The flag cloth mesh — shared geometry (957 verts, identical bounding box)
+// re-skinned per house across architecture_flag.glb / camt_flag.glb /
+// Masscom_flag.glb / Fine_art_flag.glb — is a densely
+// subdivided plane authored flat, thin along local Y — that's the axis we
+// push a wind ripple through. Local Z is the axis running from the
+// top/pole attachment (near z = min) down to the bottom (near z = max), so
+// ripple amplitude tapers from 0 at the pole (z = min) to full strength at
+// the bottom (z = max), like a real banner pinned at the top.
+// glTF scene-graph objects are named after their *node*, not the mesh they
+// reference, and Blender disambiguates re-imported "Plane" nodes by
+// suffixing ".001"/".002"/etc per file — so match by prefix, not exact name.
+const FLAG_MESH_NAME_PREFIX = "Plane";
 
 function windVertexShader(
   shader: THREE.WebGLProgramParametersWithUniforms,
@@ -96,7 +98,7 @@ function FlagModel({
       child.castShadow = true;
       child.receiveShadow = true;
 
-      if (child.name === FLAG_MESH_NAME) {
+      if (child.name.startsWith(FLAG_MESH_NAME_PREFIX)) {
         const geometry = child.geometry;
         geometry.computeBoundingBox();
         const bbox = geometry.boundingBox || new THREE.Box3();

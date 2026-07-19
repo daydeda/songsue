@@ -68,6 +68,21 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
+      {
+        // Landing-page-only assets (public, unauthenticated "/") — the 3D flag
+        // GLBs (~3MB each) and the banner/logo PNGs. Unlike /uploads these are
+        // git-committed under a fixed filename (not content-hashed), so a future
+        // asset swap without a rename would need a redeploy to look fresh sooner
+        // than max-age — hence 7-day fresh + 30-day stale-while-revalidate rather
+        // than a full immutable year. Still cuts most of the repeat-visit
+        // bandwidth against the 100GB/mo Vercel Fast Data Transfer cap, since
+        // these had no explicit Cache-Control before (default is effectively
+        // uncached revalidation on every request).
+        source: "/(flag_house/.*|songsue-banner.webp|songsue-logo.png|smocamt-logo.png|smocamt-logo-icon.png)",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=2592000" },
+        ],
+      },
     ];
   },
   distDir: (typeof __dirname !== "undefined" && (__dirname.includes("CloudDocs") || __dirname.includes("Mobile Documents")))

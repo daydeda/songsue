@@ -169,10 +169,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 {/* Brand/Logo (Desktop Left, Mobile Right) */}
 <div className="nav-left">
 <Link href="/dashboard" className="logo">
-<img src="/smocamt-logo-icon.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
-<div className="logo-text">
-<span className="gradient-text">ActiveCAMT</span>
-</div>
+<img src="/songsue-logo.png" alt="Songsue" className="logo-icon" />
 </Link>
 </div>
 
@@ -345,10 +342,7 @@ title={battleLabel}
 >
 <div className="sidebar-header">
 <div className="logo">
-<img src="/smocamt-logo-icon.png" alt="SMOCAMT Logo" className="logo-icon" width={32} height={32} style={{ width: 32, height: 32 }} />
-<div className="logo-text">
-<span className="gradient-text">ActiveCAMT</span>
-</div>
+<img src="/songsue-logo.png" alt="Songsue" className="logo-icon" />
 </div>
 <button
 className="sidebar-close touch-target"
@@ -470,14 +464,9 @@ text-decoration: none;
 color: inherit;
 }
 .logo-icon {
-width: 32px;
-height: 32px;
+height: 40px;
+width: auto;
 object-fit: contain;
-}
-.logo-text {
-font-weight: 800;
-font-size: 20px;
-letter-spacing: -0.03em;
 }
 .user-section {
 display: flex;

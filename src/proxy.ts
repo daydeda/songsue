@@ -30,7 +30,8 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/smocamt-logo.png") ||
     pathname.startsWith("/smocamt-logo-icon.png") ||
     pathname.startsWith("/icon.svg") ||
-    pathname.startsWith("/flag_house");
+    pathname.startsWith("/flag_house") ||
+    pathname.startsWith("/songsue-banner.webp");
 
   if (isPublicPath) {
     return NextResponse.next();
@@ -116,7 +117,10 @@ export const config = {
   // Supabase-backed deploys serve these from a cross-origin URL the proxy never
   // sees, so this only affects the self-hosted (local-disk) deploy.
   //
-  // `flag_house` (public/flag_house/*) is excluded for the same reason — the
-  // Two Media In Arts landing page renders house flags before sign-in.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|smocamt-logo-icon.png|icon.svg|uploads|flag_house).*)"],
+  // `flag_house`, `songsue-banner.webp`, and `songsue-logo.png` are excluded
+  // for the same reason — the Two Media In Arts landing page (and the nav
+  // bar's brand logo, visible pre-sign-in on /login) render before sign-in.
+  // `icon.png` is the App Router favicon (replaced the old `icon.svg`) and
+  // must stay public so the browser tab icon loads for signed-out visitors.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|smocamt-logo.png|smocamt-logo-icon.png|icon.png|songsue-logo.png|uploads|flag_house|songsue-banner.webp).*)"],
 };

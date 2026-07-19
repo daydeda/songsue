@@ -1,235 +1,203 @@
-# Deploy Runbook: Songsue → CAMT `dev2` (Portainer / Docker Swarm)
+# Deploy Runbook: Songsue → Vercel + Supabase
 
-Stands up a brand-new, standalone production deployment of this repo
-(`daydeda/songsue`) at **`songsue.camt.cmu.ac.th`**, separate from and
-non-impacting to the existing `activecamt.camt.cmu.ac.th` production stack
-(`daydeda/smocamt-website` — a different repo, deployed and managed
-independently of this one). Fresh empty database — no data/storage migration
-needed.
+Stands up a standalone production deployment of this repo (`daydeda/songsue`) on
+**Vercel**, backed by a dedicated **Supabase** project for Postgres + file
+storage — separate from and non-impacting to the existing
+`activecamt.camt.cmu.ac.th` production stack (`daydeda/smocamt-website` — a
+different repo, deployed and managed independently of this one).
 
-Environment constraints: shared Docker Swarm via Portainer web UI at
-`dev2.camt.cmu.ac.th`, no SSH/host filesystem, no `build:` (pre-built GHCR
-image only), no bind mounts (named volumes only), **one stack per project**
-(per CAMT IT's own instructions — see the "วิธีเข้าใช้งาน dev2" PDF).
+**Superseded plan:** an earlier version of this doc described a self-hosted
+Docker Swarm deploy to CAMT's `dev2` Portainer instance. That path was dropped
+in favor of Vercel + Supabase (decision: 2026-07-19) — mainly because it
+avoids the IT-mediated port/hostname routing step that was blocking the
+Portainer plan from going live. `docker-stack.songsue.yml` and
+`.github/workflows/docker-publish.yml` still exist in the repo but are unused
+by this deploy target; see git history for the old runbook if a self-hosted
+path is ever needed again.
+
+The codebase needed **zero code changes** for this — it already had Supabase
+Storage code paths (`src/app/api/upload/route.ts`,
+`src/lib/form-file-storage.ts`, `src/lib/shop-storage.ts`), pooler-aware DB
+connection handling (`src/db/index.ts`), and a `vercel.json` with cron config,
+all inherited from the ActiveCAMT parent project.
 
 ---
 
-## 0. Port + hostname — resolved
+## 0. Domain
 
-CAMT IT confirmed the allowed public port range for this project is
-**10700–10799**. `activecamt` already forwards `10780`, so that one's taken.
-**This runbook uses `10781`** for songsue — next free port in the range, not
-adjacent to anything else documented in this repo.
+Vercel gives you `<project>.vercel.app` immediately on import — nothing to
+request, nothing IT-mediated. Ship on that first.
 
-Before deploying, sanity-check `10781` isn't already claimed by some *other*
-CAMT project's stack you can't see from this repo (Portainer → Stacks, or ask
-IT to confirm) — the range being assigned to you doesn't guarantee every port
-in it is actually free session-to-session. If it's taken, pick another free
-one in `10700–10799` and update both `docker-stack.songsue.yml` (the
-`"10781:3000"` line) and every `10781` reference below.
-
-Hostname: still request `songsue.camt.cmu.ac.th` → `10781` reverse-proxy
-routing from CAMT IT (or `songsue.cmu.ac.th` if they offer the root domain
-instead — either works technically, just update `AUTH_URL` and the proxy
-target to match whichever they wire up). That routing step is IT-mediated and
-is the one piece that still blocks going live — everything else below can be
-prepared ahead of it.
+Optional custom domain later (e.g. `songsue.camt.cmu.ac.th` or
+`songsue.cmu.ac.th`): Vercel dashboard → your project → **Domains** → add
+domain → Vercel gives you a CNAME/A record → ask CAMT IT to add that DNS
+record. Much lighter than the old Portainer plan's port-range + reverse-proxy
+dance — no port allocation, no "one stack per project" constraint. Not
+required to go live.
 
 ## 1. OAuth — reusing activecamt's Google client
 
-You confirmed: reuse the existing Google OAuth client, and songsue should have
-**no `@cmu.ac.th`-only restriction** (any Google account can sign in).
+Reuse the existing Google OAuth client; songsue has **no `@cmu.ac.th`-only
+restriction** (any Google account can sign in).
 
-Two things worth knowing:
-- **Code-level:** `src/auth.ts`'s `signIn` callback currently has no
-  `@cmu.ac.th` domain check at all — it was disabled and later removed from
-  this codebase, despite a stale comment above it still claiming to enforce
-  one. So reusing the client requires **zero code changes** to get "no
-  restriction" on songsue — that's already the app's current behavior.
-- **Google Cloud side:** in the OAuth client's **Credentials** page, just add
-  a second **Authorized redirect URI**
-  (`https://songsue.camt.cmu.ac.th/api/auth/callback/google`) and **Authorized
-  JavaScript origin** (`https://songsue.camt.cmu.ac.th`) alongside activecamt's
-  existing ones — one client, multiple redirect URIs, no cross-effect between
-  apps. Copy the same `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` values into
-  songsue's Portainer stack env vars.
-- **Worth separately confirming** (not required to proceed, but affects what
-  "no restriction" actually means in practice): check the OAuth consent
-  screen's **User type** (APIs & Services → OAuth consent screen). If it's set
-  to **Internal** (tied to the CMU Google Workspace org), Google itself blocks
-  non-`@cmu.ac.th` accounts before either app's code ever runs — in which case
-  songsue would inherit that restriction regardless of the code, and getting a
-  truly open sign-in would need either switching that client to **External**
-  (affects activecamt too) or a second, dedicated OAuth client for songsue. If
-  it's already **External**, nothing further to do.
+- **Code-level:** `src/auth.ts`'s `signIn` callback has no `@cmu.ac.th` domain
+  check — already the app's current behavior, zero code changes needed.
+- **Google Cloud side:** OAuth client's **Credentials** page → add your Vercel
+  domain's **Authorized redirect URI**
+  (`https://<your-domain>/api/auth/callback/google`, e.g.
+  `https://songsue.vercel.app/api/auth/callback/google`) and **Authorized
+  JavaScript origin** (`https://<your-domain>`) alongside activecamt's
+  existing ones — one client, multiple redirect URIs, no cross-effect. Copy
+  the same `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` values into songsue's
+  Vercel env vars. Add a second URI/origin later if you add a custom domain.
+- **Worth separately confirming:** OAuth consent screen's **User type**. If
+  it's **Internal** (tied to the CMU Workspace org), Google blocks
+  non-`@cmu.ac.th` accounts before the app's code ever runs, regardless of
+  what the code allows — switching to **External** (affects activecamt too)
+  or a dedicated client would be needed for genuinely open sign-in. If it's
+  already **External**, nothing further to do.
 
-## 2. Publish the image to GHCR
+## 2. Create the Supabase project
 
-Already wired: `.github/workflows/docker-publish.yml` pushes
-`ghcr.io/daydeda/songsue:latest` on every push to this repo's `main` (or run
-it manually via *Actions → Build and publish Docker image → Run workflow*).
+- New project in the Supabase dashboard. Pick a region close to users —
+  Singapore matches `vercel.json`'s `regions: ["sin1"]`.
+- **Project Settings → Database → Connection string**: use the **Transaction
+  pooler** (port `6543`), not the direct connection — Vercel functions are
+  short-lived/high-concurrency and need pooled connections. This becomes
+  `DATABASE_URL`. `src/db/index.ts` already auto-detects `:6543` in the URL
+  and disables prepared statements / lowers pool size accordingly — no config
+  needed on the app side.
+- **Project Settings → API**: copy the **Project URL** (`SUPABASE_URL`) and
+  the **`service_role`** secret key (`SUPABASE_SERVICE_ROLE_KEY` — server-side
+  only, never expose client-side).
 
-**The `daydeda/songsue` GitHub repo is now public** — but that's a separate
-setting from the GHCR *package* visibility; making the repo public does not
-automatically make `ghcr.io/daydeda/songsue` public. Check: GitHub → repo →
-**Packages** (right sidebar) → the `songsue` package → **Package settings** →
-confirm visibility, and if it still shows Private, **Change visibility** →
-Public. (No secrets are baked into the image — `.env*` is `.dockerignore`d and
-everything is injected at runtime — so this is safe either way.) If you'd
-rather leave the package private, add a `ghcr.io` registry credential in
-Portainer instead (username + PAT with `read:packages`) — either path works,
-public just skips a credential.
+## 3. Create the storage buckets
 
-## 3. Create the stack in Portainer
+Supabase dashboard → **Storage** → **New bucket**, create exactly these three
+(names are hardcoded in the code, must match exactly):
 
-Following the CAMT IT instructions exactly (dev2 → primary environment →
-Stacks → **+ Add Stack**):
-- **Name:** `songsue` (must NOT reuse or edit the `activecamt` stack).
-- **Build method: Repository**
-  - **Repository URL:** `https://github.com/daydeda/songsue` ·
-    **Authentication: OFF** — the repo is now public, so Portainer can pull
-    the compose file with no GitHub credential. (If it ever goes private
-    again, flip this back ON with a GitHub username + PAT.)
-  - **Reference:** `refs/heads/main` · **Compose path:**
-    `docker-stack.songsue.yml`
-- **Environment variables:** (`SONGSUE_PORT` is NOT one of these — the port is
-  hardcoded directly in `docker-stack.songsue.yml`, matching how activecamt's
-  own stack file hardcodes `10780`)
-  - `POSTGRES_PASSWORD` — new, URL-safe, distinct from activecamt's.
-  - `AUTH_SECRET` — new, `openssl rand -base64 33`. Must NOT reuse
-    activecamt's — it signs sessions, sharing it would let a songsue session
+| Bucket | Public? | Used by |
+| --- | --- | --- |
+| `uploads` | **Public** | `src/app/api/upload/route.ts` — event/house images |
+| `form-uploads` | **Private** | `src/lib/form-file-storage.ts` — evaluation-form file answers (PDPA) |
+| `slips` | **Private** | `src/lib/shop-storage.ts` — payment slips (PDPA) |
+
+Without `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` set, all three fall back to
+writing local disk — which does **not** work on Vercel's ephemeral/read-only
+filesystem. Both env vars must be set before any upload flow is exercised.
+
+## 4. Create the Vercel project
+
+- Vercel dashboard → **New Project** → import `daydeda/songsue`. Framework
+  preset auto-detects as Next.js; no build command changes needed.
+- **Environment Variables** (Production — and Preview if you want PR previews
+  to work against the same DB, though a separate Supabase project per
+  environment is safer once this is more than one person's project):
+  - `DATABASE_URL` — Supabase pooler string from step 2.
+  - `AUTH_URL` — `https://<your-domain>` (production fails fast without this —
+    `src/auth.ts` line ~26 — since `trustHost: true` otherwise derives the
+    OAuth callback host from the request `Host` header).
+  - `AUTH_SECRET` — new, `openssl rand -base64 33`. Must **not** reuse
+    activecamt's — it signs sessions; sharing it would let a songsue session
     token be replayed against activecamt or vice versa.
   - `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` — same values as activecamt's (see
     step 1).
-- (Optional) Enable the GitOps webhook if you want — see "Updating later"
-  below for why it's best-effort only on this Portainer install, not
-  guaranteed auto-deploy.
-- **Deploy the stack.**
+  - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — from step 2.
+  - `SUPER_ADMIN_EMAILS` — comma-separated; see step 6.
+  - `CRON_SECRET` — new, e.g. `openssl rand -hex 32`. Vercel automatically
+    sends `Authorization: Bearer $CRON_SECRET` on its own scheduled cron
+    invocations once this var is set — the two routes in
+    `src/app/api/cron/*/route.ts` already fail closed if it's missing.
+- `vercel.json` already declares `regions: ["sin1"]` and both cron schedules
+  (`award-points` daily, `gc-form-files` daily) — nothing to configure in the
+  dashboard's Cron Jobs UI beyond setting `CRON_SECRET` above.
+- **Deploy.**
 
-`web` waits for `db`'s healthcheck before starting (same as activecamt).
+## 5. Build the schema
 
-## 4. Build the schema
+Supabase is publicly reachable (unlike the old self-hosted DB, which had no
+public port and required a container console) — run this from your own
+machine. Point a local `.env` at the Supabase `DATABASE_URL` from step 2, then
+run **both**, in order:
 
-*Containers → `songsue_web` → Console → `/bin/sh` → Connect*, then run
-**both**, in order:
 ```sh
-npm run db:push               # bootstraps the FULL schema from src/db/schema.ts
-npm run db:migrate:container  # layers on incremental patches accumulated since
+npm run db:push       # bootstraps the FULL schema from src/db/schema.ts
+npm run db:migrate    # layers on incremental patches — hardwired to --env-file=.env
 ```
-`db:migrate:container` alone is NOT enough on a brand-new database — its own
-docstring says "safe to run on an existing DB": every step is an `ALTER
-TABLE ... ADD COLUMN IF NOT EXISTS` or similar, assuming the base tables
-(`users`, `houses`, `events`, …) already exist. Skipping `db:push` first
-fails immediately with `relation "users" does not exist`. `db:push` may show
-an interactive confirmation prompt (drizzle-kit); on a truly empty DB there's
-nothing ambiguous to resolve. Both commands read `DATABASE_URL` straight from
-the container's env — no `.env` file involved.
 
-This is a brand-new empty database — no data-only pg_dump step, no storage
-bucket migration, unlike the activecamt cutover. Nothing else to import.
+`db:migrate` alone is not enough on a brand-new database — every step there is
+an `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` or similar, assuming base tables
+already exist. Skipping `db:push` first fails with `relation "users" does not
+exist`. `db:push` may show an interactive drizzle-kit confirmation prompt; on
+a truly empty DB there's nothing ambiguous to resolve.
 
-## 5. Promote your admin account
+`src/db/guard.ts` will refuse to run against a host matching
+`supabase.co`/`:6543` (or anything else that looks remote) unless you pass
+`CONFIRM=yes` — that's intentional protection against running a destructive
+script against prod by accident, not a bug. Only add `CONFIRM=yes` once
+you're sure the target is right.
 
-Two separate mechanisms, pick one depending on the role you need:
+## 6. Promote your admin account
 
-- **`admin`:** sign in once at `https://songsue.camt.cmu.ac.th` via Google,
-  then in the `songsue_web` console:
+Two separate mechanisms, pick one depending on the role you need — both run
+from your own machine against the Supabase `DATABASE_URL` (no container
+console needed, unlike the Portainer plan):
+
+- **`admin`:** sign in once at your Vercel URL via Google, then:
   ```sh
-  CONFIRM=yes npx tsx elevate-admin.ts <your-email>
+  CONFIRM=yes npx tsx --env-file=.env elevate-admin.ts <your-email>
   ```
-  (`elevate-admin.ts` only ever sets `role: "admin"` — there's no CLI path to
-  `super_admin`.)
-- **`super_admin`:** set `SUPER_ADMIN_EMAILS` (comma-separated) as a stack env
-  var in Portainer (already wired into `docker-stack.songsue.yml`) and
-  redeploy. `src/auth.ts` force-promotes any matching email to `super_admin`
-  on every sign-in/session refresh — no script needed, independent per stack
-  since each has its own env vars, same mechanism as activecamt.
+  (only ever sets `role: "admin"` — there's no CLI path to `super_admin`.)
+- **`super_admin`:** set `SUPER_ADMIN_EMAILS` (comma-separated) as a Vercel
+  env var (already set in step 4) and redeploy if you haven't already.
+  `src/auth.ts` force-promotes any matching email to `super_admin` on every
+  sign-in/session refresh — no script needed.
 
-## 6. Verify before announcing
+## 7. Verify before announcing
 
-- Both `songsue_web` and `songsue_db` running (Portainer → Stacks → `songsue`).
-- Sign in with a non-`@cmu.ac.th` Google account — confirms "no restriction"
-  actually works end-to-end, not just in theory.
-- Upload an image; confirm it persists across a stack redeploy (named
-  volumes — same pattern as activecamt).
-- `/audit-verify` against this stack's own DB.
+- Visit the Vercel deployment URL, sign in with a non-`@cmu.ac.th` Google
+  account — confirms "no restriction" works end-to-end.
+- Upload an image; confirm the stored URL is an absolute Supabase Storage URL
+  (not `/uploads/...`), confirming the `uploads` bucket is wired correctly.
+- Exercise a form-file-answer upload and a shop slip upload; confirm the
+  private buckets accept files and are not publicly listable/guessable.
+- `/audit-verify` against the Supabase DB.
 - `/scanner-verify` if you intend to run real events/check-ins on songsue.
-
-## 7. Cut over
-
-- Confirm `https://songsue.camt.cmu.ac.th` resolves through the CAMT proxy to
-  `10781` (IT-mediated, same as step 0).
+- Trigger a cron manually to confirm the secret check works:
+  ```sh
+  curl -i https://<your-domain>/api/cron/gc-form-files \
+    -H "Authorization: Bearer $CRON_SECRET"
+  ```
+  then check Vercel dashboard → **Cron Jobs** → run history after the next
+  scheduled time.
 
 ## Updating later
 
-**Auto-deploy is now wired** (`docker-publish.yml`'s "Trigger Portainer
-redeploy" step) — same pattern `smocamt-website`'s own CI already uses in
-real production, copied here with a **separate** secret/webhook so songsue's
-CI can never touch activecamt's stack. One-time setup:
-1. Portainer → Stacks → songsue → Editor → **GitOps updates** → enable
-   **Webhook** → copy its URL.
-2. Add it as a GitHub repo secret on `daydeda/songsue` named
-   `SONGSUE_PORTAINER_WEBHOOK_URL` (not `PORTAINER_WEBHOOK_URL`, which is
-   reserved for activecamt's own workflow in the other repo). Until this
-   secret exists the CI step just no-ops — builds never fail for a missing
-   webhook.
+Vercel auto-deploys on every push to `main` via its native GitHub
+integration — set up automatically when you imported the repo in step 4. No
+GHCR image, no Portainer webhook, no Community-vs-Business-Edition gating to
+worry about (the old plan's biggest operational unknown). `main` pushes go to
+Production; other branches get their own Preview deployment URL for free.
 
-**Caveat — unconfirmed on this specific dev2 instance:** in that same GitOps
-updates panel, `Re-pull image` and `Force redeployment` are greyed out behind
-a **"Business Feature"** badge (this dev2 install is Community Edition). It's
-untested whether firing the plain webhook still forces Swarm to pull a fresh
-`ghcr.io/daydeda/songsue:latest`, or just redeploys the git-defined spec while
-silently reusing whatever image is already cached under that tag — i.e.
-possibly stale code with no error. **Verify after the first real push:**
-check the `songsue_web` container's start time in Portainer right after CI
-finishes; if it didn't restart (or restarted but the change isn't visible),
-the webhook isn't actually re-pulling and you're back to the manual fallback.
+## Backups
 
-**Reliable manual fallback (confirmed free-tier, from the dev2 PDF):** *Stacks
-→ songsue → Editor → "Update the stack" → toggle "Pull latest image version"
-(this one is NOT gated) → Update.*
+Supabase's own backup coverage depends on your project's plan:
+- **Free tier:** no automated backups (check current Supabase docs — this has
+  changed over time).
+- **Pro tier and up:** daily backups, with Point-in-Time Recovery available on
+  higher tiers.
 
-## Backups (optional, deferred)
-
-`docker-stack.songsue.yml` has the `backup` service commented out. Self-hosted
-Postgres has no managed backups otherwise — when ready, uncomment it; it runs
-`scripts/backup-db.mjs` once a day: `pg_dump` → gzip → upload to a Google
-Drive folder (via OAuth as your own account, not a service account — service
-accounts have no Drive quota of their own) → deletes the local copy (zero
-server disk cost) → prunes backups older than `BACKUP_RETENTION_DAYS` (default
-30).
-
-**Fastest path — reuse activecamt's existing Drive setup:** if you already
-completed the one-time OAuth setup for activecamt, you can reuse the same
-`GDRIVE_OAUTH_CLIENT_ID` / `GDRIVE_OAUTH_CLIENT_SECRET` /
-`GDRIVE_OAUTH_REFRESH_TOKEN` values in songsue's stack env vars — just point
-`GDRIVE_FOLDER_ID` at a **different** Drive folder so the two apps' backups
-don't land in the same place. No new OAuth client or refresh token needed.
-
-**Or set up a dedicated one (one-time):**
-1. In any Google Cloud project (free, no billing required): **APIs & Services
-   → Library** → enable the **Google Drive API**.
-2. **APIs & Services → Credentials → + CREATE CREDENTIALS → OAuth client ID**.
-   Application type: **Desktop app**. Copy the **Client ID** and **Client
-   Secret**.
-3. In Google Drive, create a folder for songsue's backups. Copy its id from
-   the URL (`drive.google.com/drive/folders/<FOLDER_ID>`).
-4. On your own machine — **in your own terminal, not through an AI
-   assistant/chat**, since it prints a live credential:
-   ```sh
-   GDRIVE_OAUTH_CLIENT_ID=... GDRIVE_OAUTH_CLIENT_SECRET=... node scripts/gdrive-get-refresh-token.mjs
-   ```
-   Approve the browser consent screen; it prints a **refresh token**.
-5. Set `GDRIVE_OAUTH_CLIENT_ID`, `GDRIVE_OAUTH_CLIENT_SECRET`,
-   `GDRIVE_OAUTH_REFRESH_TOKEN` (from step 4), `GDRIVE_FOLDER_ID` (from step
-   3) as songsue's stack env vars, uncomment the `backup` service, redeploy.
-
-**Manual fallback** (e.g. before a risky migration): from the `songsue_web`
-console, `node scripts/backup-db.mjs` runs one immediately using the same env
-vars.
+Check what your plan actually covers before assuming you're protected.
+`scripts/backup-db.mjs` (pg_dump → gzip → Google Drive) was written for the
+self-hosted Postgres path, which had no managed backups at all — it still
+works fine pointed at a Supabase `DATABASE_URL` as a belt-and-suspenders extra
+copy if your plan's built-in coverage isn't enough, but it's optional here in
+a way it wasn't for the self-hosted plan.
 
 ## Rollback
 
-Until DNS points at CAMT (step 7), nothing is public yet — rollback is "don't
-finish step 7." Nothing here touches activecamt's stack, database, or GHCR
-image at any point.
+Vercel keeps every deployment. Rolling back is dashboard → **Deployments** →
+pick a previous one → **Promote to Production** — no infra teardown, no image
+re-pull uncertainty. Until a custom domain points here, the `vercel.app` URL
+being live is low-stakes by default (still reachable by anyone with the URL,
+so don't treat it as private).

@@ -542,15 +542,16 @@ select.input { cursor: pointer; }
 }
 
 /* ── Landing Page Specific Typography Overrides ──────────────────────────────── */
+/* The hero h1 always renders the Thai wordmark (copy.hero.titleTh) regardless
+   of the active UI language, so this rule must NOT be scoped to .lang-th —
+   scoping it broke as soon as the UI language switched to en/mm/cn, since the
+   element then carries class lang-en/lang-mm/lang-cn instead of lang-th.
+   Thai stacks combining vowel/tone marks above the base character (e.g. the
+   ่/ื in สื่อ); a sub-1 line-height and tight negative letter-spacing clips
+   those marks off, making the character look missing (สื่อ renders as สือ). */
 h1.landing-title,
-.lang-th h1.landing-title,
-.lang-mm h1.landing-title,
-.lang-cn h1.landing-title,
-h1.landing-title *,
-.lang-th h1.landing-title *,
-.lang-mm h1.landing-title *,
-.lang-cn h1.landing-title * {
-  line-height: 0.95 !important;
-  letter-spacing: -0.05em !important;
+h1.landing-title * {
+  line-height: 1.25 !important;
+  letter-spacing: -0.01em !important;
 }
 

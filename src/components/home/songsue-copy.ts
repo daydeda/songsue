@@ -5,7 +5,7 @@ export type SongsueCopy = {
     tagline: string;
     scrollHint: string;
   };
-  houses: {
+  flags: {
     kicker: string;
     title: string;
   };
@@ -32,17 +32,17 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
       tagline: "เมื่อสื่อสองรูปแบบมาบรรจบกัน เรื่องราวใหม่จึงเริ่มต้น",
       scrollHint: "เลื่อนลงเพื่อฟังเรื่องราว",
     },
-    houses: {
-      kicker: "02 — บ้านของคุณ",
-      title: "สี่บ้าน สี่เรื่องราว",
+    flags: {
+      kicker: "02 — ธงประจำบ้าน",
+      title: "สี่บ้าน สี่ธง",
     },
     cta: {
       kicker: "ลงทะเบียนเข้าร่วมงาน",
       title: "พร้อมเริ่มเรื่องราวของคุณหรือยัง?",
-      body: "การลงทะเบียนจะเปิดในวันที่ 24 กรกฎาคม — กดติดตามนับถอยหลังไว้ แล้วมาเจอกัน",
+      body: "การลงทะเบียนจะเปิดในวันที่ 23 กรกฎาคม — กดติดตามนับถอยหลังไว้ แล้วมาเจอกัน",
       lockedLabel: "เปิดลงทะเบียนในอีก",
       unlockedLabel: "ลงทะเบียนด้วย Google",
-      dateNote: "เปิดลงทะเบียน 24 กรกฎาคม 2569",
+      dateNote: "เปิดลงทะเบียน 23 กรกฎาคม 2569",
     },
     langToggleLabel: "EN",
   },
@@ -53,17 +53,17 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
       tagline: "Where two forms of media meet, a new story begins.",
       scrollHint: "Scroll to hear the story",
     },
-    houses: {
-      kicker: "02 — Your House",
-      title: "Four houses, four stories",
+    flags: {
+      kicker: "02 — House Flags",
+      title: "Four houses, four flags",
     },
     cta: {
       kicker: "Register for the event",
       title: "Ready to start your story?",
-      body: "Registration opens on July 24 — watch the countdown, and we'll see you there.",
+      body: "Registration opens on July 23 — watch the countdown, and we'll see you there.",
       lockedLabel: "Registration opens in",
       unlockedLabel: "Register with Google",
-      dateNote: "Registration opens July 24, 2026",
+      dateNote: "Registration opens July 23, 2026",
     },
     langToggleLabel: "TH",
   },

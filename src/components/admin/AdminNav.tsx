@@ -9,22 +9,25 @@ import {
   Users,
   ShieldCheck,
   Megaphone,
-  ShoppingBag,
   Building2,
   GraduationCap,
   User,
   MessageSquareWarning,
-  ClipboardList,
-  ListChecks
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { isScannerOnlyAny, isGlobalRegistrationPosition } from "@/lib/admin-access";
-import { REVIEW_PROPOSAL_ROLES } from "@/lib/event-proposals";
 
 // Grouped by topic so the sidebar reads as sections rather than one long list.
 // `titleKey` is null for the ungrouped top item (Overview); every other group
 // gets a small uppercase subheading (i18n'd) and is dropped entirely if none
 // of its items survive the role filter below.
+//
+// Clubs and Appeals stay in this list even though full-admin roles no longer
+// see them (itemAllowed hides them below) — scanner-only roles (club_president,
+// major_president, smo) still need these two entries to render their own nav.
+// Proposals/Pending Reviews/Shop have no scanner-only dependency, so they're
+// just gone: Proposals/Reviews are nav-hidden only (pages+APIs still work,
+// reachable by URL) — see itemAllowed; Shop's page+API were deleted outright.
 const NAV_GROUPS = [
   { titleKey: null, items: [
       { href: "/admin/dashboard", key: "overview", icon: LayoutDashboard },
@@ -32,8 +35,6 @@ const NAV_GROUPS = [
   { titleKey: "navGroupEvents", items: [
       { href: "/admin/events",    key: "manageEvents",   icon: Calendar },
       { href: "/admin/scanner",   key: "qrScanner",      icon: QrCode },
-      { href: "/admin/proposals", key: "manageProposals",icon: ClipboardList },
-      { href: "/admin/reviews",   key: "pendingReviews", icon: ListChecks },
       { href: "/admin/appeals",   key: "manageAppeals",  icon: MessageSquareWarning },
     ] },
   { titleKey: "navGroupCommunity", items: [
@@ -43,7 +44,6 @@ const NAV_GROUPS = [
     ] },
   { titleKey: "navGroupContent", items: [
       { href: "/admin/announcement", key: "manageAnnouncement", icon: Megaphone },
-      { href: "/admin/shop",         key: "manageShop",         icon: ShoppingBag },
     ] },
   { titleKey: "navGroupSystem", items: [
       { href: "/admin/audit-logs", key: "auditTrails", icon: ShieldCheck },
@@ -75,9 +75,7 @@ export function AdminNav({
   const globalReg = isGlobalRegistrationPosition(roles, smoPosition, anusmoPosition);
   const canSeeStudents = has(["super_admin", "admin", "registration"]) || globalReg; // organizer barred
   const canSeeAudit = has(["super_admin", "admin"]);                    // organizer + registration barred
-  const canManage = has(["super_admin", "admin"]);                      // announcement + shop
-  const canSeeClubs = has(["super_admin", "admin"]);                    // club identity management
-  const canReviewProposals = has([...REVIEW_PROPOSAL_ROLES]) || globalReg; // event-proposal review queue
+  const canManage = has(["super_admin", "admin"]);                      // announcement
 
   const itemAllowed = (item: { href: string }) => {
     // Scanner-only users (smo, club/major president, no full-admin role) see just the
@@ -105,19 +103,13 @@ export function AdminNav({
     // not folded into the `return true` full-admin fallback below.
     if (item.href === "/admin/majors") return roles.includes("major_president");
     if (item.href === "/admin/students") return canSeeStudents;
-    if (item.href === "/admin/clubs") return canSeeClubs;
+    // Clubs and Appeals stay reachable (club identity mgmt / appeals still work for
+    // full admins by direct URL) but are dropped from the full-admin sidebar itself —
+    // only scanner-only roles see them, via the branch above.
+    if (item.href === "/admin/clubs") return false;
+    if (item.href === "/admin/appeals") return false;
     if (item.href === "/admin/audit-logs") return canSeeAudit;
-    if (item.href === "/admin/announcement" || item.href === "/admin/shop") return canManage;
-    // Full-admin roles: appeals nav is super_admin/admin-only (organizer/registration
-    // never had VIEW_APPEALS_ROLES) — mirrors the page/API gate in src/lib/strikes.ts.
-    if (item.href === "/admin/appeals") return canManage;
-    // Proposal review queue: same staff set that may create real events
-    // (REVIEW_PROPOSAL_ROLES, src/lib/event-proposals.ts) — organizer/registration
-    // included, unlike appeals above.
-    if (item.href === "/admin/proposals") return canReviewProposals;
-    // Pending Reviews: same staff set as the proposal review queue — see
-    // GET /api/admin/reviews's gate.
-    if (item.href === "/admin/reviews") return canReviewProposals;
+    if (item.href === "/admin/announcement") return canManage;
     return true; // dashboard, events, scanner — every full-admin role
   };
 

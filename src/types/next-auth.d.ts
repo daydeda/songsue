@@ -8,6 +8,7 @@ declare module "next-auth" {
       roles: string[];
       profileCompleted: boolean;
       houseId: string | null;
+      faculty: string | null;
       imageTransform: { scale: number; x: number; y: number } | null;
       qrToken: string | null;
       studentId: string | null;
@@ -36,6 +37,7 @@ declare module "next-auth" {
     roles: string[];
     profileCompleted: boolean;
     houseId: string | null;
+    faculty: string | null;
     imageTransform: { scale: number; x: number; y: number } | null;
     qrToken: string | null;
     studentId: string | null;

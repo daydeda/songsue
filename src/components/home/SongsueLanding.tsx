@@ -27,8 +27,12 @@ const DoorCastle3D = dynamic(
   { ssr: false }
 );
 
-// Registration opens 23 July 2026, 00:00 Bangkok time.
-const REGISTRATION_OPENS_AT = new Date("2026-07-23T00:00:00+07:00").getTime();
+// Registration opens 23 July 2026, 00:00 Bangkok time. Local-only override via
+// NEXT_PUBLIC_REGISTRATION_OPENS_AT (.env.local, gitignored) lets the countdown
+// be forced open for testing without touching this real launch date.
+const REGISTRATION_OPENS_AT = new Date(
+  process.env.NEXT_PUBLIC_REGISTRATION_OPENS_AT || "2026-07-23T00:00:00+07:00"
+).getTime();
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
@@ -282,7 +286,15 @@ function HousesCarousel({
     <section
       className={
         phase === "carousel"
-          ? "relative flex items-center justify-center w-full overflow-hidden"
+          ? // lg:min-h only (not a universal min-height): below lg the banner's
+            // own 2.4:1 aspect ratio already fills a healthy share of a narrow
+            // viewport, and forcing extra height there is exactly what used to
+            // letterbox it into a thin strip between two huge empty bars. At
+            // lg+ the banner is comfortably shorter than the viewport, so
+            // without a min-height here to center within, items-center has
+            // nothing to do and the banner ends up glued to the very top with
+            // a dead gap below it instead of sitting centered on screen.
+            "relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
           : "relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
       }
       style={phase === "door" ? { minHeight: "100svh" } : undefined}
@@ -307,22 +319,26 @@ function HousesCarousel({
       )}
 
       {phase === "carousel" && (
-        // Full-bleed banner reveal — replaces the old per-house carousel/grid
-        // entirely. Sized to the image's own 3240x1350 aspect ratio (not a
-        // forced 100svh box) so a mobile portrait viewport doesn't letterbox
-        // this wide/short banner into a thin strip with huge empty bars.
+        // Full-width (edge-to-edge) banner reveal — replaces the old
+        // per-house carousel/grid entirely. The image itself is sized
+        // purely by its own 3240x1350 aspect ratio (no object-cover crop,
+        // so the full banner including its edges is always visible); on
+        // lg+ viewports the parent <section>'s lg:min-h-[90svh] then
+        // centers it vertically via that section's flex items-center /
+        // justify-center (see the section's className comment for why
+        // that min-height is lg-only, not universal).
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
-          className="relative w-full"
+          className="relative w-full overflow-hidden"
+          style={{ aspectRatio: "3240 / 1350" }}
         >
           <Image
             src="/songsue-banner.webp"
             alt={storyLang === "th" ? "แบนเนอร์ สองสื่อ" : "Songsue banner"}
-            width={3240}
-            height={1350}
-            className="w-full h-auto"
+            fill
+            className="object-contain"
             sizes="100vw"
             priority
           />
@@ -351,6 +367,7 @@ export function SongsueLanding({
   const [doorPhase, setDoorPhase] = useState<"door" | "carousel">("door");
   const [flash, setFlash] = useState(false);
   const houseSectionRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
 
   const handleEnter = () => {
     setFlash(true);
@@ -365,10 +382,71 @@ export function SongsueLanding({
   // doorPhase flips — with no scroll compensation the browser clamps the
   // scroll offset to the new, shorter page and the banner ends up scrolled
   // past. Recenter on the section so the banner actually appears in view.
+  // Scroll to its top, not center: the Hero section above (section 1) is
+  // always mounted at 100svh regardless of doorPhase, so centering the much
+  // shorter banner section pulls half a screen of the Hero's empty tail
+  // into view above it. Scrolling its start to the top of the viewport
+  // instead puts the banner immediately in view with nothing above it.
+  //
+  // A single scrollIntoView call isn't enough here: this page mixes
+  // Next/Image layout (banner), a WebGL canvas remount (the door canvas
+  // unmounting), and a Framer Motion whileInView reveal (the CTA card) —
+  // between them the document height keeps settling for a couple hundred ms
+  // after the phase flip, and the browser's native scroll anchoring nudges
+  // scrollY to compensate as that happens, dragging the banner back down
+  // out from under a one-shot scroll. So instead of scrolling once, we
+  // re-assert the target every time a ResizeObserver sees the page's height
+  // change, for a short window after entering — and bail out immediately if
+  // the user starts scrolling/touching themselves so we never fight them.
+  // Every re-assert (including the first) uses "instant", never "smooth":
+  // a "smooth" scroll animates over ~300-500ms, and if a ResizeObserver
+  // firing mid-animation snapped the page to a new target with "instant" it
+  // would cut that animation off half-finished — visibly yanking the banner
+  // out from under itself right as it first comes into view, since this
+  // settle window is exactly when the layout (and therefore the target) is
+  // still moving. Snapping the whole way through avoids that tug-of-war.
   useEffect(() => {
-    if (doorPhase === "carousel") {
-      houseSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    if (doorPhase !== "carousel") return;
+
+    let stopped = false;
+    let resizeObserver: ResizeObserver | null = null;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const stop = () => {
+      stopped = true;
+      resizeObserver?.disconnect();
+      if (settleTimer !== null) clearTimeout(settleTimer);
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("touchstart", stop);
+      window.removeEventListener("keydown", stop);
+    };
+
+    const scrollToBanner = () => {
+      if (stopped || !houseSectionRef.current) return;
+      const target = houseSectionRef.current.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ top: target, behavior: "instant" });
+    };
+
+    window.addEventListener("wheel", stop, { passive: true });
+    window.addEventListener("touchstart", stop, { passive: true });
+    window.addEventListener("keydown", stop);
+
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        if (stopped) return;
+        scrollToBanner();
+        resizeObserver = new ResizeObserver(() => scrollToBanner());
+        resizeObserver.observe(document.body);
+        settleTimer = setTimeout(stop, 1200);
+      });
+      rafRef.current = raf2;
+    });
+    rafRef.current = raf1;
+
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      stop();
+    };
   }, [doorPhase]);
 
   const heroRef = useRef<HTMLDivElement>(null);
@@ -480,11 +558,40 @@ export function SongsueLanding({
         />
       </div>
 
+      {/* Visual separator between the banner and the CTA — plain margin alone
+          is invisible here since both sections sit on the same solid black
+          page background, so a subtle divider line is what actually reads
+          as "a gap" instead of just more black space. py-* here (not on the
+          CTA section) is the single source of the gap at every breakpoint,
+          so mobile and desktop both get real, visible spacing.
+          The "!" (Tailwind v4 important) on every spacing class below is
+          load-bearing, not decorative: globals.css:49 has an unlayered
+          universal selector zeroing padding, and per the CSS Cascade Layers
+          spec an unlayered rule always beats a layered one (Tailwind's own
+          utilities live in the "utilities" layer) regardless of source
+          order or specificity — so plain px-6, py-8 etc classes here
+          silently no-op. Don't simplify these back to bare utility classes. */}
+      {doorPhase === "carousel" && (
+        <div className="w-full flex justify-center px-6! py-8! sm:py-10! lg:py-14!">
+          <div
+            className="w-full max-w-xs h-px"
+            style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent)" }}
+          />
+        </div>
+      )}
+
       {/* ── CTA / Register ───────────────────────────────────────────────── */}
       {doorPhase === "carousel" && (
       <motion.section
         {...reveal}
-        className="relative flex flex-col items-center justify-center text-center px-6 py-24"
+        className="relative flex flex-col items-center justify-center text-center px-6! py-12! sm:py-16! lg:py-24!"
+        /* 90svh (not a rounder 70/80svh) is deliberate: the scroll-into-view
+           effect above needs (banner + divider + this section) to add up to
+           at least one full viewport so the browser has room to actually
+           scroll the banner flush to the top — anything shorter gets clamped
+           by the max scroll position, leaving a leftover strip of the Hero
+           section stuck above the banner. Verified against 390x844 and
+           1440x900; don't shrink this without re-checking the flush at both. */
         style={{ minHeight: "90svh" }}
       >
         <div

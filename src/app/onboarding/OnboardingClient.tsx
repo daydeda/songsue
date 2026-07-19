@@ -40,7 +40,7 @@ function StepIcon({ index, current }: { index: number; current: number }) {
         background: done
           ? "var(--accent-primary)"
           : active
-          ? "rgba(255,107,0,0.12)"
+          ? "rgba(0,0,0,0.12)"
           : "var(--bg-elevated)",
         border: active
           ? "2px solid var(--accent-primary)"
@@ -540,7 +540,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
             </div>
             {renderMedicalField("emergencyMedication", t.emergencyMed)}
           </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", background: formData.faintingHistory ? "rgba(255,107,0,0.06)" : "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: `1px solid ${formData.faintingHistory ? "rgba(255,107,0,0.3)" : "var(--border-subtle)"}`, cursor: "pointer", transition: "all 0.15s", minHeight: 56 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", background: formData.faintingHistory ? "rgba(0,0,0,0.06)" : "var(--bg-elevated)", borderRadius: "var(--radius-md)", border: `1px solid ${formData.faintingHistory ? "rgba(0,0,0,0.3)" : "var(--border-subtle)"}`, cursor: "pointer", transition: "all 0.15s", minHeight: 56 }}>
             <input type="checkbox" style={{ width: 20, height: 20, accentColor: "var(--accent-primary)", flexShrink: 0 }} checked={formData.faintingHistory} onChange={(e) => set("faintingHistory", e.target.checked)} />
             <span style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.4 }}>{t.faintingHistory}</span>
           </label>
@@ -642,7 +642,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
           </div>
 
           {/* PDPA */}
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 16px", background: formData.pdpaConsent ? "rgba(255,107,0,0.05)" : "var(--bg-surface)", borderRadius: "var(--radius-md)", border: `1.5px solid ${formData.pdpaConsent ? "rgba(255,107,0,0.35)" : "var(--border-medium)"}`, cursor: "pointer", transition: "all 0.15s" }}>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 16px", background: formData.pdpaConsent ? "rgba(0,0,0,0.05)" : "var(--bg-surface)", borderRadius: "var(--radius-md)", border: `1.5px solid ${formData.pdpaConsent ? "rgba(0,0,0,0.35)" : "var(--border-medium)"}`, cursor: "pointer", transition: "all 0.15s" }}>
             <input type="checkbox" style={{ width: 20, height: 20, accentColor: "var(--accent-primary)", flexShrink: 0, marginTop: 2 }} checked={formData.pdpaConsent} onChange={(e) => set("pdpaConsent", e.target.checked)} />
             <div>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{t.pdpaConsent}</p>
@@ -754,7 +754,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
                   padding: "8px 10px",
                   borderRadius: "var(--radius-md)",
                   background: active ? "var(--accent-glow)" : "transparent",
-                  border: active ? "1px solid rgba(255,107,0,0.2)" : "1px solid transparent",
+                  border: active ? "1px solid rgba(0,0,0,0.2)" : "1px solid transparent",
                   transition: "all 0.2s",
                   cursor: "default",
                 }}
@@ -852,7 +852,7 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
                       padding: "10px 12px",
                       borderRadius: "var(--radius-md)",
                       background: active ? "var(--accent-glow)" : "transparent",
-                      border: active ? "1px solid rgba(255,107,0,0.2)" : "1px solid transparent",
+                      border: active ? "1px solid rgba(0,0,0,0.2)" : "1px solid transparent",
                       transition: "all 0.2s",
                       cursor: "default",
                     }}

@@ -12,7 +12,7 @@
  */
 
 const NEW_URL = "https://activecamt.camt.cmu.ac.th/dashboard";
-const ACCENT = "#ff6b00";
+const ACCENT = "#0a0a0a";
 
 export function MovedNotice() {
   return (
@@ -66,7 +66,7 @@ export function MovedNotice() {
             fontSize: 16,
             fontWeight: 800,
             textDecoration: "none",
-            boxShadow: "0 4px 14px rgba(255,107,0,0.35)",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
           }}
         >
           ไปยังเว็บไซต์ใหม่ / Go to the new site →

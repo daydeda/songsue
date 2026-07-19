@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
 import { POSITION_IDS, POSITION_I18N_KEY } from "@/lib/positions";
+import { houseDisplayName } from "@/lib/faculties";
 
 type Student = {
   id: string;
@@ -110,7 +111,7 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
           {icon && (
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 ml-2 mr-0.5 ${
               hasActiveFilter
-                ? "bg-[var(--accent-glow)] text-[var(--accent-primary)] shadow-[0_0_10px_rgba(255,107,0,0.15)]"
+                ? "bg-[var(--accent-glow)] text-[var(--accent-primary)] shadow-[0_0_10px_rgba(0,0,0,0.15)]"
                 : "bg-[var(--bg-surface)] text-[var(--text-muted)] border border-[var(--border-subtle)]"
             }`}>
               {currentOption?.icon ? currentOption.icon : icon}
@@ -306,19 +307,13 @@ export default function AdminStudentsDirectory() {
     return fields.some(isMeaningful) || user.faintingHistory === true;
   };
 
-  // Per-faculty houses share colour names, so translate by colour group and
-  // prefix the faculty (e.g. "MASSCOM · Mom"). Looks the house up in the fetched
-  // list to recover faculty/colorGroup for ids that only arrive as a bare id.
+  // Each faculty's houses now share one themed name (e.g. every CAMT house is
+  // "Ashkayn") — looks the house up in the fetched list to recover its faculty
+  // for ids that only arrive as a bare id, and falls back to the row's own
+  // `name` (already faculty-named in the DB) if the faculty can't be resolved.
   const getHouseName = (id: string, defaultName: string) => {
     const h = houses.find(x => x.id === id);
-    const cg = h?.colorGroup || id;
-    const color =
-      cg === "red" ? (t.houseMom || "Mom")
-      : cg === "green" ? (t.houseTo || "To")
-      : cg === "yellow" ? (t.houseLuang || "Luang")
-      : cg === "blue" ? (t.houseMakara || "Makon")
-      : defaultName;
-    return h?.faculty ? `${h.faculty} · ${color}` : color;
+    return h?.faculty ? houseDisplayName(id) : defaultName;
   };
 
   const houseOptions = [

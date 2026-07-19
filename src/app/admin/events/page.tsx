@@ -1840,7 +1840,7 @@ export default function AdminEventsPage() {
               </button>
             )}
             {multiDay ? (
-              <div style={{ minWidth: 50, height: 32, padding: "0 10px", borderRadius: 16, background: attendedDays > 0 ? "rgba(16,185,129,0.1)" : "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, color: attendedDays > 0 ? "#10b981" : "var(--accent-primary)", fontSize: 13, fontWeight: 800, border: attendedDays > 0 ? "none" : "1px dashed var(--accent-primary)" }} title={`${attendedDays} / ${unit.rows.length} ${lang === "th" ? "วันเช็คอินแล้ว" : "days checked in"}`}>
+              <div style={{ minWidth: 50, height: 32, padding: "0 10px", borderRadius: 16, background: attendedDays > 0 ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, color: attendedDays > 0 ? "#10b981" : "var(--accent-primary)", fontSize: 13, fontWeight: 800, border: attendedDays > 0 ? "none" : "1px dashed var(--accent-primary)" }} title={`${attendedDays} / ${unit.rows.length} ${lang === "th" ? "วันเช็คอินแล้ว" : "days checked in"}`}>
                 <CheckCircle2 size={14} />
                 {attendedDays}/{unit.rows.length}
               </div>
@@ -1853,7 +1853,7 @@ export default function AdminEventsPage() {
                 <User size={14} />
               </div>
             ) : (
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,107,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", border: "1px dashed var(--accent-primary)" }} title="Registered (Not Checked In)">
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", border: "1px dashed var(--accent-primary)" }} title="Registered (Not Checked In)">
                 <Clock size={14} className="animate-pulse" />
               </div>
             )}
@@ -3080,8 +3080,8 @@ export default function AdminEventsPage() {
                             gap: 10,
                             padding: "10px 16px",
                             borderRadius: 14,
-                            background: isSelected ? "rgba(255,107,0,0.12)" : "var(--bg-elevated)",
-                            border: `1px solid ${isSelected ? "rgba(255,107,0,0.5)" : "transparent"}`,
+                            background: isSelected ? "rgba(0,0,0,0.12)" : "var(--bg-elevated)",
+                            border: `1px solid ${isSelected ? "rgba(0,0,0,0.5)" : "transparent"}`,
                             cursor: "pointer",
                             transition: "all 0.2s",
                             minWidth: 80,
@@ -3123,9 +3123,9 @@ export default function AdminEventsPage() {
                       fontWeight: 800,
                       background: formData.allowedMajors.length === 0
                         ? "rgba(16,185,129,0.1)"
-                        : "rgba(255,107,0,0.1)",
+                        : "rgba(0,0,0,0.1)",
                       color: formData.allowedMajors.length === 0 ? "#10b981" : "var(--accent-primary)",
-                      border: `1px solid ${formData.allowedMajors.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(255,107,0,0.2)"}`,
+                      border: `1px solid ${formData.allowedMajors.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(0,0,0,0.2)"}`,
                     }}>
                       {formData.allowedMajors.length === 0
                         ? (lang === "th" ? "✓ เปิดให้ทุกสาขา" : "✓ Open to all majors")
@@ -3498,7 +3498,7 @@ export default function AdminEventsPage() {
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {t.eventPosterLabel}
                     {formData.imageUrls.length > 0 && (
-                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(255,107,0,0.1)", padding: "2px 8px", borderRadius: 99 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(0,0,0,0.1)", padding: "2px 8px", borderRadius: 99 }}>
                         {formData.imageUrls.length}
                       </span>
                     )}
@@ -3636,7 +3636,7 @@ export default function AdminEventsPage() {
                       <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("**", "**")}><Edit2 size={14} /></button>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("[", "](https://...)")}><ExternalLink size={14} /></button>
                       <div style={{ position: "relative" }}>
-                        <input type="color" defaultValue="#ff6b00" style={{ opacity: 0, position: "absolute", inset: 0, cursor: "pointer" }} onChange={(e) => injectMarkup(`{{color:${e.target.value}|`, "}}")} />
+                        <input type="color" defaultValue="#0a0a0a" style={{ opacity: 0, position: "absolute", inset: 0, cursor: "pointer" }} onChange={(e) => injectMarkup(`{{color:${e.target.value}|`, "}}")} />
                         <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }}>
                           <span style={{ width: 14, height: 14, borderRadius: 4, background: "linear-gradient(135deg,#ef4444,#6366f1)", display: "inline-block" }} />
                         </button>
@@ -3790,7 +3790,7 @@ export default function AdminEventsPage() {
                           alignItems: "center",
                           gap: 5,
                           maxWidth: "100%",
-                          background: "rgba(255,107,0,0.85)",
+                          background: "rgba(0,0,0,0.85)",
                           backdropFilter: "blur(6px)",
                           color: "#fff",
                           padding: "5px 10px",
@@ -3799,7 +3799,7 @@ export default function AdminEventsPage() {
                           fontWeight: 900,
                           letterSpacing: "0.04em",
                           border: "1px solid rgba(255,255,255,0.15)",
-                          boxShadow: "0 2px 8px rgba(255,107,0,0.3)",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
                           textTransform: "uppercase",
                         }}>
                           <Users size={10} style={{ flexShrink: 0 }} />
@@ -4166,7 +4166,7 @@ export default function AdminEventsPage() {
         .event-card-premium:hover {
           transform: translateY(-8px);
           border-color: var(--accent-primary);
-          box-shadow: 0 30px 60px rgba(255,107,0,0.1);
+          box-shadow: 0 30px 60px rgba(0,0,0,0.1);
         }
         .event-card-premium:hover .hover-overlay {
           opacity: 1;
@@ -4357,7 +4357,7 @@ export default function AdminEventsPage() {
               width: 56,
               height: 56,
               borderRadius: "50%",
-              background: confirmModal.isDanger ? "rgba(239, 68, 68, 0.1)" : "rgba(255, 107, 0, 0.1)",
+              background: confirmModal.isDanger ? "rgba(239, 68, 68, 0.1)" : "rgba(0,0,0, 0.1)",
               color: confirmModal.isDanger ? "#ef4444" : "var(--accent-primary)",
               display: "flex",
               alignItems: "center",
@@ -4390,12 +4390,12 @@ export default function AdminEventsPage() {
                   fontWeight: 800,
                   background: confirmModal.isDanger 
                     ? "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)" 
-                    : "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
+                    : "linear-gradient(135deg, #0a0a0a 0%, #262626 100%)",
                   color: "#fff",
                   border: "none",
                   boxShadow: confirmModal.isDanger 
                     ? "0 4px 14px rgba(239, 68, 68, 0.3)" 
-                    : "0 4px 14px rgba(255, 107, 0, 0.3)"
+                    : "0 4px 14px rgba(0,0,0, 0.3)"
                 }}
                 onClick={confirmModal.onConfirm}
               >
@@ -4871,7 +4871,7 @@ export default function AdminEventsPage() {
                     cursor: "pointer",
                     padding: "8px 16px",
                     borderRadius: 99,
-                    background: filterThai ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
+                    background: filterThai ? "rgba(0,0,0, 0.08)" : "var(--bg-surface)",
                     border: filterThai ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
                     transition: "all 0.2s"
                   }}>
@@ -4894,7 +4894,7 @@ export default function AdminEventsPage() {
                     cursor: "pointer",
                     padding: "8px 16px",
                     borderRadius: 99,
-                    background: filterInternational ? "rgba(255, 107, 0, 0.08)" : "var(--bg-surface)",
+                    background: filterInternational ? "rgba(0,0,0, 0.08)" : "var(--bg-surface)",
                     border: filterInternational ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
                     transition: "all 0.2s"
                   }}>

@@ -172,7 +172,7 @@ export function AnnouncementEditor() {
                 Color
                 <input
                   type="color"
-                  defaultValue="#ff6b00"
+                  defaultValue="#0a0a0a"
                   onChange={(e) => applyColor(e.target.value)}
                   style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
                 />
@@ -201,7 +201,7 @@ export function AnnouncementEditor() {
               {t.announcementBodyHint}
             </p>
             <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-              <code>**bold**</code> · <code>[text](https://…)</code> · <code>{`{{color:#ff6b00|text}}`}</code>
+              <code>**bold**</code> · <code>[text](https://…)</code> · <code>{`{{color:#0a0a0a|text}}`}</code>
             </p>
 
             {/* Live preview */}
@@ -209,8 +209,8 @@ export function AnnouncementEditor() {
               <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text-muted)" }}>
                 Preview
               </label>
-              <div className="alert alert-info" style={{ borderRadius: "var(--radius-lg)", padding: 20, background: "rgba(255,107,0,0.04)", border: "1px solid rgba(255,107,0,0.1)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)", color: "var(--accent-primary)", width: 40, height: 40, flexShrink: 0 }}>
+              <div className="alert alert-info" style={{ borderRadius: "var(--radius-lg)", padding: 20, background: "rgba(79,70,229,0.06)", border: "1px solid rgba(79,70,229,0.18)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)", color: "var(--highlight)", width: 40, height: 40, flexShrink: 0 }}>
                   <Megaphone size={22} />
                 </div>
                 <div>

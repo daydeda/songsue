@@ -12,9 +12,14 @@ const QRCodeSVG = dynamic(
       <div style={{ width: 240, height: 240, background: "var(--bg-elevated)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <span style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading...</span>
       </div>
-    ) 
+    )
   }
 );
+const FlagFlutter3D = dynamic(
+  () => import("@/components/home/FlagFlutter3D").then((mod) => mod.FlagFlutter3D),
+  { ssr: false }
+);
+import { useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import {
   Trophy,
@@ -29,17 +34,22 @@ import { useQrToken } from "@/lib/useQrToken";
 import { useNotifications } from "@/lib/useNotifications";
 import { NotificationModal } from "@/components/NotificationModal";
 import { FormsDueBanner } from "@/components/FormsDueBanner";
+import {
+  colorGroupOfHouseId,
+  COLORS,
+  facultyHouseName,
+  facultyFlagSrc,
+  facultyAccentColor,
+  normalizeFaculty,
+  type ColorId,
+} from "@/lib/faculties";
 
-// House mascot logos (background removed). Keyed by both the house id (color) and
-// its name so it resolves whichever identifier the API returns.
-const HOUSE_LOGOS: Record<string, string> = {
-  red: "/house_logo/mom.png",    mom: "/house_logo/mom.png",
-  green: "/house_logo/to.png",   to: "/house_logo/to.png",
-  yellow: "/house_logo/luang.png", luang: "/house_logo/luang.png",
-  blue: "/house_logo/makon.png", makara: "/house_logo/makon.png", makon: "/house_logo/makon.png",
+const COLOR_LABEL_KEY: Record<ColorId, string> = {
+  red: "colorRed",
+  green: "colorGreen",
+  yellow: "colorYellow",
+  blue: "colorBlue",
 };
-const houseLogo = (idOrName?: string | null): string | null =>
-  idOrName ? HOUSE_LOGOS[idOrName.toLowerCase()] ?? null : null;
 
 interface HouseItem {
   id: string;
@@ -51,6 +61,7 @@ interface HouseItem {
 export default function DigitalIdPage() {
   const { data: session, status } = useSession();
   const { t, lang } = useLanguage();
+  const prefersReducedMotion = useReducedMotion();
   const [houses, setHouses] = useState<HouseItem[]>([]);
   const [loadingHouses, setLoadingHouses] = useState(true);
   const [myStanding, setMyStanding] = useState<{ points: number; rank: number | null; total: number } | null>(null);
@@ -62,13 +73,6 @@ export default function DigitalIdPage() {
   // immediate. The page is open only transiently (while being scanned) and the
   // poll pauses on a hidden tab, so the added load stays bounded.
   const { items: notifItems, dismiss: dismissNotif } = useNotifications(session?.user?.id, 8000);
-
-  const HOUSE_MAP: Record<string, { name: string, color: string }> = {
-    red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red
-    green:  { name: t.houseTo || "To",      color: "#94a3b8" }, // White → silver/pewter
-    yellow: { name: t.houseLuang || "Luang",  color: "#3b82f6" }, // Blue
-    blue:   { name: t.houseMakara || "Makon", color: "#22c55e" }, // Green
-  };
 
   const fetchHouses = (signal?: AbortSignal) => {
     const houseReq = fetch("/api/houses", { signal })
@@ -119,13 +123,26 @@ export default function DigitalIdPage() {
 
   const user = session?.user;
   const houseId = user?.houseId ?? null;
-  const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
+  // Every faculty now has ONE themed house name shared across its 4 colours
+  // (e.g. every CAMT student's house is "Ashkayn") — fixed and known right
+  // away, independent of assignment. Colour is what's actually "unassigned"
+  // until first check-in (ScannerService.ensureHouseAssigned).
+  const userFaculty = normalizeFaculty(user?.faculty);
+  const myHouseName = facultyHouseName(userFaculty);
+  const myHouseAccentColor = facultyAccentColor(userFaculty);
+  const assignedColorGroup = colorGroupOfHouseId(houseId);
+  const houseInfo = assignedColorGroup
+    ? {
+        name: (t as Record<string, string>)[COLOR_LABEL_KEY[assignedColorGroup]] || assignedColorGroup,
+        color: COLORS.find((c) => c.id === assignedColorGroup)?.color || "var(--text-muted)",
+      }
+    : { name: t.unassigned, color: "var(--text-muted)" };
 
   return (
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
       {/* Decorative Orbs */}
       <div className="absolute top-[-200px] left-[-100px] w-[600px] h-[600px] rounded-full" 
-           style={{ background: "radial-gradient(circle, rgba(255,107,0,0.03) 0%, transparent 70%)", pointerEvents: "none" }} />
+           style={{ background: "radial-gradient(circle, rgba(0,0,0,0.03) 0%, transparent 70%)", pointerEvents: "none" }} />
 
       <StudentNav />
 
@@ -181,12 +198,12 @@ export default function DigitalIdPage() {
               border: `1px solid ${houseInfo.color}30`
             }}
           >
-            {houseLogo(houseId) && (
-              <img src={houseLogo(houseId)!} alt="" style={{ width: 72, height: 72, objectFit: "contain", margin: "0 auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.12))" }} />
-            )}
-            <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: houseInfo.color, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <div style={{ width: "100%", height: 150, margin: "0 auto", filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.15))" }}>
+              <FlagFlutter3D src={facultyFlagSrc(userFaculty)} prefersReducedMotion={!!prefersReducedMotion} />
+            </div>
+            <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: myHouseAccentColor, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <Trophy size={12} />
-              {lang === "th" ? houseInfo.name : `${houseInfo.name} ${t.house}`}
+              {myHouseName}
             </p>
             <p style={{ fontSize: 32, fontWeight: 900, color: houseInfo.color, filter: "brightness(0.8)" }}>
               {houseInfo.name.toUpperCase()}
@@ -201,9 +218,9 @@ export default function DigitalIdPage() {
             style={{
               padding: "18px 20px",
               borderRadius: 24,
-              background: "linear-gradient(135deg, rgba(255,107,0,0.08), rgba(255,255,255,0.7))",
-              border: "1px solid rgba(255,107,0,0.25)",
-              boxShadow: "0 10px 30px rgba(255,107,0,0.06)",
+              background: "linear-gradient(135deg, rgba(0,0,0,0.08), rgba(255,255,255,0.7))",
+              border: "1px solid rgba(0,0,0,0.25)",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
@@ -354,10 +371,10 @@ export default function DigitalIdPage() {
               borderRadius: "28px",
               width: "100%",
               minHeight: "320px",
-              background: "linear-gradient(135deg, rgba(255, 107, 0, 0.03) 0%, rgba(255, 255, 255, 0.8) 100%)"
+              background: "linear-gradient(135deg, rgba(0,0,0, 0.03) 0%, rgba(255, 255, 255, 0.8) 100%)"
             }}
           >
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(255, 107, 0, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", marginBottom: 4 }}>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(0,0,0, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", marginBottom: 4 }}>
               <User size={32} />
             </div>
             <h4 style={{ fontSize: 20, fontWeight: 900, color: "var(--text-primary)", margin: 0 }}>
@@ -459,7 +476,7 @@ export default function DigitalIdPage() {
             textDecoration: "none",
             padding: "12px",
             borderRadius: 16,
-            background: "rgba(255,107,0,0.05)"
+            background: "rgba(0,0,0,0.05)"
           }}>
             {t.houseRankings}
             <RefreshCw size={12} className="animate-spin-slow" style={{ animationDuration: "10s" }} />

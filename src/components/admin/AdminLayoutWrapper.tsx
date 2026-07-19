@@ -39,8 +39,8 @@ export function AdminLayoutWrapper({
           {isSidebarOpen ? <X size={24} style={{ pointerEvents: "none" }} /> : <Menu size={24} style={{ pointerEvents: "none" }} />}
         </button>
         <div className="flex items-center gap-3">
-          <img src="/smocamt-logo-icon.png" className="w-8 h-8 object-contain" alt="SMOCAMT Logo" width={32} height={32} style={{ width: 32, height: 32 }} />
-          <span className="gradient-text font-black text-xl">ActiveCAMT</span>
+          <img src="/songsue-logo.png" className="w-12 h-12 object-contain" alt="Songsue" width={48} height={48} style={{ width: 48, height: 48 }} />
+          <span className="gradient-text font-black text-xl">Songsue</span>
         </div>
       </header>
 
@@ -62,24 +62,24 @@ export function AdminLayoutWrapper({
       `}>
         <div style={{ marginBottom: 40, display: "flex", alignItems: "center" }}>
           <Link href="/admin" style={{ display: "flex", alignItems: "center", gap: 14, textDecoration: "none" }}>
-            <img 
-              src="/smocamt-logo-icon.png"
-              className="object-contain" 
-              alt="SMOCAMT Logo"
-              style={{ 
-                width: 44, 
-                height: 44, 
-              }} 
+            <img
+              src="/songsue-logo.png"
+              className="object-contain"
+              alt="Songsue"
+              style={{
+                width: 72,
+                height: 72,
+              }}
             />
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ 
-                fontSize: 22, 
-                fontWeight: 900, 
-                color: "var(--text-primary)", 
+              <span style={{
+                fontSize: 22,
+                fontWeight: 900,
+                color: "var(--text-primary)",
                 letterSpacing: "-0.03em",
                 lineHeight: 1
               }}>
-                Active<span style={{ color: "var(--accent-primary)" }}>CAMT</span>
+                Songsue
               </span>
               <span style={{ 
                 fontSize: 10, 

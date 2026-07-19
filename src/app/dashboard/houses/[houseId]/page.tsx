@@ -408,9 +408,9 @@ export default function HouseMembersPage() {
         }
         .member-row:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.04); }
         .member-row.is-me {
-          border-color: var(--accent-primary);
-          background: rgba(255,107,0,0.05);
-          box-shadow: 0 0 0 1px var(--accent-primary), 0 8px 24px rgba(255,107,0,0.08);
+          border-color: var(--highlight);
+          background: rgba(79,70,229,0.06);
+          box-shadow: 0 0 0 1px var(--highlight), 0 8px 24px var(--highlight-glow);
         }
         .member-rank {
           width: 28px;
@@ -439,7 +439,7 @@ export default function HouseMembersPage() {
           margin-left: 8px;
           padding: 2px 8px;
           border-radius: 999px;
-          background: var(--accent-primary);
+          background: var(--highlight);
           color: #fff;
           font-size: 10px;
           font-weight: 900;

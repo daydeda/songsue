@@ -119,9 +119,9 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
   const getHouseColor = (houseId: string | null | undefined) => {
     switch (houseId?.toLowerCase()) {
       case "red": return "var(--red-house, #ef4444)";
-      case "blue": return "var(--yellow-house, #3b82f6)";
-      case "green": return "var(--blue-house, #22c55e)";
-      case "yellow": return "var(--green-house, #94a3b8)"; // Green house in schema is named White/Pewter but colored green, etc.
+      case "green": return "var(--green-house, #94a3b8)";
+      case "yellow": return "var(--yellow-house, #3b82f6)";
+      case "blue": return "var(--blue-house, #22c55e)";
       default: return "var(--text-secondary)";
     }
   };

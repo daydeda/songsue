@@ -1897,7 +1897,7 @@ export function EventFormBuilderModal({ eventId, eventTitle, onClose, onChanged 
                             <button
                               type="button"
                               className="btn"
-                              style={{ alignSelf: "flex-start", borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)", border: "none", cursor: "pointer" }}
+                              style={{ alignSelf: "flex-start", borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 800, background: "rgba(0,0,0,0.1)", color: "var(--accent-primary)", border: "none", cursor: "pointer" }}
                               onClick={() => addQuestion(section.id)}
                             >
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={14} style={{ flexShrink: 0 }} /> {t.eventAddQuestionLabel}</span>
@@ -1988,10 +1988,10 @@ export function EventFormBuilderModal({ eventId, eventTitle, onClose, onChanged 
                       return (
                         <div
                           className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
-                          style={{ background: "linear-gradient(135deg, rgba(255,107,0,0.08) 0%, rgba(255,50,0,0.08) 100%)", border: "1px solid rgba(255,107,0,0.2)", borderRadius: 24, padding: "24px 32px" }}
+                          style={{ background: "linear-gradient(135deg, rgba(0,0,0,0.08) 0%, rgba(255,50,0,0.08) 100%)", border: "1px solid rgba(0,0,0,0.2)", borderRadius: 24, padding: "24px 32px" }}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)", flexShrink: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "50%", background: "rgba(0,0,0,0.1)", color: "var(--accent-primary)", flexShrink: 0 }}>
                               {hasClosed ? <Trophy size={22} /> : <Calendar size={22} />}
                             </div>
                             <div>
@@ -2129,7 +2129,7 @@ export function EventFormBuilderModal({ eventId, eventTitle, onClose, onChanged 
                                             href={`/api/forms/file/${sub.id}?q=${q.id}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            style={{ display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start", fontSize: 13, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(255,107,0,0.08)", border: "1px solid rgba(255,107,0,0.15)", borderRadius: 10, padding: "8px 14px", textDecoration: "none" }}
+                                            style={{ display: "inline-flex", alignItems: "center", gap: 8, alignSelf: "flex-start", fontSize: 13, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(0,0,0,0.08)", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 10, padding: "8px 14px", textDecoration: "none" }}
                                           >
                                             <Download size={14} /> {(ans.split(".").pop() || "file").toUpperCase()} · {lang === "th" ? "เปิดไฟล์" : lang === "cn" ? "查看文件" : lang === "mm" ? "ဖိုင်ဖွင့်ရန်" : "Open file"}
                                           </a>
@@ -2155,11 +2155,11 @@ export function EventFormBuilderModal({ eventId, eventTitle, onClose, onChanged 
                                                 style={{
                                                   fontSize: 12,
                                                   fontWeight: 800,
-                                                  background: "rgba(255,107,0,0.08)",
+                                                  background: "rgba(0,0,0,0.08)",
                                                   color: "var(--accent-primary)",
                                                   padding: "4px 8px",
                                                   borderRadius: 8,
-                                                  border: "1px solid rgba(255,107,0,0.15)"
+                                                  border: "1px solid rgba(0,0,0,0.15)"
                                                 }}
                                               >
                                                 {item}
@@ -2244,7 +2244,7 @@ export function EventFormBuilderModal({ eventId, eventTitle, onClose, onChanged 
               width: 56,
               height: 56,
               borderRadius: "50%",
-              background: confirmModal.isDanger ? "rgba(239, 68, 68, 0.1)" : "rgba(255, 107, 0, 0.1)",
+              background: confirmModal.isDanger ? "rgba(239, 68, 68, 0.1)" : "rgba(0,0,0, 0.1)",
               color: confirmModal.isDanger ? "#ef4444" : "var(--accent-primary)",
               display: "flex",
               alignItems: "center",
@@ -2277,12 +2277,12 @@ export function EventFormBuilderModal({ eventId, eventTitle, onClose, onChanged 
                   fontWeight: 800,
                   background: confirmModal.isDanger 
                     ? "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)" 
-                    : "linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%)",
+                    : "linear-gradient(135deg, #0a0a0a 0%, #262626 100%)",
                   color: "#fff",
                   border: "none",
                   boxShadow: confirmModal.isDanger 
                     ? "0 4px 14px rgba(239, 68, 68, 0.3)" 
-                    : "0 4px 14px rgba(255, 107, 0, 0.3)"
+                    : "0 4px 14px rgba(0,0,0, 0.3)"
                 }}
                 onClick={confirmModal.onConfirm}
               >

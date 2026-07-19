@@ -40,22 +40,13 @@ export default function AdminDashboardOverview() {
   const [stats, setStats] = useState<DashboardStats | { error: string } | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
-    const key = idOrName.toLowerCase();
-    if (key === "red" || key === "mom") return t.houseMom || "Mom";
-    if (key === "green" || key === "to") return t.houseTo || "To";
-    if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
-    if (key === "blue" || key === "makara") return t.houseMakara || "Makon";
-    return defaultName;
-  };
-
-  // Per-faculty houses share colour names ("Mom"…), so prefix the faculty to keep
-  // the 16 leaderboard rows unambiguous (e.g. "MASSCOM · Mom"). Translation keys
-  // off colorGroup since faculty house ids are like "masscom-red".
-  const houseLabel = (h: { id: string; name: string; faculty?: string; colorGroup?: string }) => {
-    const color = getTranslatedHouseName(h.colorGroup || h.id, h.name);
-    return h.faculty ? `${h.faculty} · ${color}` : color;
-  };
+  // Each house now carries its own faculty-themed name (Ashkayn/MASSFENRIR/…,
+  // see migrate.ts step 83) rather than the old shared Mom/To/Luang/Makon colour
+  // names, so the name is displayed as-is; colour still comes from HOUSE_GRADIENT
+  // keyed off colorGroup. Faculty is prefixed to keep the 16 leaderboard rows
+  // unambiguous (e.g. "MASSCOM · MASSFENRIR").
+  const houseLabel = (h: { id: string; name: string; faculty?: string; colorGroup?: string }) =>
+    h.faculty ? `${h.faculty} · ${h.name}` : h.name;
 
   const translateActivityReason = (reason: string) => {
     if (!reason) return "";
@@ -94,10 +85,9 @@ export default function AdminDashboardOverview() {
     const match4 = reason.match(/^Event Form Contest Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Received (\d+) PTS\.$/);
     if (match4) {
       const [_, house, formTitle, subs, pts] = match4;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
-      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံးဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
-      if (lang === "cn") return `活动表单竞赛优胜者：${translatedHouse} 学院以 ${subs} 次提交最多完成了评估表 "${formTitle}"！获得 ${pts} 积分。`;
+      if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: ${house} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံးဆု - ${house} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动表单竞赛优胜者：${house} 学院以 ${subs} 次提交最多完成了评估表 "${formTitle}"！获得 ${pts} 积分。`;
       return reason;
     }
 
@@ -105,10 +95,9 @@ export default function AdminDashboardOverview() {
     const match5 = reason.match(/^Event Form Contest Tie Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Shared (\d+) PTS\.$/);
     if (match5) {
       const [_, house, formTitle, subs, pts] = match5;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
-      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံး ပူးတွဲဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
-      if (lang === "cn") return `活动表单竞赛并列优胜者：${translatedHouse} 学院以 ${subs} 次提交完成了评估表 "${formTitle}"！平分获得 ${pts} 积分。`;
+      if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: ${house} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံး ပူးတွဲဆု - ${house} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动表单竞赛并列优胜者：${house} 学院以 ${subs} 次提交完成了评估表 "${formTitle}"！平分获得 ${pts} 积分。`;
       return reason;
     }
 
@@ -116,10 +105,9 @@ export default function AdminDashboardOverview() {
     const match6 = reason.match(/^Event "(.+?)" completed! WINNER: (.+?) House won with (\d+) attendees! Received (\d+) PTS\.$/);
     if (match6) {
       const [_, eventTitle, house, atts, pts] = match6;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
-      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ အနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
-      if (lang === "cn") return `活动 "${eventTitle}" 已结束！获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！获得 ${pts} 积分。`;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ${house} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ အနိုင်ရရှိသူ - ${house} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束！获胜者：${house} 学院以 ${atts} 位到场人数获胜！获得 ${pts} 积分。`;
       return reason;
     }
 
@@ -127,10 +115,9 @@ export default function AdminDashboardOverview() {
     const match7 = reason.match(/^Event "(.+?)" completed! TIE WINNER: (.+?) House won with (\d+) attendees! Shared (\d+) PTS\.$/);
     if (match7) {
       const [_, eventTitle, house, atts, pts] = match7;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
-      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
-      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ ပူးတွဲအနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
-      if (lang === "cn") return `活动 "${eventTitle}" 已结束！并列获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！平分获得 ${pts} 积分。`;
+      if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: ${house} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
+      if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ ပူးတွဲအနိုင်ရရှိသူ - ${house} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
+      if (lang === "cn") return `活动 "${eventTitle}" 已结束！并列获胜者：${house} 学院以 ${atts} 位到场人数获胜！平分获得 ${pts} 积分。`;
       return reason;
     }
 
@@ -406,7 +393,7 @@ export default function AdminDashboardOverview() {
                     padding: 0,
                     overflow: "hidden",
                     border: idx === 0 ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
-                    boxShadow: idx === 0 ? "0 20px 40px rgba(255,107,0,0.08)" : "none",
+                    boxShadow: idx === 0 ? "0 20px 40px rgba(0,0,0,0.08)" : "none",
                     background: "var(--bg-surface)",
                     position: "relative"
                   }}
@@ -531,7 +518,7 @@ export default function AdminDashboardOverview() {
                                 <i>&ldquo;{translateActivityReason(a.reason)}&rdquo;</i>
                               ) : lang === "th" ? (
                                 <>
-                                   <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> ได้รับ{" "}
+                                   <b>{a.houseName}</b> ได้รับ{" "}
                                   <span style={{
                                     margin: "0 4px",
                                     color: a.delta > 0 ? "#10b981" : "#ef4444",
@@ -543,7 +530,7 @@ export default function AdminDashboardOverview() {
                                 </>
                               ) : lang === "mm" ? (
                                 <>
-                                  <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> အိမ်သို့{" "}
+                                  <b>{a.houseName}</b> အိမ်သို့{" "}
                                   <span style={{
                                     margin: "0 4px",
                                     color: a.delta > 0 ? "#10b981" : "#ef4444",
@@ -555,7 +542,7 @@ export default function AdminDashboardOverview() {
                                 </>
                               ) : lang === "cn" ? (
                                 <>
-                                  <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> 学院获得{" "}
+                                  <b>{a.houseName}</b> 学院获得{" "}
                                   <span style={{
                                     margin: "0 4px",
                                     color: a.delta > 0 ? "#10b981" : "#ef4444",
@@ -567,7 +554,7 @@ export default function AdminDashboardOverview() {
                                 </>
                               ) : (
                                 <>
-                                  <b>{getTranslatedHouseName(a.houseId || "", a.houseName)}</b> awarded{" "}
+                                  <b>{a.houseName}</b> awarded{" "}
                                   <span style={{
                                     margin: "0 4px",
                                     color: a.delta > 0 ? "#10b981" : "#ef4444",

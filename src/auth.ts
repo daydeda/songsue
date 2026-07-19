@@ -68,6 +68,7 @@ async function fetchUserDataFromDb(userId: string) {
       email: true,
       profileCompleted: true,
       houseId: true,
+      faculty: true,
       imageTransform: true,
       qrToken: true,
       studentId: true,
@@ -113,6 +114,7 @@ async function applyDbUserToToken(token: Record<string, unknown>, dbUser: DbUser
   token.roles = userRoles;
   token.profileCompleted = dbUser.profileCompleted ?? false;
   token.houseId = dbUser.houseId ?? null;
+  token.faculty = dbUser.faculty ?? null;
   token.imageTransform = dbUser.imageTransform ?? null;
   token.qrToken = qrToken;
   token.studentId = dbUser.studentId ?? null;
@@ -217,6 +219,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 roles: [role],
                 profileCompleted: user!.profileCompleted ?? false,
                 houseId: user!.houseId ?? null,
+                faculty: user!.faculty ?? null,
                 imageTransform: (user!.imageTransform as { scale: number; x: number; y: number } | null) ?? null,
                 qrToken: user!.qrToken ?? null,
                 studentId: user!.studentId ?? null,
@@ -276,6 +279,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.email = dbUser.email;
             token.profileCompleted = dbUser.profileCompleted ?? false;
             token.houseId = dbUser.houseId ?? null;
+            token.faculty = dbUser.faculty ?? null;
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
@@ -308,6 +312,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.email = dbUser.email;
             token.profileCompleted = dbUser.profileCompleted ?? false;
             token.houseId = dbUser.houseId ?? null;
+            token.faculty = dbUser.faculty ?? null;
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
@@ -348,6 +353,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.email = dbUser.email;
             token.profileCompleted = dbUser.profileCompleted ?? false;
             token.houseId = dbUser.houseId ?? null;
+            token.faculty = dbUser.faculty ?? null;
             token.imageTransform = dbUser.imageTransform ?? null;
             token.qrToken = dbUser.qrToken;
             token.studentId = dbUser.studentId ?? null;
@@ -383,6 +389,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.role = (token.role as string) ?? "student";
       session.user.profileCompleted = (token.profileCompleted as boolean) ?? false;
       session.user.houseId = (token.houseId as string) ?? null;
+      session.user.faculty = (token.faculty as string | null) ?? null;
       session.user.imageTransform = (token.imageTransform as { scale: number; x: number; y: number } | null) ?? null;
       session.user.qrToken = (token.qrToken as string) ?? null;
       session.user.studentId = (token.studentId as string) ?? null;

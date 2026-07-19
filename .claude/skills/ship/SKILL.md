@@ -1,16 +1,17 @@
 ---
 name: ship
-description: Ship the current changes end-to-end for ActiveCAMT — branch off main, commit, push, open a PR, merge it into main, delete the branch (local + remote), tag the merge with a semver version + description, cut a GitHub release, and record the day's entry in updates/. Use when the user says "ship this", "commit + PR + merge", "open a PR and merge", or otherwise wants the full feature-branch → PR → merge → tag → release → cleanup flow in one go. For deploys that touch the DB schema or read a new column, run /safe-deploy first.
+description: Ship the current changes end-to-end for songsue — branch off main, commit, push to origin (daydeda/songsue), open a PR, merge it into main, delete the branch (local + remote), tag the merge with a semver version + description, cut a GitHub release, and record the day's entry in updates/. Use when the user says "ship this", "commit + PR + merge", "open a PR and merge", or otherwise wants the full feature-branch → PR → merge → tag → release → cleanup flow in one go. For deploys that touch the DB schema or read a new column, run /safe-deploy first.
 ---
 
-# Ship (ActiveCAMT)
+# Ship (songsue)
 
 Takes working-tree changes from "done on `main`'s worktree" to "merged into `main`,
 tagged, and released" without ever pushing to `main` directly. The merge happens
 through a PR — that is the only sanctioned path to `main` (see CLAUDE.md: **never
 push to `main`**). Every ship ends with a new `vX.Y.Z` tag and a matching GitHub
 release — this is not optional, it's the last two steps of the flow, same as the
-changelog entry.
+changelog entry. All of this targets **`origin` = `daydeda/songsue`** — see the
+remote warning below before pushing anything.
 
 ## When to use
 - The user asks to "ship", "commit and open a PR and merge", or lists the full
@@ -27,6 +28,14 @@ changelog entry.
 1. **Build + lint pass.** Run `npm run build` and `npm run lint`. Pre-existing
    warnings/errors in files you didn't touch are fine; do not let *new* ones land.
 2. Know what's staged. `git status --short` — commit only the intended files.
+3. **Confirm you're pushing to `origin`, not `upstream`.** This repo has two
+   remotes: `origin` = `daydeda/songsue` (this project, what every step below
+   must touch) and `upstream` = `daydeda/smocamt-website` (the separate
+   ActiveCAMT production repo this one was forked from — a different app, a
+   different deploy, not yours to push to). Run `git remote -v` if unsure. Every
+   `push`/`gh pr create`/`gh pr merge`/`gh release create` in this skill must
+   resolve to `origin`; never pass `upstream` or `daydeda/smocamt-website` to any
+   of them, and never push a branch/tag straight to `upstream`.
 
 ## Steps
 
@@ -43,27 +52,30 @@ changelog entry.
    ```
    Commit with a clear subject + body, ending with the trailer:
    ```
-   Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+   Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+   Claude-Session: <this session's claude.ai/code URL>
    ```
 
-3. **Push** and set upstream:
+3. **Push to `origin`** (never `upstream`) and set upstream tracking:
    ```bash
    git push -u origin feat/<short-description>
    ```
 
-4. **Open the PR** against `main` with `gh`. End the body with:
+4. **Open the PR** against `daydeda/songsue`'s `main` with `gh`. Pass `--repo`
+   explicitly — belt-and-suspenders against `gh` ever resolving to `upstream`
+   since this checkout has two remotes. End the body with:
    ```
    🤖 Generated with [Claude Code](https://claude.com/claude-code)
    ```
    ```bash
-   gh pr create --base main --head feat/<short-description> \
+   gh pr create --repo daydeda/songsue --base main --head feat/<short-description> \
      --title "<conventional commit title>" --body "<summary>"
    ```
 
 5. **Merge + delete the branch** (deletes both remote and local, returns you to
    `main`):
    ```bash
-   gh pr merge <PR#> --merge --delete-branch
+   gh pr merge <PR#> --repo daydeda/songsue --merge --delete-branch
    ```
    Use `--merge` (a real merge commit, matching this repo's history) unless the user
    asks for `--squash` or `--rebase`.
@@ -103,10 +115,12 @@ changelog entry.
      - <highlight 2>"
      git push origin vX.Y.Z
      ```
+     Push the tag to `origin`, same as the branch — never `upstream`.
    - **Cut the GitHub release** from that tag, reusing the tag message as the
      release body:
      ```bash
-     gh release create vX.Y.Z --title "vX.Y.Z — <short description>" \
+     gh release create vX.Y.Z --repo daydeda/songsue \
+       --title "vX.Y.Z — <short description>" \
        --notes "<highlights, same content as the tag message>"
      ```
    - Skip this step only if the user explicitly says not to tag/release this
@@ -128,7 +142,10 @@ changelog entry.
    - **Choose the file.** Default: a new `updates/YYYY-MM-DD.md` for today. Only
      extend the latest existing file instead if it's an open period range that
      clearly continues into today — append, never rewrite or delete prior entries.
-   - **Write the entry:** header `# ActiveCAMT — อัปเดต <date> 69`, a one-line
+   - **Write the entry:** header `# ActiveCAMT (Songsue) — อัปเดต <date> 69`
+     (match the exact header style of the latest file in `updates/` — it has
+     drifted from plain `# ActiveCAMT` to `# ActiveCAMT (Songsue)` since the
+     2026-07-19 rebrand; copy whatever the newest file actually uses), a one-line
      "ช่วง: … · สรุปไว้สำหรับลง Discord …" subtitle, then:
      - `## ฝั่งนักศึกษา (สิ่งที่ user จะเห็น)` — user-facing, plain Thai,
        benefit-first, no code jargon.
@@ -147,7 +164,14 @@ changelog entry.
 - If the merge is not a fast-forward and conflicts arise, stop and surface the
   conflict rather than force-anything.
 - This skill is git mechanics only. It does **not** deploy or migrate — Vercel
-  deploys on merge to `main`, so make sure prod is already migrated (via
-  /safe-deploy) for any schema-dependent change *before* you run step 5 (the merge).
+  auto-deploys `daydeda/songsue`'s `main` on merge (see `docs/songsue-deploy.md`),
+  so make sure prod is already migrated (via /safe-deploy) for any schema-dependent
+  change *before* you run step 5 (the merge).
 - Tagging (step 7) always happens after the merge (step 5) lands, never before —
   the tag must point at a commit that's actually on `main`.
+- **`origin` vs `upstream`, one more time:** this checkout tracks both
+  `daydeda/songsue` (`origin`, this skill's only target) and
+  `daydeda/smocamt-website` (`upstream`, the unrelated production ActiveCAMT repo).
+  If any command in this flow ever prompts to pick a repo, resolves ambiguously,
+  or you're about to type `upstream` anywhere in a push/PR/release command — stop
+  and re-check `git remote -v` before proceeding.

@@ -9,13 +9,15 @@ import { db } from "./index";
 import { houses, users } from "./schema";
 import { eq } from "drizzle-orm";
 import { assertDestructiveAllowed } from "./guard";
-import { ALL_HOUSE_ROWS } from "../lib/faculties";
+import { ALL_HOUSE_ROWS, FACULTY_HOUSE_NAMES } from "../lib/faculties";
 
 // All 16 (faculty × colour) houses. CAMT keeps the bare colour ids ('red'…) so
 // existing house_id foreign keys never move; other faculties use '<fac>-<colour>'.
+// `name` is the faculty's single themed house name (shared across its 4 colours);
+// colour stays a separate visual/balancing attribute.
 const HOUSES = ALL_HOUSE_ROWS.map(({ id, faculty, color }) => ({
   id,
-  name: color.name,
+  name: FACULTY_HOUSE_NAMES[faculty],
   color: color.color,
   faculty,
   colorGroup: color.id,

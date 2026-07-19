@@ -985,18 +985,18 @@ export default function HousesPage() {
         .standings-row:hover {
           transform: translateY(-2px);
           box-shadow: 0 10px 30px rgba(0,0,0,0.03);
-          border-color: rgba(255,107,0,0.15);
+          border-color: rgba(0,0,0,0.15);
         }
         .standings-row.is-me {
-          border-color: var(--accent-primary);
-          background: rgba(255,107,0,0.05);
-          box-shadow: 0 0 0 1px var(--accent-primary), 0 8px 24px rgba(255,107,0,0.08);
+          border-color: var(--highlight);
+          background: rgba(79,70,229,0.06);
+          box-shadow: 0 0 0 1px var(--highlight), 0 8px 24px var(--highlight-glow);
         }
         /* The student's own house row — a quiet locator highlight only; the real
            call-to-action lives in the "Your House" card above the list. */
         .standings-row.is-my-house {
-          border-color: rgba(255,107,0,0.35);
-          background: rgba(255,107,0,0.04);
+          border-color: rgba(79,70,229,0.35);
+          background: rgba(79,70,229,0.04);
         }
 
         /* "Your House" card — branded entry point into the member roster */
@@ -1106,7 +1106,7 @@ export default function HousesPage() {
           margin-left: 8px;
           padding: 2px 8px;
           border-radius: 999px;
-          background: var(--accent-primary);
+          background: var(--highlight);
           color: #fff;
           font-size: 10px;
           font-weight: 900;
@@ -1123,15 +1123,15 @@ export default function HousesPage() {
           text-align: left;
           padding: 16px 24px;
           margin-bottom: 20px;
-          background: linear-gradient(135deg, rgba(255,107,0,0.10), rgba(255,107,0,0.03));
-          border: 1.5px solid var(--accent-primary);
+          background: linear-gradient(135deg, rgba(79,70,229,0.10), rgba(79,70,229,0.03));
+          border: 1.5px solid var(--highlight);
           border-radius: 20px;
           cursor: pointer;
           transition: all 0.2s ease;
         }
         .my-rank-banner:hover {
           transform: translateY(-2px);
-          box-shadow: 0 10px 30px rgba(255,107,0,0.12);
+          box-shadow: 0 10px 30px rgba(0,0,0,0.12);
         }
         .my-rank-badge {
           min-width: 44px;
@@ -1265,7 +1265,7 @@ export default function HousesPage() {
         :global(.hover-scale:hover) {
           transform: translateY(-2px);
           box-shadow: 0 10px 30px rgba(0,0,0,0.03);
-          border-color: rgba(255,107,0,0.15);
+          border-color: rgba(0,0,0,0.15);
         }
 
         /* Recent Activity */

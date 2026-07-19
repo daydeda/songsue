@@ -15,9 +15,14 @@ const QRCodeSVG = dynamic(
       <div style={{ width: 240, height: 240, background: "var(--bg-elevated)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <span style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading...</span>
       </div>
-    ) 
+    )
   }
 );
+const FlagFlutter3D = dynamic(
+  () => import("@/components/home/FlagFlutter3D").then((mod) => mod.FlagFlutter3D),
+  { ssr: false }
+);
+import { useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import {
   LogOut,
@@ -55,17 +60,22 @@ import { FormsDueBanner } from "@/components/FormsDueBanner";
 import { useNotifications } from "@/lib/useNotifications";
 import { useRouter } from "next/navigation";
 import { NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
+import {
+  colorGroupOfHouseId,
+  COLORS,
+  facultyHouseName,
+  facultyFlagSrc,
+  facultyAccentColor,
+  normalizeFaculty,
+  type ColorId,
+} from "@/lib/faculties";
 
-// House mascot logos (background removed). Keyed by both the house id (color) and
-// its name so it resolves whichever identifier the API returns.
-const HOUSE_LOGOS: Record<string, string> = {
-  red: "/house_logo/mom.png",    mom: "/house_logo/mom.png",
-  green: "/house_logo/to.png",   to: "/house_logo/to.png",
-  yellow: "/house_logo/luang.png", luang: "/house_logo/luang.png",
-  blue: "/house_logo/makon.png", makara: "/house_logo/makon.png", makon: "/house_logo/makon.png",
+const COLOR_LABEL_KEY: Record<ColorId, string> = {
+  red: "colorRed",
+  green: "colorGreen",
+  yellow: "colorYellow",
+  blue: "colorBlue",
 };
-const houseLogo = (idOrName?: string | null): string | null =>
-  idOrName ? HOUSE_LOGOS[idOrName.toLowerCase()] ?? null : null;
 
 type Event = {
   id: string;
@@ -371,6 +381,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     ? sessionStatus
     : (initialSession ? "authenticated" : "loading");
   const { t, lang } = useLanguage();
+  const prefersReducedMotion = useReducedMotion();
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   // How the events section is rendered. "grid" is the action-first card grid
@@ -497,13 +508,6 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-
-  const HOUSE_MAP: Record<string, { name: string, color: string }> = {
-    red:    { name: t.houseMom || "Mom",   color: "#ef4444" }, // Red
-    green:  { name: t.houseTo || "To",      color: "#94a3b8" }, // White → silver/pewter
-    yellow: { name: t.houseLuang || "Luang",  color: "#3b82f6" }, // Blue
-    blue:   { name: t.houseMakara || "Makon", color: "#22c55e" }, // Green
-  };
 
   const fetchEvents = (signal?: AbortSignal) =>
     fetch("/api/events", { signal })
@@ -706,7 +710,20 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
 
   const user = session?.user;
   const houseId = user?.houseId ?? null;
-  const houseInfo = houseId ? (HOUSE_MAP[houseId] ?? { name: "Unknown", color: "var(--text-muted)" }) : { name: t.unassigned, color: "var(--text-muted)" };
+  // Every faculty now has ONE themed house name shared across its 4 colours
+  // (e.g. every CAMT student's house is "Ashkayn") — that's fixed and known
+  // right away, independent of assignment. Colour is the only thing that's
+  // actually "unassigned" until first check-in (ScannerService.ensureHouseAssigned).
+  const userFaculty = normalizeFaculty(user?.faculty);
+  const myHouseName = facultyHouseName(userFaculty);
+  const myHouseAccentColor = facultyAccentColor(userFaculty);
+  const assignedColorGroup = colorGroupOfHouseId(houseId);
+  const houseInfo = assignedColorGroup
+    ? {
+        name: (t as Record<string, string>)[COLOR_LABEL_KEY[assignedColorGroup]] || assignedColorGroup,
+        color: COLORS.find((c) => c.id === assignedColorGroup)?.color || "var(--text-muted)",
+      }
+    : { name: t.unassigned, color: "var(--text-muted)" };
 
   // The event whose preview modal is open, derived from the URL-backed id. Resolves
   // once the events list has loaded; if the id isn't found (bad/stale link) the modal
@@ -821,7 +838,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
             <Users size={16} />
           </div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>
@@ -853,7 +870,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     <div style={{ background: "var(--bg-base)", minHeight: "100vh", position: "relative", overflowX: "hidden" }}>
       {/* Decorative Orbs */}
       <div className="absolute top-[-200px] left-[-100px] w-[600px] h-[600px] rounded-full" 
-           style={{ background: "radial-gradient(circle, rgba(255,107,0,0.03) 0%, transparent 70%)", pointerEvents: "none" }} />
+           style={{ background: "radial-gradient(circle, rgba(0,0,0,0.03) 0%, transparent 70%)", pointerEvents: "none" }} />
       
       <StudentNav />
 
@@ -886,12 +903,12 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                 background: "rgba(255,255,255,0.6)"
               }}
             >
-              {houseLogo(houseId) && (
-                <img src={houseLogo(houseId)!} alt="" style={{ width: 64, height: 64, objectFit: "contain", margin: "0 auto", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.12))" }} />
-              )}
-              <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: houseInfo.color, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <div style={{ width: "100%", height: 140, margin: "0 auto", filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.15))" }}>
+                <FlagFlutter3D src={facultyFlagSrc(userFaculty)} prefersReducedMotion={!!prefersReducedMotion} />
+              </div>
+              <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: myHouseAccentColor, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Trophy size={12} />
-                {lang === "th" ? houseInfo.name : `${houseInfo.name} ${t.house}`}
+                {myHouseName}
               </p>
               <p style={{ fontSize: 32, fontWeight: 900, color: houseInfo.color, filter: "brightness(0.8)" }}>
                 {houseInfo.name.toUpperCase()}
@@ -1071,8 +1088,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                 Hidden only when an announcement is loaded AND explicitly disabled.
                 When none is loaded yet / fetch failed, fall back to the built-in text. */}
             {!(announcement && announcement.enabled === false) && (
-            <div className="alert alert-info" style={{ borderRadius: "var(--radius-lg)", padding: 20, background: "rgba(255,107,0,0.04)", border: "1px solid rgba(255,107,0,0.1)" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)", color: "var(--accent-primary)", width: 40, height: 40, flexShrink: 0 }}>
+            <div className="alert alert-info" style={{ borderRadius: "var(--radius-lg)", padding: 20, background: "rgba(79,70,229,0.06)", border: "1px solid rgba(79,70,229,0.18)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-surface)", padding: 8, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)", color: "var(--highlight)", width: 40, height: 40, flexShrink: 0 }}>
                 <Megaphone size={22} />
               </div>
               <div>
@@ -1141,7 +1158,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
                   {stats.map(({ key, label, value, icon: Icon }) => (
                     <div key={key} className="glass" style={{ padding: "16px 18px", borderRadius: 18, display: "flex", alignItems: "center", gap: 14, background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(255,107,0,0.06)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(0,0,0,0.06)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", flexShrink: 0 }}>
                         <Icon size={18} />
                       </div>
                       <div style={{ minWidth: 0 }}>
@@ -1363,7 +1380,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                         
                         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-                            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
                                <Clock size={16} />
                             </div>
                             <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, lineHeight: 1.4 }}>
@@ -1378,7 +1395,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-                            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
                                <MapPin size={16} />
                             </div>
                             {e.location || "CAMT Building"}
@@ -1602,10 +1619,10 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     maxWidth: "340px",
                     alignSelf: "center",
                     minHeight: "280px",
-                    background: "linear-gradient(135deg, rgba(255, 107, 0, 0.03) 0%, rgba(255, 255, 255, 0.8) 100%)"
+                    background: "linear-gradient(135deg, rgba(0,0,0, 0.03) 0%, rgba(255, 255, 255, 0.8) 100%)"
                   }}
                 >
-                   <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(255, 107, 0, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", marginBottom: 4 }}>
+                   <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(0,0,0, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)", marginBottom: 4 }}>
                      <User size={32} />
                    </div>
                    <h4 style={{ fontSize: 18, fontWeight: 900, color: "var(--text-primary)", margin: 0 }}>
@@ -1717,7 +1734,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                    textDecoration: "none",
                    padding: "12px",
                    borderRadius: 16,
-                   background: "rgba(255,107,0,0.05)"
+                   background: "rgba(0,0,0,0.05)"
                  }}>
                     {t.houseRankings}
                     <ArrowRight size={14} />
@@ -1870,7 +1887,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
               width: 56,
               height: 56,
               borderRadius: "50%",
-              background: "rgba(255, 107, 0, 0.1)",
+              background: "rgba(0,0,0, 0.1)",
               color: "var(--accent-primary)",
               display: "flex",
               alignItems: "center",
@@ -2334,7 +2351,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                   {/* Metadata List */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
                          <Clock size={16} />
                       </div>
                       <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, lineHeight: 1.4 }}>
@@ -2350,7 +2367,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-secondary)", fontWeight: 600 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(255,107,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-primary)" }}>
                          <MapPin size={16} />
                       </div>
                       <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>

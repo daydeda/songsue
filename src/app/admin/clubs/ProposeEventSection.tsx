@@ -225,7 +225,7 @@ function ClubDropdown({
                   padding: "10px 14px",
                   borderRadius: 10,
                   border: "none",
-                  background: isSelected ? "rgba(255,107,0,0.1)" : "transparent",
+                  background: isSelected ? "rgba(0,0,0,0.1)" : "transparent",
                   color: isSelected ? "var(--accent-primary)" : "var(--text-secondary)",
                   fontWeight: isSelected ? 800 : 600,
                   fontSize: 14,
@@ -968,7 +968,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                     <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("**", "**")}><Edit2 size={14} /></button>
                     <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }} onClick={() => injectMarkup("[", "](https://...)")}><ExternalLink size={14} /></button>
                     <div style={{ position: "relative" }}>
-                      <input type="color" defaultValue="#ff6b00" style={{ opacity: 0, position: "absolute", inset: 0, cursor: "pointer" }} onChange={(e) => injectMarkup(`{{color:${e.target.value}|`, "}}")} />
+                      <input type="color" defaultValue="#0a0a0a" style={{ opacity: 0, position: "absolute", inset: 0, cursor: "pointer" }} onChange={(e) => injectMarkup(`{{color:${e.target.value}|`, "}}")} />
                       <button type="button" className="btn btn-ghost btn-sm" style={{ padding: 6, border: "none" }}>
                         <span style={{ width: 14, height: 14, borderRadius: 4, background: "linear-gradient(135deg,#ef4444,#6366f1)", display: "inline-block" }} />
                       </button>
@@ -1459,9 +1459,9 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                         style={{
                           display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 99,
                           fontSize: 12, fontWeight: 800, cursor: "pointer",
-                          background: isSelected ? "rgba(255,107,0,0.12)" : "var(--bg-elevated)",
+                          background: isSelected ? "rgba(0,0,0,0.12)" : "var(--bg-elevated)",
                           color: isSelected ? "var(--accent-primary)" : "var(--text-secondary)",
-                          border: `1px solid ${isSelected ? "rgba(255,107,0,0.5)" : "transparent"}`,
+                          border: `1px solid ${isSelected ? "rgba(0,0,0,0.5)" : "transparent"}`,
                         }}
                       >
                         {isSelected && <CheckCircle2 size={12} />}
@@ -1507,7 +1507,7 @@ export function ProposeEventSection({ clubs }: { clubs: Club[] }) {
                 <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {t.eventPosterLabel}
                   {form.imageUrls.length > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(255,107,0,0.1)", padding: "2px 8px", borderRadius: 99 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: "var(--accent-primary)", background: "rgba(0,0,0,0.1)", padding: "2px 8px", borderRadius: 99 }}>
                       {form.imageUrls.length}
                     </span>
                   )}

@@ -548,9 +548,9 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
   const getHouseColor = (houseId: string | null | undefined) => {
     switch (houseId?.toLowerCase()) {
       case "red": return "var(--red-house, #ef4444)";
-      case "blue": return "var(--yellow-house, #3b82f6)";
-      case "green": return "var(--blue-house, #22c55e)";
-      case "yellow": return "var(--green-house, #94a3b8)";
+      case "green": return "var(--green-house, #94a3b8)";
+      case "yellow": return "var(--yellow-house, #3b82f6)";
+      case "blue": return "var(--blue-house, #22c55e)";
       default: return "var(--text-secondary)";
     }
   };
@@ -811,7 +811,7 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
                     {cellValue === 0 && myTurn && status === "active" && (
                       <div className="preview-symbol" style={{ opacity: 0, transition: "opacity 0.15s" }}>
                         {myNumber === 1 ? (
-                          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-glow)" strokeWidth="3" strokeLinecap="round" style={{ stroke: "rgba(255, 107, 0, 0.25)" }}>
+                          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-glow)" strokeWidth="3" strokeLinecap="round" style={{ stroke: "rgba(0,0,0, 0.25)" }}>
                             <line x1="18" y1="6" x2="6" y2="18"></line>
                             <line x1="6" y1="6" x2="18" y2="18"></line>
                           </svg>

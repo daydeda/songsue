@@ -1044,20 +1044,23 @@ async function migrate() {
   // 64. Insert the 12 new faculty houses (MASSCOM/ARCH/ARTS × red/green/yellow/blue).
   // ids/names/colours mirror src/lib/faculties.ts (ALL_HOUSE_ROWS / houseRowId / COLORS).
   // ON CONFLICT (id) DO NOTHING makes re-runs a no-op and never clobbers points.
+  // `name` here is each faculty's themed house name (step 83 below renamed the
+  // legacy CAMT rows + these to match; a brand-new DB gets the current names
+  // straight away instead of needing step 83 to fix them up).
   await sql`
     INSERT INTO houses (id, name, color, points, faculty, color_group) VALUES
-      ('masscom-red',    'Mom',   '#ef4444', 0, 'MASSCOM', 'red'),
-      ('masscom-green',  'To',    '#94a3b8', 0, 'MASSCOM', 'green'),
-      ('masscom-yellow', 'Luang', '#3b82f6', 0, 'MASSCOM', 'yellow'),
-      ('masscom-blue',   'Makon', '#22c55e', 0, 'MASSCOM', 'blue'),
-      ('arch-red',       'Mom',   '#ef4444', 0, 'ARCH',    'red'),
-      ('arch-green',     'To',    '#94a3b8', 0, 'ARCH',    'green'),
-      ('arch-yellow',    'Luang', '#3b82f6', 0, 'ARCH',    'yellow'),
-      ('arch-blue',      'Makon', '#22c55e', 0, 'ARCH',    'blue'),
-      ('arts-red',       'Mom',   '#ef4444', 0, 'ARTS',    'red'),
-      ('arts-green',     'To',    '#94a3b8', 0, 'ARTS',    'green'),
-      ('arts-yellow',    'Luang', '#3b82f6', 0, 'ARTS',    'yellow'),
-      ('arts-blue',      'Makon', '#22c55e', 0, 'ARTS',    'blue')
+      ('masscom-red',    'MASSFENRIR', '#ef4444', 0, 'MASSCOM', 'red'),
+      ('masscom-green',  'MASSFENRIR', '#94a3b8', 0, 'MASSCOM', 'green'),
+      ('masscom-yellow', 'MASSFENRIR', '#3b82f6', 0, 'MASSCOM', 'yellow'),
+      ('masscom-blue',   'MASSFENRIR', '#22c55e', 0, 'MASSCOM', 'blue'),
+      ('arch-red',       'CHRONOKINESIS', '#ef4444', 0, 'ARCH',    'red'),
+      ('arch-green',     'CHRONOKINESIS', '#94a3b8', 0, 'ARCH',    'green'),
+      ('arch-yellow',    'CHRONOKINESIS', '#3b82f6', 0, 'ARCH',    'yellow'),
+      ('arch-blue',      'CHRONOKINESIS', '#22c55e', 0, 'ARCH',    'blue'),
+      ('arts-red',       'Ancestral Incantation', '#ef4444', 0, 'ARTS',    'red'),
+      ('arts-green',     'Ancestral Incantation', '#94a3b8', 0, 'ARTS',    'green'),
+      ('arts-yellow',    'Ancestral Incantation', '#3b82f6', 0, 'ARTS',    'yellow'),
+      ('arts-blue',      'Ancestral Incantation', '#22c55e', 0, 'ARTS',    'blue')
     ON CONFLICT (id) DO NOTHING
   `;
   console.log("  ✅ inserted 12 new faculty houses (ON CONFLICT DO NOTHING)");
@@ -1319,6 +1322,20 @@ async function migrate() {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS smo_position text`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS anusmo_position text`;
   console.log("  ✅ club_members.position, users.major_position/smo_position/anusmo_position");
+
+  // 83. Rename each faculty's 4 houses to its own themed name (previously all 4
+  // faculties shared the same 4 colour names — Mom/To/Luang/Makon). Every CAMT
+  // house becomes "Ashkayn", every MASSCOM house "MASSFENRIR", every ARCH house
+  // "CHRONOKINESIS", every ARTS house "Ancestral Incantation" — colour stays a
+  // separate visual/balancing attribute (color/color_group columns untouched).
+  // Only touches `name`; ids/points/faculty/color_group are all left alone, so
+  // this is a pure, non-destructive relabel. Mirrors src/lib/faculties.ts's
+  // FACULTY_HOUSE_NAMES — keep both in sync if a name ever changes again.
+  await sql`UPDATE houses SET name = 'Ashkayn' WHERE faculty = 'CAMT' AND name IS DISTINCT FROM 'Ashkayn'`;
+  await sql`UPDATE houses SET name = 'MASSFENRIR' WHERE faculty = 'MASSCOM' AND name IS DISTINCT FROM 'MASSFENRIR'`;
+  await sql`UPDATE houses SET name = 'CHRONOKINESIS' WHERE faculty = 'ARCH' AND name IS DISTINCT FROM 'CHRONOKINESIS'`;
+  await sql`UPDATE houses SET name = 'Ancestral Incantation' WHERE faculty = 'ARTS' AND name IS DISTINCT FROM 'Ancestral Incantation'`;
+  console.log("  ✅ renamed houses to their faculty's themed name (Ashkayn/MASSFENRIR/CHRONOKINESIS/Ancestral Incantation)");
 
   console.log("✅ Migration complete!");
   await sql.end();

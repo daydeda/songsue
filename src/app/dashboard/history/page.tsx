@@ -548,7 +548,7 @@ export default function HistoryPage() {
                         <div key={s.sessionId} style={{
                           display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
                           padding: "8px 14px", borderRadius: 14,
-                          background: s.checkInTime ? "rgba(255,107,0,0.08)" : "rgba(0,0,0,0.04)"
+                          background: s.checkInTime ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.04)"
                         }}>
                           <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                             <ClipboardList size={14} style={{ flexShrink: 0, color: s.checkInTime ? "var(--accent-primary)" : "var(--text-muted)" }} />
@@ -594,7 +594,7 @@ export default function HistoryPage() {
                       alignItems: "center",
                       gap: 6,
                       padding: "6px 14px",
-                      background: "rgba(255,107,0,0.08)",
+                      background: "rgba(0,0,0,0.08)",
                       borderRadius: 14,
                       color: "var(--accent-primary)",
                       fontSize: 12,
@@ -641,11 +641,11 @@ export default function HistoryPage() {
                               padding: "8px 14px",
                               fontSize: 13,
                               fontWeight: 900,
-                              background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
+                              background: "linear-gradient(135deg, var(--accent-primary) 0%, #262626 100%)",
                               color: "#fff",
                               border: "none",
                               cursor: "pointer",
-                              boxShadow: "0 4px 12px rgba(255,107,0,0.15)",
+                              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
@@ -780,9 +780,9 @@ export default function HistoryPage() {
               padding: "40px 32px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center"
             }} onClick={e => e.stopPropagation()}>
               <div style={{
-                width: 72, height: 72, borderRadius: "50%", background: "rgba(255,107,0,0.1)",
+                width: 72, height: 72, borderRadius: "50%", background: "rgba(0,0,0,0.1)",
                 display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 24,
-                border: "1px solid rgba(255,107,0,0.2)", boxShadow: "0 0 20px rgba(255,107,0,0.15)"
+                border: "1px solid rgba(0,0,0,0.2)", boxShadow: "0 0 20px rgba(0,0,0,0.15)"
               }}>
                 <Trophy size={36} style={{ color: "var(--accent-primary)" }} />
               </div>
@@ -794,8 +794,8 @@ export default function HistoryPage() {
               </p>
               <button className="btn btn-primary" type="button" style={{
                 width: "100%", height: 48, borderRadius: 14, fontWeight: 900, fontSize: 15,
-                background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
-                color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(255,107,0,0.3)", cursor: "pointer"
+                background: "linear-gradient(135deg, var(--accent-primary) 0%, #262626 100%)",
+                color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(0,0,0,0.3)", cursor: "pointer"
               }} onClick={() => setShowWarningModal(false)}>
                 {lang === "th" ? "ตกลง" : lang === "cn" ? "好的" : lang === "mm" ? "ကောင်းပါပြီ" : "Understood"}
               </button>
@@ -821,7 +821,7 @@ export default function HistoryPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                     <span style={{ fontSize: 11, fontWeight: 900, color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t.housePointFeeding}</span>
                     {activeForm?.formType && (
-                      <span style={{ fontSize: 10, fontWeight: 900, background: "rgba(255,107,0,0.12)", color: "var(--accent-primary)", padding: "2px 8px", borderRadius: 6 }}>
+                      <span style={{ fontSize: 10, fontWeight: 900, background: "rgba(0,0,0,0.12)", color: "var(--accent-primary)", padding: "2px 8px", borderRadius: 6 }}>
                         {FORM_TYPE_LABELS[activeForm.formType] || activeForm.formType}
                       </span>
                     )}
@@ -869,8 +869,8 @@ export default function HistoryPage() {
                   </p>
                   <button className="btn btn-primary" style={{
                     height: 46, borderRadius: 12, padding: "0 32px",
-                    background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
-                    color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(255,107,0,0.3)"
+                    background: "linear-gradient(135deg, var(--accent-primary) 0%, #262626 100%)",
+                    color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(0,0,0,0.3)"
                   }} onClick={() => { closeStudentForm(); setGeneralSuccess(null); }}>
                     {t.closeWindow}
                   </button>
@@ -968,7 +968,7 @@ export default function HistoryPage() {
                                     display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 14,
                                     border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
                                     background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)", cursor: "pointer",
-                                    transition: "all 0.2s ease", boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
+                                    transition: "all 0.2s ease", boxShadow: isSelected ? "0 0 12px rgba(0,0,0,0.1)" : "none"
                                   }}>
                                     <input type="radio" name={`choice-${q.id}`} value={opt} checked={isSelected}
                                       onChange={() => {
@@ -991,7 +991,7 @@ export default function HistoryPage() {
                                     display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 14,
                                     border: isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
                                     background: isSelected ? "var(--bg-elevated)" : "var(--bg-surface)", cursor: "pointer",
-                                    transition: "all 0.2s ease", boxShadow: isSelected ? "0 0 12px rgba(255,107,0,0.1)" : "none"
+                                    transition: "all 0.2s ease", boxShadow: isSelected ? "0 0 12px rgba(0,0,0,0.1)" : "none"
                                   }}>
                                     <input type="checkbox" value={opt} checked={isSelected}
                                       onChange={(e) => {
@@ -1075,8 +1075,8 @@ export default function HistoryPage() {
                     </button>
                     <button className="btn btn-primary" type="button" style={{
                       height: 46, borderRadius: 12, padding: "0 24px",
-                      background: "linear-gradient(135deg, var(--accent-primary) 0%, #ff3d00 100%)",
-                      color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(255,107,0,0.3)",
+                      background: "linear-gradient(135deg, var(--accent-primary) 0%, #262626 100%)",
+                      color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
                       display: "flex", alignItems: "center", gap: 8
                     }} disabled={submitting} onClick={goNext}>
                       {submitting ? (

@@ -14,7 +14,6 @@ X,
 Settings,
 LayoutDashboard,
 QrCode,
-ShoppingBag,
 Users,
 CalendarDays,
 Gamepad2
@@ -57,7 +56,6 @@ const primaryLinks = user ? [
   { href: "/dashboard/calendar", label: t.calendar || "Calendar", icon: CalendarDays },
   { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
   { href: "/dashboard/history", label: t.eventHistory, icon: History },
-  { href: "/dashboard/shop", label: t.shop || "Shop", icon: ShoppingBag },
 ] : [
   { href: "/dashboard", label: t.upcomingEvents, icon: LayoutDashboard },
   { href: "/dashboard/houses", label: t.leaderboard, icon: Trophy },
@@ -375,7 +373,7 @@ borderRadius: "12px",
 textDecoration: "none",
 marginBottom: "4px",
 background: isActive ? "var(--accent-glow)" : "transparent",
-border: isActive ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
+border: isActive ? "1px solid rgba(0,0,0, 0.15)" : "1px solid transparent",
 }}
 >
 <Icon size={16} style={{ flexShrink: 0 }} />
@@ -399,8 +397,8 @@ fontSize: "15px",
 borderRadius: "12px",
 textDecoration: "none",
 marginBottom: "4px",
-background: pathname.startsWith("/admin") ? "var(--accent-glow)" : "rgba(255,107,0,0.05)",
-border: pathname.startsWith("/admin") ? "1px solid rgba(255, 107, 0, 0.15)" : "1px solid transparent",
+background: pathname.startsWith("/admin") ? "var(--accent-glow)" : "rgba(0,0,0,0.05)",
+border: pathname.startsWith("/admin") ? "1px solid rgba(0,0,0, 0.15)" : "1px solid transparent",
 }}
 >
 <ShieldCheck size={16} style={{ flexShrink: 0 }} /> {t.adminPanel}
@@ -464,7 +462,7 @@ text-decoration: none;
 color: inherit;
 }
 .logo-icon {
-height: 40px;
+height: 68px;
 width: auto;
 object-fit: contain;
 }
@@ -531,13 +529,13 @@ display: flex;
 align-items: center;
 justify-content: center;
 text-decoration: none;
-box-shadow: 0 6px 20px rgba(255, 107, 0, 0.35), 0 2px 6px rgba(0,0,0,0.15);
+box-shadow: 0 6px 20px rgba(0,0,0, 0.35), 0 2px 6px rgba(0,0,0,0.15);
 z-index: 998;
 transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 :global(.battle-fab:hover) {
 transform: translateY(-2px) scale(1.05);
-box-shadow: 0 10px 26px rgba(255, 107, 0, 0.45), 0 3px 8px rgba(0,0,0,0.18);
+box-shadow: 0 10px 26px rgba(0,0,0, 0.45), 0 3px 8px rgba(0,0,0,0.18);
 }
 :global(.battle-fab.active) {
 background: var(--text-primary);
@@ -548,7 +546,7 @@ content: '';
 position: absolute;
 inset: -4px;
 border-radius: 50%;
-border: 2px solid rgba(255, 107, 0, 0.35);
+border: 2px solid rgba(0,0,0, 0.35);
 animation: fab-pulse 2.2s ease-out infinite;
 }
 :global(.battle-fab.active::after) {
@@ -664,7 +662,7 @@ transform: translateX(3px);
 }
 :global(.dropdown-item.admin-item) {
 color: var(--accent-primary);
-background: rgba(255, 107, 0, 0.03);
+background: rgba(0,0,0, 0.03);
 }
 :global(.dropdown-item.admin-item:hover) {
 background: var(--accent-glow);
@@ -786,12 +784,12 @@ white-space: nowrap;
 }
 :global(.nav-link:hover) {
 color: var(--accent-primary);
-background: rgba(255,107,0,0.05);
+background: rgba(0,0,0,0.05);
 }
 :global(.nav-link.active) {
 background: var(--accent-glow) !important;
 color: var(--accent-primary) !important;
-border: 1px solid rgba(255, 107, 0, 0.15) !important;
+border: 1px solid rgba(0,0,0, 0.15) !important;
 }
 
 @media (max-width: 1400px) {

@@ -112,7 +112,7 @@ export function RichTextEditor({
           Color
           <input
             type="color"
-            defaultValue="#ff6b00"
+            defaultValue="#0a0a0a"
             onChange={(e) => applyColor(e.target.value)}
             style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
           />
@@ -138,7 +138,7 @@ export function RichTextEditor({
         }}
       />
       <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-        <code>**bold**</code> · <code>[text](https://…)</code> · <code>{`{{color:#ff6b00|text}}`}</code>
+        <code>**bold**</code> · <code>[text](https://…)</code> · <code>{`{{color:#0a0a0a|text}}`}</code>
       </p>
 
       {showPreview && value.trim() !== "" && (

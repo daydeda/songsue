@@ -236,7 +236,7 @@ export function EventProposalsClient() {
                     </span>
                   )}
                   {p.allowedMajors && p.allowedMajors.length > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "rgba(255,107,0,0.1)", color: "var(--accent-primary)" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "rgba(0,0,0,0.1)", color: "var(--accent-primary)" }}>
                       {lang === "th" ? "แนะนำตามสาขา: " : lang === "cn" ? "建议专业： " : lang === "mm" ? "အကြံပြုအထူးပြုဌာန: " : "Suggested majors: "}{p.allowedMajors.join(", ")}
                     </span>
                   )}

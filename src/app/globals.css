@@ -22,10 +22,19 @@
   --text-secondary: #4b5563;
   --text-muted:     #9ca3af;
 
-  --accent-primary:  #ff6b00;
-  --accent-hover:    #ff8533;
-  --accent-glow:     rgba(255,107,0,0.15);
+  --accent-primary:  #0a0a0a;
+  --accent-hover:    #262626;
+  --accent-glow:     rgba(0,0,0,0.15);
   --accent-secondary: #f59e0b;
+
+  /* Reserved for elements that must visibly stand out — announcement banner,
+     "this is your house" highlights, button hover — everything else stays on
+     the neutral black/white accent above. Deliberately not the same blue as
+     --yellow-house/#3b82f6 (registration badges also use that blue) so a
+     highlight never reads as "this is the blue house". */
+  --highlight:       #4f46e5;
+  --highlight-hover: #6366f1;
+  --highlight-glow:  rgba(79,70,229,0.18);
 
   --red-house:    #ef4444; /* มอม (Mom)   — Red */
   --green-house:  #94a3b8; /* โต (To)     — White → silver/pewter (visible on the light theme) */
@@ -105,8 +114,8 @@ html, body {
   box-shadow: 0 0 20px var(--accent-glow);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  box-shadow: 0 0 30px var(--accent-glow), 0 4px 12px rgba(0,0,0,0.4);
+  background: var(--highlight);
+  box-shadow: 0 0 30px var(--highlight-glow), 0 4px 12px rgba(0,0,0,0.4);
   transform: translateY(-1px);
 }
 .btn-primary:active:not(:disabled) { transform: scale(0.97); }
@@ -376,7 +385,7 @@ select.input { cursor: pointer; }
 }
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 12px var(--accent-glow); }
-  50%       { box-shadow: 0 0 32px var(--accent-glow), 0 0 48px rgba(255,107,0,0.15); }
+  50%       { box-shadow: 0 0 32px var(--accent-glow), 0 0 48px rgba(0,0,0,0.15); }
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -441,7 +450,7 @@ select.input { cursor: pointer; }
 .nav-link.active {
   background: var(--accent-glow);
   color: var(--accent-primary);
-  border: 1px solid rgba(255,107,0,0.2);
+  border: 1px solid rgba(0,0,0,0.2);
 }
 
 /* ── Divider ────────────────────────────────────────────────────────────────── */
@@ -464,7 +473,7 @@ select.input { cursor: pointer; }
 .alert-success { background: rgba(34,197,94,0.08);  border: 1px solid rgba(34,197,94,0.2);  color: #4ade80; }
 .alert-warning { background: rgba(234,179,8,0.08);  border: 1px solid rgba(234,179,8,0.2);  color: #facc15; }
 .alert-error   { background: rgba(239,68,68,0.08);  border: 1px solid rgba(239,68,68,0.2);  color: #f87171; }
-.alert-info    { background: rgba(255,107,0,0.08); border: 1px solid rgba(255,107,0,0.2); color: #fb923c; }
+.alert-info    { background: rgba(79,70,229,0.08); border: 1px solid rgba(79,70,229,0.2); color: #4338ca; }
 
 /* ── Thai Typography Fixes ─────────────────────────────────────────────────── */
 .lang-th,

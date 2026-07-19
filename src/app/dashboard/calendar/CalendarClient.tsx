@@ -942,7 +942,7 @@ export default function CalendarClient({
           align-self: flex-end;
         }
         .cal-cell.today .cal-daynum {
-          background: var(--accent-primary, #ff6b00);
+          background: var(--accent-primary, #0a0a0a);
           color: #fff;
           width: 22px;
           height: 22px;
@@ -974,7 +974,7 @@ export default function CalendarClient({
           overflow: hidden;
         }
         .cal-chip.event {
-          background: rgba(255, 107, 0, 0.12);
+          background: rgba(0,0,0, 0.12);
           color: #c2410c;
         }
         .cal-chip.entry {
@@ -1013,7 +1013,7 @@ export default function CalendarClient({
           border: 1px solid transparent;
         }
         .btn-primary {
-          background: var(--accent-primary, #ff6b00);
+          background: var(--accent-primary, #0a0a0a);
           color: #fff;
         }
         .btn-ghost {
@@ -1076,7 +1076,7 @@ export default function CalendarClient({
           letter-spacing: 0.03em;
         }
         .badge.event {
-          background: rgba(255, 107, 0, 0.12);
+          background: rgba(0,0,0, 0.12);
           color: #c2410c;
         }
         .badge.entry {
@@ -1440,7 +1440,7 @@ function SubscribePanel({ onClose }: { onClose: () => void }) {
           color: var(--text-secondary);
         }
         .btn-primary {
-          background: var(--accent-primary, #ff6b00);
+          background: var(--accent-primary, #0a0a0a);
           color: #fff;
         }
         .btn-danger {

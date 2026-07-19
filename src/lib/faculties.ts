@@ -21,7 +21,7 @@ export const FACULTIES: Faculty[] = [
   // Real major lists for the other faculties are pending — until provided, Major
   // is optional for these faculties (no sub-selection shown). Add codes here to
   // turn on the Major dropdown for that faculty.
-  { id: "MASSCOM", name: "MassComm", majors: [] },
+  { id: "MASSCOM", name: "Mass Communication", majors: [] },
   { id: "ARCH", name: "Architecture", majors: [] },
   { id: "ARTS", name: "Fine Arts", majors: [] },
 ];
@@ -38,6 +38,57 @@ export const normalizeFaculty = (v: unknown): FacultyId =>
 
 export const majorsForFaculty = (faculty: unknown): string[] =>
   FACULTIES.find((f) => f.id === normalizeFaculty(faculty))?.majors ?? [];
+
+// Each faculty's own themed house — ONE name shared across all 4 of its colour
+// variants (colour is a per-student visual/balancing attribute, not part of the
+// name). Matches the lore + 3D flags already built for the landing page, see
+// src/components/home/houses-data.ts.
+export const FACULTY_HOUSE_NAMES: Record<FacultyId, string> = {
+  CAMT: "Ashkayn",
+  MASSCOM: "MASSFENRIR",
+  ARCH: "CHRONOKINESIS",
+  ARTS: "Ancestral Incantation",
+};
+
+export const facultyHouseName = (faculty: unknown): string =>
+  FACULTY_HOUSE_NAMES[normalizeFaculty(faculty)];
+
+// The animated 3D flag (.glb, public/flag_house/) for each faculty's house —
+// same assets already used on the landing page, see src/components/home/houses-data.ts.
+export const FACULTY_FLAG_SRC: Record<FacultyId, string> = {
+  CAMT: "/flag_house/camt_flag.glb",
+  MASSCOM: "/flag_house/Masscom_flag.glb",
+  ARCH: "/flag_house/architecture_flag.glb",
+  ARTS: "/flag_house/Fine_art_flag.glb",
+};
+
+export const facultyFlagSrc = (faculty: unknown): string =>
+  FACULTY_FLAG_SRC[normalizeFaculty(faculty)];
+
+// Signature colour of each faculty's flag/banner (sampled from the .glb art),
+// used to tint the house name label so it visually matches its flag.
+export const FACULTY_ACCENT_COLOR: Record<FacultyId, string> = {
+  CAMT: "#b91c1c", // Ashkayn — crimson banner, gold flame emblem
+  MASSCOM: "#52525b", // MASSFENRIR — gunmetal grey banner
+  ARCH: "#7c3aed", // CHRONOKINESIS — violet banner
+  ARTS: "#7c2d12", // Ancestral Incantation — burnt umber banner
+};
+
+export const facultyAccentColor = (faculty: unknown): string =>
+  FACULTY_ACCENT_COLOR[normalizeFaculty(faculty)];
+
+/** The faculty a house row id belongs to — reverses houseRowId's encoding
+ *  ('red' → CAMT, 'masscom-red' → MASSCOM, …). Unrecognised ids default to
+ *  CAMT, matching normalizeFaculty's back-compat behaviour. */
+export const facultyOfHouseId = (houseId: string | null | undefined): FacultyId => {
+  if (!houseId || !houseId.includes("-")) return DEFAULT_FACULTY;
+  const prefix = houseId.slice(0, houseId.indexOf("-"));
+  return FACULTY_IDS.find((f) => f.toLowerCase() === prefix) ?? DEFAULT_FACULTY;
+};
+
+/** A house row id's display name — its faculty's single themed house name. */
+export const houseDisplayName = (houseId: string | null | undefined): string =>
+  FACULTY_HOUSE_NAMES[facultyOfHouseId(houseId)];
 
 // The 4 shared colour houses. `name` mirrors the seed/i18n house names; `color`
 // is the display hex (kept in sync with src/db/seed.ts).

@@ -2023,10 +2023,10 @@ export function EventFormBuilderModal({ eventId, eventTitle, onClose, onChanged 
                             blue: "var(--blue-house)"
                           };
                           const houseNames: Record<string, string> = {
-                            red: t.houseMom || "Mom",
-                            green: t.houseTo || "To",
-                            yellow: t.houseLuang || "Luang",
-                            blue: t.houseMakara || "Makon"
+                            red: t.colorRed || "Red",
+                            green: t.colorGreen || "Green",
+                            yellow: t.colorYellow || "Yellow",
+                            blue: t.colorBlue || "Blue"
                           };
                           const count = formStats?.[hId] || 0;
                           return (

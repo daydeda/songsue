@@ -6,6 +6,14 @@ import { useRouter } from "next/navigation";
 import { Swords, Trophy, History, Play, Users, Medal, Zap, RotateCcw, AlertTriangle, Flame } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
+import { colorGroupOfHouseId } from "@/lib/faculties";
+
+const COLOR_LABEL_KEY: Record<string, string> = {
+  red: "colorRed",
+  green: "colorGreen",
+  yellow: "colorYellow",
+  blue: "colorBlue",
+};
 
 interface SessionUser {
   id: string;
@@ -115,9 +123,12 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
     }
   }
 
-  // Helper to format house colors
+  // Helper to format house colors. houseId is the student's real per-faculty house
+  // id (bare colour for CAMT, "<faculty>-<colour>" for the other 3 faculties) —
+  // resolve to its colour group first, or non-CAMT students always fall through
+  // to the default case regardless of their actual colour.
   const getHouseColor = (houseId: string | null | undefined) => {
-    switch (houseId?.toLowerCase()) {
+    switch (colorGroupOfHouseId(houseId)) {
       case "red": return "var(--red-house, #ef4444)";
       case "green": return "var(--green-house, #94a3b8)";
       case "yellow": return "var(--yellow-house, #3b82f6)";
@@ -127,13 +138,9 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
   };
 
   const getHouseName = (houseId: string | null | undefined) => {
-    switch (houseId?.toLowerCase()) {
-      case "red": return t.houseMom;
-      case "blue": return t.houseLuang;
-      case "green": return t.houseMakara;
-      case "yellow": return t.houseTo;
-      default: return t.battleNoHouse;
-    }
+    const colorGroup = colorGroupOfHouseId(houseId);
+    const labelKey = colorGroup && COLOR_LABEL_KEY[colorGroup];
+    return (labelKey && (t as Record<string, string>)[labelKey]) || t.battleNoHouse;
   };
 
   return (

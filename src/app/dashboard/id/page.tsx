@@ -441,7 +441,7 @@ export default function DigitalIdPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ fontSize: 12, fontWeight: 900, color: idx === 0 ? "#fbbf24" : "var(--text-muted)", width: 14 }}>{idx + 1}</span>
                         <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>
-                          {h.id === 'red' ? t.houseMom : h.id === 'green' ? t.houseTo : h.id === 'yellow' ? t.houseLuang : h.id === 'blue' ? t.houseMakara : h.name}
+                          {(t as Record<string, string>)[COLOR_LABEL_KEY[h.id as ColorId]] || h.name}
                         </span>
                         {isUserHouse && <span style={{ fontSize: 9, fontWeight: 900, background: h.color, color: "#fff", padding: "2px 6px", borderRadius: 6 }}>YOU</span>}
                       </div>

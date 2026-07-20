@@ -5044,7 +5044,7 @@ export default function AdminEventsPage() {
                               background: members[0]?.primary.user?.house?.color || "var(--accent-primary)",
                               boxShadow: `0 0 15px ${members[0]?.primary.user?.house?.color}55`
                             }} />
-                            {house === "red" ? t.houseMom : house === "green" ? t.houseTo : house === "yellow" ? t.houseLuang : house === "blue" ? t.houseMakara : house}
+                            {members[0]?.primary.user?.house?.name || house}
                           </h4>
                           <span className="badge" style={{ padding: "6px 16px", borderRadius: 99, background: "var(--bg-surface)", fontWeight: 800, color: "var(--text-secondary)" }}>
                             {members.length} Members

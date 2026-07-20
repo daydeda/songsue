@@ -127,6 +127,13 @@
       "when": 1784350129591,
       "tag": "0032_cloudy_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784516363311,
+      "tag": "0033_glamorous_blonde_phantom",
+      "breakpoints": true
     }
   ]
 }

@@ -73,6 +73,13 @@ export const users = pgTable("users", {
   // new event pre-registration until a staff member resets it.
   noShowCount: integer("no_show_count").notNull().default(0),
   registrationBlocked: boolean("registration_blocked").notNull().default(false),
+  // Site-wide early-access flag: set via a secret activation link (see
+  // /api/preview/activate and users.previewAccess in the register route's
+  // bypass logic). Lets the holder register for ANY event before its public
+  // registrationOpenTime and skip that event's allowedRoles/allowedMajors/
+  // allowedClubs eligibility checks — nothing else (quota, close time,
+  // walk-ins-only, first-year-only, target audience all still apply).
+  previewAccess: boolean("preview_access").notNull().default(false),
   // QR Token for secure check-in (FE-13)
   qrToken: text("qr_token").unique(),
   // Profile specifics
@@ -586,6 +593,17 @@ export const announcements = pgTable("announcements", {
   id: uuid("id").defaultRandom().primaryKey(),
   body: text("body").notNull(),
   enabled: boolean("enabled").notNull().default(true),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+// Singleton (like `announcements`): the current site-wide preview-access
+// token an admin can generate/rotate/clear. The app always reads/writes the
+// most-recently-updated row (see /api/admin/settings), same convention as
+// the announcements singleton — no DB-level single-row constraint.
+export const siteSettings = pgTable("site_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  previewAccessToken: text("preview_access_token"),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });

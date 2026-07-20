@@ -13,6 +13,7 @@ import {
   GraduationCap,
   User,
   MessageSquareWarning,
+  KeyRound,
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { isScannerOnlyAny, isGlobalRegistrationPosition } from "@/lib/admin-access";
@@ -47,6 +48,7 @@ const NAV_GROUPS = [
     ] },
   { titleKey: "navGroupSystem", items: [
       { href: "/admin/audit-logs", key: "auditTrails", icon: ShieldCheck },
+      { href: "/admin/settings",   key: "manageSettings", icon: KeyRound },
     ] },
 ] as const;
 
@@ -110,6 +112,7 @@ export function AdminNav({
     if (item.href === "/admin/appeals") return false;
     if (item.href === "/admin/audit-logs") return canSeeAudit;
     if (item.href === "/admin/announcement") return canManage;
+    if (item.href === "/admin/settings") return canManage;
     return true; // dashboard, events, scanner — every full-admin role
   };
 

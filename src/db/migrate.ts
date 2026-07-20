@@ -1337,6 +1337,21 @@ async function migrate() {
   await sql`UPDATE houses SET name = 'Ancestral Incantation' WHERE faculty = 'ARTS' AND name IS DISTINCT FROM 'Ancestral Incantation'`;
   console.log("  ✅ renamed houses to their faculty's themed name (Ashkayn/MASSFENRIR/CHRONOKINESIS/Ancestral Incantation)");
 
+  // 84. users.preview_access — site-wide early-access flag (see schema.ts).
+  // site_settings — new singleton table holding the current preview-access
+  // activation token (see /api/admin/settings, /api/preview/activate). Both
+  // additive/idempotent/non-destructive.
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS preview_access boolean NOT NULL DEFAULT false`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      preview_access_token text,
+      updated_by text,
+      updated_at timestamptz DEFAULT now()
+    )
+  `;
+  console.log("  ✅ users.preview_access, site_settings table");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -41,6 +41,7 @@ export async function GET() {
         roles: true,
         noShowCount: true,
         registrationBlocked: true,
+        previewAccess: true,
         ...(isSuperAdmin ? { email: true, phone: true, contactChannels: true } : {}),
       },
       with: { house: true },

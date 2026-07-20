@@ -6,7 +6,15 @@ import { useRouter } from "next/navigation";
 import { Swords, Trophy, AlertTriangle, ArrowLeft, Loader2, Zap, Hourglass, LogOut, Award, RefreshCcw, RotateCcw, Info, PartyPopper, Frown, Handshake } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
+import { colorGroupOfHouseId } from "@/lib/faculties";
 import dynamic from "next/dynamic";
+
+const COLOR_LABEL_KEY: Record<string, string> = {
+  red: "colorRed",
+  green: "colorGreen",
+  yellow: "colorYellow",
+  blue: "colorBlue",
+};
 
 const QRCodeSVG = dynamic(() => import("qrcode.react").then((mod) => mod.QRCodeSVG), {
   ssr: false,
@@ -544,9 +552,12 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
     }
   };
 
-  // Helper formatting for house classes
+  // Helper formatting for house classes. houseId is the student's real per-faculty
+  // house id (bare colour for CAMT, "<faculty>-<colour>" for the other 3 faculties)
+  // — resolve to its colour group first, or non-CAMT students always fall through
+  // to the default case regardless of their actual colour.
   const getHouseColor = (houseId: string | null | undefined) => {
-    switch (houseId?.toLowerCase()) {
+    switch (colorGroupOfHouseId(houseId)) {
       case "red": return "var(--red-house, #ef4444)";
       case "green": return "var(--green-house, #94a3b8)";
       case "yellow": return "var(--yellow-house, #3b82f6)";
@@ -556,13 +567,9 @@ export function RoomClient({ initialSession, roomCode }: RoomClientProps) {
   };
 
   const getHouseName = (houseId: string | null | undefined) => {
-    switch (houseId?.toLowerCase()) {
-      case "red": return t.houseMom;
-      case "blue": return t.houseLuang;
-      case "green": return t.houseMakara;
-      case "yellow": return t.houseTo;
-      default: return "";
-    }
+    const colorGroup = colorGroupOfHouseId(houseId);
+    const labelKey = colorGroup && COLOR_LABEL_KEY[colorGroup];
+    return (labelKey && (t as Record<string, string>)[labelKey]) || "";
   };
 
   // Render winning line highlighting helper

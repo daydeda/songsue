@@ -15,15 +15,6 @@ export default function AdminActivityPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
-    const key = idOrName.toLowerCase();
-    if (key === "red" || key === "mom") return t.houseMom || "Mom";
-    if (key === "green" || key === "to") return t.houseTo || "To";
-    if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
-    if (key === "blue" || key === "makara") return t.houseMakara || "Makon";
-    return defaultName;
-  };
-
   const translateActivityReason = (reason: string) => {
     if (!reason) return "";
 
@@ -61,7 +52,7 @@ export default function AdminActivityPage() {
     const match4 = reason.match(/^Event Form Contest Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Received (\d+) PTS\.$/);
     if (match4) {
       const [_, house, formTitle, subs, pts] = match4;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `အကဲဖြတ်လွှา တင်သွင်းမှုအများဆုံးဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动表单竞赛优胜者：${translatedHouse} 学院以 ${subs} 次提交最多完成了评估表 "${formTitle}"！获得 ${pts} 积分。`;
@@ -72,7 +63,7 @@ export default function AdminActivityPage() {
     const match5 = reason.match(/^Event Form Contest Tie Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Shared (\d+) PTS\.$/);
     if (match5) {
       const [_, house, formTitle, subs, pts] = match5;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံး ပူးတွဲဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ขွဲဝေရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动表单竞赛并列优胜者：${translatedHouse} 学院以 ${subs} 次提交完成了评估表 "${formTitle}"！平分获得 ${pts} 积分。`;
@@ -83,7 +74,7 @@ export default function AdminActivityPage() {
     const match6 = reason.match(/^Event "(.+?)" completed! WINNER: (.+?) House won with (\d+) attendees! Received (\d+) PTS\.$/);
     if (match6) {
       const [_, eventTitle, house, atts, pts] = match6;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ အနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束！获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！获得 ${pts} 积分。`;
@@ -94,7 +85,7 @@ export default function AdminActivityPage() {
     const match7 = reason.match(/^Event "(.+?)" completed! TIE WINNER: (.+?) House won with (\d+) attendees! Shared (\d+) PTS\.$/);
     if (match7) {
       const [_, eventTitle, house, atts, pts] = match7;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ ပူးတွဲအနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束！并列获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！平分获得 ${pts} 积分。`;
@@ -136,7 +127,7 @@ export default function AdminActivityPage() {
     if (a.type === "checkin") {
       return a.studentName.toLowerCase().includes(q) || a.eventTitle.toLowerCase().includes(q) || a.studentId.includes(q);
     } else {
-      const houseTranslated = getTranslatedHouseName(a.houseId || "", a.houseName);
+      const houseTranslated = a.houseName;
       const reasonTranslated = translateActivityReason(a.reason);
       return houseTranslated.toLowerCase().includes(q) || reasonTranslated.toLowerCase().includes(q) || a.reason.toLowerCase().includes(q);
     }
@@ -206,7 +197,7 @@ export default function AdminActivityPage() {
                       ) : (
                         <div>
                           <p style={{ fontWeight: 700, fontSize: 14, color: a.houseColor }}>
-                            {getTranslatedHouseName(a.houseId || "", a.houseName)}
+                            {a.houseName}
                           </p>
                           <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{t.labelManualAdjustment}</p>
                         </div>

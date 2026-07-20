@@ -1373,6 +1373,24 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_announcements_faculty ON announcements (faculty)`;
   console.log("  ✅ announcements.faculty (per-faculty announcements)");
 
+  // 87. Insert the 4 base CAMT houses if missing. Steps 62-64 assumed these rows
+  // ('red'/'green'/'yellow'/'blue') already existed from the pre-four-faculty
+  // era and only ever UPDATEd them — fine for an old DB carried forward, but a
+  // brand-new DB bootstrapped via db:push + db:migrate (never db:seed, which is
+  // prod-guarded) never got them INSERTed anywhere, so it ends up with only the
+  // 12 MASSCOM/ARCH/ARTS houses and the CAMT/Ashkayn houses are silently
+  // missing from the leaderboard. ON CONFLICT (id) DO NOTHING mirrors step 64:
+  // a no-op (never clobbers points) on any DB that already has these rows.
+  await sql`
+    INSERT INTO houses (id, name, color, points, faculty, color_group) VALUES
+      ('red',    'Ashkayn', '#ef4444', 0, 'CAMT', 'red'),
+      ('green',  'Ashkayn', '#94a3b8', 0, 'CAMT', 'green'),
+      ('yellow', 'Ashkayn', '#3b82f6', 0, 'CAMT', 'yellow'),
+      ('blue',   'Ashkayn', '#22c55e', 0, 'CAMT', 'blue')
+    ON CONFLICT (id) DO NOTHING
+  `;
+  console.log("  ✅ inserted 4 base CAMT houses if missing (ON CONFLICT DO NOTHING)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -12,16 +12,16 @@ import { StudentNav } from "@/components/layout/StudentNav";
 const LINE_GROUP_URL =
   "https://line.me/ti/g2/82BVV3y9-l4YuhV5uqFWNMY52Dqg42ZpvYYNFQ?utm_source=invitation&utm_medium=link_copy&utm_campaign=default";
 
-// House mascot logos, keyed by house id (color) and name — mirrors the leaderboard
-// page so the same artwork resolves whichever identifier the API returns.
-const HOUSE_LOGOS: Record<string, string> = {
-  red: "/house_logo/mom.png",    mom: "/house_logo/mom.png",
-  green: "/house_logo/to.png",   to: "/house_logo/to.png",
-  yellow: "/house_logo/luang.png", luang: "/house_logo/luang.png",
-  blue: "/house_logo/makon.png", makara: "/house_logo/makon.png", makon: "/house_logo/makon.png",
+// This roster is always for one of the 4 shared colour houses (see
+// /api/houses/[houseId]/members, which resolves the URL slug to a colour group) —
+// translate via the colorRed/colorGreen/colorYellow/colorBlue i18n keys, same
+// convention as the leaderboard page and DashboardClient.tsx's COLOR_LABEL_KEY.
+const COLOR_LABEL_KEY: Record<string, string> = {
+  red: "colorRed",
+  green: "colorGreen",
+  yellow: "colorYellow",
+  blue: "colorBlue",
 };
-const houseLogo = (idOrName?: string | null): string | null =>
-  idOrName ? HOUSE_LOGOS[idOrName.toLowerCase()] ?? null : null;
 
 type House = { id: string; name: string; color: string; points: number };
 type Member = { id: string; name: string; nickname: string | null; points: number };
@@ -40,13 +40,9 @@ export default function HouseMembersPage() {
   // 403 → trying to view a house that isn't yours; anything else → generic failure.
   const [error, setError] = useState<"forbidden" | "other" | null>(null);
 
-  const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
-    const key = idOrName.toLowerCase();
-    if (key === "red" || key === "mom") return t.houseMom || "Mom";
-    if (key === "green" || key === "to") return t.houseTo || "To";
-    if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
-    if (key === "blue" || key === "makara") return t.houseMakara || "Makon";
-    return defaultName;
+  const getColorHouseName = (colorId: string): string => {
+    const labelKey = COLOR_LABEL_KEY[colorId.toLowerCase()];
+    return (labelKey && (t as Record<string, string>)[labelKey]) || colorId;
   };
 
   useEffect(() => {
@@ -95,8 +91,7 @@ export default function HouseMembersPage() {
   }
 
   const color = house.color || "var(--accent-primary)";
-  const displayName = getTranslatedHouseName(house.id, house.name);
-  const logo = houseLogo(house.id);
+  const displayName = getColorHouseName(house.id);
   const maxPoints = Math.max(...members.map((m) => m.points), 1);
 
   // Pagination — 50 members per page. The top-3 podium only renders on page 1
@@ -119,7 +114,7 @@ export default function HouseMembersPage() {
       <StudentNav />
 
       <main className="page-container" style={{ marginTop: 32 }}>
-        {/* Hero banner — house colour wash + mascot */}
+        {/* Hero banner — house colour wash */}
         <header
           className="house-hero"
           style={{
@@ -129,7 +124,7 @@ export default function HouseMembersPage() {
         >
           <div className="hero-glow" style={{ background: color }} />
           <div className="hero-avatar" style={{ background: `${color}14`, boxShadow: `0 16px 40px ${color}33` }}>
-            {logo ? <img src={logo} alt="" className="hero-logo-img" /> : <Trophy size={48} style={{ color }} />}
+            <Trophy size={48} style={{ color }} />
           </div>
           <div className="hero-meta">
             <span className="hero-eyebrow" style={{ color }}>{t.houseMembers}</span>
@@ -302,7 +297,6 @@ export default function HouseMembersPage() {
           flex-shrink: 0;
           z-index: 1;
         }
-        .hero-logo-img { width: 84%; height: 84%; object-fit: contain; }
         .hero-meta { z-index: 1; min-width: 0; }
         .hero-eyebrow {
           font-size: 12px;

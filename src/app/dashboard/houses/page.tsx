@@ -17,23 +17,13 @@ import {
   ChevronRight as ArrowRight
 } from "lucide-react";
 import { houseSlug } from "@/lib/houses";
+import { colorGroupOfHouseId } from "@/lib/faculties";
 import { StudentNav } from "@/components/layout/StudentNav";
 
 // Shared LINE group everyone joins (same group on both rankings tabs and every
 // house page).
 const LINE_GROUP_URL =
   "https://line.me/ti/g2/82BVV3y9-l4YuhV5uqFWNMY52Dqg42ZpvYYNFQ?utm_source=invitation&utm_medium=link_copy&utm_campaign=default";
-
-// House mascot logos (background removed). Keyed by both the house id (color) and
-// its name so it resolves whichever identifier the API returns.
-const HOUSE_LOGOS: Record<string, string> = {
-  red: "/house_logo/mom.png",    mom: "/house_logo/mom.png",
-  green: "/house_logo/to.png",   to: "/house_logo/to.png",
-  yellow: "/house_logo/luang.png", luang: "/house_logo/luang.png",
-  blue: "/house_logo/makon.png", makara: "/house_logo/makon.png", makon: "/house_logo/makon.png",
-};
-const houseLogo = (idOrName?: string | null): string | null =>
-  idOrName ? HOUSE_LOGOS[idOrName.toLowerCase()] ?? null : null;
 
 type House = {
   id: string;
@@ -98,13 +88,20 @@ export default function HousesPage() {
   const [error, setError] = useState(false);
   const [myStanding, setMyStanding] = useState<{ points: number; rank: number | null; total: number } | null>(null);
 
-  const getTranslatedHouseName = (idOrName: string, defaultName: string) => {
-    const key = idOrName.toLowerCase();
-    if (key === "red" || key === "mom") return t.houseMom || "Mom";
-    if (key === "green" || key === "to") return t.houseTo || "To";
-    if (key === "yellow" || key === "luang") return t.houseLuang || "Luang";
-    if (key === "blue" || key === "makara") return t.houseMakara || "Makon";
-    return defaultName;
+  // Only the rolled-up colour leaderboard (houses/podium/"Your House") is a colour
+  // entity — translate those via the colorRed/colorGreen/colorYellow/colorBlue i18n
+  // keys (same convention as DashboardClient.tsx/id/page.tsx's COLOR_LABEL_KEY).
+  // Individual students and per-house rosters belong to a real per-faculty house
+  // (its themed name, e.g. "Ashkayn") and must be shown as-is, not colour-translated.
+  const COLOR_LABEL_KEY: Record<string, string> = {
+    red: "colorRed",
+    green: "colorGreen",
+    yellow: "colorYellow",
+    blue: "colorBlue",
+  };
+  const getColorHouseName = (colorId: string): string => {
+    const labelKey = COLOR_LABEL_KEY[colorId.toLowerCase()];
+    return (labelKey && (t as Record<string, string>)[labelKey]) || colorId;
   };
 
   const translateActivityReason = (reason: string) => {
@@ -144,7 +141,7 @@ export default function HousesPage() {
     const match4 = reason.match(/^Event Form Contest Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Received (\d+) PTS\.$/);
     if (match4) {
       const [_, house, formTitle, subs, pts] = match4;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `ผู้ชนะการประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! ได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံးဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动表单竞赛优胜者：${translatedHouse} 学院以 ${subs} 次提交最多完成了评估表 "${formTitle}"！获得 ${pts} 积分。`;
@@ -155,7 +152,7 @@ export default function HousesPage() {
     const match5 = reason.match(/^Event Form Contest Tie Winner: (.+?) House completed the evaluation form "(.+?)" most with (\d+) submissions! Shared (\d+) PTS\.$/);
     if (match5) {
       const [_, house, formTitle, subs, pts] = match5;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `ผู้ชนะร่วมประกวดฟอร์มกิจกรรม: ${translatedHouse} ส่งแบบประเมิน "${formTitle}" มากที่สุดจำนวน ${subs} ครั้ง! แบ่งกันได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `အကဲဖြတ်လွှာ တင်သွင်းမှုအများဆုံး ပူးတွဲဆု - ${translatedHouse} အိမ်သည် အကဲဖြတ်လွှာ "${formTitle}" ကို အများဆုံး ${subs} ကြိမ် တင်သွင်းပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动表单竞赛并列优胜者：${translatedHouse} 学院以 ${subs} 次提交完成了评估表 "${formTitle}"！平分获得 ${pts} 积分。`;
@@ -166,7 +163,7 @@ export default function HousesPage() {
     const match6 = reason.match(/^Event "(.+?)" completed! WINNER: (.+?) House won with (\d+) attendees! Received (\d+) PTS\.$/);
     if (match6) {
       const [_, eventTitle, house, atts, pts] = match6;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! ได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ အနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束！获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！获得 ${pts} 积分。`;
@@ -177,7 +174,7 @@ export default function HousesPage() {
     const match7 = reason.match(/^Event "(.+?)" completed! TIE WINNER: (.+?) House won with (\d+) attendees! Shared (\d+) PTS\.$/);
     if (match7) {
       const [_, eventTitle, house, atts, pts] = match7;
-      const translatedHouse = getTranslatedHouseName(house.toLowerCase(), house);
+      const translatedHouse = house;
       if (lang === "th") return `กิจกรรม "${eventTitle}" เสร็จสิ้น! ผู้ชนะร่วม: ${translatedHouse} ชนะด้วยจำนวนผู้เข้าร่วม ${atts} คน! แบ่งกันได้รับ ${pts} คะแนน`;
       if (lang === "mm") return `လှုပ်ရှားမှု "${eventTitle}" ပြီးဆုံးပါပြီ။ ပူးတွဲအနိုင်ရရှိသူ - ${translatedHouse} အိမ်သည် တက်ရောက်သူ ${atts} ဦးဖြင့် အနိုင်ရရှိပြီး ${pts} မှတ် ခွဲဝေရရှိခဲ့သည်!`;
       if (lang === "cn") return `活动 "${eventTitle}" 已结束！并列获胜者：${translatedHouse} 学院以 ${atts} 位到场人数获胜！平分获得 ${pts} 积分。`;
@@ -301,13 +298,18 @@ export default function HousesPage() {
 
   const maxPoints = Math.max(...houses.map(h => h.points), 1);
 
-  // The student's own house and its rank within the (points-sorted) standings —
-  // surfaced as a dedicated "Your House" card so it has real presence instead of
-  // being a cramped badge inside a list row.
-  const myHouseIndex = myHouseId ? houses.findIndex(h => h.id === myHouseId) : -1;
+  // The student's own colour house and its rank within the (points-sorted)
+  // standings — surfaced as a dedicated "Your House" card so it has real presence
+  // instead of being a cramped badge inside a list row. myHouseId is the student's
+  // real per-faculty house id (bare colour for CAMT, "<faculty>-<colour>" for the
+  // other 3 faculties per houseRowId) — resolve to its colour GROUP before matching
+  // against `houses` (the 4 rolled-up colour rows), or non-CAMT students would never
+  // match and this card would silently never render for them.
+  const myColorGroup = colorGroupOfHouseId(myHouseId);
+  const myHouseIndex = myColorGroup ? houses.findIndex(h => h.id === myColorGroup) : -1;
   const myHouse = myHouseIndex >= 0 ? houses[myHouseIndex] : null;
   const myHouseRank = myHouseIndex >= 0 ? myHouseIndex + 1 : null;
-  const myHouseName = myHouse ? getTranslatedHouseName(myHouse.id, myHouse.name) : "";
+  const myHouseName = myHouse ? getColorHouseName(myHouse.id) : "";
 
   // Individual pagination calculations
   const itemsPerPage = 10;
@@ -405,11 +407,9 @@ export default function HousesPage() {
                 <div className="podium-card second-place" style={{ borderBottom: `8px solid ${houses[1].color}` }}>
                   <div className="podium-rank-badge rank-second">2</div>
                   <div className="podium-avatar" style={{ background: `${houses[1].color}10`, color: houses[1].color }}>
-                    {houseLogo(houses[1].id) ? (
-                      <img src={houseLogo(houses[1].id)!} alt="" className="house-logo-img" />
-                    ) : <Trophy size={28} />}
+                    <Trophy size={28} />
                   </div>
-                  <h3 className="podium-name">{getTranslatedHouseName(houses[1].id, houses[1].name)}</h3>
+                  <h3 className="podium-name">{getColorHouseName(houses[1].id)}</h3>
                   <div className="podium-points">
                     <span className="points-num">{houses[1].points}</span>
                     <span className="points-unit">{t.points}</span>
@@ -425,11 +425,9 @@ export default function HousesPage() {
                   </div>
                   <div className="podium-rank-badge rank-first">1</div>
                   <div className="podium-avatar" style={{ background: `${houses[0].color}10`, color: houses[0].color, boxShadow: `0 10px 25px ${houses[0].color}25` }}>
-                    {houseLogo(houses[0].id) ? (
-                      <img src={houseLogo(houses[0].id)!} alt="" className="house-logo-img" />
-                    ) : <Trophy size={36} />}
+                    <Trophy size={36} />
                   </div>
-                  <h3 className="podium-name">{getTranslatedHouseName(houses[0].id, houses[0].name)}</h3>
+                  <h3 className="podium-name">{getColorHouseName(houses[0].id)}</h3>
                   <div className="podium-points">
                     <span className="points-num highlight-points">{houses[0].points}</span>
                     <span className="points-unit">{t.points}</span>
@@ -442,11 +440,9 @@ export default function HousesPage() {
                 <div className="podium-card third-place" style={{ borderBottom: `8px solid ${houses[2].color}` }}>
                   <div className="podium-rank-badge rank-third">3</div>
                   <div className="podium-avatar" style={{ background: `${houses[2].color}10`, color: houses[2].color }}>
-                    {houseLogo(houses[2].id) ? (
-                      <img src={houseLogo(houses[2].id)!} alt="" className="house-logo-img" />
-                    ) : <Trophy size={24} />}
+                    <Trophy size={24} />
                   </div>
-                  <h3 className="podium-name">{getTranslatedHouseName(houses[2].id, houses[2].name)}</h3>
+                  <h3 className="podium-name">{getColorHouseName(houses[2].id)}</h3>
                   <div className="podium-points">
                     <span className="points-num">{houses[2].points}</span>
                     <span className="points-unit">{t.points}</span>
@@ -473,9 +469,7 @@ export default function HousesPage() {
               >
                 <span className="mh-accent" />
                 <div className="mh-avatar">
-                  {houseLogo(myHouse.id) ? (
-                    <img src={houseLogo(myHouse.id)!} alt="" className="house-logo-img" />
-                  ) : <Trophy size={28} />}
+                  <Trophy size={28} />
                 </div>
                 <div className="mh-info">
                   <span className="mh-eyebrow">{t.yourHouse}</span>
@@ -497,17 +491,15 @@ export default function HousesPage() {
             <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 24 }}>Full Standings</h2>
             <div className="standings-list">
               {houses.map((h, idx) => {
-                const isMyHouse = h.id === myHouseId;
-                const houseName = getTranslatedHouseName(h.id, h.name);
+                const isMyHouse = h.id === myColorGroup;
+                const houseName = getColorHouseName(h.id);
                 return (
                   <div className={`standings-row${isMyHouse ? " is-my-house" : ""}`} key={h.id}>
                     <div className={`standings-rank rank-${idx + 1}`}>
                       {idx + 1}
                     </div>
                     <div className="standings-avatar" style={{ background: `${h.color}10`, color: h.color }}>
-                      {houseLogo(h.id) ? (
-                        <img src={houseLogo(h.id)!} alt="" className="house-logo-img" />
-                      ) : <Trophy size={18} />}
+                      <Trophy size={18} />
                     </div>
                     <div className="standings-info">
                       <span className="standings-name">{houseName}</span>
@@ -554,7 +546,7 @@ export default function HousesPage() {
                     )}
                   </h3>
                   <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: topThreeIndividuals[1].house?.color || "var(--text-muted)", marginTop: -4 }}>
-                    {topThreeIndividuals[1].houseId ? getTranslatedHouseName(topThreeIndividuals[1].houseId, topThreeIndividuals[1].house?.name || "") : t.unassigned}
+                    {topThreeIndividuals[1].house?.name || t.unassigned}
                   </div>
                   <div className="podium-points">
                     <span className="points-num">{topThreeIndividuals[1].points}</span>
@@ -582,7 +574,7 @@ export default function HousesPage() {
                     )}
                   </h3>
                   <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: topThreeIndividuals[0].house?.color || "var(--text-muted)", marginTop: -4 }}>
-                    {topThreeIndividuals[0].houseId ? getTranslatedHouseName(topThreeIndividuals[0].houseId, topThreeIndividuals[0].house?.name || "") : t.unassigned}
+                    {topThreeIndividuals[0].house?.name || t.unassigned}
                   </div>
                   <div className="podium-points">
                     <span className="points-num highlight-points">{topThreeIndividuals[0].points}</span>
@@ -607,7 +599,7 @@ export default function HousesPage() {
                     )}
                   </h3>
                   <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: topThreeIndividuals[2].house?.color || "var(--text-muted)", marginTop: -4 }}>
-                    {topThreeIndividuals[2].houseId ? getTranslatedHouseName(topThreeIndividuals[2].houseId, topThreeIndividuals[2].house?.name || "") : t.unassigned}
+                    {topThreeIndividuals[2].house?.name || t.unassigned}
                   </div>
                   <div className="podium-points">
                     <span className="points-num">{topThreeIndividuals[2].points}</span>
@@ -665,7 +657,7 @@ export default function HousesPage() {
                 const rank = startIndex + idx + 1;
                 const progressWidth = (ind.points / maxIndividualPoints) * 100;
                 const houseColor = ind.house?.color || "var(--border-subtle)";
-                const houseName = ind.houseId ? getTranslatedHouseName(ind.houseId, ind.house?.name || "") : t.unassigned;
+                const houseName = ind.house?.name || t.unassigned;
                 const isMe = ind.id === myId;
 
                 return (
@@ -792,7 +784,7 @@ export default function HousesPage() {
                     <div className="activity-sub-info">
                        {a.house && (
                          <>
-                           <span style={{ color: a.house.color }}>{getTranslatedHouseName(a.house.id, a.house.name)}</span>
+                           <span style={{ color: a.house.color }}>{a.house.name}</span>
                            <span className="bullet">•</span>
                          </>
                        )}
@@ -898,14 +890,6 @@ export default function HousesPage() {
           width: 76px;
           height: 76px;
           border-radius: 24px;
-        }
-        /* House mascot logo inside podium/standings avatars (transparent PNG) */
-        .house-logo-img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          padding: 4px;
-          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.12));
         }
         .podium-name {
           font-size: 18px;

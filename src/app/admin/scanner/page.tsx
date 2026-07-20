@@ -23,7 +23,8 @@ import {
   UserX,
   Award,
   Plus,
-  Minus
+  Minus,
+  AlertTriangle
 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { useSession } from "next-auth/react";
@@ -37,7 +38,7 @@ const QRCodeSVG = dynamic(() => import("qrcode.react").then((mod) => mod.QRCodeS
   ssr: false,
 });
 
-type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "found" | "not_registered" | "error";
+type ScanStatus = "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "walk_ins_disabled" | "not_found" | "quota_full" | "found" | "not_registered" | "wrong_faculty" | "no_faculty" | "error";
 
 type ScanResult = {
   status: ScanStatus;
@@ -728,6 +729,20 @@ export default function QRScannerPage() {
       title: lang === "th" ? "ยังไม่ได้ลงทะเบียน" : lang === "cn" ? "未报名此活动" : lang === "mm" ? "ဤပွဲအတွက် စာရင်းမသွင်းရသေးပါ" : "Not Registered",
       desc: lang === "th" ? "นักศึกษายังไม่ได้ลงทะเบียนกิจกรรมนี้" : lang === "cn" ? "该学生未报名此活动" : lang === "mm" ? "ဤကျောင်းသားသည် ဤပွဲတွင် စာရင်းမသွင်းထားပါ" : "This student is not registered for this event",
       bg: "rgba(239, 68, 68, 0.1)"
+    },
+    wrong_faculty: {
+      color: "#ef4444",
+      icon: UserX,
+      title: lang === "th" ? "ต่างคณะ" : lang === "cn" ? "不同学院" : lang === "mm" ? "ဌာနမတူညီပါ" : "Different Faculty",
+      desc: lang === "th" ? "นักศึกษาคนนี้อยู่คณะอื่น ไม่สามารถเช็คอินได้" : lang === "cn" ? "该学生属于其他学院，无法签到" : lang === "mm" ? "ဤကျောင်းသားသည် အခြားဌာနမှဖြစ်သဖြင့် စစ်ဆေးဝင်ရောက်၍မရပါ" : "This student belongs to a different faculty and cannot be checked in here",
+      bg: "rgba(239, 68, 68, 0.1)"
+    },
+    no_faculty: {
+      color: "#f59e0b",
+      icon: AlertTriangle,
+      title: lang === "th" ? "ยังไม่กำหนดคณะ" : lang === "cn" ? "尚未分配学院" : lang === "mm" ? "ဌာနမသတ်မှတ်ရသေးပါ" : "No Faculty Assigned",
+      desc: lang === "th" ? "บัญชีของคุณยังไม่ได้กำหนดคณะ กรุณาติดต่อ Super Admin" : lang === "cn" ? "您的帐户尚未分配学院，请联系超级管理员" : lang === "mm" ? "သင့်အကောင့်တွင် ဌာနမသတ်မှတ်ရသေးပါ။ Super Admin ကိုဆက်သွယ်ပါ" : "Your account has no faculty assigned yet — ask a super admin to set one",
+      bg: "rgba(245, 158, 11, 0.1)"
     },
     error: { 
       color: "#ef4444", 

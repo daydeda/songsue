@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 import { redactEmergencyContacts } from "@/lib/emergency-contacts";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -73,6 +74,16 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
+    // Faculty scoping (see src/lib/faculty-scope.ts): applied on top of the
+    // club/major-owner scoping below.
+    const facultyScope = resolveFacultyViewScope(roles, session.user.faculty);
+    if (!facultyScope.global && facultyScope.faculty === null) {
+      return NextResponse.json(
+        { error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
+    }
+
     const canViewMedical = roles.includes("super_admin");
     // A club/major president exporting an event THEY OWN (scoped below) also
     // gets medical detail + (redacted) emergency contacts — see isPresidentRole
@@ -122,7 +133,7 @@ export async function GET(
       sessionLabelForFile = s.title?.trim() || `Day ${s.sortOrder + 1}`;
     }
 
-    const list = await db.query.attendance.findMany({
+    const rawList = await db.query.attendance.findMany({
       where: sessionIdFilter
         ? and(eq(attendance.eventId, eventId), eq(attendance.sessionId, sessionIdFilter))
         : eq(attendance.eventId, eventId),
@@ -133,6 +144,9 @@ export async function GET(
             name: true,
             nickname: true,
             studentId: true,
+            // Fetched unconditionally (not PDPA-sensitive) to apply the
+            // faculty-scope filter below — see src/lib/faculty-scope.ts.
+            faculty: true,
             email: !isThinRoster,
             phone: !isThinRoster,
             contactChannels: !isThinRoster,
@@ -154,6 +168,13 @@ export async function GET(
       },
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
+
+    // Faculty scoping: drop rows outside the viewer's faculty. A relational
+    // `with: { user }` query can't push this into the WHERE clause, so it's
+    // filtered in-memory here; every downstream reference below uses `list`.
+    const list = facultyScope.global
+      ? rawList
+      : rawList.filter((row) => matchesFacultyScope(row.user?.faculty, facultyScope, row.user?.role));
 
     // Defensive cap: the whole roster + the xlsx buffer are built in memory (xlsx
     // can't stream). Per-event this is bounded, but refuse a pathologically large

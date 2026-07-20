@@ -1352,6 +1352,15 @@ async function migrate() {
   `;
   console.log("  ✅ users.preview_access, site_settings table");
 
+  // 85. users.faculty index — per-faculty admin scoping (see
+  // src/lib/faculty-scope.ts's facultyRowCondition()) now filters nearly every
+  // admin list/attendance/dashboard-stats query by users.faculty for
+  // non-super_admin viewers. Column already exists (nullable, no default);
+  // this only adds the index. CREATE INDEX IF NOT EXISTS ⇒ additive,
+  // idempotent, non-destructive.
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_faculty ON users (faculty)`;
+  console.log("  ✅ idx_users_faculty");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

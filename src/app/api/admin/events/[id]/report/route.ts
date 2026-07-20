@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 import { isGlobalRegistrationPosition } from "@/lib/admin-access";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // xlsx is a CommonJS package — keep this route on the Node.js runtime.
 export const runtime = "nodejs";
@@ -24,6 +25,16 @@ export async function GET(
       && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition)));
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): applied on top of the
+    // club/major-owner scoping below.
+    const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!facultyScope.global && facultyScope.faculty === null) {
+      return NextResponse.json(
+        { error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
     }
 
     const { id: eventId } = await params;
@@ -63,13 +74,25 @@ export async function GET(
     // This report is reachable by scanner-only roles (smo) and registration/
     // organizer, so it deliberately pulls NO medical detail — only the roster
     // fields below.
-    const allAttendance = await db.query.attendance.findMany({
+    const rawAttendance = await db.query.attendance.findMany({
       where: eq(attendance.eventId, eventId),
       with: {
-        user: { columns: { studentId: true, name: true, nickname: true } },
+        // faculty fetched unconditionally (not PDPA-sensitive) to apply the
+        // faculty-scope filter below — see src/lib/faculty-scope.ts.
+        // role fetched too so the faculty-scope filter below never sweeps a
+        // null-faculty STAFF row into the CAMT default — see faculty-scope.ts.
+        user: { columns: { studentId: true, name: true, nickname: true, faculty: true, role: true } },
         session: { columns: { id: true, title: true, sortOrder: true } },
       },
     });
+
+    // Faculty scoping: drop rows outside the viewer's faculty. A relational
+    // `with: { user }` query can't push this into the WHERE clause, so it's
+    // filtered in-memory here; every downstream reference below uses
+    // `allAttendance`.
+    const allAttendance = facultyScope.global
+      ? rawAttendance
+      : rawAttendance.filter((row) => matchesFacultyScope(row.user?.faculty, facultyScope, row.user?.role));
 
     // Defensive cap: the whole roster + the xlsx buffer are built in memory (xlsx
     // can't stream). Per-event this is bounded, but refuse a pathologically large

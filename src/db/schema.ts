@@ -126,6 +126,10 @@ export const users = pgTable("users", {
   // Role-filtered admin/leaderboard queries and signup-time ordering/reporting.
   index("idx_users_role").on(table.role),
   index("idx_users_created_at").on(table.createdAt),
+  // Faculty-scoped admin dashboard: nearly every admin list/filter/stats query
+  // now runs facultyRowCondition() (src/lib/faculty-scope.ts) against this
+  // column for non-super_admin viewers.
+  index("idx_users_faculty").on(table.faculty),
 ]));
 
 export const authenticators = pgTable(

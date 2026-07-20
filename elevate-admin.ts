@@ -14,8 +14,13 @@ async function elevate() {
 
   console.log(`🚀 Elevating user ${email} to admin...`);
 
+  // Must set BOTH columns: src/auth.ts derives the session role from
+  // users.roles (the multi-role array) first, falling back to users.role only
+  // when roles is empty — and every user already has roles=["student"]
+  // materialized by the column default from their first sign-in, so writing
+  // role alone here silently has no effect on what the app actually sees.
   const result = await db.update(users)
-    .set({ role: "admin" })
+    .set({ role: "admin", roles: ["admin"] })
     .where(eq(users.email, email))
     .returning();
 

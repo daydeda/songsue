@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { canEnterAdminAny, isScannerOnlyAny, isScannerOnlyAllowedPath, effectiveRoles, SCANNER_HREF } from "@/lib/admin-access";
 import { isSiteMoved } from "@/lib/site-moved";
+import { isRegistrationOpen } from "@/lib/registration-window";
 
 // Next.js 16: "middleware" renamed to "proxy"
 export async function proxy(req: NextRequest) {
@@ -16,14 +17,20 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow public paths and Next.js internals to pass through
-  const isPublicPath =
+  // Allow public paths and Next.js internals to pass through, launch date or
+  // not — these must always work regardless of the pre-launch gate below
+  // (e.g. /login must always let people sign in; /api/* is excluded from this
+  // proxy entirely by the matcher at the bottom of this file regardless of
+  // whether it's also listed here).
+  const isAlwaysPublicPath =
     pathname === "/" ||
-    pathname === "/dashboard" ||
-    pathname === "/dashboard/id" ||
     pathname === "/login" ||
-    pathname === "/api/events" ||
-    pathname === "/api/houses" ||
+    // Site-wide preview-access activation link (see users.previewAccess) must
+    // survive the Google sign-in round-trip with its token intact — a bare
+    // redirect to /login here would drop the callbackUrl. The page itself
+    // handles both the unauthenticated sign-in prompt and the
+    // profileCompleted/onboarding check.
+    pathname === "/preview" ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
@@ -33,7 +40,19 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/flag_house") ||
     pathname.startsWith("/songsue-banner.webp");
 
-  if (isPublicPath) {
+  if (isAlwaysPublicPath) {
+    return NextResponse.next();
+  }
+
+  // "/dashboard" and "/dashboard/id" are public FOR GUEST BROWSING (no
+  // sign-in required) — but only once registration has actually opened. Before
+  // that date these must NOT shortcut past the auth/pre-launch gate below like
+  // they used to (that was the bug: a general user's session was never even
+  // consulted for these two paths, so nothing else in this file mattered for
+  // them). Post-launch this restores the exact original guest-browsing
+  // behavior.
+  const isGuestDashboardPath = pathname === "/dashboard" || pathname === "/dashboard/id";
+  if (isGuestDashboardPath && isRegistrationOpen()) {
     return NextResponse.next();
   }
 
@@ -52,6 +71,31 @@ export async function proxy(req: NextRequest) {
   // to the QR scanner. A registration position (users.smoPosition/anusmoPosition,
   // distinct from role/roles) additively widens entry the same way — see admin-access.ts.
   const isScannerOnly = isScannerOnlyAny(roles, user.hasStaffPosition, user.smoPosition, user.anusmoPosition);
+
+  // Site-wide pre-launch gate: /login itself has no gate (it must always let
+  // people sign in — see its own comment), so this is the actual enforcement.
+  // Before the real registration date, only previewAccess testers (see
+  // users.previewAccess, redeemed via /preview) and admin-capable staff (the
+  // same set /admin uses below) may reach ANY signed-in page, including
+  // /onboarding — everyone else who signs in via /login lands back on the
+  // locked landing page instead. Shares its date with SongsueLanding.tsx's
+  // countdown via src/lib/registration-window.ts so the cosmetic lock and the
+  // real one can't drift apart.
+  //
+  // Narrow carve-out: a brand-new user arriving via /preview?token=X doesn't
+  // have previewAccess yet — that's only granted by POST /api/preview/activate,
+  // which onboarding/page.tsx's ?returnTo bounces them back to AFTER they
+  // finish this form (see OnboardingClient.tsx). So /onboarding is exempt only
+  // when its ?returnTo points back at /preview — i.e. only mid-preview-token
+  // redemption, not for a generic new sign-in. The token itself (not this
+  // returnTo check) is what actually gates previewAccess, so this carve-out
+  // can't be used to reach anything beyond onboarding without a real token.
+  const returnTo = req.nextUrl.searchParams.get("returnTo");
+  const isPreviewOnboarding = pathname === "/onboarding" && !!returnTo && returnTo.startsWith("/preview");
+  const isPrelaunchExempt = !!user.previewAccess || canEnterAdminAny(roles, user.hasStaffPosition) || isPreviewOnboarding;
+  if (!isRegistrationOpen() && !isPrelaunchExempt) {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
 
   // Authenticated but profile not complete → force onboarding
   // (except for the /onboarding page itself, and API routes)

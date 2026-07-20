@@ -27,7 +27,7 @@ export async function POST(
     // can be stale (auth.ts only eagerly refreshes while profileCompleted is false).
     const profile = await db.query.users.findFirst({
       where: eq(users.id, userId),
-      columns: { profileCompleted: true, major: true, registrationBlocked: true, noShowCount: true },
+      columns: { profileCompleted: true, major: true, registrationBlocked: true, noShowCount: true, previewAccess: true },
     });
     if (!profile?.profileCompleted) {
       return NextResponse.json(
@@ -65,7 +65,9 @@ export async function POST(
 
     // Role-based access control (mirrors the event-list filter so students can't
     // POST directly to a role-restricted event they can't see). null/[] = open to
-    // all; admin-type roles always pass.
+    // all; admin-type roles always pass. A site-wide preview tester (see
+    // users.previewAccess) also always passes — they need to reach events outside
+    // their own role/major/club to actually test early registration.
     const userRole = session.user.role || "student";
     const adminRoles = ["super_admin", "admin", "registration", "organizer"];
     const allowedRoles = event.allowedRoles;
@@ -73,6 +75,7 @@ export async function POST(
       Array.isArray(allowedRoles) &&
       allowedRoles.length > 0 &&
       !adminRoles.includes(userRole) &&
+      !profile.previewAccess &&
       !allowedRoles.includes(userRole)
     ) {
       return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
@@ -86,6 +89,7 @@ export async function POST(
       Array.isArray(allowedMajors) &&
       allowedMajors.length > 0 &&
       !adminRoles.includes(userRole) &&
+      !profile.previewAccess &&
       !(profile.major && allowedMajors.includes(profile.major))
     ) {
       return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
@@ -98,7 +102,8 @@ export async function POST(
     if (
       Array.isArray(allowedClubs) &&
       allowedClubs.length > 0 &&
-      !adminRoles.includes(userRole)
+      !adminRoles.includes(userRole) &&
+      !profile.previewAccess
     ) {
       const myClubIds = await ClubsService.getMemberClubIds(userId);
       const inAllowedClub = myClubIds.some((id) => allowedClubs.includes(id));
@@ -117,8 +122,15 @@ export async function POST(
       );
     }
 
-    // Validate registration window if set
-    if (event.registrationOpenTime && new Date() < new Date(event.registrationOpenTime)) {
+    // Validate registration window if set. A site-wide preview tester (see
+    // users.previewAccess) bypasses ONLY the "too early" half — once the real
+    // registrationOpenTime arrives, everyone can register anyway, so this never
+    // needs its own expiry. The close-time check below still applies to everyone.
+    if (
+      event.registrationOpenTime &&
+      new Date() < new Date(event.registrationOpenTime) &&
+      !profile.previewAccess
+    ) {
       return NextResponse.json({ error: "Registration for this event has not opened yet" }, { status: 403 });
     }
     if (event.registrationCloseTime && new Date() > new Date(event.registrationCloseTime)) {

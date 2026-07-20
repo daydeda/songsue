@@ -381,6 +381,11 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
     ? sessionStatus
     : (initialSession ? "authenticated" : "loading");
   const { t, lang } = useLanguage();
+  // Site-wide preview testers (users.previewAccess, redeemed via /preview) bypass
+  // the "not yet open" registration gate everywhere, not just server-side — see
+  // the matching bypass in /api/events/[id]/register. Without this, the button
+  // stays disabled for them even though the POST would actually succeed.
+  const hasPreviewAccess = !!session?.user?.previewAccess;
   const prefersReducedMotion = useReducedMotion();
   const [events, setEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
@@ -1452,7 +1457,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             // in both directions: no new sign-ups AND no cancellations.
                             const regWindowClosed = !!regCloseAt && nowTs > regCloseAt;
                             const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
-                            const notYetOpen = !e.isRegistered && !!regOpenAt && nowTs < regOpenAt;
+                            const notYetOpen = !e.isRegistered && !!regOpenAt && nowTs < regOpenAt && !hasPreviewAccess;
                             const regClosed = !e.isRegistered && regWindowClosed;
                             const walkInsOnlyMode = !e.isRegistered && !!e.walkInsOnly;
                             const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;
@@ -2123,7 +2128,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         // directions: no new sign-ups AND no cancellations.
         const regWindowClosed = !!regCloseAt && nowTs > regCloseAt;
         const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
-        const notYetOpen = !liveEvent.isRegistered && !!regOpenAt && nowTs < regOpenAt;
+        const notYetOpen = !liveEvent.isRegistered && !!regOpenAt && nowTs < regOpenAt && !hasPreviewAccess;
         const regClosed = !liveEvent.isRegistered && regWindowClosed;
         const walkInsOnlyMode = !liveEvent.isRegistered && !!liveEvent.walkInsOnly;
         const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;

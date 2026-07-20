@@ -43,6 +43,10 @@ type Student = {
   roles?: string[];
   noShowCount?: number;
   registrationBlocked?: boolean;
+  // Site-wide preview/beta-tester access (see users.previewAccess) — normally
+  // self-activated via a secret link; editable here so staff can revoke ONE
+  // tester without rotating the shared token for everyone else.
+  previewAccess?: boolean;
   chronicDiseases?: string | null;
   medicalHistory?: string | null;
   drugAllergies?: string | null;
@@ -1204,6 +1208,35 @@ export default function AdminStudentsDirectory() {
                     );
                   })}
                 </div>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    cursor: "pointer",
+                    width: "fit-content",
+                    background: editingStudent.previewAccess ? "var(--bg-surface)" : "transparent",
+                    border: editingStudent.previewAccess ? "1px solid var(--accent-primary)" : "1px solid var(--border-subtle)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!editingStudent.previewAccess}
+                    onChange={() => setEditingStudent({ ...editingStudent, previewAccess: !editingStudent.previewAccess })}
+                    style={{ accentColor: "var(--accent-primary)", cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: editingStudent.previewAccess ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                    {t.previewAccessCheckboxLabel}
+                  </span>
+                </label>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                  {t.previewAccessCheckboxHint}
+                </p>
               </div>
 
               {(editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])).includes("club_president") && (

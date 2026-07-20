@@ -48,6 +48,11 @@ const userRoleSchema = z.object({
   // writing garbage.
   smoPosition: z.enum(POSITION_IDS).optional().nullable(),
   anusmoPosition: z.enum(POSITION_IDS).optional().nullable(),
+  // Site-wide preview/beta-tester access (see users.previewAccess). Normally
+  // set by the user themselves via the secret activation link
+  // (/api/preview/activate); exposed here so an admin can revoke ONE tester
+  // without rotating the shared token for everyone else.
+  previewAccess: z.boolean().optional(),
 });
 
 // PATCH: Update user information or role
@@ -78,7 +83,7 @@ export async function PATCH(
     // Fields that can be updated by admin
     const { name, prefix, major, houseId, studentId, nickname } = body;
     let { role, roles } = parsedRoles.data;
-    const { clubIds, smoPosition, anusmoPosition } = parsedRoles.data;
+    const { clubIds, smoPosition, anusmoPosition, previewAccess } = parsedRoles.data;
 
     // Contact info (phone/contactChannels) is only ever writable by
     // super_admin, mirroring the read-side gate in GET /api/admin/students —
@@ -164,6 +169,9 @@ export async function PATCH(
     }
     if (phone !== undefined && phone !== targetUser.phone) changes.push("phone");
     if (contactChannels !== undefined && contactChannels !== targetUser.contactChannels) changes.push("contactChannels");
+    if (previewAccess !== undefined && previewAccess !== targetUser.previewAccess) {
+      changes.push(`previewAccess: ${targetUser.previewAccess} → ${previewAccess}`);
+    }
 
     // Club presidencies: diff against the CURRENT set so the audit note only
     // fires on a real change. The actual club_members write happens inside the
@@ -199,6 +207,7 @@ export async function PATCH(
           anusmoPosition,
           phone,
           contactChannels,
+          previewAccess,
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));

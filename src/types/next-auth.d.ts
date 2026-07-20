@@ -7,6 +7,12 @@ declare module "next-auth" {
       role: string;
       roles: string[];
       profileCompleted: boolean;
+      // Permanent site-wide early-registration grant redeemed via the /preview
+      // link (users.previewAccess) — see the register route's bypass. Session
+      // field only, so it can drive client-side UI (e.g. not greying out a
+      // not-yet-open event's register button); the server route re-reads the
+      // DB column directly and never trusts this for the actual gate.
+      previewAccess: boolean;
       houseId: string | null;
       faculty: string | null;
       imageTransform: { scale: number; x: number; y: number } | null;
@@ -36,6 +42,7 @@ declare module "next-auth" {
     role: string;
     roles: string[];
     profileCompleted: boolean;
+    previewAccess: boolean;
     houseId: string | null;
     faculty: string | null;
     imageTransform: { scale: number; x: number; y: number } | null;

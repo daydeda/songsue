@@ -187,7 +187,17 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (res.ok) { await update(); window.location.href = "/dashboard"; }
+      if (res.ok) {
+        await update();
+        // Honor ?returnTo so flows that bounce here mid-journey (e.g. the
+        // /preview site-wide access link, which needs the user to finish
+        // onboarding before it can redeem the token) come back to finish,
+        // instead of always landing on /dashboard. Only same-site relative
+        // paths are allowed, to avoid an open redirect.
+        const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+        const safeReturnTo = returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/dashboard";
+        window.location.href = safeReturnTo;
+      }
       else {
         const d = await res.json();
         const errVal = Array.isArray(d.error) ? d.error[0]?.message : d.error;

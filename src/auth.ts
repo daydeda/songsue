@@ -67,6 +67,7 @@ async function fetchUserDataFromDb(userId: string) {
       roles: true,
       email: true,
       profileCompleted: true,
+      previewAccess: true,
       houseId: true,
       faculty: true,
       imageTransform: true,
@@ -113,6 +114,7 @@ async function applyDbUserToToken(token: Record<string, unknown>, dbUser: DbUser
   token.role = getPrimaryRole(userRoles, dbUser.role);
   token.roles = userRoles;
   token.profileCompleted = dbUser.profileCompleted ?? false;
+  token.previewAccess = dbUser.previewAccess ?? false;
   token.houseId = dbUser.houseId ?? null;
   token.faculty = dbUser.faculty ?? null;
   token.imageTransform = dbUser.imageTransform ?? null;
@@ -218,6 +220,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 role: role,
                 roles: [role],
                 profileCompleted: user!.profileCompleted ?? false,
+                previewAccess: user!.previewAccess ?? false,
                 houseId: user!.houseId ?? null,
                 faculty: user!.faculty ?? null,
                 imageTransform: (user!.imageTransform as { scale: number; x: number; y: number } | null) ?? null,
@@ -278,6 +281,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.image = dbUser.image;
             token.email = dbUser.email;
             token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.previewAccess = dbUser.previewAccess ?? false;
             token.houseId = dbUser.houseId ?? null;
             token.faculty = dbUser.faculty ?? null;
             token.imageTransform = dbUser.imageTransform ?? null;
@@ -311,6 +315,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.image = dbUser.image;
             token.email = dbUser.email;
             token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.previewAccess = dbUser.previewAccess ?? false;
             token.houseId = dbUser.houseId ?? null;
             token.faculty = dbUser.faculty ?? null;
             token.imageTransform = dbUser.imageTransform ?? null;
@@ -352,6 +357,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.image = dbUser.image;
             token.email = dbUser.email;
             token.profileCompleted = dbUser.profileCompleted ?? false;
+            token.previewAccess = dbUser.previewAccess ?? false;
             token.houseId = dbUser.houseId ?? null;
             token.faculty = dbUser.faculty ?? null;
             token.imageTransform = dbUser.imageTransform ?? null;
@@ -388,6 +394,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.roles = (token.roles as string[]) ?? ["student"];
       session.user.role = (token.role as string) ?? "student";
       session.user.profileCompleted = (token.profileCompleted as boolean) ?? false;
+      session.user.previewAccess = (token.previewAccess as boolean) ?? false;
       session.user.houseId = (token.houseId as string) ?? null;
       session.user.faculty = (token.faculty as string | null) ?? null;
       session.user.imageTransform = (token.imageTransform as { scale: number; x: number; y: number } | null) ?? null;

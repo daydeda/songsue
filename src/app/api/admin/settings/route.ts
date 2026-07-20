@@ -9,13 +9,12 @@ import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 
-// Only super_admin and admin may view/edit this — it's a real privilege
-// escalation (site-wide preview access), kept narrower than the general admin
-// surface (registration/organizer excluded), mirroring canEditAnnouncement.
+// Only super_admin may view/edit this — it's a real privilege escalation
+// (site-wide preview access), kept narrower than the general admin surface.
 function canEditSettings(session: Session | null): boolean {
   if (!session?.user) return false;
   const roles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
-  return roles.some((r) => r === "super_admin" || r === "admin");
+  return roles.some((r) => r === "super_admin");
 }
 
 const settingsSchema = z.object({

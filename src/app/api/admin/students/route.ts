@@ -22,9 +22,10 @@ export async function GET() {
     }
 
     // Contact info (email/phone/contactChannels) is only ever included for
-    // super_admin — everyone else on this bulk directory endpoint gets the
-    // PDPA-minimal columns, same as before.
-    const isSuperAdmin = myRoles.includes("super_admin");
+    // super_admin and admin (full parity outside deletion/settings/faculty-
+    // reassignment) — registration/organizer etc. on this bulk directory
+    // endpoint still get the PDPA-minimal columns, same as before.
+    const canSeeContactInfo = myRoles.some((r) => ["super_admin", "admin"].includes(r));
 
     // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin actor
     // only sees students in their own faculty. An actor with no faculty
@@ -62,7 +63,7 @@ export async function GET() {
         noShowCount: true,
         registrationBlocked: true,
         previewAccess: true,
-        ...(isSuperAdmin ? { email: true, phone: true, contactChannels: true } : {}),
+        ...(canSeeContactInfo ? { email: true, phone: true, contactChannels: true } : {}),
       },
       with: { house: true },
     });

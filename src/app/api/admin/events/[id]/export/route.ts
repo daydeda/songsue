@@ -17,10 +17,10 @@ interface EmergencyContact {
   phone: string;
 }
 
-// The medical/emergency columns are selected conditionally (super_admin only),
-// and email/phone/contactChannels are selected conditionally (thin-roster roles
-// get none of them), so Drizzle infers them as absent. Treat them as optional
-// when present.
+// The medical/emergency columns are selected conditionally (super_admin/admin
+// only), and email/phone/contactChannels are selected conditionally
+// (thin-roster roles get none of them), so Drizzle infers them as absent.
+// Treat them as optional when present.
 type AttendeeUser = {
   name: string;
   nickname: string | null;
@@ -84,7 +84,7 @@ export async function GET(
       );
     }
 
-    const canViewMedical = roles.includes("super_admin");
+    const canViewMedical = roles.includes("super_admin") || roles.includes("admin");
     // A club/major president exporting an event THEY OWN (scoped below) also
     // gets medical detail + (redacted) emergency contacts — see isPresidentRole
     // comment above.
@@ -191,21 +191,18 @@ export async function GET(
     // note the health info in the export. Mirrors the CSV report and the
     // attendance-list access log.
     //
-    // The "Meds Check" (medsCheckOption) column is in every non-thin export, so a
-    // plain admin's export still carries health info the descriptor must disclose.
-    // super_admin additionally receives full medical detail + full emergency-contact
-    // columns (incl. contact name); a club/major president exporting their own
-    // event gets the same medical detail but with the contact's NAME redacted
-    // (relationship + phone only); a plain admin gets only the meds-check signal.
-    // Thin-roster exporters (smo) get neither — no health info of any kind. Record
-    // which, so the log never understates (or overstates) the exposure.
+    // super_admin/admin (isStaffRole) receive full medical detail + full
+    // emergency-contact columns (incl. contact name); a club/major president
+    // exporting their own event gets the same medical detail but with the
+    // contact's NAME redacted (relationship + phone only). Thin-roster
+    // exporters (smo) get neither — no health info of any kind, not even the
+    // "Meds Check" signal. Record which, so the log never understates (or
+    // overstates) the exposure.
     const healthNote = canViewMedical
       ? ", included health detail + emergency contacts"
       : isPresidentRole
       ? ", included health detail + emergency contacts (relationship/phone only, president tier)"
-      : isThinRoster
-      ? ", no health info (thin roster)"
-      : ", included meds-check status";
+      : ", no health info (thin roster)";
     await AuditService.logAction({
       actorId: session.user.id!,
       action: `Exported attendee XLSX for event "${event.title}" (${eventId})${sessionLabelForFile ? ` [${sessionLabelForFile}]` : ""} (${list.length} rows${healthNote})`,

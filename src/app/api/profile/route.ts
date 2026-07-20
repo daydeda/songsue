@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { FACULTY_IDS } from "@/lib/faculties";
+import { FACULTY_IDS, facultyFromStudentId } from "@/lib/faculties";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 
@@ -100,6 +100,20 @@ export async function POST(req: Request) {
       || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.smoPosition, session.user.anusmoPosition);
     if (!data.studentId && !isAdmin) {
       return NextResponse.json({ error: "Student ID is required" }, { status: 400 });
+    }
+
+    // Faculty is derived from the student id server-side (see
+    // src/lib/faculties.ts facultyFromStudentId), not trusted from the client —
+    // OnboardingClient.tsx already derives+locks it for UX, but a raw request
+    // must not be able to submit a mismatched faculty and silently misroute
+    // into the wrong faculty's house-colour pool / admin scope (mirrors the
+    // PATCH handler below, which strips `faculty` entirely for non-admins).
+    if (data.studentId) {
+      const derivedFaculty = facultyFromStudentId(data.studentId);
+      if (!derivedFaculty) {
+        return NextResponse.json({ error: "Student ID does not belong to a participating faculty" }, { status: 400 });
+      }
+      data.faculty = derivedFaculty;
     }
 
     // 1. Check if user already completed profile

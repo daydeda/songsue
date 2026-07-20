@@ -242,13 +242,20 @@ export default function AdminStudentsDirectory() {
   const userRole = session?.user?.role || "student";
   const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
 
-  const canViewMedicalLog = userRole === "super_admin";
+  // Medical detail: admin/super_admin only (mirrors GET /api/admin/students/[id]
+  // — see CLAUDE.md's PDPA rule). Uses the full role set so a user whose grant
+  // isn't their primary role still sees the button.
+  const canViewMedicalLog = myRoles.some((r) => ["super_admin", "admin"].includes(r));
   // UI-only mirror of RESET_STRIKES_ROLES (src/lib/strikes.ts) — the server
   // route (/api/admin/students/[id]/strikes/reset) independently re-checks it,
-  // this just decides whether to show the edit/delete/reset-strikes buttons.
-  // Uses the full role set (not just the primary role) so a user whose
-  // admin/super_admin grant isn't their primary role still sees the buttons.
-  const canEditOrDelete = myRoles.some((r) => (RESET_STRIKES_ROLES as readonly string[]).includes(r));
+  // this just decides whether to show the edit/reset-strikes buttons. Uses the
+  // full role set (not just the primary role) so a user whose admin/super_admin
+  // grant isn't their primary role still sees the buttons.
+  const canEdit = myRoles.some((r) => (RESET_STRIKES_ROLES as readonly string[]).includes(r));
+  // Deletion is deliberately narrower than edit — only super_admin may delete
+  // an account (mirrors DELETE /api/admin/users/[id]); admin gets full parity
+  // with super_admin everywhere else, but never this.
+  const canDelete = myRoles.includes("super_admin");
 
   const { t, lang } = useLanguage();
   const [students, setStudents] = useState<Student[]>([]);
@@ -497,7 +504,7 @@ export default function AdminStudentsDirectory() {
   };
 
   // Clears a student's no-show strikes/block (super_admin/admin only, see
-  // canEditOrDelete below — narrower RESET_STRIKES_ROLES enforced server-side
+  // canEdit below — narrower RESET_STRIKES_ROLES enforced server-side
   // at /api/admin/students/[id]/strikes/reset). Does not refund deducted
   // points; that penalty already stands as served.
   const resetStrikes = async (s: Student) => {
@@ -638,7 +645,12 @@ export default function AdminStudentsDirectory() {
                 <tbody>
                   {paginatedStudents.map((s) => {
                     const isTargetSuperAdmin = s.role === "super_admin";
-                    const canModifyThisRow = canEditOrDelete && (!isTargetSuperAdmin || userRole === "super_admin");
+                    const canEditThisRow = canEdit && (!isTargetSuperAdmin || userRole === "super_admin");
+                    // No isTargetSuperAdmin gate here: canDelete already implies
+                    // the actor IS super_admin (mirrors DELETE /api/admin/users/[id],
+                    // which only ever blocks a NON-super_admin actor from deleting
+                    // a super_admin target — moot once only super_admin can call it).
+                    const canDeleteThisRow = canDelete;
                     return (
                       <tr key={s.id} style={{ transition: "all 0.2s" }} className="student-row">
                       <td style={{ padding: "24px 32px" }}>
@@ -770,7 +782,7 @@ export default function AdminStudentsDirectory() {
                       </td>
                       <td style={{ textAlign: "right", paddingRight: 32 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-                          {canModifyThisRow ? (
+                          {canEditThisRow ? (
                             <button
                               className="btn btn-ghost"
                               style={{ padding: 8, borderRadius: 10, color: "var(--text-secondary)" }}
@@ -800,7 +812,7 @@ export default function AdminStudentsDirectory() {
                               <Edit2 size={16} />
                             </button>
                           )}
-                          {canModifyThisRow ? (
+                          {canDeleteThisRow ? (
                             <button
                               className="btn btn-ghost"
                               style={{ padding: 8, borderRadius: 10, color: "#ef4444" }}
@@ -846,7 +858,7 @@ export default function AdminStudentsDirectory() {
                               </button>
                             </>
                           )}
-                          {canEditOrDelete && (s.noShowCount ?? 0) > 0 && (
+                          {canEdit && (s.noShowCount ?? 0) > 0 && (
                             <button
                               className="btn btn-sm"
                               style={{
@@ -1422,15 +1434,15 @@ export default function AdminStudentsDirectory() {
               )}
 
               {/* Contact info — email/phone/contactChannels are only ever
-                  present on editingStudent for a super_admin requester (the
-                  API strips them for everyone else), so this section is
-                  naturally invisible to admin/registration/organizer too. */}
-              {userRole === "super_admin" && (
+                  present on editingStudent for a super_admin/admin requester
+                  (the API strips them for everyone else), so this section is
+                  naturally invisible to registration/organizer too. */}
+              {myRoles.some((r) => ["super_admin", "admin"].includes(r)) && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 16, background: "var(--bg-elevated)", borderRadius: 16, border: "1px solid var(--border-subtle)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <ShieldAlert size={14} style={{ color: "#ef4444" }} />
                     <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                      {lang === "th" ? "ข้อมูลติดต่อ (Super Admin เท่านั้น)" : "Contact Info (Super Admin only)"}
+                      {lang === "th" ? "ข้อมูลติดต่อ" : "Contact Info"}
                     </span>
                   </div>
                   <div>

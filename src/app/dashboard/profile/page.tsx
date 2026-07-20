@@ -12,7 +12,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { compressImageFile } from "@/lib/compress-image";
 import { useRouter } from "next/navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { FACULTIES, majorsForFaculty } from "@/lib/faculties";
+import { FACULTIES, majorsForFaculty, facultyFromStudentId } from "@/lib/faculties";
 
 // Rich CAMT major labels; other faculties show their bare code.
 const MAJOR_LABELS: Record<string, string> = {
@@ -133,20 +133,30 @@ export default function ProfilePage() {
     : degreeDigit === "5" ? ["KIM", "DTM"]
     : ["ANI", "DG", "DII", "MMIT", "SE"];
 
+  // Faculty is auto-derived from the (locked, server-set) student id rather than
+  // picked from a dropdown — see src/lib/faculties.ts. null = no student id yet
+  // (e.g. staff) or a faculty code outside the 4 participating faculties.
+  const derivedFaculty = facultyFromStudentId(formData.studentId);
+
   // Faculty-scoped major list. CAMT keeps the existing degree-digit-aware list
   // (undergrad SE/KIM/DTM by intake year vs the base ANI/DG/DII/MMIT/SE);
   // other faculties use their (currently empty, pending real data) list from
   // src/lib/faculties.ts.
-  const currentMajorOptions = formData.faculty === "CAMT" ? majorOptions : majorsForFaculty(formData.faculty);
+  const currentMajorOptions = derivedFaculty === "CAMT" ? majorOptions : majorsForFaculty(derivedFaculty);
 
-  // Reset major when degree level or faculty changes (only relevant while the field is editable)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Keep formData.faculty in sync with the derived value, and reset major to a
+  // valid option when it changes (only relevant while the field is editable).
   useEffect(() => {
-    if (!isProfileCompleted && !currentMajorOptions.includes(formData.major)) {
+    if (isProfileCompleted) return;
+    if (derivedFaculty && derivedFaculty !== formData.faculty) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
+      set("faculty", derivedFaculty);
+    }
+    if (derivedFaculty && !currentMajorOptions.includes(formData.major)) {
       set("major", currentMajorOptions[0] ?? "");
     }
-  }, [degreeDigit, formData.faculty]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [degreeDigit, derivedFaculty, isProfileCompleted]);
 
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
@@ -579,27 +589,29 @@ export default function ProfilePage() {
                     </span>
                   )}
                 </div>
-                <div className="field col-span-8">
-                  <label className="label">
-                    {t.faculty} {isProfileCompleted && "(Locked)"}
-                  </label>
-                  <select
-                    className="input"
-                    disabled={isProfileCompleted}
-                    value={formData.faculty}
-                    onChange={(e) => set("faculty", e.target.value)}
-                    style={{
-                      background: isProfileCompleted ? "var(--bg-elevated)" : undefined,
-                      cursor: isProfileCompleted ? "not-allowed" : undefined,
-                      opacity: isProfileCompleted ? 0.7 : undefined,
-                    }}
-                  >
-                    {FACULTIES.map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
-                </div>
-                {currentMajorOptions.length > 0 && (
+                {/* Faculty — auto-derived from the (locked) student id instead of a
+                    manual dropdown; see src/lib/faculties.ts. Hidden until a
+                    9-digit student id exists (e.g. staff accounts have none). */}
+                {formData.studentId.trim().length === 9 && (
+                  derivedFaculty ? (
+                    <div className="field col-span-8">
+                      <label className="label">{t.faculty} (Locked)</label>
+                      <div className="input" style={{ display: "flex", alignItems: "center", background: "var(--bg-elevated)", cursor: "not-allowed", opacity: 0.7 }}>
+                        {FACULTIES.find((f) => f.id === derivedFaculty)?.name ?? derivedFaculty}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="field col-span-8">
+                      <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <AlertTriangle size={12} style={{ flexShrink: 0 }} />
+                        {t.back === "กลับ"
+                          ? "รหัสนักศึกษานี้ไม่ตรงกับคณะที่เข้าร่วมกิจกรรม (CAMT / MASSCOM / ARCH / ARTS) กรุณาติดต่อเจ้าหน้าที่"
+                          : "This student ID's faculty isn't one of the participating faculties (CAMT / MASSCOM / ARCH / ARTS). Please contact staff."}
+                      </span>
+                    </div>
+                  )
+                )}
+                {derivedFaculty && currentMajorOptions.length > 0 && (
                   <div className="field col-span-8">
                     <label className="label">
                       {t.major} {isProfileCompleted && "(Locked)"}

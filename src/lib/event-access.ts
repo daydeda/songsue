@@ -95,9 +95,12 @@ export function yearOfStudy(
 }
 
 /**
- * Thai vs international is derived from the student id: the first of the last
- * three digits being "5" marks an international student. Unknown/short ids
- * default to Thai (matches the historic /api/events behaviour).
+ * Thai vs international is derived from digit 6 of the student id (the
+ * "ลักษณะหลักสูตร" / curriculum-type digit per CMU's official id scheme,
+ * km-core-62213.pdf): 0/1/2 = Thai-track programs, 5/7 = international-track
+ * programs (regular/special respectively), 6 = affiliated nursing institutes
+ * (nationality not determined by this digit). Unknown/short ids default to
+ * Thai (matches the historic /api/events behaviour).
  */
 export function deriveThaiIntl(studentId: string | null | undefined): {
   isThai: boolean;
@@ -106,9 +109,9 @@ export function deriveThaiIntl(studentId: string | null | undefined): {
   const cleanId = (studentId || "").trim();
   let isThai = true;
   let isIntl = false;
-  if (cleanId.length >= 3) {
-    const lastThreeDigitFirst = cleanId.slice(-3)[0];
-    if (lastThreeDigitFirst === "5") {
+  if (cleanId.length >= 6) {
+    const curriculumTypeDigit = cleanId[5];
+    if (curriculumTypeDigit === "5" || curriculumTypeDigit === "7") {
       isThai = false;
       isIntl = true;
     }

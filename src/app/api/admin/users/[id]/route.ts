@@ -92,15 +92,19 @@ export async function PATCH(
     let { role, roles } = parsedRoles.data;
     const { clubIds, smoPosition, anusmoPosition, previewAccess, faculty } = parsedRoles.data;
 
-    // Contact info (phone/contactChannels) is only ever writable by
-    // super_admin, mirroring the read-side gate in GET /api/admin/students —
-    // a crafted request from an admin/registration actor must not be able to
-    // smuggle these fields in even though the route otherwise allows admin.
-    const isSuperAdminActor = effectiveRoles(session.user.role, session.user.roles).includes("super_admin");
+    const actorRoles = effectiveRoles(session.user.role, session.user.roles);
+    const isSuperAdminActor = actorRoles.includes("super_admin");
+    // Contact info (phone/contactChannels) is writable by super_admin AND
+    // admin (full parity outside deletion/settings/faculty-reassignment),
+    // mirroring the read-side gate in GET /api/admin/students — but not by
+    // registration/organizer/etc, so a crafted request from those actors
+    // can't smuggle these fields in even though the route otherwise allows
+    // admin.
+    const canManageContactInfo = isSuperAdminActor || actorRoles.includes("admin");
     // phone is unique-but-nullable in the schema — normalize "" to null so
     // clearing it for one user can't collide with another user's empty string.
-    const phone = isSuperAdminActor && typeof body.phone === "string" ? (body.phone.trim() || null) : undefined;
-    const contactChannels = isSuperAdminActor && typeof body.contactChannels === "string" ? body.contactChannels : undefined;
+    const phone = canManageContactInfo && typeof body.phone === "string" ? (body.phone.trim() || null) : undefined;
+    const contactChannels = canManageContactInfo && typeof body.contactChannels === "string" ? body.contactChannels : undefined;
 
     if (roles && Array.isArray(roles)) {
       // Find the primary role based on priority
@@ -135,10 +139,7 @@ export async function PATCH(
     // /api/admin/students' filter, so a faculty-scoped admin can't bypass it
     // by hitting this route directly for a known out-of-faculty user id.
     if (!isSuperAdminActor) {
-      const actorScope = resolveFacultyViewScope(
-        effectiveRoles(session.user.role, session.user.roles),
-        session.user.faculty,
-      );
+      const actorScope = resolveFacultyViewScope(actorRoles, session.user.faculty);
       if (!matchesFacultyScope(targetUser.faculty, actorScope, targetUser.role, targetUser.roles)) {
         return NextResponse.json({ error: "Forbidden: User is outside your faculty" }, { status: 403 });
       }
@@ -272,7 +273,11 @@ export async function DELETE(
 ) {
   try {
     const session = await auth();
-    if (!session?.user || !["super_admin", "admin"].includes(session.user.role || "")) {
+    // Only super_admin may delete accounts — deliberately narrower than the
+    // rest of the admin surface (irreversible + PDPA erasure), unlike PATCH
+    // above which "admin" may also use. An admin's scope over faculty data
+    // never includes deletion, regardless of faculty.
+    if (!session?.user || !effectiveRoles(session.user.role, session.user.roles).includes("super_admin")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -283,25 +288,11 @@ export async function DELETE(
       return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
     }
 
-    // FE-Security: non-super_admin cannot delete a super_admin user
     const targetUser = await db.query.users.findFirst({
       where: eq(users.id, userId),
     });
     if (!targetUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-    if (targetUser.role === "super_admin" && session.user.role !== "super_admin") {
-      return NextResponse.json({ error: "Forbidden: Cannot delete Super Admin accounts" }, { status: 403 });
-    }
-
-    // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin actor
-    // may only delete a target user within their OWN faculty.
-    const actorRoles = effectiveRoles(session.user.role, session.user.roles);
-    if (!actorRoles.includes("super_admin")) {
-      const actorScope = resolveFacultyViewScope(actorRoles, session.user.faculty);
-      if (!matchesFacultyScope(targetUser.faculty, actorScope, targetUser.role, targetUser.roles)) {
-        return NextResponse.json({ error: "Forbidden: User is outside your faculty" }, { status: 403 });
-      }
     }
 
     // Some foreign keys referencing users.id lack ON DELETE CASCADE in the

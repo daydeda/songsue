@@ -29,6 +29,33 @@ export const FACULTIES: Faculty[] = [
 export const FACULTY_IDS: FacultyId[] = FACULTIES.map((f) => f.id);
 export const DEFAULT_FACULTY: FacultyId = "CAMT";
 
+/**
+ * CMU official faculty code (student id digits 3-4, per km-core-62213.pdf) for
+ * each of the 4 participating faculties: 21 = CAMT (วิทยาลัยศิลปะ สื่อ และ
+ * เทคโนโลยี), 18 = MASSCOM (คณะการสื่อสารมวลชน), 17 = ARCH
+ * (คณะสถาปัตยกรรมศาสตร์), 03 = ARTS (คณะวิจิตรศิลป์).
+ */
+export const FACULTY_CODE_TO_ID: Record<string, FacultyId> = {
+  "21": "CAMT",
+  "18": "MASSCOM",
+  "17": "ARCH",
+  "03": "ARTS",
+};
+
+/**
+ * Derive a student's faculty from digits 3-4 of their student id, instead of a
+ * manual dropdown pick — a wrong pick would silently misroute them into the
+ * wrong faculty's house colour pool. Returns null for a too-short id or a
+ * faculty code outside the 4 participating faculties; callers must NOT
+ * default a null result to CAMT (that would misassign a real non-participating
+ * student), unlike normalizeFaculty's back-compat default elsewhere.
+ */
+export const facultyFromStudentId = (studentId: string | null | undefined): FacultyId | null => {
+  const cleanId = (studentId || "").trim();
+  if (cleanId.length < 4) return null;
+  return FACULTY_CODE_TO_ID[cleanId.slice(2, 4)] ?? null;
+};
+
 export const isFacultyId = (v: unknown): v is FacultyId =>
   typeof v === "string" && (FACULTY_IDS as string[]).includes(v);
 

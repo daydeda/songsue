@@ -7,12 +7,14 @@ import { AuditService } from "../audit/audit.service";
 import { HousesService } from "../houses/houses.service";
 import { canGiveIndividualScore } from "@/lib/admin-access";
 import { awardIndividualPoints } from "@/lib/award-individual-points";
+import { matchesFacultyScope, facultyRowCondition, type FacultyViewScope } from "@/lib/faculty-scope";
+import type { FacultyId } from "@/lib/faculties";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
 type DBTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export interface ScanResult {
-  status: "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "not_found" | "quota_full" | "walk_ins_disabled" | "found" | "not_registered" | "error";
+  status: "success" | "success_walk_in" | "pending_confirmation" | "already_checked_in" | "not_found" | "quota_full" | "walk_ins_disabled" | "found" | "not_registered" | "wrong_faculty" | "error";
   student: {
     name: string;
     nickname: string | null;
@@ -63,9 +65,13 @@ export class ScannerService {
     reason?: string;
     actorId: string;
     actorRole: string;
+    // Faculty scope of the SCANNING staff member (see src/lib/faculty-scope.ts) —
+    // resolved by the caller from the actor's full role set + session.user.faculty,
+    // distinct from actorRole (which only drives medical-detail visibility below).
+    viewerFacultyScope: FacultyViewScope;
     ipAddress: string;
   }): Promise<ScanResult> {
-    const { qrToken, eventId, sessionId, action, medsCheckOption, actorId, actorRole, ipAddress } = params;
+    const { qrToken, eventId, sessionId, action, medsCheckOption, actorId, actorRole, viewerFacultyScope, ipAddress } = params;
 
     const [student, event, session] = await Promise.all([
       UsersService.resolveStudentByToken(qrToken),
@@ -80,6 +86,14 @@ export class ScannerService {
     // The session must exist AND belong to this event — blocks a hand-crafted
     // cross-event sessionId from recording attendance against the wrong day.
     if (!session) return { status: "not_found", student: null, error: "Session not found for this event." };
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): checked BEFORE any medical
+    // evaluation or branch below, and blocks every action (scan/confirm/score/
+    // lookup) outright — no student data (name, medical signal, etc.) is ever
+    // returned for a student outside the scanning staff member's faculty.
+    if (!matchesFacultyScope(student.faculty, viewerFacultyScope, student.role, student.roles)) {
+      return { status: "wrong_faculty", student: null, error: "This student belongs to a different faculty." };
+    }
 
     // Explicitly assigned event staff (event.staffUserIds — set by an admin,
     // NOT derived from global role) are exempt from quota on every insert path
@@ -688,17 +702,25 @@ export class ScannerService {
     }
   }
 
-  static async searchStudents(query: string) {
+  // facultyScope: a null-faculty scope must be rejected by the caller BEFORE
+  // reaching here (mirrors every other faculty-scoped route) — this only
+  // handles the global-vs-one-faculty cases.
+  static async searchStudents(query: string, facultyScope: FacultyViewScope) {
     // Escape LIKE metacharacters so a query of "%" or "_" can't wildcard-match
     // the whole table; the search should only ever match literal substrings.
     const escaped = query.replace(/[\\%_]/g, "\\$&");
     return await db.query.users.findMany({
-      where: (users, { or, like }) =>
-        or(
+      where: (users, { or, like, and }) => {
+        const textMatch = or(
           like(users.studentId, `%${escaped}%`),
           like(users.name, `%${escaped}%`),
           like(users.nickname, `%${escaped}%`)
-        ),
+        );
+        if (facultyScope.global) return textMatch;
+        // users.role passed so a null-faculty STAFF row (unassigned yet)
+        // never surfaces under the CAMT default — only a plain student does.
+        return and(textMatch, facultyRowCondition(users.faculty, facultyScope.faculty as FacultyId, users.role));
+      },
       // No qrToken here: it's a long-lived check-in credential, and the manual
       // check-in flow resolves students by plain id instead.
       columns: {

@@ -1,13 +1,24 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events, users, houses } from "@/db/schema";
-import { count, sql, eq } from "drizzle-orm";
+import { attendance, events, users, houses, scoreHistory } from "@/db/schema";
+import { and, count, desc, eq, gte, isNotNull, type SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { csvCell } from "@/lib/csv";
 import { unstable_cache } from "next/cache";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { captureException, logger } from "@/lib/logger";
 import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
+import { resolveFacultyViewScope, facultyRowCondition, type FacultyViewScope } from "@/lib/faculty-scope";
+import type { FacultyId } from "@/lib/faculties";
+
+// and(...) with possibly-undefined conditions, collapsing to a single
+// condition (or undefined for "no filter") instead of always wrapping in
+// and() — keeps the global (super_admin) path a plain unfiltered query.
+function combine(...conds: (SQL | undefined)[]): SQL | undefined {
+  const list = conds.filter((c): c is SQL => c !== undefined);
+  if (list.length === 0) return undefined;
+  return list.length === 1 ? list[0] : and(...list);
+}
 
 // Hard ceiling: a request must never hang at the platform's 300s default. If a DB
 // call stalls (e.g. the Supabase pooler is momentarily queueing), fail fast at 20s,
@@ -36,30 +47,56 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 
+// The total event count is a genuinely global number (events aren't
+// faculty-owned entities today — see src/lib/faculty-scope.ts), so it's the
+// one aggregate that stays a single shared cache entry for every viewer.
+const getTotalEventsCount = unstable_cache(
+  async () => {
+    const [row] = await db.select({ n: count() }).from(events);
+    return Number(row?.n) || 0;
+  },
+  ["admin-dashboard-total-events"],
+  { revalidate: 15, tags: ["admin-dashboard-counts"] },
+);
+
 // The expensive dashboard aggregates, cached at the app layer for 15s so polling
 // admins don't each hit the DB (this is the workload that previously starved the
-// pooler). Both are GLOBAL (identical for every admin), so a single shared cache
-// entry is correct. Dates are computed inside so each 15s fill re-anchors "today"
-// and the 30-day window itself.
+// pooler). Faculty-scoped (facultyKey = a FacultyId, or "ALL" for super_admin) —
+// unstable_cache varies its cache entry by the arguments passed to the wrapped
+// function, so each faculty gets its own 15s-cached entry and never reads
+// another faculty's numbers. Dates are computed inside so each fill re-anchors
+// "today" and the 30-day window itself.
 const getDashboardCounts = unstable_cache(
-  async () => {
+  async (facultyKey: string) => {
     const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
     const bkkNow = new Date(Date.now() + BKK_OFFSET_MS);
     bkkNow.setUTCHours(0, 0, 0, 0);
     const startOfToday = new Date(bkkNow.getTime() - BKK_OFFSET_MS);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const countsResult = await db.execute(sql`
-      SELECT
-        (SELECT count(*)::int FROM ${users}) AS "totalUsers",
-        (SELECT count(*)::int FROM ${events}) AS "totalEvents",
-        (SELECT count(*)::int FROM ${attendance} WHERE ${attendance.checkInTime} >= ${startOfToday.toISOString()}) AS "checkinsToday",
-        (SELECT count(*)::int FROM ${users} WHERE ${users.createdAt} >= ${thirtyDaysAgo.toISOString()}) AS "newUsers30d"
-    `);
+
+    // users.role passed so a null-faculty STAFF row (unassigned yet) is
+    // never swept into the CAMT default — only a plain student is.
+    const userFacultyCond = facultyKey === "ALL" ? undefined : facultyRowCondition(users.faculty, facultyKey as FacultyId, users.role);
+
+    const [totalUsersRow] = await db.select({ n: count() }).from(users).where(userFacultyCond);
+
+    const [newUsers30dRow] = await db
+      .select({ n: count() })
+      .from(users)
+      .where(combine(gte(users.createdAt, thirtyDaysAgo), userFacultyCond));
+
+    const [checkinsTodayRow] = userFacultyCond
+      ? await db
+          .select({ n: count() })
+          .from(attendance)
+          .innerJoin(users, eq(attendance.studentId, users.id))
+          .where(combine(gte(attendance.checkInTime, startOfToday), userFacultyCond))
+      : await db.select({ n: count() }).from(attendance).where(gte(attendance.checkInTime, startOfToday));
+
     return {
-      totalUsers: (countsResult[0]?.totalUsers as number) ?? 0,
-      totalEvents: (countsResult[0]?.totalEvents as number) ?? 0,
-      checkinsToday: (countsResult[0]?.checkinsToday as number) ?? 0,
-      newUsers30d: (countsResult[0]?.newUsers30d as number) ?? 0,
+      totalUsers: Number(totalUsersRow?.n) || 0,
+      checkinsToday: Number(checkinsTodayRow?.n) || 0,
+      newUsers30d: Number(newUsers30dRow?.n) || 0,
     };
   },
   ["admin-dashboard-counts"],
@@ -67,7 +104,7 @@ const getDashboardCounts = unstable_cache(
 );
 
 const getHouseMemberCounts = unstable_cache(
-  async () =>
+  async (facultyKey: string) =>
     db
       .select({
         id: houses.id,
@@ -80,6 +117,7 @@ const getHouseMemberCounts = unstable_cache(
       })
       .from(houses)
       .leftJoin(users, eq(users.houseId, houses.id))
+      .where(facultyKey === "ALL" ? undefined : eq(houses.faculty, facultyKey))
       .groupBy(houses.id),
   ["admin-dashboard-house-members"],
   { revalidate: 15, tags: ["admin-dashboard-house-members"] },
@@ -96,6 +134,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Faculty scoping (see src/lib/faculty-scope.ts): every non-super_admin
+    // viewer's stats/exports below are restricted to their own faculty. An
+    // account with no faculty assigned yet gets a clear error instead of
+    // silently seeing everything (global) or nothing looking like a bug
+    // (all-zero cards).
+    const facultyScope: FacultyViewScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!facultyScope.global && facultyScope.faculty === null) {
+      return NextResponse.json(
+        { error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
+    }
+    const facultyCond = facultyScope.global ? undefined : facultyRowCondition(users.faculty, facultyScope.faculty, users.role);
 
     const type = new URL(req.url).searchParams.get("type") || "overview";
 
@@ -107,10 +158,12 @@ export async function GET(req: Request) {
       // Bulk PII export: keep a tamper-evident record of who pulled it (PDPA). Count
       // first (one cheap aggregate) so the audit row has the row count without
       // materializing the whole table.
-      const [{ total }] = await db.select({ total: count() }).from(attendance);
+      const [{ total }] = facultyCond
+        ? await db.select({ total: count() }).from(attendance).innerJoin(users, eq(attendance.studentId, users.id)).where(facultyCond)
+        : await db.select({ total: count() }).from(attendance);
       await AuditService.logAction({
         actorId: session.user.id!,
-        action: `Exported full attendance CSV (${Number(total)} rows)`,
+        action: `Exported full attendance CSV (${Number(total)} rows)${facultyScope.global ? "" : ` [faculty: ${facultyScope.faculty}]`}`,
         ipAddress: getClientIp(req),
       });
 
@@ -127,15 +180,25 @@ export async function GET(req: Request) {
         },
         async pull(controller) {
           try {
-            const batch = await db.query.attendance.findMany({
-              with: {
-                user: { columns: { studentId: true, name: true, major: true } },
-                event: { columns: { title: true } },
-              },
-              orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
-              limit: BATCH,
-              offset,
-            });
+            // A relational `with: { user }` query can't filter by the related
+            // user's faculty, so this is a flat select+join instead (also lets
+            // the faculty filter apply consistently across every page).
+            const batch = await db
+              .select({
+                eventTitle: events.title,
+                studentId: users.studentId,
+                name: users.name,
+                major: users.major,
+                checkInTime: attendance.checkInTime,
+                method: attendance.method,
+              })
+              .from(attendance)
+              .leftJoin(events, eq(attendance.eventId, events.id))
+              .innerJoin(users, eq(attendance.studentId, users.id))
+              .where(facultyCond)
+              .orderBy(desc(attendance.checkInTime))
+              .limit(BATCH)
+              .offset(offset);
             if (batch.length === 0) {
               controller.close();
               return;
@@ -143,7 +206,7 @@ export async function GET(req: Request) {
             offset += batch.length;
             let chunk = "";
             for (const a of batch) {
-              chunk += [a.event?.title, a.user?.studentId, a.user?.name, a.user?.major, a.checkInTime, a.method]
+              chunk += [a.eventTitle, a.studentId, a.name, a.major, a.checkInTime, a.method]
                 .map(csvCell)
                 .join(",") + "\n";
             }
@@ -175,8 +238,12 @@ export async function GET(req: Request) {
     // decoupled from how many admins are polling — the workload that used to starve
     // the pooler. Recent activity below stays live (cheap, limit 10). Check-ins-today
     // is anchored to Bangkok midnight inside getDashboardCounts (UTC+7, no DST).
-    const { totalUsers, totalEvents, checkinsToday, newUsers30d } = await withTimeout(
-      getDashboardCounts(),
+    // facultyKey is non-null here — the null-scope case already returned above.
+    const facultyKey = facultyScope.global ? "ALL" : (facultyScope.faculty as FacultyId);
+
+    const totalEvents = await withTimeout(getTotalEventsCount(), READ_TIMEOUT_MS, "totalEvents");
+    const { totalUsers, checkinsToday, newUsers30d } = await withTimeout(
+      getDashboardCounts(facultyKey),
       READ_TIMEOUT_MS,
       "counts"
     );
@@ -188,43 +255,54 @@ export async function GET(req: Request) {
     const userGrowthPct = priorUsers > 0 ? Math.round((newUsers30d / priorUsers) * 100) : 0;
 
     const houseListWithMembers = await withTimeout(
-      getHouseMemberCounts(),
+      getHouseMemberCounts(facultyKey),
       READ_TIMEOUT_MS,
       "houses"
     );
 
+    // Flat select+join instead of a relational `with: { user }` query — the
+    // latter can't filter by the related user's faculty.
     const recentCheckins = await withTimeout(
-      db.query.attendance.findMany({
-        limit: 10,
+      db
+        .select({
+          name: users.name,
+          nickname: users.nickname,
+          eventTitle: events.title,
+          checkInTime: attendance.checkInTime,
+        })
+        .from(attendance)
+        .leftJoin(users, eq(attendance.studentId, users.id))
+        .leftJoin(events, eq(attendance.eventId, events.id))
         // Only genuine check-ins. Registration rows have checkInTime = null, and
         // `ORDER BY ... DESC` is NULLS FIRST in Postgres, so without this filter
         // those un-checked-in rows sort to the top and fall back to new Date()
         // below — making every Recent Activity entry show the current time.
-        where: (attendance, { isNotNull }) => isNotNull(attendance.checkInTime),
-        orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
-        with: {
-          user: { columns: { name: true, nickname: true } },
-          event: { columns: { title: true } },
-        },
-      }),
+        .where(combine(isNotNull(attendance.checkInTime), facultyCond))
+        .orderBy(desc(attendance.checkInTime))
+        .limit(10),
       READ_TIMEOUT_MS,
       "checkins"
     );
 
+    // Left-joined to houses so a faculty filter naturally excludes house-less
+    // activity rows for a scoped viewer (NULL never matches eq(houseFaculty,
+    // X)) while a global viewer keeps seeing them, exactly as before.
     const recentScores = await withTimeout(
-      db.query.scoreHistory.findMany({
-        limit: 10,
-        orderBy: (scoreHistory, { desc }) => [desc(scoreHistory.timestamp)],
-        columns: {
-          id: true,
-          delta: true,
-          reason: true,
-          timestamp: true,
-        },
-        with: {
-          house: { columns: { id: true, name: true, color: true } },
-        },
-      }),
+      db
+        .select({
+          id: scoreHistory.id,
+          delta: scoreHistory.delta,
+          reason: scoreHistory.reason,
+          timestamp: scoreHistory.timestamp,
+          houseId: houses.id,
+          houseName: houses.name,
+          houseColor: houses.color,
+        })
+        .from(scoreHistory)
+        .leftJoin(houses, eq(scoreHistory.houseId, houses.id))
+        .where(facultyScope.global ? undefined : eq(houses.faculty, facultyScope.faculty as FacultyId))
+        .orderBy(desc(scoreHistory.timestamp))
+        .limit(10),
       READ_TIMEOUT_MS,
       "scores"
     );
@@ -233,16 +311,16 @@ export async function GET(req: Request) {
     const mergedActivity = [
       ...recentCheckins.map(a => ({
         type: "checkin" as const,
-        studentName: a.user?.name ?? "Unknown",
-        studentNickname: a.user?.nickname ?? "",
-        eventTitle: a.event?.title ?? "Unknown Event",
+        studentName: a.name ?? "Unknown",
+        studentNickname: a.nickname ?? "",
+        eventTitle: a.eventTitle ?? "Unknown Event",
         timestamp: a.checkInTime?.toISOString() || new Date().toISOString(),
       })),
       ...recentScores.map(s => ({
         type: "score" as const,
-        houseId: s.house?.id,
-        houseName: s.house?.name ?? "Unknown",
-        houseColor: s.house?.color ?? "var(--accent-primary)",
+        houseId: s.houseId,
+        houseName: s.houseName ?? "Unknown",
+        houseColor: s.houseColor ?? "var(--accent-primary)",
         delta: s.delta,
         reason: s.reason,
         timestamp: s.timestamp?.toISOString() || new Date().toISOString(),

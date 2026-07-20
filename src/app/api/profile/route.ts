@@ -199,8 +199,15 @@ export async function PATCH(req: Request) {
       || isGlobalRegistrationPosition(effectiveRoles(session.user.role, session.user.roles), session.user.smoPosition, session.user.anusmoPosition);
     if (!isAdmin) {
       delete data.studentId;
-      // Faculty is set once at onboarding and gates which house a student lands in
-      // at check-in. Lock it for non-admins so a raw PATCH can't switch faculties.
+    }
+    // Faculty now gates admin data access too (see src/lib/faculty-scope.ts) —
+    // NOT just which house-colour pool a student lands in. Only super_admin
+    // may write it, mirroring PATCH /api/admin/users/[id]'s guard; any other
+    // actor (including admin/registration/organizer, who ARE in `isAdmin`
+    // above) could otherwise self-service-rescope their own faculty here and
+    // read another faculty's data through this sibling endpoint.
+    const isSuperAdminActor = effectiveRoles(session.user.role, session.user.roles).includes("super_admin");
+    if (!isSuperAdminActor) {
       delete data.faculty;
     }
 

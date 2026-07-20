@@ -1,7 +1,9 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
+import { users } from "@/db/schema";
 import { NextResponse } from "next/server";
 import { effectiveRoles } from "@/lib/admin-access";
+import { resolveFacultyViewScope, facultyRowCondition } from "@/lib/faculty-scope";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 export const maxDuration = 20;
@@ -24,8 +26,22 @@ export async function GET() {
     // PDPA-minimal columns, same as before.
     const isSuperAdmin = myRoles.includes("super_admin");
 
+    // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin actor
+    // only sees students in their own faculty. An actor with no faculty
+    // assigned yet sees nobody, rather than defaulting to CAMT.
+    const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!facultyScope.global && facultyScope.faculty === null) {
+      return NextResponse.json(
+        { error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
+    }
+
     // Only fetch non-sensitive data for the general directory
     const allStudents = await db.query.users.findMany({
+      // users.role passed so a null-faculty STAFF row (unassigned yet) is
+      // never swept into the CAMT default — only a plain student is.
+      where: facultyScope.global ? undefined : facultyRowCondition(users.faculty, facultyScope.faculty, users.role),
       columns: {
         id: true,
         studentId: true,
@@ -39,6 +55,10 @@ export async function GET() {
         profileCompleted: true,
         role: true,
         roles: true,
+        // Not PDPA-sensitive — visible to every role that reaches this
+        // directory. Needed client-side so super_admin can assign a staff
+        // account's faculty scope (see src/lib/faculty-scope.ts).
+        faculty: true,
         noShowCount: true,
         registrationBlocked: true,
         previewAccess: true,

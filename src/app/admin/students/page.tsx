@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 import { NO_SHOW_STRIKE_THRESHOLD, RESET_STRIKES_ROLES } from "@/lib/strikes";
 import { POSITION_IDS, POSITION_I18N_KEY } from "@/lib/positions";
-import { houseDisplayName } from "@/lib/faculties";
+import { houseDisplayName, FACULTIES } from "@/lib/faculties";
+
+// Roles whose faculty scope (see src/lib/faculty-scope.ts) actually gates
+// admin data access — the Faculty picker in the edit modal only appears for
+// these. super_admin is excluded: it's always global regardless of faculty.
+const FACULTY_SCOPED_ROLES = ["admin", "registration", "organizer", "smo", "anusmo", "club_president", "major_president"];
 
 type Student = {
   id: string;
@@ -41,6 +46,10 @@ type Student = {
   profileCompleted?: boolean;
   role?: string;
   roles?: string[];
+  // Which faculty this account is scoped to for admin data access (see
+  // src/lib/faculty-scope.ts) — only meaningful/editable for a staff/
+  // leadership role; only super_admin may change it.
+  faculty?: string | null;
   noShowCount?: number;
   registrationBlocked?: boolean;
   // Site-wide preview/beta-tester access (see users.previewAccess) — normally
@@ -78,9 +87,10 @@ interface CustomDropdownProps {
   icon?: React.ReactNode;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }
 
-function CustomDropdown({ value, options, onChange, icon, placeholder = "Select...", className = "" }: CustomDropdownProps) {
+function CustomDropdown({ value, options, onChange, icon, placeholder = "Select...", className = "", disabled = false }: CustomDropdownProps) {
   const [open, setOpen] = useState(false);
   const currentOption = options.find(o => o.value === value);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -103,8 +113,13 @@ function CustomDropdown({ value, options, onChange, icon, placeholder = "Select.
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        className={`flex items-center justify-between w-full h-14 bg-[var(--bg-elevated)] border rounded-2xl px-4 text-base font-bold text-[var(--text-primary)] shadow-sm transition-all duration-300 cursor-pointer ${
+        disabled={disabled}
+        onClick={() => !disabled && setOpen(!open)}
+        className={`flex items-center justify-between w-full h-14 bg-[var(--bg-elevated)] border rounded-2xl px-4 text-base font-bold text-[var(--text-primary)] shadow-sm transition-all duration-300 ${
+          disabled
+            ? "opacity-60 cursor-not-allowed"
+            : "cursor-pointer"
+        } ${
           open
             ? "border-[var(--accent-primary)] shadow-[0_0_0_3px_var(--accent-glow)] bg-[var(--bg-surface)]"
             : "border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/40 hover:bg-[var(--bg-surface)] hover:shadow-md"
@@ -238,6 +253,7 @@ export default function AdminStudentsDirectory() {
   const { t, lang } = useLanguage();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rosterError, setRosterError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -274,8 +290,16 @@ export default function AdminStudentsDirectory() {
   const refreshData = () => {
     setLoading(true);
     fetch("/api/admin/students")
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d)) setStudents(d); })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (ok && Array.isArray(d)) {
+          setStudents(d);
+          setRosterError(null);
+        } else {
+          setRosterError((d && d.error) || "Failed to load the roster.");
+        }
+      })
+      .catch(() => setRosterError("Failed to load the roster."))
       .finally(() => setLoading(false));
 
     fetch("/api/admin/houses")
@@ -582,6 +606,19 @@ export default function AdminStudentsDirectory() {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 100, gap: 20 }}>
               <div className="spinner" style={{ width: 40, height: 40, borderWidth: 3 }} />
               <p style={{ color: "var(--text-muted)", fontWeight: 600 }}>Retrieving Student Records...</p>
+            </div>
+          ) : rosterError ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 100, gap: 16, textAlign: "center" }}>
+              <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#ef4444" }}>
+                <AlertTriangle size={28} />
+              </div>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)" }}>
+                {lang === "th" ? "โหลดรายชื่อไม่สำเร็จ" : lang === "cn" ? "无法加载名单" : lang === "mm" ? "စာရင်းကို ဖွင့်၍မရပါ" : "Couldn't load the roster"}
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontWeight: 600, maxWidth: 400 }}>{rosterError}</p>
+              <button className="btn btn-primary" style={{ borderRadius: 12, padding: "10px 24px", marginTop: 4 }} onClick={refreshData}>
+                {lang === "th" ? "ลองอีกครั้ง" : lang === "cn" ? "重试" : lang === "mm" ? "ထပ်ကြိုးစားပါ" : "Retry"}
+              </button>
             </div>
           ) : (
             <>
@@ -1349,6 +1386,38 @@ export default function AdminStudentsDirectory() {
                     onChange={val => setEditingStudent({ ...editingStudent, anusmoPosition: val || null })}
                     icon={<Briefcase size={18} />}
                   />
+                </div>
+              )}
+
+              {/* Faculty scope (see src/lib/faculty-scope.ts) — gates which
+                  faculty's students/attendance/dashboard data this account can
+                  see. Only shown for a staff/leadership role (super_admin is
+                  always global), and only super_admin may edit the value —
+                  the server independently enforces the same restriction. */}
+              {(editingStudent.roles || (editingStudent.role ? [editingStudent.role] : [])).some(r => FACULTY_SCOPED_ROLES.includes(r)) && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, display: "block" }}>
+                    {lang === "th" ? "คณะที่ดูแล (Faculty Scope)" : "Faculty Scope"}
+                  </label>
+                  <CustomDropdown
+                    value={editingStudent.faculty || ""}
+                    disabled={userRole !== "super_admin"}
+                    options={[
+                      { value: "", label: lang === "th" ? "— ยังไม่กำหนด —" : "— Unassigned —", icon: <X size={16} className="text-muted" /> },
+                      ...FACULTIES.map(f => ({
+                        value: f.id,
+                        label: f.name,
+                        icon: <ShieldCheck size={16} className="text-[var(--accent-primary)]" />,
+                      })),
+                    ]}
+                    onChange={val => setEditingStudent({ ...editingStudent, faculty: val || null })}
+                    icon={<ShieldCheck size={18} />}
+                  />
+                  {userRole !== "super_admin" && (
+                    <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                      {lang === "th" ? "เฉพาะ Super Admin เท่านั้นที่แก้ไขได้" : "Only Super Admin can change this"}
+                    </p>
+                  )}
                 </div>
               )}
 

@@ -8,6 +8,8 @@ import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { ClubsService } from "@/modules/clubs/clubs.service";
 import { POSITION_IDS } from "@/lib/positions";
 import { effectiveRoles } from "@/lib/admin-access";
+import { FACULTY_IDS } from "@/lib/faculties";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // Every role the system recognizes, highest-privilege first. Used both to derive
 // the primary `role` from a roles[] set and (via roleEnum) to validate incoming
@@ -48,6 +50,11 @@ const userRoleSchema = z.object({
   // writing garbage.
   smoPosition: z.enum(POSITION_IDS).optional().nullable(),
   anusmoPosition: z.enum(POSITION_IDS).optional().nullable(),
+  // Which faculty this staff account is scoped to (see src/lib/faculty-scope.ts).
+  // Only super_admin may write this — validated separately below, since a
+  // faculty-scoped admin re-assigning their own/a peer's faculty would let
+  // them escalate into another faculty's data.
+  faculty: z.enum(FACULTY_IDS as [string, ...string[]]).optional().nullable(),
   // Site-wide preview/beta-tester access (see users.previewAccess). Normally
   // set by the user themselves via the secret activation link
   // (/api/preview/activate); exposed here so an admin can revoke ONE tester
@@ -83,7 +90,7 @@ export async function PATCH(
     // Fields that can be updated by admin
     const { name, prefix, major, houseId, studentId, nickname } = body;
     let { role, roles } = parsedRoles.data;
-    const { clubIds, smoPosition, anusmoPosition, previewAccess } = parsedRoles.data;
+    const { clubIds, smoPosition, anusmoPosition, previewAccess, faculty } = parsedRoles.data;
 
     // Contact info (phone/contactChannels) is only ever writable by
     // super_admin, mirroring the read-side gate in GET /api/admin/students —
@@ -121,6 +128,27 @@ export async function PATCH(
     const isTargetSuperAdmin = targetUser.role === "super_admin" || (targetUser.roles as string[] | null)?.includes("super_admin");
     if (isTargetSuperAdmin && session.user.role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden: Cannot edit Super Admin accounts" }, { status: 403 });
+    }
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin actor
+    // may only touch a target user within their OWN faculty — mirrors GET
+    // /api/admin/students' filter, so a faculty-scoped admin can't bypass it
+    // by hitting this route directly for a known out-of-faculty user id.
+    if (!isSuperAdminActor) {
+      const actorScope = resolveFacultyViewScope(
+        effectiveRoles(session.user.role, session.user.roles),
+        session.user.faculty,
+      );
+      if (!matchesFacultyScope(targetUser.faculty, actorScope, targetUser.role, targetUser.roles)) {
+        return NextResponse.json({ error: "Forbidden: User is outside your faculty" }, { status: 403 });
+      }
+    }
+
+    // FE-Security: only super_admin may set/change a user's faculty scope — a
+    // faculty-scoped admin editing this field could otherwise re-scope
+    // themselves or a peer into another faculty's data.
+    if (faculty !== undefined && faculty !== targetUser.faculty && !isSuperAdminActor) {
+      return NextResponse.json({ error: "Forbidden: Only Super Admins can change a user's faculty" }, { status: 403 });
     }
 
     // Major-position lock: a major_president's title is always "President" —
@@ -172,6 +200,9 @@ export async function PATCH(
     if (previewAccess !== undefined && previewAccess !== targetUser.previewAccess) {
       changes.push(`previewAccess: ${targetUser.previewAccess} → ${previewAccess}`);
     }
+    if (faculty !== undefined && faculty !== targetUser.faculty) {
+      changes.push(`faculty: ${targetUser.faculty ?? "none"} → ${faculty ?? "none"}`);
+    }
 
     // Club presidencies: diff against the CURRENT set so the audit note only
     // fires on a real change. The actual club_members write happens inside the
@@ -208,6 +239,7 @@ export async function PATCH(
           phone,
           contactChannels,
           previewAccess,
+          faculty,
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
@@ -260,6 +292,16 @@ export async function DELETE(
     }
     if (targetUser.role === "super_admin" && session.user.role !== "super_admin") {
       return NextResponse.json({ error: "Forbidden: Cannot delete Super Admin accounts" }, { status: 403 });
+    }
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin actor
+    // may only delete a target user within their OWN faculty.
+    const actorRoles = effectiveRoles(session.user.role, session.user.roles);
+    if (!actorRoles.includes("super_admin")) {
+      const actorScope = resolveFacultyViewScope(actorRoles, session.user.faculty);
+      if (!matchesFacultyScope(targetUser.faculty, actorScope, targetUser.role, targetUser.roles)) {
+        return NextResponse.json({ error: "Forbidden: User is outside your faculty" }, { status: 403 });
+      }
     }
 
     // Some foreign keys referencing users.id lack ON DELETE CASCADE in the

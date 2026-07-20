@@ -1,24 +1,27 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { attendance, events } from "@/db/schema";
+import { attendance, events, users } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
 import { isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { redactEmergencyContacts } from "@/lib/emergency-contacts";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // Columns read for a normal/staff roster. Medical free-text + emergency contacts
 // are fetched so super_admin/admin (and, per the sanitize step, a club/major
 // president viewing their own event) get full detail and registration/organizer
 // can have the medical-CATEGORY signal derived below; they are stripped per-role
-// in the sanitize step.
+// in the sanitize step. `faculty` is fetched purely to apply the faculty-scope
+// filter below — see src/lib/faculty-scope.ts.
 const FULL_USER_COLUMNS = {
   id: true,
   name: true,
   nickname: true,
   studentId: true,
   major: true,
+  faculty: true,
   phone: true,
   role: true,
   roles: true,
@@ -44,6 +47,7 @@ const THIN_USER_COLUMNS = {
   nickname: true,
   studentId: true,
   major: true,
+  faculty: true,
   role: true,
   roles: true,
   noShowCount: true,
@@ -75,6 +79,17 @@ export async function GET(
       && (await EventScopeService.hasRegistrationScope(session.user.id, myRoles, smoPosition, anusmoPosition));
     if (!session?.user || (!isStaffRole && !isThinRosterRole && !isPositionScopedRegistration)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): applied on top of the
+    // club/major-owner scoping above — a president's own club/major roster is
+    // further filtered down to their own faculty's attendees within it.
+    const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!facultyScope.global && facultyScope.faculty === null) {
+      return NextResponse.json(
+        { error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
     }
 
     // PDPA-sensitive medical & emergency-contact data is restricted to
@@ -154,6 +169,13 @@ export async function GET(
       orderBy: (attendance, { desc }) => [desc(attendance.checkInTime)],
     });
 
+    // Faculty scoping: drop rows outside the viewer's faculty before any
+    // sanitizing/counting below. A relational `with: { user }` query can't
+    // push this into the WHERE clause, so it's filtered in-memory here.
+    const scopedList = facultyScope.global
+      ? list
+      : list.filter((row) => matchesFacultyScope(row.user?.faculty, facultyScope, row.user?.role, row.user?.roles));
+
     // Which medical CATEGORIES a user filled in (mirrors hasActualMedicalInfo
     // on the client). "-" and blanks are treated as empty. The identifiers match
     // i18n keys so the client can translate them directly — values are never
@@ -179,7 +201,7 @@ export async function GET(
     // registration/organizer get only the list of categories present — never the
     // detail the student filled in — and no meds-check status (which would
     // itself reveal a condition).
-    const sanitized = list.map((row) => {
+    const sanitized = scopedList.map((row) => {
       const u = row.user;
       const medicalCategories = medicalCategoriesOf(u);
       const hasMedicalInfo = medicalCategories.length > 0;
@@ -302,6 +324,19 @@ export async function DELETE(
     });
     if (!ev) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin
+    // actor may only remove a registration belonging to their own faculty.
+    const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!facultyScope.global) {
+      const targetStudent = await db.query.users.findFirst({
+        where: eq(users.id, studentId),
+        columns: { faculty: true, role: true, roles: true },
+      });
+      if (!targetStudent || !matchesFacultyScope(targetStudent.faculty, facultyScope, targetStudent.role, targetStudent.roles)) {
+        return NextResponse.json({ error: "Forbidden: Student is outside your faculty" }, { status: 403 });
+      }
     }
 
     const removedRows = await db.transaction(async (tx) => {

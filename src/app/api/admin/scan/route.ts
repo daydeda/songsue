@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { captureException } from "@/lib/logger";
 import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
+import { resolveFacultyViewScope } from "@/lib/faculty-scope";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 // Scanning must stay responsive during the event even under load.
@@ -60,6 +61,17 @@ export async function POST(req: Request) {
     const anusmoPosition = session.user.anusmoPosition;
     if (!canEnterAdminAny(roles, session.user.hasStaffPosition)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): resolved once here and
+    // passed into ScannerService, which blocks the scan outright for a
+    // student outside this scope — no student data is returned on mismatch.
+    const viewerFacultyScope = resolveFacultyViewScope(roles, session.user.faculty);
+    if (!viewerFacultyScope.global && viewerFacultyScope.faculty === null) {
+      return NextResponse.json(
+        { status: "no_faculty", error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
     }
 
     const body = await req.json();
@@ -121,6 +133,7 @@ export async function POST(req: Request) {
       reason,
       actorId: session.user.id!,
       actorRole: session.user.role || "",
+      viewerFacultyScope,
       ipAddress: ip,
     });
 
@@ -168,6 +181,13 @@ export async function POST(req: Request) {
           student: result.student,
           error: result.error,
         },
+        { status: 403 }
+      );
+    }
+
+    if (result.status === "wrong_faculty") {
+      return NextResponse.json(
+        { status: result.status, error: result.error },
         { status: 403 }
       );
     }
@@ -225,6 +245,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Faculty scoping (see src/lib/faculty-scope.ts): a faculty-scoped
+    // staffer's manual search must never surface an out-of-faculty student.
+    const viewerFacultyScope = resolveFacultyViewScope(roles, session.user.faculty);
+    if (!viewerFacultyScope.global && viewerFacultyScope.faculty === null) {
+      return NextResponse.json(
+        { status: "no_faculty", error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const query = searchParams.get("q");
 
@@ -233,7 +263,7 @@ export async function GET(req: Request) {
     }
 
     // Delegate query search to ScannerService
-    const results = await ScannerService.searchStudents(query);
+    const results = await ScannerService.searchStudents(query, viewerFacultyScope);
     return NextResponse.json(results);
   } catch (error) {
     captureException(error, { route: "GET /api/admin/scan" });

@@ -78,6 +78,7 @@ export function AdminNav({
   const canSeeStudents = has(["super_admin", "admin", "registration"]) || globalReg; // organizer barred
   const canSeeAudit = has(["super_admin", "admin"]);                    // organizer + registration barred
   const canManage = has(["super_admin", "admin"]);                      // announcement
+  const canManageSettings = has(["super_admin"]);                       // settings (preview-access token)
 
   const itemAllowed = (item: { href: string }) => {
     // Scanner-only users (smo, club/major president, no full-admin role) see just the
@@ -112,7 +113,7 @@ export function AdminNav({
     if (item.href === "/admin/appeals") return false;
     if (item.href === "/admin/audit-logs") return canSeeAudit;
     if (item.href === "/admin/announcement") return canManage;
-    if (item.href === "/admin/settings") return canManage;
+    if (item.href === "/admin/settings") return canManageSettings;
     return true; // dashboard, events, scanner — every full-admin role
   };
 

@@ -4,9 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { Megaphone, Save, Eye, EyeOff, Bold, Link2, AlertTriangle, Check } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { parseRichText } from "@/lib/rich-text";
+import { FACULTIES, DEFAULT_FACULTY, type FacultyId } from "@/lib/faculties";
 
-export function AnnouncementEditor() {
+interface AnnouncementEditorProps {
+  // super_admin (global scope): shows faculty tabs, may switch/edit all 4.
+  isGlobal: boolean;
+  // A faculty-scoped admin's own faculty (null if global, or if not yet
+  // assigned — see src/lib/faculty-scope.ts).
+  ownFaculty: FacultyId | null;
+}
+
+export function AnnouncementEditor({ isGlobal, ownFaculty }: AnnouncementEditorProps) {
   const { t } = useLanguage();
+  const [faculty, setFaculty] = useState<FacultyId>(ownFaculty ?? DEFAULT_FACULTY);
   const [body, setBody] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -15,15 +25,26 @@ export function AnnouncementEditor() {
   const [error, setError] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
+  // Non-super_admin accounts with no faculty assigned yet see/edit nothing —
+  // deny-safe, matching every other per-faculty admin view (faculty-scope.ts).
+  const unassigned = !isGlobal && !ownFaculty;
+
+  // unassigned always renders its own alert branch below regardless of
+  // `loading`, so there's nothing to fetch or reset here.
   useEffect(() => {
-    fetch("/api/admin/announcement")
+    if (unassigned) return;
+    let cancelled = false;
+    fetch(`/api/admin/announcement?faculty=${faculty}`)
       .then((r) => r.json())
       .then((d) => {
-        if (d && typeof d.body === "string") setBody(d.body);
-        if (d && typeof d.enabled === "boolean") setEnabled(d.enabled);
+        if (cancelled) return;
+        setBody(typeof d?.body === "string" ? d.body : "");
+        setEnabled(typeof d?.enabled === "boolean" ? d.enabled : true);
+        setSavedAt(null);
       })
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [faculty, unassigned]);
 
   // Replace the [start,end) range with `replacement` and re-select `selLen`
   // characters from `selStart`, keeping focus in the textarea.
@@ -100,7 +121,7 @@ export function AnnouncementEditor() {
       const res = await fetch("/api/admin/announcement", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, enabled }),
+        body: JSON.stringify({ body, enabled, faculty }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => null);
@@ -139,6 +160,24 @@ export function AnnouncementEditor() {
         </h1>
       </div>
 
+      {/* Faculty tabs — super_admin only. A faculty-scoped admin never sees
+          this; their own faculty (ownFaculty) is fixed and forced server-side. */}
+      {isGlobal && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+          {FACULTIES.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFaculty(f.id)}
+              className={faculty === f.id ? "btn btn-primary" : "btn btn-ghost"}
+              style={{ fontSize: 13 }}
+            >
+              {f.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div
         style={{
           background: "var(--bg-surface)",
@@ -148,7 +187,12 @@ export function AnnouncementEditor() {
           width: "100%",
         }}
       >
-        {loading ? (
+        {unassigned ? (
+          <div className="alert alert-error" style={{ fontSize: 13 }}>
+            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+            <span>No faculty assigned to your account yet. Ask a super admin to assign one.</span>
+          </div>
+        ) : loading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
             <div className="spinner" style={{ width: 28, height: 28 }} />
           </div>

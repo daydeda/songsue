@@ -589,17 +589,25 @@ export const formSubmissionsRelations = relations(formSubmissions, ({ one }) => 
   }),
 }));
 
-// Dashboard announcement banner. Treated as a SINGLETON — the app always reads
-// and writes the single most-recently-updated row (the editor upserts it). Body
-// is plain text; newlines render via white-space: pre-wrap on the dashboard.
-// updatedBy has no FK (like audit_logs) so editor deletion never rewrites it.
+// Dashboard announcement banner. Per-faculty: each of the 4 faculties gets its
+// own singleton row — the app reads/writes the most-recently-updated row FOR
+// A GIVEN faculty (the editor upserts it), same singleton-via-upsert
+// convention as before, just partitioned by faculty. Body is plain text;
+// newlines render via white-space: pre-wrap on the dashboard. updatedBy has no
+// FK (like audit_logs) so editor deletion never rewrites it.
 export const announcements = pgTable("announcements", {
   id: uuid("id").defaultRandom().primaryKey(),
   body: text("body").notNull(),
   enabled: boolean("enabled").notNull().default(true),
+  // 'CAMT' | 'MASSCOM' | 'ARCH' | 'ARTS' (src/lib/faculties.ts) — which
+  // faculty's dashboard shows this row. No fallback across faculties: a
+  // faculty with no row simply shows no banner (see src/lib/faculty-scope.ts).
+  faculty: text("faculty").notNull(),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+}, (table) => ([
+  index("idx_announcements_faculty").on(table.faculty),
+]));
 
 // Singleton (like `announcements`): the current site-wide preview-access
 // token an admin can generate/rotate/clear. The app always reads/writes the

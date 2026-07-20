@@ -527,7 +527,7 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       .finally(() => setLoadingHouses(false));
 
   const fetchAnnouncement = (signal?: AbortSignal) =>
-    fetch("/api/announcement", { signal })
+    fetch(`/api/announcement?faculty=${normalizeFaculty(session?.user?.faculty)}`, { signal })
       .then((r) => r.json())
       .then((d) => { setAnnouncement(d && typeof d.body === "string" ? d : null); })
       .catch(() => {});

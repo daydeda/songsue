@@ -1361,6 +1361,18 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS idx_users_faculty ON users (faculty)`;
   console.log("  ✅ idx_users_faculty");
 
+  // 86. announcements.faculty — the dashboard "ประกาศสำคัญ | Important
+  // Announcement" banner is now per-faculty (CAMT/MASSCOM/ARCH/ARTS) instead
+  // of one global singleton, matching the per-faculty admin scoping model
+  // (see src/lib/faculty-scope.ts). Existing row(s) backfilled to CAMT so that
+  // faculty's banner is unchanged after this deploy; the other 3 faculties
+  // start with no row (banner hidden) until their own scoped admin writes one.
+  await sql`ALTER TABLE announcements ADD COLUMN IF NOT EXISTS faculty text`;
+  await sql`UPDATE announcements SET faculty = 'CAMT' WHERE faculty IS NULL`;
+  await sql`ALTER TABLE announcements ALTER COLUMN faculty SET NOT NULL`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_announcements_faculty ON announcements (faculty)`;
+  console.log("  ✅ announcements.faculty (per-faculty announcements)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

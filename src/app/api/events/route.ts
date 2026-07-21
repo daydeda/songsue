@@ -7,6 +7,7 @@ import { unstable_cache } from "next/cache";
 import { getFormAvailability } from "@/lib/form-access";
 import { buildViewer, isEligibleFor, isEligibleForGuest } from "@/lib/event-access";
 import { ClubsService } from "@/modules/clubs/clubs.service";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // Fail fast instead of hanging to the 300s platform default if the DB pooler stalls.
 export const maxDuration = 20;
@@ -86,11 +87,19 @@ export async function GET() {
 
     const userRoles = session.user.roles || [session.user.role || "student"];
 
-    // Major used for major-based access control (not on the session token).
+    // Major/faculty used for major- and faculty-based access control (not on
+    // the session token).
     const me = await db.query.users.findFirst({
       where: eq(users.id, session.user.id!),
-      columns: { major: true },
+      columns: { major: true, faculty: true },
     });
+
+    // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin
+    // student/staff viewer only sees events in their own faculty — this is
+    // what keeps a CAMT student from seeing MASSCOM/ARCH/ARTS events (and
+    // vice versa). An account with no faculty assigned yet sees only events
+    // it's already registered/checked into (see the bypass below).
+    const facultyScope = resolveFacultyViewScope(userRoles, me?.faculty);
 
     // Club memberships (any role) — powers the allowedClubs eligibility check below.
     const clubIds = await ClubsService.getMemberClubIds(session.user.id!);
@@ -119,8 +128,10 @@ export async function GET() {
 
     const eligibleEvents = allEvents.filter((event) => {
       // Always surface an event the student is registered for / checked into,
-      // regardless of the eligibility rules below.
+      // regardless of the eligibility rules below (mirrors staff manually
+      // walking someone into an out-of-faculty event via the scanner).
       if (attendanceMap.has(event.id)) return true;
+      if (!matchesFacultyScope(event.faculty, facultyScope)) return false;
       return isEligibleFor(event, viewer);
     });
 

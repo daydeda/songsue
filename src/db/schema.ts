@@ -197,6 +197,16 @@ export const verificationTokens = pgTable(
 
 export const events = pgTable("events", {
   id: uuid("id").defaultRandom().primaryKey(),
+  // Which faculty this event belongs to — set automatically from the creator's
+  // own users.faculty at creation time (see resolveWriteFaculty in
+  // src/lib/faculty-scope.ts); only a super_admin may explicitly pick a
+  // different one. null is treated as CAMT (mirrors users.faculty's null->CAMT
+  // convention via normalizeFaculty) — every event created before this rollout
+  // stays CAMT-visible after this change. Drives per-faculty event-list scoping
+  // (see src/lib/faculty-scope.ts) — an axis fully independent from
+  // allowedMajors/allowedRoles/allowedClubs, which gate participant eligibility
+  // WITHIN a faculty a viewer can already see, not across faculties.
+  faculty: text("faculty"),
   title: text("title").notNull(),
   description: text("description"),
   startTime: timestamp("start_time", { withTimezone: true }).notNull(),
@@ -321,6 +331,7 @@ export const events = pgTable("events", {
   uniqueIndex("events_external_source_id_unique")
     .on(table.externalSource, table.externalId)
     .where(sql`${table.externalId} IS NOT NULL`),
+  index("idx_events_faculty").on(table.faculty),
 ]));
 
 // A session is one occurrence of an event — typically a day (CAMT LINK Day 1 /

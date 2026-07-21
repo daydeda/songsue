@@ -1425,6 +1425,20 @@ async function migrate() {
   await sql`UPDATE houses SET color = '#3b82f6' WHERE color_group = 'blue' AND color IS DISTINCT FROM '#3b82f6'`;
   console.log("  ✅ fixed houses.color to match color_group (yellow=yellow, green=green, blue=blue)");
 
+  // 90. events.faculty — per-faculty event scoping, mirroring the users.faculty /
+  // announcements.faculty pattern (see src/lib/faculty-scope.ts). Set automatically
+  // from the creator's own users.faculty at creation time (only a super_admin may
+  // pick a different one). Unlike step 86's announcements.faculty, this is a
+  // NULLABLE column with NO backfill: null is deliberately treated as CAMT (mirrors
+  // users.faculty's null->CAMT convention via normalizeFaculty), so every event
+  // created before this rollout keeps reading as CAMT-visible with no data write
+  // needed. Fully independent from allowedMajors/allowedRoles/allowedClubs, which
+  // gate participant eligibility WITHIN a faculty a viewer can already see, not
+  // across faculties. Additive/idempotent/non-destructive.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS faculty text`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_events_faculty ON events (faculty)`;
+  console.log("  ✅ events.faculty (per-faculty event scoping)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { getFormAvailability } from "@/lib/form-access";
 import { isFirstYearStudent } from "@/lib/event-access";
 import { ClubsService } from "@/modules/clubs/clubs.service";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // POST /api/events/[id]/register — One-click registration (FE-05)
 export async function POST(
@@ -27,7 +28,7 @@ export async function POST(
     // can be stale (auth.ts only eagerly refreshes while profileCompleted is false).
     const profile = await db.query.users.findFirst({
       where: eq(users.id, userId),
-      columns: { profileCompleted: true, major: true, registrationBlocked: true, noShowCount: true, previewAccess: true },
+      columns: { profileCompleted: true, major: true, faculty: true, registrationBlocked: true, noShowCount: true, previewAccess: true },
     });
     if (!profile?.profileCompleted) {
       return NextResponse.json(
@@ -120,6 +121,19 @@ export async function POST(
       const myClubIds = await ClubsService.getMemberClubIds(userId);
       const inAllowedClub = myClubIds.some((id) => allowedClubs.includes(id));
       if (!inAllowedClub) {
+        return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
+      }
+    }
+
+    // Faculty scoping (mirrors the event-list filter — see
+    // src/lib/faculty-scope.ts). Unlike the role/major/club checks above,
+    // only super_admin bypasses this (admin/registration/organizer do NOT —
+    // they're scoped to their own faculty everywhere else too). A site-wide
+    // preview tester still bypasses it, same rationale as above.
+    if (!profile.previewAccess) {
+      const myRoles = session.user.roles?.length ? session.user.roles : [userRole];
+      const facultyScope = resolveFacultyViewScope(myRoles, profile.faculty);
+      if (!matchesFacultyScope(event.faculty, facultyScope)) {
         return NextResponse.json({ error: "You are not eligible to register for this event" }, { status: 403 });
       }
     }

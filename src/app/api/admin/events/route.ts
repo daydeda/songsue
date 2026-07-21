@@ -4,6 +4,7 @@ import { events, attendance, eventSessions, eventProposals } from "@/db/schema";
 import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { EventScopeService } from "@/modules/events/event-scope.service";
+import { resolveFacultyViewScope, resolveWriteFaculty, matchesFacultyScope } from "@/lib/faculty-scope";
 import { and, eq, sql } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
@@ -55,6 +56,10 @@ const eventSchema = z.object({
   // role-based fields above) — exempts their attendance from quota counts and
   // no-show strikes. See events.staffUserIds in schema.ts.
   staffUserIds: z.array(z.string()).optional().nullable(),
+  // Only meaningful for a super_admin (global scope) picking which faculty this
+  // event belongs to — a faculty-scoped creator's own faculty is always forced
+  // server-side, ignoring this field (see resolveWriteFaculty).
+  faculty: z.string().optional().nullable(),
   // Present when this event is being created FROM a club_president's proposal
   // (see /api/admin/event-proposals). Purely a linkage marker — staff still
   // fills in every field above explicitly; this just flips the source proposal
@@ -114,6 +119,19 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin viewer
+    // only sees events in their own faculty — this is what keeps a CAMT
+    // admin/registration staffer from being confused by MASSCOM/ARCH/ARTS
+    // events (and vice versa). An actor with no faculty assigned yet sees
+    // nothing, rather than defaulting to CAMT.
+    const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!facultyScope.global && facultyScope.faculty === null) {
+      return NextResponse.json(
+        { error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
+    }
+
     // Event scoping for president roles: club_president / major_president see ONLY
     // events they own (ownerClubIds/ownerMajors match their own club membership /
     // major — see EventScopeService), not merely events tagged with the generic
@@ -170,9 +188,15 @@ export async function GET() {
       sessions: sessionsByEvent.get(e.id) ?? [],
     }));
 
+    // Faculty scope applies first (a hard partition super_admin alone bypasses),
+    // then the existing president-ownership scope narrows further within it.
+    const facultyScoped = facultyScope.global
+      ? eventsWithCount
+      : eventsWithCount.filter((e) => matchesFacultyScope(e.faculty, facultyScope));
+
     const scoped = presidentScope
-      ? EventScopeService.filterEventsByScope(eventsWithCount, presidentScope)
-      : eventsWithCount;
+      ? EventScopeService.filterEventsByScope(facultyScoped, presidentScope)
+      : facultyScoped;
 
     return NextResponse.json(scoped);
   } catch (error) {
@@ -203,6 +227,18 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const data = eventSchema.parse(body);
 
+    // Faculty this event belongs to (see src/lib/faculty-scope.ts): a
+    // faculty-scoped creator's own faculty always wins; only a super_admin's
+    // explicit `faculty` in the body is honored. null means the creator has no
+    // faculty assigned yet — reject rather than silently defaulting to CAMT.
+    const targetFaculty = resolveWriteFaculty(myRoles, session.user.faculty, data.faculty ?? null);
+    if (!targetFaculty) {
+      return NextResponse.json(
+        { error: "No faculty assigned to your account yet. Ask a super admin to assign one." },
+        { status: 403 },
+      );
+    }
+
     // Normalize posters: drop blanks, dedupe-free order preserved. The cover
     // (imageUrl) always mirrors imageUrls[0] so single-image consumers keep working.
     const posters = (data.imageUrls ?? (data.imageUrl ? [data.imageUrl] : []))
@@ -221,6 +257,7 @@ export async function POST(req: Request) {
       const [created] = await tx
         .insert(events)
         .values({
+          faculty: targetFaculty,
           title: data.title,
           description: data.description,
           startTime: new Date(data.startTime),

@@ -10,6 +10,7 @@ import { deductIndividualPoints } from "@/lib/award-individual-points";
 import { APPLY_STRIKES_ROLES, NO_SHOW_PENALTY_MAX, NO_SHOW_PENALTY_MIN, NO_SHOW_PENALTY_POINTS, NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
 import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
 import { EventScopeService } from "@/modules/events/event-scope.service";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // Students holding a 'registered' attendance row for this event with NO
 // 'attended' row anywhere in the event — i.e. they signed up and never checked
@@ -53,7 +54,7 @@ async function loadEventAndGate(eventId: string, session: Session | null) {
 
   const event = await db.query.events.findFirst({
     where: eq(events.id, eventId),
-    columns: { id: true, title: true, endTime: true, ownerClubIds: true, ownerMajors: true },
+    columns: { id: true, title: true, endTime: true, ownerClubIds: true, ownerMajors: true, faculty: true },
   });
   if (!event) {
     return { error: NextResponse.json({ error: "Event not found" }, { status: 404 }) };
@@ -71,6 +72,19 @@ async function loadEventAndGate(eventId: string, session: Session | null) {
   const presidentTags = myRoles.filter((r) => ["club_president", "major_president"].includes(r));
   const isUnscopedStaff = myRoles.some((r) => ["super_admin", "admin", "organizer", "registration"].includes(r))
     || isGlobalRegistrationPosition(myRoles, smoPosition, anusmoPosition);
+
+  // Faculty scoping on the EVENT itself (see src/lib/faculty-scope.ts) — only
+  // applies to the unscoped-STAFF path above; a president/position-scoped
+  // actor is already gated by club/major OWNERSHIP right below, an axis clubs
+  // don't carry a faculty for (a club's president can genuinely be in a
+  // different faculty than whoever staff-created the event).
+  if (isUnscopedStaff) {
+    const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!matchesFacultyScope(event.faculty, facultyScope)) {
+      return { error: NextResponse.json({ error: "Event not found" }, { status: 404 }) };
+    }
+  }
+
   if (!isUnscopedStaff) {
     const access = await EventScopeService.resolveEventAccess({
       userId: session.user.id!, roles: myRoles, smoPosition, anusmoPosition, isUnscopedStaff: false, hasPresidentTag: presidentTags.length > 0,

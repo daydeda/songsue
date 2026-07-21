@@ -7,7 +7,7 @@
 
 import { and, eq, isNull, or, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import { type FacultyId, isFacultyId, normalizeFaculty } from "@/lib/faculties";
+import { DEFAULT_FACULTY, type FacultyId, isFacultyId, normalizeFaculty } from "@/lib/faculties";
 
 // True iff a row's role(s) are nothing but "student" (or absent) — i.e. the
 // null->CAMT default below is safe to apply. A brand-new staff/leadership
@@ -65,6 +65,31 @@ export function facultyRowCondition(column: AnyPgColumn, faculty: FacultyId, rol
     ? and(isNull(column), or(isNull(roleColumn), eq(roleColumn, "student")))!
     : isNull(column);
   return or(eq(column, faculty), nullFacultyMatch)!;
+}
+
+/**
+ * Resolves which faculty a NEW row (event, announcement, ...) should be
+ * tagged with when an actor creates it. A scoped (non-super_admin) actor's
+ * own faculty always wins, regardless of what the client sent — otherwise a
+ * faculty-scoped staffer could smuggle a foreign faculty into a hand-crafted
+ * request body. `requestedFaculty` is only honored for a global (super_admin)
+ * actor, who has no single faculty of their own and must pick one explicitly
+ * (defaults to DEFAULT_FACULTY if they didn't). Returns null if the actor may
+ * not create anything yet (unassigned staff account, or an invalid faculty
+ * requested by a super_admin) — callers must reject the request in that case,
+ * mirroring resolveFacultyViewScope's { faculty: null } deny-safe convention.
+ */
+export function resolveWriteFaculty(
+  roles: string[],
+  rawFaculty: unknown,
+  requestedFaculty: string | null | undefined,
+): FacultyId | null {
+  const scope = resolveFacultyViewScope(roles, rawFaculty);
+  if (scope.global) {
+    if (requestedFaculty == null) return DEFAULT_FACULTY;
+    return isFacultyId(requestedFaculty) ? requestedFaculty : null;
+  }
+  return scope.faculty;
 }
 
 /**

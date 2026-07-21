@@ -18,9 +18,14 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { usePolling } from "@/lib/usePolling";
 import { EventFormBuilderModal } from "@/components/admin/EventFormBuilderModal";
 import { isGlobalRegistrationPosition } from "@/lib/admin-access";
+import { FACULTIES, DEFAULT_FACULTY, facultyAccentColor } from "@/lib/faculties";
 
 interface AdminEvent {
   id: string;
+  // Which faculty this event belongs to — null on legacy events (treated as
+  // CAMT, see src/lib/faculty-scope.ts). Set automatically at creation from
+  // the creator's own faculty; only a super_admin may pick a different one.
+  faculty?: string | null;
   title: string;
   description: string | null;
   location: string | null;
@@ -271,24 +276,16 @@ const ROLE_LABELS: Record<ParticipantRole, string> = {
   major_president: "Major President",
 };
 
-// Student majors that an event's registration can be restricted to. Includes
-// postgraduate majors (KIM, DTM) added for Master's/Ph.D. targeting.
-const ALL_MAJORS = ["ANI", "DG", "DII", "MMIT", "SE", "KIM", "DTM"] as const;
 // KIM (Master's) and DTM (Ph.D.) are the postgraduate majors — used to power
 // the separate "Master's Degree" and "Ph.D Degree" attendance roster filters.
 const MASTER_MAJORS: string[] = ["KIM"];
 const PHD_MAJORS: string[] = ["DTM"];
-const MAJOR_LABELS: Record<string, string> = {
-  ANI: "ANI - Animation & Visual Effects",
-  DG: "DG - Digital Game",
-  DII: "DII - Digital Industry Integration",
-  MMIT: "MMIT - Modern Management & IT",
-  SE: "SE - Software Engineering",
-  KIM: "KIM",
-  DTM: "DTM",
-};
 
 const EMPTY_FORM = {
+  // Only meaningful for a super_admin (global scope) picking which faculty a
+  // new event belongs to — a faculty-scoped creator's own faculty is always
+  // forced server-side, ignoring this field. See src/lib/faculty-scope.ts.
+  faculty: DEFAULT_FACULTY as string,
   title: "",
   description: "",
   location: "",
@@ -1186,9 +1183,10 @@ export default function AdminEventsPage() {
       targetInternational: eff("targetInternational", evt.targetInternational) !== false,
       quotaThai: eff("quotaThai", evt.quotaThai) || null,
       quotaInternational: eff("quotaInternational", evt.quotaInternational) || null,
-      // Role/access/points/Managed By/staff are staff-only — always from the
-      // live event, never from a president's pending payload (it can never
-      // contain them, see PRESIDENT_EDITABLE_FIELDS server-side).
+      // Role/access/points/Managed By/staff/faculty are staff-only — always
+      // from the live event, never from a president's pending payload (it can
+      // never contain them, see PRESIDENT_EDITABLE_FIELDS server-side).
+      faculty: evt.faculty || DEFAULT_FACULTY,
       allowedRoles: evt.allowedRoles || [],
       allowedMajors: evt.allowedMajors || [],
       allowedClubs: evt.allowedClubs || [],
@@ -2922,505 +2920,70 @@ export default function AdminEventsPage() {
               {/* Right Column: Poster & Description */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-                {/* Role Access Control — admin/registration/organizer only */}
-                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
-                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} style={{ color: "var(--accent-primary)" }} />
-                    {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามบทบาท)" : "Role-Based Access Control"}
-                  </label>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
-                    {lang === "th"
-                      ? "เลือกบทบาทที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกบทบาท"
-                      : "Select which roles can see & join this event. Leave all unchecked = visible to everyone."}
-                  </p>
-                  {!canEditRestrictedFields && (
-                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
-                  )}
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    {ALL_PARTICIPANT_ROLES.map((role) => {
-                      const isSelected = formData.allowedRoles.includes(role);
-                      const roleColors: Record<string, { bg: string; border: string; text: string; badge: string }> = {
-                        student: {
-                          bg: isSelected ? "rgba(99,102,241,0.12)" : "var(--bg-elevated)",
-                          border: isSelected ? "rgba(99,102,241,0.5)" : "transparent",
-                          text: isSelected ? "#6366f1" : "var(--text-secondary)",
-                          badge: "#6366f1",
-                        },
-                        staff: {
-                          bg: isSelected ? "rgba(20,184,166,0.12)" : "var(--bg-elevated)",
-                          border: isSelected ? "rgba(20,184,166,0.5)" : "transparent",
-                          text: isSelected ? "#14b8a6" : "var(--text-secondary)",
-                          badge: "#14b8a6",
-                        },
-                        smo: {
-                          bg: isSelected ? "rgba(139,92,246,0.12)" : "var(--bg-elevated)",
-                          border: isSelected ? "rgba(139,92,246,0.5)" : "transparent",
-                          text: isSelected ? "#8b5cf6" : "var(--text-secondary)",
-                          badge: "#8b5cf6",
-                        },
-                        anusmo: {
-                          bg: isSelected ? "rgba(236,72,153,0.12)" : "var(--bg-elevated)",
-                          border: isSelected ? "rgba(236,72,153,0.5)" : "transparent",
-                          text: isSelected ? "#ec4899" : "var(--text-secondary)",
-                          badge: "#ec4899",
-                        },
-                        club_president: {
-                          bg: isSelected ? "rgba(245,158,11,0.12)" : "var(--bg-elevated)",
-                          border: isSelected ? "rgba(245,158,11,0.5)" : "transparent",
-                          text: isSelected ? "#f59e0b" : "var(--text-secondary)",
-                          badge: "#f59e0b",
-                        },
-                        major_president: {
-                          bg: isSelected ? "rgba(6,182,212,0.12)" : "var(--bg-elevated)",
-                          border: isSelected ? "rgba(6,182,212,0.5)" : "transparent",
-                          text: isSelected ? "#06b6d4" : "var(--text-secondary)",
-                          badge: "#06b6d4",
-                        },
-                      };
-                      const c = roleColors[role];
-                      return (
-                        <div
-                          key={role}
-                          onClick={() => {
-                            const current = formData.allowedRoles;
-                            const next = current.includes(role)
-                              ? current.filter((r) => r !== role)
-                              : [...current, role];
-                            setFormData({ ...formData, allowedRoles: next });
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            padding: "10px 16px",
-                            borderRadius: 14,
-                            background: c.bg,
-                            border: `1px solid ${c.border}`,
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                            minWidth: 100,
-                          }}
-                        >
-                          <div style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 6,
-                            background: isSelected ? c.badge : "transparent",
-                            border: `2px solid ${isSelected ? c.badge : "var(--border-medium)"}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                            transition: "all 0.15s",
-                          }}>
-                            {isSelected && <CheckCircle2 size={13} color="white" />}
-                          </div>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: c.text }}>
-                            {ROLE_LABELS[role as ParticipantRole]}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Summary tag */}
-                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 12px",
-                      borderRadius: 99,
-                      fontSize: 11,
-                      fontWeight: 800,
-                      background: formData.allowedRoles.length === 0
-                        ? "rgba(16,185,129,0.1)"
-                        : "rgba(99,102,241,0.1)",
-                      color: formData.allowedRoles.length === 0 ? "#10b981" : "#6366f1",
-                      border: `1px solid ${formData.allowedRoles.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(99,102,241,0.2)"}`,
-                    }}>
-                      {formData.allowedRoles.length === 0
-                        ? (lang === "th" ? "✓ เปิดให้ทุกบทบาท" : "✓ Open to all roles")
-                        : `✓ ${lang === "th" ? "จำกัดเฉพาะ: " : "Restricted to: "}${formData.allowedRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Major Access Control — limits which student majors may join.
-                    Combined with the role filter as AND. Empty = all majors.
-                    admin/registration/organizer only. */}
-                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
-                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} style={{ color: "var(--accent-primary)" }} />
-                    {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามสาขา)" : "Major-Based Access Control"}
-                  </label>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
-                    {lang === "th"
-                      ? "เลือกสาขาที่อนุญาตให้เข้าร่วมกิจกรรมนี้ หากไม่เลือก = ทุกสาขา"
-                      : "Select which majors can see & join this event. Leave all unchecked = open to every major."}
-                  </p>
-                  {!canEditRestrictedFields && (
-                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
-                  )}
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    {ALL_MAJORS.map((major) => {
-                      const isSelected = formData.allowedMajors.includes(major);
-                      return (
-                        <div
-                          key={major}
-                          onClick={() => {
-                            const current = formData.allowedMajors;
-                            const next = current.includes(major)
-                              ? current.filter((m) => m !== major)
-                              : [...current, major];
-                            setFormData({ ...formData, allowedMajors: next });
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            padding: "10px 16px",
-                            borderRadius: 14,
-                            background: isSelected ? "rgba(0,0,0,0.12)" : "var(--bg-elevated)",
-                            border: `1px solid ${isSelected ? "rgba(0,0,0,0.5)" : "transparent"}`,
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                            minWidth: 80,
-                          }}
-                        >
-                          <div style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 6,
-                            background: isSelected ? "var(--accent-primary)" : "transparent",
-                            border: `2px solid ${isSelected ? "var(--accent-primary)" : "var(--border-medium)"}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                            transition: "all 0.15s",
-                          }}>
-                            {isSelected && <CheckCircle2 size={13} color="white" />}
-                          </div>
-                          <span
-                            title={MAJOR_LABELS[major]}
-                            style={{ fontSize: 13, fontWeight: 800, color: isSelected ? "var(--accent-primary)" : "var(--text-secondary)" }}
-                          >
-                            {major}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Summary tag */}
-                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 12px",
-                      borderRadius: 99,
-                      fontSize: 11,
-                      fontWeight: 800,
-                      background: formData.allowedMajors.length === 0
-                        ? "rgba(16,185,129,0.1)"
-                        : "rgba(0,0,0,0.1)",
-                      color: formData.allowedMajors.length === 0 ? "#10b981" : "var(--accent-primary)",
-                      border: `1px solid ${formData.allowedMajors.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(0,0,0,0.2)"}`,
-                    }}>
-                      {formData.allowedMajors.length === 0
-                        ? (lang === "th" ? "✓ เปิดให้ทุกสาขา" : "✓ Open to all majors")
-                        : `✓ ${lang === "th" ? "จำกัดเฉพาะ: " : "Restricted to: "}${formData.allowedMajors.join(", ")}`}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Club Access Control — limits registration to member(s) of specific
-                    club(s) (any club_members role — member or president). Combined
-                    with the role/major filters as AND. Empty = no club restriction.
-                    admin/registration/organizer only. SEPARATE from "Owning club(s)"
-                    below, which controls who MANAGES the event, not who may join. */}
-                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
-                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Building2 size={16} style={{ color: "var(--accent-primary)" }} />
-                    {lang === "th" ? "สิทธิ์การเข้าร่วม (ตามชมรม)" : "Club-Based Access Control"}
-                  </label>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
-                    {lang === "th"
-                      ? "จำกัดให้เฉพาะสมาชิกชมรมที่เลือกเท่านั้นที่เห็น/เข้าร่วมกิจกรรมนี้ได้ หากไม่เลือก = ไม่จำกัดตามชมรม"
-                      : "Restrict this event to members of the selected club(s) (add members under Admin > Clubs). Leave unchecked = no club restriction."}
-                  </p>
-                  {!canEditRestrictedFields && (
-                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
-                  )}
-                  {clubs.filter((c) => !c.isArchived).length === 0 ? (
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
-                      {lang === "th" ? "ยังไม่มีชมรม — สร้างได้ที่ Admin > Clubs" : "No clubs yet — create one under Admin > Clubs."}
+                {/* Faculty — which faculty this event belongs to (see
+                    src/lib/faculty-scope.ts). A faculty-scoped creator's own
+                    faculty is always forced server-side; only super_admin
+                    (global scope) sees this picker at all. Everyone else's
+                    events are auto-tagged with their own faculty. */}
+                {myRoles.includes("super_admin") && (
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Building2 size={16} style={{ color: "var(--accent-primary)" }} />
+                      {lang === "th" ? "คณะ" : "Faculty"}
+                    </label>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
+                      {lang === "th"
+                        ? "คณะที่กิจกรรมนี้เป็นของ — ควบคุมว่าใครเห็นกิจกรรมนี้บ้าง (ทีมงาน/นักศึกษาคณะอื่นจะไม่เห็น)"
+                        : "Which faculty this event belongs to — controls who can see it (staff/students of other faculties won't)."}
                     </p>
-                  ) : (
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      {clubs.filter((c) => !c.isArchived).map((club) => {
-                        const isSelected = formData.allowedClubs.includes(club.id);
+                      {FACULTIES.map((f) => {
+                        const isSelected = formData.faculty === f.id;
                         return (
                           <div
-                            key={club.id}
-                            onClick={() => {
-                              const current = formData.allowedClubs;
-                              const next = isSelected
-                                ? current.filter((id) => id !== club.id)
-                                : [...current, club.id];
-                              setFormData({ ...formData, allowedClubs: next });
-                            }}
+                            key={f.id}
+                            onClick={() => setFormData({ ...formData, faculty: f.id })}
                             style={{
                               display: "flex",
                               alignItems: "center",
                               gap: 10,
                               padding: "10px 16px",
                               borderRadius: 14,
-                              background: isSelected ? "rgba(139,92,246,0.12)" : "var(--bg-elevated)",
-                              border: `1px solid ${isSelected ? "rgba(139,92,246,0.5)" : "transparent"}`,
+                              background: isSelected ? "rgba(99,102,241,0.12)" : "var(--bg-elevated)",
+                              border: `1px solid ${isSelected ? "rgba(99,102,241,0.5)" : "transparent"}`,
                               cursor: "pointer",
                               transition: "all 0.2s",
-                              minWidth: 80,
+                              minWidth: 100,
                             }}
                           >
                             <div style={{
                               width: 20,
                               height: 20,
                               borderRadius: 6,
-                              background: isSelected ? "#8b5cf6" : "transparent",
-                              border: `2px solid ${isSelected ? "#8b5cf6" : "var(--border-medium)"}`,
+                              background: isSelected ? "#6366f1" : "transparent",
+                              border: `2px solid ${isSelected ? "#6366f1" : "var(--border-medium)"}`,
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
                               flexShrink: 0,
-                              transition: "all 0.15s",
                             }}>
                               {isSelected && <CheckCircle2 size={13} color="white" />}
                             </div>
-                            <span style={{ fontSize: 13, fontWeight: 800, color: isSelected ? "#8b5cf6" : "var(--text-secondary)" }}>
-                              {club.name}
+                            <span style={{ fontSize: 13, fontWeight: 800, color: isSelected ? "#6366f1" : "var(--text-secondary)" }}>
+                              {f.name}
                             </span>
                           </div>
                         );
                       })}
                     </div>
-                  )}
-                  {/* Summary tag */}
-                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 12px",
-                      borderRadius: 99,
-                      fontSize: 11,
-                      fontWeight: 800,
-                      background: formData.allowedClubs.length === 0
-                        ? "rgba(16,185,129,0.1)"
-                        : "rgba(139,92,246,0.1)",
-                      color: formData.allowedClubs.length === 0 ? "#10b981" : "#8b5cf6",
-                      border: `1px solid ${formData.allowedClubs.length === 0 ? "rgba(16,185,129,0.2)" : "rgba(139,92,246,0.2)"}`,
-                    }}>
-                      {formData.allowedClubs.length === 0
-                        ? (lang === "th" ? "✓ ไม่จำกัดตามชมรม" : "✓ No club restriction")
-                        : `✓ ${lang === "th" ? "จำกัดเฉพาะสมาชิก: " : "Restricted to members of: "}${clubs.filter((c) => formData.allowedClubs.includes(c.id)).map((c) => c.name).join(", ")}`}
-                    </div>
                   </div>
-                </div>
-
-                {/* Managed By — which president role(s) MANAGE this event (see it in
-                    their admin list, view attendance, scan, export). Independent of
-                    the role/major access above, which only controls who can JOIN.
-                    admin/registration/organizer only — a president must never be
-                    able to reassign who manages/owns their own event. */}
-                <div className="field" style={{ marginBottom: 0, opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
-                  <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <ShieldCheck size={16} style={{ color: "var(--accent-primary)" }} />
-                    {lang === "th" ? "ผู้ดูแลกิจกรรม (ประธาน)" : "Managed By (President)"}
-                  </label>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, fontWeight: 600 }}>
-                    {lang === "th"
-                      ? "เลือกประธานที่ดูแลกิจกรรมนี้ (เห็นในรายการ ดูการเช็คอิน สแกน ส่งออก) — ไม่กระทบสิทธิ์การเข้าร่วมของนักศึกษา"
-                      : "Choose which president(s) manage this event (view it, see attendance, scan, export). Does NOT affect which students can join."}
-                  </p>
-                  {!canEditRestrictedFields && (
-                    <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 10 }}>{t.eventStaffOnlyFieldHint}</p>
-                  )}
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    {(["club_president", "major_president"] as const).map((role) => {
-                      const isSelected = formData.managedByRoles.includes(role);
-                      const accent = role === "club_president" ? "#f59e0b" : "#06b6d4";
-                      return (
-                        <div
-                          key={role}
-                          onClick={() => {
-                            const current = formData.managedByRoles;
-                            const next = current.includes(role)
-                              ? current.filter((r) => r !== role)
-                              : [...current, role];
-                            setFormData({ ...formData, managedByRoles: next });
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            padding: "10px 16px",
-                            borderRadius: 14,
-                            background: isSelected ? `${accent}1f` : "var(--bg-elevated)",
-                            border: `1px solid ${isSelected ? `${accent}80` : "transparent"}`,
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                            minWidth: 100,
-                          }}
-                        >
-                          <div style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 6,
-                            background: isSelected ? accent : "transparent",
-                            border: `2px solid ${isSelected ? accent : "var(--border-medium)"}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                            transition: "all 0.15s",
-                          }}>
-                            {isSelected && <CheckCircle2 size={13} color="white" />}
-                          </div>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: isSelected ? accent : "var(--text-secondary)" }}>
-                            {ROLE_LABELS[role as ParticipantRole]}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Summary tag */}
-                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 12px",
-                      borderRadius: 99,
-                      fontSize: 11,
-                      fontWeight: 800,
-                      background: formData.managedByRoles.length === 0
-                        ? "rgba(148,163,184,0.12)"
-                        : "rgba(99,102,241,0.1)",
-                      color: formData.managedByRoles.length === 0 ? "var(--text-muted)" : "#6366f1",
-                      border: `1px solid ${formData.managedByRoles.length === 0 ? "var(--border-subtle)" : "rgba(99,102,241,0.2)"}`,
-                    }}>
-                      {formData.managedByRoles.length === 0
-                        ? (lang === "th" ? "จัดการโดยทีมงานเท่านั้น" : "Staff-managed only")
-                        : `✓ ${lang === "th" ? "ดูแลโดย: " : "Managed by: "}${formData.managedByRoles.map(r => ROLE_LABELS[r as ParticipantRole] || r).join(", ")}`}
-                    </div>
-                  </div>
-
-                  {/* Owner club(s)/major(s) — WHICH club_president/major_president may
-                      actually manage this event (see EventScopeService). Without an
-                      owner assigned here, the event stays hidden from every president
-                      even though managedByRoles marks it as president-managed. */}
-                  {formData.managedByRoles.includes("club_president") && (
-                    <div style={{ marginTop: 14 }}>
-                      <label className="label" style={{ fontSize: 12 }}>
-                        {lang === "th" ? "ชมรมที่เป็นเจ้าของกิจกรรม" : "Owning club(s)"}
-                      </label>
-                      {clubs.filter((c) => !c.isArchived).length === 0 ? (
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
-                          {lang === "th" ? "ยังไม่มีชมรม — สร้างได้ที่ Admin > Clubs" : "No clubs yet — create one under Admin > Clubs."}
-                        </p>
-                      ) : (
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                          {clubs.filter((c) => !c.isArchived).map((club) => {
-                            const isSelected = formData.ownerClubIds.includes(club.id);
-                            return (
-                              <div
-                                key={club.id}
-                                onClick={() => {
-                                  const current = formData.ownerClubIds;
-                                  const next = isSelected
-                                    ? current.filter((id) => id !== club.id)
-                                    : [...current, club.id];
-                                  setFormData({ ...formData, ownerClubIds: next });
-                                }}
-                                style={{
-                                  padding: "6px 12px",
-                                  borderRadius: 10,
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                  background: isSelected ? "rgba(245,158,11,0.15)" : "var(--bg-elevated)",
-                                  color: isSelected ? "#f59e0b" : "var(--text-secondary)",
-                                  border: `1px solid ${isSelected ? "rgba(245,158,11,0.4)" : "var(--border-subtle)"}`,
-                                }}
-                              >
-                                {club.name}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {formData.ownerClubIds.length === 0 && (
-                        <p style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginTop: 6 }}>
-                          {lang === "th"
-                            ? "⚠ ยังไม่ได้กำหนดชมรม — จะไม่แสดงกับประธานชมรมคนใดจนกว่าจะเลือก"
-                            : "⚠ No club assigned yet — hidden from every club president until you pick one."}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {formData.managedByRoles.includes("major_president") && (
-                    <div style={{ marginTop: 14 }}>
-                      <label className="label" style={{ fontSize: 12 }}>
-                        {lang === "th" ? "สาขาที่เป็นเจ้าของกิจกรรม" : "Owning major(s)"}
-                      </label>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                        {ALL_MAJORS.map((major) => {
-                          const isSelected = formData.ownerMajors.includes(major);
-                          return (
-                            <div
-                              key={major}
-                              onClick={() => {
-                                const current = formData.ownerMajors;
-                                const next = isSelected
-                                  ? current.filter((m) => m !== major)
-                                  : [...current, major];
-                                setFormData({ ...formData, ownerMajors: next });
-                              }}
-                              style={{
-                                padding: "6px 12px",
-                                borderRadius: 10,
-                                fontSize: 12,
-                                fontWeight: 700,
-                                cursor: "pointer",
-                                background: isSelected ? "rgba(6,182,212,0.15)" : "var(--bg-elevated)",
-                                color: isSelected ? "#06b6d4" : "var(--text-secondary)",
-                                border: `1px solid ${isSelected ? "rgba(6,182,212,0.4)" : "var(--border-subtle)"}`,
-                              }}
-                            >
-                              {major}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {formData.ownerMajors.length === 0 && (
-                        <p style={{ fontSize: 11, color: "#06b6d4", fontWeight: 700, marginTop: 6 }}>
-                          {lang === "th"
-                            ? "⚠ ยังไม่ได้กำหนดสาขา — จะไม่แสดงกับประธานสาขาคนใดจนกว่าจะเลือก"
-                            : "⚠ No major assigned yet — hidden from every major president until you pick one."}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
 
                 {/* Event Staff — specific PEOPLE (any role, including plain
-                    students) assigned to staff THIS event. Separate from
-                    Managed By above (which is role-based, president-only):
-                    this is a per-person list that exempts their own
-                    registration/check-in from the event's quota and no-show
-                    strikes (see events.staffUserIds in schema.ts). Staff-only
-                    field, like Managed By. */}
+                    students) assigned to staff THIS event. This is a
+                    per-person list that exempts their own registration/
+                    check-in from the event's quota and no-show strikes
+                    (see events.staffUserIds in schema.ts). Staff-only field. */}
                 <div className="field" style={{ opacity: canEditRestrictedFields ? 1 : 0.5, pointerEvents: canEditRestrictedFields ? "auto" : "none" }}>
                   <label className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <ShieldCheck size={16} style={{ color: "#6366f1" }} />
@@ -3661,12 +3224,16 @@ export default function AdminEventsPage() {
                         fontSize: 14,
                         lineHeight: 1.6,
                         overflowY: "auto",
+                        overflowX: "hidden",
                         color: "var(--text-primary)",
-                        border: "1px solid var(--border-subtle)"
+                        border: "1px solid var(--border-subtle)",
+                        maxWidth: "100%",
+                        overflowWrap: "anywhere",
+                        wordBreak: "break-word",
                       }}
                     >
                       <p style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.05em" }}>{lang === "th" ? "ตัวอย่างการแสดงผล" : "Live Preview"}</p>
-                      <div dangerouslySetInnerHTML={{ __html: parseRichText(formData.description) || `<span style="color: var(--text-muted); font-style: italic;">${lang === "th" ? "ยังไม่มีเนื้อหา..." : "No content yet..."}</span>` }} />
+                      <div style={{ overflowWrap: "anywhere", wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: parseRichText(formData.description) || `<span style="color: var(--text-muted); font-style: italic;">${lang === "th" ? "ยังไม่มีเนื้อหา..." : "No content yet..."}</span>` }} />
                     </div>
                   </div>
                 </div>
@@ -3856,6 +3423,32 @@ export default function AdminEventsPage() {
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {t.firstYearBadge}
                           </span>
+                        </div>
+                      )}
+                      {/* Faculty badge — super_admin only (a scoped viewer only
+                          ever sees their own faculty's events anyway, so this
+                          would be redundant noise for them). Helps a
+                          global-scope super_admin tell events from different
+                          faculties apart at a glance. */}
+                      {myRoles.includes("super_admin") && (
+                        <div className="event-card-tag" style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          maxWidth: "100%",
+                          background: facultyAccentColor(evt.faculty),
+                          backdropFilter: "blur(6px)",
+                          color: "#fff",
+                          padding: "5px 10px",
+                          borderRadius: 99,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: "0.04em",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          textTransform: "uppercase",
+                        }}>
+                          <Building2 size={10} style={{ flexShrink: 0 }} />
+                          <span>{FACULTIES.find((f) => f.id === (evt.faculty || DEFAULT_FACULTY))?.name || evt.faculty}</span>
                         </div>
                       )}
                       {/* Managed-by badge — which president manages this event

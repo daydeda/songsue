@@ -169,6 +169,14 @@ async function seed() {
   // ============================================================================
   // 5. CREATE CROSS-FACULTY TEST EVENT WITH REGISTRATIONS
   // ============================================================================
+  // This event itself now belongs to CAMT (events.faculty — see
+  // src/lib/faculty-scope.ts): only a CAMT-scoped admin/registration staffer
+  // (or super_admin) can even open it at all — a MASSCOM/ARCH/ARTS admin gets
+  // "Event not found" on /api/admin/events/[id]/attendance|export|report. The
+  // REGISTRATIONS below still deliberately span all 4 faculties, so once a
+  // CAMT admin (or super_admin) IS let in, the roster itself still exercises
+  // the older, independent attendee-row faculty filter (only CAMT attendees
+  // show up for a CAMT-scoped admin; super_admin sees all 4).
   console.log("\n🎉 Creating cross-faculty test event...");
 
   // Event name and timing
@@ -188,6 +196,7 @@ async function seed() {
       .values({
         id: crypto.randomUUID(),
         title: eventTitle,
+        faculty: "CAMT",
         description: "Synthetic event for testing faculty-scoped admin visibility",
         startTime: eventStart,
         endTime: eventEnd,

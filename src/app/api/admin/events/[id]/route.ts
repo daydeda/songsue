@@ -8,6 +8,7 @@ import { AuditService, getClientIp } from "@/modules/audit/audit.service";
 import { sessionInputSchema, sessionsHaveInvalidSpan } from "@/lib/event-schema";
 import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { EventScopeService } from "@/modules/events/event-scope.service";
+import { resolveFacultyViewScope, resolveWriteFaculty, matchesFacultyScope } from "@/lib/faculty-scope";
 
 const eventUpdateSchema = z.object({
   title: z.string().min(1).optional(),
@@ -59,6 +60,11 @@ const eventUpdateSchema = z.object({
   // Staff-only: drop a pending president edit without applying it — live
   // fields stay exactly as they are. See events.pendingDetailsChanges.
   discardPendingDetails: z.boolean().optional(),
+  // Staff-only reassignment of which faculty this event belongs to — only a
+  // super_admin's value is honored (see resolveWriteFaculty); ignored for
+  // everyone else, and never reachable by a president (not in
+  // PRESIDENT_EDITABLE_FIELDS).
+  faculty: z.string().optional().nullable(),
 }).refine(
   // Only enforce when BOTH ends are supplied — this is a partial update.
   (d) => {
@@ -243,6 +249,20 @@ export async function PUT(
           throw new Error("EVENT_NOT_FOUND");
         }
 
+        // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin
+        // STAFF actor may only touch an event in their own faculty — treated
+        // as not-found rather than 401 so a cross-faculty event id doesn't
+        // even confirm existence. Deliberately skipped for a president: their
+        // access is governed by club/major OWNERSHIP (checked right below),
+        // an axis clubs don't carry a faculty for — a club's president can
+        // genuinely be in a different faculty than whoever staff-created the
+        // event, and gating on event.faculty here would wrongly lock them out
+        // of an event they legitimately manage.
+        const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+        if (isAdminRole && !matchesFacultyScope(current.faculty, facultyScope)) {
+          throw new Error("EVENT_NOT_FOUND");
+        }
+
         // A club/major president may edit their OWN event's details (title,
         // description, schedule, location, quota, etc.) — but the edit is
         // held as a pending proposal (events.pendingDetailsChanges) instead
@@ -386,10 +406,19 @@ export async function PUT(
           ? (current.staffUserIds ?? [])
           : [];
 
+        // Faculty reassignment — only a super_admin's requested value is
+        // honored (resolveWriteFaculty forces a scoped actor back to their
+        // own faculty, which is already current.faculty at this point, so
+        // this is a no-op for them).
+        const targetFaculty = data.faculty !== undefined
+          ? resolveWriteFaculty(myRoles, session.user.faculty, data.faculty)
+          : undefined;
+
         const [row] = await tx
           .update(events)
           .set({
             ...buildEventSetFields(effectiveData, effectivePosters, effectiveCover),
+            ...(targetFaculty && { faculty: targetFaculty }),
             // Staff-only approve/reopen toggle (never reached for president
             // actors) — approving sets the reviewer/timestamp; reopening
             // clears them, since they no longer describe the current state.
@@ -558,8 +587,9 @@ export async function DELETE(
 ) {
   try {
     const session = await auth();
+    const myRoles = effectiveRoles(session?.user?.role, session?.user?.roles);
     const isAdminRole = ["super_admin", "admin", "registration", "organizer"].includes(session?.user?.role || "")
-      || isGlobalRegistrationPosition(effectiveRoles(session?.user?.role, session?.user?.roles), session?.user?.smoPosition, session?.user?.anusmoPosition);
+      || isGlobalRegistrationPosition(myRoles, session?.user?.smoPosition, session?.user?.anusmoPosition);
     if (!session?.user || !isAdminRole) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -568,6 +598,21 @@ export async function DELETE(
 
     // Delete related records manually to avoid FK constraints if cascade isn't applied
     await db.transaction(async (tx) => {
+      // Faculty scoping (see src/lib/faculty-scope.ts): a non-super_admin actor
+      // may only delete an event in their own faculty — treated as not-found
+      // rather than 401 so a cross-faculty event id doesn't confirm existence.
+      const current = await tx.query.events.findFirst({
+        where: eq(events.id, id),
+        columns: { faculty: true },
+      });
+      if (!current) {
+        throw new Error("Event not found");
+      }
+      const facultyScope = resolveFacultyViewScope(myRoles, session.user!.faculty);
+      if (!matchesFacultyScope(current.faculty, facultyScope)) {
+        throw new Error("Event not found");
+      }
+
       // 1. Attendance
       const { attendance, scoreHistory } = await import("@/db/schema");
       await tx.delete(attendance).where(eq(attendance.eventId, id));

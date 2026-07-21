@@ -11,6 +11,7 @@ import { revertFormAward } from "@/lib/award-points";
 import { revalidateLeaderboards } from "@/lib/leaderboard-cache";
 import { effectiveRoles, isGlobalRegistrationPosition } from "@/lib/admin-access";
 import { EventScopeService } from "@/modules/events/event-scope.service";
+import { resolveFacultyViewScope, matchesFacultyScope } from "@/lib/faculty-scope";
 
 // Staff manage every event's forms, unscoped. club_president/major_president may
 // also fully manage forms (create/edit/delete/schedule/identity toggle), but only
@@ -48,6 +49,23 @@ async function gateEventForms(eventId: string, session: Session | null, write: b
   }
 
   if (isStaff || isViewOnly) {
+    // Faculty scoping on the EVENT itself (see src/lib/faculty-scope.ts) — a
+    // non-super_admin staff/smo(view-only) actor may only touch forms for an
+    // event in their own faculty. Deliberately not applied to the
+    // president/position-scoped branch below: their access is already
+    // governed by club/major OWNERSHIP, an axis clubs don't carry a faculty
+    // for (a club's president can genuinely be in a different faculty than
+    // whoever staff-created the event).
+    const facultyScope = resolveFacultyViewScope(myRoles, session.user.faculty);
+    if (!facultyScope.global) {
+      const ev = await db.query.events.findFirst({
+        where: eq(events.id, eventId),
+        columns: { faculty: true },
+      });
+      if (!ev || !matchesFacultyScope(ev.faculty, facultyScope)) {
+        return { error: NextResponse.json({ error: "Event not found" }, { status: 404 }), isStaff };
+      }
+    }
     return { error: null as NextResponse | null, isStaff };
   }
 

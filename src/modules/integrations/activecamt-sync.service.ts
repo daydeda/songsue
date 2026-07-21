@@ -153,6 +153,10 @@ export class ActiveCamtSyncService {
       const inserted = await tx
         .insert(events)
         .values({
+          // faculty deliberately omitted (stays null): ActiveCAMT only ever
+          // serves CAMT students, and null normalizes to CAMT everywhere
+          // (see src/lib/faculty-scope.ts) — exactly the right default for a
+          // mirrored event without needing to write it explicitly.
           title: payload.title,
           description: payload.description ?? null,
           startTime,

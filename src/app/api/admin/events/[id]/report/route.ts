@@ -41,7 +41,7 @@ export async function GET(
 
     const event = await db.query.events.findFirst({
       where: eq(events.id, eventId),
-      columns: { id: true, title: true, managedByRoles: true, ownerClubIds: true, ownerMajors: true },
+      columns: { id: true, title: true, managedByRoles: true, ownerClubIds: true, ownerMajors: true, faculty: true },
     });
     if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
@@ -69,6 +69,18 @@ export async function GET(
       if (!managed) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+    }
+
+    // Faculty scoping on the EVENT itself (see src/lib/faculty-scope.ts) — a
+    // non-super_admin STAFF (or bare smo) actor may only view a report for an
+    // event in their own faculty, independent of the attendee-row filtering
+    // applied below. Deliberately skipped for a president/position-scoped
+    // viewer: their access is already governed by club/major OWNERSHIP
+    // (checked above), an axis clubs don't carry a faculty for — gating on
+    // event.faculty here would wrongly lock them out of an event they
+    // legitimately manage in a different faculty than whoever staff-created it.
+    if (!facultyScope.global && !hasPresidentTag && !hasRegistrationScope && !matchesFacultyScope(event.faculty, facultyScope)) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
     // This report is reachable by scanner-only roles (smo) and registration/

@@ -101,9 +101,21 @@ export async function GET(
 
     const event = await db.query.events.findFirst({
       where: eq(events.id, eventId),
-      columns: { id: true, title: true, managedByRoles: true, ownerClubIds: true, ownerMajors: true },
+      columns: { id: true, title: true, managedByRoles: true, ownerClubIds: true, ownerMajors: true, faculty: true },
     });
     if (!event) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    // Faculty scoping on the EVENT itself (see src/lib/faculty-scope.ts) — a
+    // non-super_admin STAFF (or bare smo) actor may only export an event in
+    // their own faculty, independent of the attendee-row filtering applied to
+    // the roster below. Deliberately skipped for a president viewer: their
+    // access is already governed by club/major OWNERSHIP (checked right
+    // below), an axis clubs don't carry a faculty for — gating on
+    // event.faculty here would wrongly lock a president out of an event they
+    // legitimately manage in a different faculty than whoever staff-created it.
+    if (!facultyScope.global && !isPresidentRole && !matchesFacultyScope(event.faculty, facultyScope)) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 

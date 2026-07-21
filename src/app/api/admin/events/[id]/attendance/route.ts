@@ -112,6 +112,27 @@ export async function GET(
 
     const { id: eventId } = await params;
 
+    // Faculty scoping on the EVENT itself (see src/lib/faculty-scope.ts) — a
+    // non-super_admin STAFF actor (or bare smo, unscoped by ownership) may
+    // only view attendance for an event in their own faculty, independent of
+    // the attendee-row filtering applied to the roster further below.
+    // Deliberately skipped for a president/position-scoped viewer: their
+    // access is already governed by club/major OWNERSHIP (checked right
+    // below), an axis clubs don't carry a faculty for — a club's president
+    // can genuinely be in a different faculty than whoever staff-created the
+    // event, and gating on event.faculty here would wrongly lock them out of
+    // an event they legitimately manage. Not-found rather than 403 so a
+    // cross-faculty event id doesn't confirm existence.
+    if (!facultyScope.global && !isPresidentRole && !isPositionScopedRegistration) {
+      const evFaculty = await db.query.events.findFirst({
+        where: eq(events.id, eventId),
+        columns: { faculty: true },
+      });
+      if (!evFaculty || !matchesFacultyScope(evFaculty.faculty, facultyScope)) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+    }
+
     // Event scoping for president roles (mirrors the /api/admin/events list filter)
     // AND for a club/major-scoped registration position: they may only read
     // attendance for events their club/major OWNS (ownerClubIds/ownerMajors — see

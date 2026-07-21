@@ -9,6 +9,7 @@ import { canGiveIndividualScore } from "@/lib/admin-access";
 import { awardIndividualPoints } from "@/lib/award-individual-points";
 import { matchesFacultyScope, facultyRowCondition, type FacultyViewScope } from "@/lib/faculty-scope";
 import type { FacultyId } from "@/lib/faculties";
+import { syncAttendedToActiveCamt as postAttendedCheckinToActiveCamt, type ActiveCamtEmergencyContact } from "@/lib/activecamt-outbound-sync";
 
 type ResolvedStudent = NonNullable<Awaited<ReturnType<typeof UsersService.resolveStudentByToken>>>;
 type DBTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -339,6 +340,9 @@ export class ScannerService {
         if (updated.length === 0) {
           return { status: "already_checked_in", student: baseStudentInfo };
         }
+        if (event.externalSource === "activecamt" && event.externalId) {
+          await this.syncAttendedToActiveCamt(student, event.externalId);
+        }
         const preTestWarning = await this.getPreTestWarning(eventId, student.id);
         return {
           status: "success",
@@ -411,6 +415,9 @@ export class ScannerService {
 
           if (inserted.length === 0) {
             return { status: "already_checked_in", student: baseStudentInfo };
+          }
+          if (event.externalSource === "activecamt" && event.externalId) {
+            await this.syncAttendedToActiveCamt(student, event.externalId);
           }
           const preTestWarning = await this.getPreTestWarning(eventId, student.id);
           return { status: "success", student: studentWithMedical, preTestWarning };
@@ -535,6 +542,9 @@ export class ScannerService {
         throw e;
       }
 
+      if (event.externalSource === "activecamt" && event.externalId) {
+        await this.syncAttendedToActiveCamt(student, event.externalId);
+      }
       const preTestWarning = await this.getPreTestWarning(eventId, student.id);
       return {
         status: "success_walk_in",
@@ -604,6 +614,44 @@ export class ScannerService {
   >(student: ResolvedStudent, info: T): Promise<T> {
     const h = await this.ensureHouseAssigned(student);
     return { ...info, house: h.name, houseId: h.id, houseColor: h.color };
+  }
+
+  /**
+   * Mirrors a confirmed check-in into ActiveCAMT when the event is a mirror of one
+   * of its events (events.externalSource === 'activecamt') — see
+   * src/lib/activecamt-outbound-sync.ts. Called AFTER the check-in transaction
+   * commits (never inside it): this is a best-effort HTTP call to a sibling app and
+   * must never delay or fail a real check-in.
+   */
+  private static async syncAttendedToActiveCamt(
+    student: ResolvedStudent,
+    activeCamtEventId: string
+  ): Promise<void> {
+    await postAttendedCheckinToActiveCamt({
+      eventId: activeCamtEventId,
+      user: {
+        email: student.email,
+        studentId: student.studentId,
+        name: student.name,
+        prefix: student.prefix,
+        faculty: student.faculty,
+        major: student.major,
+        phone: student.phone,
+        nickname: student.nickname,
+        image: student.image,
+        religion: student.religion,
+        contactChannels: student.contactChannels,
+        chronicDiseases: student.chronicDiseases,
+        medicalHistory: student.medicalHistory,
+        drugAllergies: student.drugAllergies,
+        foodAllergies: student.foodAllergies,
+        dietaryRestrictions: student.dietaryRestrictions,
+        faintingHistory: student.faintingHistory,
+        emergencyMedication: student.emergencyMedication,
+        emergencyContacts: student.emergencyContacts as ActiveCamtEmergencyContact[] | null,
+      },
+      status: "attended",
+    });
   }
 
   /**

@@ -1408,6 +1408,23 @@ async function migrate() {
   `;
   console.log("  ✅ events.external_source / events.external_id (ActiveCAMT sync)");
 
+  // 89. Fix houses.color to actually match its color_group id. Steps 63/64/87
+  // (and whatever originally created the 4 legacy CAMT rows before this script
+  // existed) all set yellow's swatch to blue's hex and blue's swatch to
+  // green's hex (green got a grey/silver hex instead) — the DB stored
+  // color_group='yellow' but rendered blue everywhere the UI reads
+  // houses.color directly (dashboard leaderboard, house detail page,
+  // /api/houses/[houseId]/members). src/lib/faculties.ts's COLORS and
+  // src/app/globals.css's --*-house tokens are fixed in the same change; this
+  // step corrects the already-migrated data. Plain UPDATE keyed by
+  // color_group, not INSERT — non-destructive, touches only the `color`
+  // column, safe to re-run.
+  await sql`UPDATE houses SET color = '#ef4444' WHERE color_group = 'red' AND color IS DISTINCT FROM '#ef4444'`;
+  await sql`UPDATE houses SET color = '#22c55e' WHERE color_group = 'green' AND color IS DISTINCT FROM '#22c55e'`;
+  await sql`UPDATE houses SET color = '#eab308' WHERE color_group = 'yellow' AND color IS DISTINCT FROM '#eab308'`;
+  await sql`UPDATE houses SET color = '#3b82f6' WHERE color_group = 'blue' AND color IS DISTINCT FROM '#3b82f6'`;
+  console.log("  ✅ fixed houses.color to match color_group (yellow=yellow, green=green, blue=blue)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

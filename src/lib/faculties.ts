@@ -127,9 +127,9 @@ export interface HouseColor {
 
 export const COLORS: HouseColor[] = [
   { id: "red", name: "Mom", color: "#ef4444" },
-  { id: "green", name: "To", color: "#94a3b8" },
-  { id: "yellow", name: "Luang", color: "#3b82f6" },
-  { id: "blue", name: "Makon", color: "#22c55e" },
+  { id: "green", name: "To", color: "#22c55e" },
+  { id: "yellow", name: "Luang", color: "#eab308" },
+  { id: "blue", name: "Makon", color: "#3b82f6" },
 ];
 
 export const COLOR_IDS: ColorId[] = COLORS.map((c) => c.id);

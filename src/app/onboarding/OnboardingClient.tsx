@@ -129,6 +129,63 @@ export default function OnboardingClient({ initialSession }: { initialSession: S
   const set = <K extends keyof typeof formData>(key: K, value: (typeof formData)[K]) =>
     setFormData((p) => ({ ...p, [key]: value }));
 
+  // Pre-fill from whatever Songsue already knows about this account — e.g. a
+  // student who registered for a Songsue-linked event on ActiveCAMT first
+  // (ActiveCamtSyncService.upsertSyncedUser) already has identity AND
+  // medical/emergency-contact fields on their (still profileCompleted=false)
+  // row — the sync carries both now (product decision, see
+  // activecamt-sync.service.ts's SyncExternalRegistrationUser doc comment).
+  // Without this they'd have to retype all of it here even though it was
+  // never lost.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/profile");
+        if (!res.ok) return;
+        const u = await res.json();
+        setFormData((p) => ({
+          ...p,
+          studentId: u.studentId || p.studentId,
+          prefix: u.prefix || p.prefix,
+          name: u.name || p.name,
+          nickname: u.nickname || p.nickname,
+          phone: u.phone || p.phone,
+          major: u.major || p.major,
+          image: u.image || p.image,
+          religion: u.religion || p.religion,
+          contactChannels: u.contactChannels || p.contactChannels,
+          chronicDiseases: u.chronicDiseases || p.chronicDiseases,
+          medicalHistory: u.medicalHistory || p.medicalHistory,
+          drugAllergies: u.drugAllergies || p.drugAllergies,
+          foodAllergies: u.foodAllergies || p.foodAllergies,
+          dietaryRestrictions: u.dietaryRestrictions || p.dietaryRestrictions,
+          faintingHistory: u.faintingHistory ?? p.faintingHistory,
+          emergencyMedication: u.emergencyMedication || p.emergencyMedication,
+          emergencyContacts:
+            Array.isArray(u.emergencyContacts) && u.emergencyContacts.length > 0
+              ? [
+                  u.emergencyContacts[0] ?? { name: "", relationship: "", phone: "" },
+                  u.emergencyContacts[1] ?? { name: "", relationship: "", phone: "" },
+                ]
+              : p.emergencyContacts,
+        }));
+        // These fields are gated behind a "None"/"Has" toggle (renderMedicalField)
+        // that defaults to "None" — without this, a backfilled value would sit in
+        // formData but stay hidden behind an unchecked "Has" box.
+        setHasFields((p) => ({
+          ...p,
+          chronicDiseases: p.chronicDiseases || !!u.chronicDiseases,
+          medicalHistory: p.medicalHistory || !!u.medicalHistory,
+          drugAllergies: p.drugAllergies || !!u.drugAllergies,
+          foodAllergies: p.foodAllergies || !!u.foodAllergies,
+          emergencyMedication: p.emergencyMedication || !!u.emergencyMedication,
+        }));
+      } catch {
+        // Blank form is still a fully usable fallback — nothing to surface.
+      }
+    })();
+  }, []);
+
   const setEC = (idx: number, key: string, value: string) => {
     const contacts = [...formData.emergencyContacts] as EmergencyContact[];
     contacts[idx] = { ...contacts[idx], [key]: value };

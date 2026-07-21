@@ -15,6 +15,9 @@ const eventSyncSchema = z.object({
   location: z.string().optional().nullable(),
   pointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
   individualPointsAwarded: z.number().int().min(0).max(10000).optional().nullable(),
+  walkInsEnabled: z.boolean().optional().nullable(),
+  quota: z.number().int().min(0).optional().nullable(),
+  quotaWalkIn: z.number().int().min(0).optional().nullable(),
 }).refine((d) => !Number.isNaN(new Date(d.startTime).getTime()), {
   message: "startTime must be a valid date",
   path: ["startTime"],

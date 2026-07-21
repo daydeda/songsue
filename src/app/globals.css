@@ -30,16 +30,16 @@
   /* Reserved for elements that must visibly stand out — announcement banner,
      "this is your house" highlights, button hover — everything else stays on
      the neutral black/white accent above. Deliberately not the same blue as
-     --yellow-house/#3b82f6 (registration badges also use that blue) so a
+     --blue-house/#3b82f6 (registration badges also use that blue) so a
      highlight never reads as "this is the blue house". */
   --highlight:       #4f46e5;
   --highlight-hover: #6366f1;
   --highlight-glow:  rgba(79,70,229,0.18);
 
   --red-house:    #ef4444; /* มอม (Mom)   — Red */
-  --green-house:  #94a3b8; /* โต (To)     — White → silver/pewter (visible on the light theme) */
-  --yellow-house: #3b82f6; /* ลวง (Luang) — Blue */
-  --blue-house:   #22c55e; /* มกร (Makara) — Green */
+  --green-house:  #22c55e; /* โต (To)     — Green */
+  --yellow-house: #eab308; /* ลวง (Luang) — Yellow */
+  --blue-house:   #3b82f6; /* มกร (Makara) — Blue */
 
   --radius-sm:  8px;
   --radius-md:  14px;

@@ -130,9 +130,9 @@ export function BattleHubClient({ initialSession }: BattleHubClientProps) {
   const getHouseColor = (houseId: string | null | undefined) => {
     switch (colorGroupOfHouseId(houseId)) {
       case "red": return "var(--red-house, #ef4444)";
-      case "green": return "var(--green-house, #94a3b8)";
-      case "yellow": return "var(--yellow-house, #3b82f6)";
-      case "blue": return "var(--blue-house, #22c55e)";
+      case "green": return "var(--green-house, #22c55e)";
+      case "yellow": return "var(--yellow-house, #eab308)";
+      case "blue": return "var(--blue-house, #3b82f6)";
       default: return "var(--text-secondary)";
     }
   };

@@ -57,6 +57,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { StudentNav } from "@/components/layout/StudentNav";
 import { NotificationModal } from "@/components/NotificationModal";
 import { FormsDueBanner } from "@/components/FormsDueBanner";
+import { QuickProfileModal } from "@/components/QuickProfileModal";
 import { useNotifications } from "@/lib/useNotifications";
 import { useRouter } from "next/navigation";
 import { NO_SHOW_STRIKE_THRESHOLD } from "@/lib/strikes";
@@ -379,7 +380,7 @@ interface HouseItem {
 
 export default function DashboardClient({ initialSession }: { initialSession: Session | null }) {
   const router = useRouter();
-  const { data: sessionData, status: sessionStatus } = useSession();
+  const { data: sessionData, status: sessionStatus, update: updateSession } = useSession();
   const session = sessionData || initialSession;
   const status = sessionStatus !== "loading"
     ? sessionStatus
@@ -398,6 +399,15 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
   // past included, grouped by Today / This Week / Upcoming / Past.
   const [eventView, setEventView] = useState<"grid" | "timeline">("grid");
   const [registeringId, setRegisteringId] = useState<string | null>(null);
+  // Deferred-consent gate (see proxy.ts + QuickProfileModal): a signed-in
+  // account with profileCompleted=false is now allowed onto the dashboard
+  // freely (proxy.ts no longer force-routes it to /onboarding once a
+  // studentId is on file). The register button is the actual point that
+  // needs the rest — nickname/contact/emergency-contact/PDPA consent — so
+  // promptRegister opens this modal first when that's still missing, then
+  // resumes the original register/cancel action on completion.
+  const [quickProfileModal, setQuickProfileModal] = useState(false);
+  const [pendingRegister, setPendingRegister] = useState<{ eventId: string; eventTitle: string } | null>(null);
   const [errorModal, setErrorModal] = useState<{
     show: boolean;
     title: string;
@@ -694,11 +704,28 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
       router.push("/login");
       return;
     }
+    // Cancelling an existing registration never needs this — only signing up
+    // fresh does (you can't have a registration to cancel without already
+    // having passed this gate once).
+    if (!registered && !session.user.profileCompleted) {
+      setPendingRegister({ eventId, eventTitle });
+      setQuickProfileModal(true);
+      return;
+    }
     if (registered) {
       const losesPreTest = events.find(e => e.id === eventId)?.preTest?.status === "submitted";
       setConfirmUnregister({ show: true, eventId, eventTitle, losesPreTest });
     } else {
       handleRegister(eventId, false);
+    }
+  };
+
+  const handleQuickProfileComplete = async () => {
+    setQuickProfileModal(false);
+    await updateSession();
+    if (pendingRegister) {
+      handleRegister(pendingRegister.eventId, false);
+      setPendingRegister(null);
     }
   };
 
@@ -1760,6 +1787,12 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
             </div>
           </div>
         </main>
+
+      <QuickProfileModal
+        open={quickProfileModal}
+        onClose={() => { setQuickProfileModal(false); setPendingRegister(null); }}
+        onComplete={handleQuickProfileComplete}
+      />
 
       {errorModal.show && (
         <div style={{

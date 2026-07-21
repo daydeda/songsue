@@ -97,15 +97,22 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  // Authenticated but profile not complete → force onboarding
-  // (except for the /onboarding page itself, and API routes)
-  if (
-    !user.profileCompleted &&
-    pathname !== "/onboarding" &&
-    !pathname.startsWith("/api/")
-  ) {
-    return NextResponse.redirect(new URL("/onboarding", req.url));
-  }
+  // profileCompleted no longer forces /onboarding here AT ALL — every
+  // signed-in user (student or otherwise, synced from ActiveCAMT or a
+  // completely fresh Google sign-in) lands straight on /dashboard. The full
+  // 4-step wizard at /onboarding still exists and is still reachable
+  // directly, but nothing routes anyone there automatically anymore.
+  // Whatever's still missing — up to and including studentId/faculty for a
+  // genuinely blank account — is collected by QuickProfileModal
+  // (DashboardClient.tsx) at the point something first needs it (registering
+  // for an event), not gated page-by-page on every route.
+  //
+  // The rest of the app already treats these fields as nullable throughout
+  // (normalizeFaculty defaults a null faculty to CAMT, studentId displays
+  // fall back to a placeholder, houseId has always been nullable pre-scan) —
+  // this was already a reachable state for any ActiveCAMT-synced account
+  // sitting between sync and first scan, just never one a plain Google
+  // sign-in could reach before now.
 
   // Completed profile visiting onboarding → redirect to dashboard
   if (user.profileCompleted && pathname === "/onboarding") {

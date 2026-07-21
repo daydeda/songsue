@@ -1,6 +1,6 @@
 "use client";
  
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import {
@@ -78,6 +78,15 @@ export default function ProfilePage() {
   useEffect(() => {
     fetch("/api/profile")
       .then(r => {
+        // 401/404 means the session cookie no longer maps to a real account
+        // (stale JWT after a DB reset, or the row was deleted after the
+        // cookie was issued) — no amount of "try again" will fix that, only
+        // a fresh sign-in will. Redirect straight to it instead of showing a
+        // dead-end error.
+        if (r.status === 401 || r.status === 404) {
+          signOut({ callbackUrl: "/login" });
+          return null;
+        }
         if (!r.ok) throw new Error("failed");
         return r.json();
       })

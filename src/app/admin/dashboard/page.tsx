@@ -30,9 +30,9 @@ type DashboardStats = {
 
 const HOUSE_GRADIENT: Record<string, string> = {
   red: "linear-gradient(135deg, #ef4444, #b91c1c)", // Red (Mom)
-  green: "linear-gradient(135deg, #94a3b8, #64748b)", // White → silver/pewter (To)
-  yellow: "linear-gradient(135deg, #3b82f6, #1d4ed8)", // Blue (Luang)
-  blue: "linear-gradient(135deg, #22c55e, #15803d)", // Green (Makon)
+  green: "linear-gradient(135deg, #22c55e, #15803d)", // Green (To)
+  yellow: "linear-gradient(135deg, #eab308, #a16207)", // Yellow (Luang)
+  blue: "linear-gradient(135deg, #3b82f6, #1d4ed8)", // Blue (Makon)
 };
 
 export default function AdminDashboardOverview() {

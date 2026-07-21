@@ -6,6 +6,13 @@ import { ActiveCamtSyncService, ActiveCamtSyncError } from "@/modules/integratio
 
 export const dynamic = "force-dynamic";
 
+// Mirrors emergencyContactSchema in api/profile/route.ts.
+const emergencyContactSchema = z.object({
+  name: z.string(),
+  relationship: z.string(),
+  phone: z.string(),
+});
+
 const registerSyncSchema = z.object({
   externalEventId: z.string().min(1),
   user: z.object({
@@ -19,6 +26,21 @@ const registerSyncSchema = z.object({
     faculty: z.string().optional().nullable(),
     major: z.string().optional().nullable(),
     phone: z.string().optional().nullable(),
+    nickname: z.string().optional().nullable(),
+    image: z.string().optional().nullable(),
+    religion: z.string().optional().nullable(),
+    contactChannels: z.string().optional().nullable(),
+    // Sensitive — only written on first-time account creation, and only ever
+    // sourced from ActiveCAMT's own consent, not songsue's (see
+    // SyncExternalRegistrationUser's doc comment in activecamt-sync.service.ts).
+    chronicDiseases: z.string().optional().nullable(),
+    medicalHistory: z.string().optional().nullable(),
+    drugAllergies: z.string().optional().nullable(),
+    foodAllergies: z.string().optional().nullable(),
+    dietaryRestrictions: z.string().optional().nullable(),
+    faintingHistory: z.boolean().optional().nullable(),
+    emergencyMedication: z.string().optional().nullable(),
+    emergencyContacts: z.array(emergencyContactSchema).optional().nullable(),
   }),
   status: z.enum(["registered", "attended", "cancelled"]),
 });
@@ -26,10 +48,13 @@ const registerSyncSchema = z.object({
 // POST /api/integrations/activecamt/register — ActiveCAMT calls this after a
 // student registers, unregisters, or gets checked in (QR scan) for an event
 // flagged `songsueLinked`. Upserts the student's Songsue account by email
-// (PDPA-minimal: profileCompleted/pdpaConsent both false, no medical fields
-// touched) and mirrors their attendance status onto the previously synced
-// event — see ActiveCamtSyncService.syncExternalRegistration. 404s if the
-// event hasn't been synced via POST .../events yet.
+// (profileCompleted/pdpaConsent/houseId stay unset, but profile AND medical/
+// emergency fields from the payload ARE written on first-time creation — a
+// deliberate PDPA-consent tradeoff, see SyncExternalRegistrationUser's doc
+// comment in activecamt-sync.service.ts) and mirrors their attendance status
+// onto the previously synced event — see
+// ActiveCamtSyncService.syncExternalRegistration. 404s if the event hasn't
+// been synced via POST .../events yet.
 export async function POST(req: Request) {
   if (!isAuthorizedActiveCamtSync(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

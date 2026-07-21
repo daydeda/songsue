@@ -39,6 +39,13 @@ const profileSchema = z.object({
   emergencyMedication: z.string().optional().nullable(),
   image: z.string().optional().nullable(),
   studentId: z.string().optional().nullable(), // Allow empty or null for admins
+  // Was previously accepted from the client and checked in OnboardingClient's
+  // own pre-submit guard, but never listed here — zod silently stripped it, so
+  // POST never actually wrote it and users.pdpaConsent stayed false forever
+  // regardless of what the student ticked. Genuine consent, not a formality:
+  // this is Songsue's own legal basis to hold the data, separate from
+  // whatever consent (if any) was given to a synced-in account's source app.
+  pdpaConsent: z.boolean().optional(),
 });
 
 // Sensitive medical/emergency fields. Self-edits to these are recorded (field NAMES
@@ -80,6 +87,12 @@ export async function GET() {
     // reset/reseed) would otherwise reach NextResponse.json(undefined), which
     // throws "Value is not JSON serializable" instead of a clean error.
     if (!user) {
+      // A stale JWT (session.user.id survives a DB reset/reseed, or a row
+      // deleted after the cookie was issued) with no matching row — the
+      // client on a 404 signs the user out and sends them to /login so a
+      // fresh sign-in re-links or re-creates the row, rather than retrying
+      // forever against an id that will never resolve. See dashboard/profile
+      // page.tsx's loadError handling.
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -269,6 +282,14 @@ export async function PATCH(req: Request) {
       }
       return row;
     });
+
+    // A stale JWT pointing at a users.id that no longer exists updates 0 rows
+    // — same failure mode as the GET handler's 404 (see its comment). Guard
+    // explicitly rather than destructuring `undefined` below, which would
+    // throw and surface as an opaque 500.
+    if (!updated) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
     revalidatePath("/");
     revalidatePath("/dashboard");

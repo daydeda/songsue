@@ -104,6 +104,22 @@ export async function POST(req: Request) {
       }
     }
 
+    // Mirrored events are one-directional (ActiveCAMT → Songsue) — see
+    // ActiveCamtSyncService. Scanning here would create a real Songsue check-in
+    // ActiveCAMT never sees (and which a later ActiveCAMT scan sync would
+    // silently overwrite), the same drift the register/cancel guard prevents.
+    // ActiveCAMT's own scanner remains the only place to check in for these.
+    const targetEvent = await db.query.events.findFirst({
+      where: eq(events.id, eventId),
+      columns: { externalSource: true },
+    });
+    if (targetEvent?.externalSource) {
+      return NextResponse.json(
+        { status: "not_found", error: "This event is managed by ActiveCAMT — scan there." },
+        { status: 409 }
+      );
+    }
+
     // When the client doesn't pin a session, record the check-in against the
     // event's "current" day (window containing now → upcoming → most recent).
     const resolvedSessionId = sessionId ?? (await EventsService.resolveCurrentSessionId(eventId));

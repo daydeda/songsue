@@ -75,7 +75,7 @@ type EventSession = {
   endTime: string;
   sortOrder: number;
 };
-type Event = { id: string; title: string; startTime: string; endTime: string; sessions?: EventSession[] };
+type Event = { id: string; title: string; startTime: string; endTime: string; sessions?: EventSession[]; externalSource?: string | null };
 
 // Sessions sorted into display order ("Day 1", "Day 2", …).
 function sortedSessions(sessions?: EventSession[]): EventSession[] {
@@ -253,11 +253,16 @@ export default function QRScannerPage() {
       .then((d) => {
         if (isMountedRef.current) {
           if (Array.isArray(d)) {
-            setEvents(d);
-            if (d.length > 0) {
+            // Mirrored events (ActiveCAMT → Songsue, see ActiveCamtSyncService) are
+            // one-directional — scanning here would create a check-in ActiveCAMT
+            // never sees, and a later ActiveCAMT scan sync would silently overwrite
+            // it. ActiveCAMT's own scanner is the only valid place to check in.
+            const scannable = d.filter((e: Event) => !e.externalSource);
+            setEvents(scannable);
+            if (scannable.length > 0) {
               // Default to whichever event is live right now, if any — falls back to
               // the newest event (server's default order) when nothing is live.
-              const defaultEvent = d.find(isEventLive) ?? d[0];
+              const defaultEvent = scannable.find(isEventLive) ?? scannable[0];
               setEventId(defaultEvent.id);
               setSessionId(pickCurrentSessionId(defaultEvent.sessions));
             }

@@ -1391,6 +1391,23 @@ async function migrate() {
   `;
   console.log("  ✅ inserted 4 base CAMT houses if missing (ON CONFLICT DO NOTHING)");
 
+  // 88. events.external_source / events.external_id — one-directional sync from
+  // the sibling app ActiveCAMT: when a student registers for an ActiveCAMT event
+  // flagged to also count for Songsue, a new service-to-service API mirrors that
+  // event into Songsue's events table. external_source identifies which external
+  // system mirrored the row (e.g. 'activecamt'); native Songsue-authored events
+  // leave both columns null. The unique partial index lets the sync service
+  // upsert idempotently on (external_source, external_id) across repeated syncs
+  // without a round-trip id handoff back to ActiveCAMT.
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS external_source text`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS external_id text`;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS events_external_source_id_unique
+    ON events (external_source, external_id)
+    WHERE external_id IS NOT NULL
+  `;
+  console.log("  ✅ events.external_source / events.external_id (ActiveCAMT sync)");
+
   console.log("✅ Migration complete!");
   await sql.end();
   process.exit(0);

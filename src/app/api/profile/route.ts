@@ -76,6 +76,13 @@ export async function GET() {
       with: { house: true }
     });
 
+    // A valid session whose user row no longer exists (stale JWT after a DB
+    // reset/reseed) would otherwise reach NextResponse.json(undefined), which
+    // throws "Value is not JSON serializable" instead of a clean error.
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
     return NextResponse.json(user);
   } catch (error) {
     // Log a plain message only — never the raw error, whose Postgres `detail` can

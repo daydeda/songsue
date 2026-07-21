@@ -4,10 +4,10 @@ import { effectiveRoles } from "@/lib/admin-access";
 import { canAccessBattle } from "@/lib/battle-access";
 import { BattleTestingNotice } from "./BattleTestingNotice";
 
-// Staged rollout: P2P Battle is open to SMO/ANUSMO/Admin only while it's being
-// tested on prod. Everyone else gets an "in testing" notice instead of a
-// silent redirect — a shared room/join link should read as "not yet", not as
-// broken. API routes under /api/battle are the real data gate regardless.
+// P2P Battle is open to every signed-in role (src/lib/battle-access.ts) — this
+// check is now effectively a defensive fallback (BattleTestingNotice) for the
+// edge case of a session with no roles at all. API routes under /api/battle
+// are the real data gate regardless.
 export default async function BattleLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {

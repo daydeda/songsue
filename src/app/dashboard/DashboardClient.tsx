@@ -98,6 +98,10 @@ type Event = {
   quotaWalkIn?: number | null;
   isRegistered?: boolean;
   attendanceStatus?: string | null;
+  // Set when this event is mirrored from ActiveCAMT (see ActiveCamtSyncService).
+  // Sync is one-directional — registering/cancelling must happen in ActiveCAMT,
+  // never here, or the two apps drift out of sync with each other.
+  externalSource?: string | null;
   imageUrl?: string;
   imageUrls?: string[] | null;
   pointsAwarded?: number;
@@ -1456,13 +1460,17 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                             // Once the registration window closes the headcount locks
                             // in both directions: no new sign-ups AND no cancellations.
                             const regWindowClosed = !!regCloseAt && nowTs > regCloseAt;
-                            const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
+                            // Mirrored events are one-directional (ActiveCAMT → Songsue) — see
+                            // ActiveCamtSyncService. Register/cancel must happen in ActiveCAMT,
+                            // never here, or the two apps drift out of sync with each other.
+                            const isMirrored = !!e.externalSource;
+                            const canCancel = !isPastEvent && !isAttended && !regWindowClosed && !isMirrored;
                             const notYetOpen = !e.isRegistered && !!regOpenAt && nowTs < regOpenAt && !hasPreviewAccess;
                             const regClosed = !e.isRegistered && regWindowClosed;
                             const walkInsOnlyMode = !e.isRegistered && !!e.walkInsOnly;
-                            const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;
+                            const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode || (!e.isRegistered && isMirrored);
                             const isDisabled = (e.isRegistered && !canCancel) || windowBlocked || registeringId === e.id;
-                            const greyed = regClosed || walkInsOnlyMode || (e.isRegistered && !canCancel);
+                            const greyed = regClosed || walkInsOnlyMode || (e.isRegistered && !canCancel) || (!e.isRegistered && isMirrored);
 
                             return (
                               <button
@@ -1491,6 +1499,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                                     <><CheckCircle2 size={18} /> {t.attended || "Attended"}</>
                                   ) : isPastEvent ? (
                                     <><Calendar size={18} /> {t.eventEnded || "Event Ended"}</>
+                                  ) : isMirrored ? (
+                                    <><CheckCircle2 size={18} /> {t.registeredViaActivecamt}</>
                                   ) : (
                                     <><CheckCircle2 size={18} /> {t.registered || "Registered"}</>
                                   )
@@ -1500,6 +1510,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                                   <><AlertCircle size={18} /> {t.registrationClosed}</>
                                 ) : walkInsOnlyMode ? (
                                   <><DoorOpen size={18} /> {t.walkInsOnlyBadge}</>
+                                ) : isMirrored ? (
+                                  t.registerViaActivecamt
                                 ) : (
                                   t.registerNow || "Register Now"
                                 )}
@@ -2127,12 +2139,16 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
         // Once the registration window closes the headcount locks in both
         // directions: no new sign-ups AND no cancellations.
         const regWindowClosed = !!regCloseAt && nowTs > regCloseAt;
-        const canCancel = !isPastEvent && !isAttended && !regWindowClosed;
+        // Mirrored events are one-directional (ActiveCAMT → Songsue) — see
+        // ActiveCamtSyncService. Register/cancel must happen in ActiveCAMT, never
+        // here, or the two apps drift out of sync with each other.
+        const isMirrored = !!liveEvent.externalSource;
+        const canCancel = !isPastEvent && !isAttended && !regWindowClosed && !isMirrored;
         const notYetOpen = !liveEvent.isRegistered && !!regOpenAt && nowTs < regOpenAt && !hasPreviewAccess;
         const regClosed = !liveEvent.isRegistered && regWindowClosed;
         const walkInsOnlyMode = !liveEvent.isRegistered && !!liveEvent.walkInsOnly;
-        const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode;
-        const greyed = regClosed || walkInsOnlyMode || (liveEvent.isRegistered && !canCancel);
+        const windowBlocked = notYetOpen || regClosed || walkInsOnlyMode || (!liveEvent.isRegistered && isMirrored);
+        const greyed = regClosed || walkInsOnlyMode || (liveEvent.isRegistered && !canCancel) || (!liveEvent.isRegistered && isMirrored);
         const isDisabled = (liveEvent.isRegistered && !canCancel) || windowBlocked || registeringId === liveEvent.id;
         const previewPosters = getPosters(liveEvent);
 
@@ -2485,6 +2501,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                       <><CheckCircle2 size={18} /> {t.attended || "Attended"}</>
                     ) : isPastEvent ? (
                       <><Calendar size={18} /> {t.eventEnded || "Event Ended"}</>
+                    ) : isMirrored ? (
+                      <><CheckCircle2 size={18} /> {t.registeredViaActivecamt}</>
                     ) : (
                       <><CheckCircle2 size={18} /> {t.registered || "Registered"}</>
                     )
@@ -2494,6 +2512,8 @@ export default function DashboardClient({ initialSession }: { initialSession: Se
                     <><AlertCircle size={18} /> {t.registrationClosed}</>
                   ) : walkInsOnlyMode ? (
                     <><DoorOpen size={18} /> {t.walkInsOnlyBadge}</>
+                  ) : isMirrored ? (
+                    t.registerViaActivecamt
                   ) : (
                     t.registerNow || "Register Now"
                   )}

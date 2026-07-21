@@ -9,10 +9,9 @@ const testClient = (globalThis as any).pglite;
 
 // Mock auth() dynamically based on our test variables
 let currentUserId = "user-host";
-// Battle is staged behind BATTLE_ALLOWED_ROLES (smo/anusmo/admin) for prod
-// testing; the session role must clear that gate for the end-to-end flow to
-// reach the room-creation/join/move handlers. Defaults to an allowed role;
-// the access-control test below flips it to an unprivileged role.
+// Battle access (src/lib/battle-access.ts) is open to every signed-in role —
+// any non-empty roles[] clears the gate for the end-to-end flow to reach the
+// room-creation/join/move handlers.
 let currentUserRole = "smo";
 vi.mock("@/auth", () => {
   return {
@@ -177,6 +176,17 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
         name: "Guest Player",
         email: "guest@example.com",
         houseId: "blue",
+        points: 0,
+        role: "student",
+        roles: ["student"],
+        pdpaConsent: false,
+        profileCompleted: false
+      },
+      {
+        id: "user-student",
+        name: "Student Player",
+        email: "student@example.com",
+        houseId: "yellow",
         points: 0,
         role: "student",
         roles: ["student"],
@@ -413,7 +423,7 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
     expect(guestStats!.winStreak).toBe(0);
   });
 
-  it("should reject room creation from a role outside BATTLE_ALLOWED_ROLES (403)", async () => {
+  it("should allow room creation from a plain student role (full rollout, not staged)", async () => {
     currentUserId = "user-student";
     currentUserRole = "student";
     try {
@@ -423,7 +433,7 @@ describe("OX Battle System End-to-End API Flow and Performance Verification", ()
         body: JSON.stringify({ gameType: "ox" }),
       });
       const createRes = await createRoom(createReq);
-      expect(createRes.status).toBe(403);
+      expect(createRes.status).toBe(200);
     } finally {
       currentUserId = "user-host";
       currentUserRole = "smo";

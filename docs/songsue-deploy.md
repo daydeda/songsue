@@ -108,6 +108,13 @@ filesystem. Both env vars must be set before any upload flow is exercised.
     sends `Authorization: Bearer $CRON_SECRET` on its own scheduled cron
     invocations once this var is set — the two routes in
     `src/app/api/cron/*/route.ts` already fail closed if it's missing.
+  - `ACTIVECAMT_SYNC_SECRET` — new, e.g. `openssl rand -hex 32`. Authorizes the
+    cross-app sync from ActiveCAMT (`src/app/api/integrations/activecamt/**` —
+    `src/lib/integration-auth.ts` fails closed if this is unset). Must be the
+    **same value** as ActiveCAMT's own `ACTIVECAMT_SYNC_SECRET` env var — a
+    dedicated shared secret, not `AUTH_SECRET`/`CRON_SECRET`. ActiveCAMT also
+    needs `SONGSUE_SYNC_URL` set to this songsue deployment's base URL (see
+    `docker-stack.yml`/`docker-compose.yml` in the ActiveCAMT repo).
 - `vercel.json` already declares `regions: ["sin1"]` and both cron schedules
   (`award-points` daily, `gc-form-files` daily) — nothing to configure in the
   dashboard's Cron Jobs UI beyond setting `CRON_SECRET` above.

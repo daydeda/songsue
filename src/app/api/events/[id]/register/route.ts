@@ -58,6 +58,18 @@ export async function POST(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    // Mirrored events are one-directional (ActiveCAMT → Songsue) — see
+    // ActiveCamtSyncService. Registering directly here would create a row
+    // ActiveCAMT doesn't know about, so a later cancel on either side can't stay in
+    // sync (the exact "still shows Registered on one side" bug this guard prevents).
+    // ActiveCAMT remains the only place to register/cancel for these events.
+    if (event.externalSource) {
+      return NextResponse.json(
+        { error: "This event is managed by ActiveCAMT — register there." },
+        { status: 409 }
+      );
+    }
+
     // Explicitly assigned event staff (event.staffUserIds — set by an admin,
     // NOT derived from global role) are exempt from every quota below: they're
     // registering to work the event, not to take a participant's seat.
@@ -342,6 +354,15 @@ export async function DELETE(
     }
 
     const event = records[0].event;
+
+    // Mirrored events are one-directional (ActiveCAMT → Songsue) — cancelling here
+    // wouldn't tell ActiveCAMT, so it would keep showing Registered. Cancel there.
+    if (event?.externalSource) {
+      return NextResponse.json(
+        { error: "This event is managed by ActiveCAMT — cancel there." },
+        { status: 409 }
+      );
+    }
 
     // Rule 1: Cannot un-register if already checked in on ANY session.
     if (records.some((r) => r.status === 'attended')) {

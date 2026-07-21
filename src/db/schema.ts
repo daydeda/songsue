@@ -305,9 +305,23 @@ export const events = pgTable("events", {
   // source of truth for "already processed" — never infer it from score_history,
   // because mid-event individual/milestone/manual rows also carry this eventId.
   winnerAwardedAt: timestamp("winner_awarded_at", { withTimezone: true }),
+  // Cross-app event mirroring: when a sibling app (e.g. ActiveCAMT) flags one of
+  // its events to also count for Songsue, that app's sync service upserts a
+  // mirrored row here identified by (externalSource, externalId). Native
+  // Songsue-authored events leave both null. externalSource identifies which
+  // external system mirrored this event (e.g. 'activecamt'); externalId is the
+  // event's id in that system. See the unique partial index below — it lets the
+  // sync service upsert idempotently across repeated syncs without a round-trip
+  // id handoff back to the external system.
+  externalSource: text("external_source"),
+  externalId: text("external_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+}, (table) => ([
+  uniqueIndex("events_external_source_id_unique")
+    .on(table.externalSource, table.externalId)
+    .where(sql`${table.externalId} IS NOT NULL`),
+]));
 
 // A session is one occurrence of an event — typically a day (CAMT LINK Day 1 /
 // Day 2), but could be a morning/afternoon block. "Day N" is just the Nth session

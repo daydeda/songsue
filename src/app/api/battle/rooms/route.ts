@@ -28,8 +28,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Staged rollout: P2P Battle is SMO/ANUSMO/Admin-only for prod testing —
-    // this is the real gate, the proxy/layout redirects are UX only.
+    // P2P Battle is open to every signed-in role — this is the real gate,
+    // the proxy/layout redirects are UX only (src/lib/battle-access.ts).
     if (!canAccessBattle(effectiveRoles(session.user.role, session.user.roles))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

@@ -297,9 +297,7 @@ transform: user.imageTransform ? `scale(${user.imageTransform.scale}) translate(
 {/* Battle shortcut: a floating action button, not a nav item — it's a side
     activity, not a core destination, so it shouldn't compete with the tab
     bar or the account menu for space. Fixed bottom-right on every viewport.
-    Staged rollout: SMO/ANUSMO/Admin only while battle is tested on prod —
-    hiding it for everyone else avoids a dead-end into the /dashboard bounce
-    the proxy/layout gates already enforce. */}
+    Open to every signed-in role (src/lib/battle-access.ts). */}
 {user && canAccessBattle(effectiveRoles(user.role, user.roles)) && (
 <Link
 href="/battle"

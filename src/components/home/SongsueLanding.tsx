@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { motion, useReducedMotion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import { signIn } from "next-auth/react";
-import { AlertTriangle, ChevronDown, ImageOff, Lock, Volume2, VolumeX } from "lucide-react";
+import { AlertTriangle, ChevronDown, Flame, Hourglass, ImageOff, Link2, Lock, Volume2, VolumeX, Wand2 } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { REGISTRATION_OPENS_AT } from "@/lib/registration-window";
 import { songsueCopy, type SongsueCopy } from "./songsue-copy";
 import { houses, type HouseInfo } from "./houses-data";
+import { houseNameFontClassById } from "./house-fonts";
 // three.js touches the DOM/WebGL — must never run during SSR.
 const FlagFlutter3D = dynamic(
   () => import("./FlagFlutter3D").then((mod) => mod.FlagFlutter3D),
@@ -20,6 +21,16 @@ const DoorCastle3D = dynamic(
   () => import("./DoorCastle3D").then((mod) => mod.DoorCastle3D),
   { ssr: false }
 );
+
+// One theme-matching lucide icon per house, shown next to its dress-code
+// swatches: chained beast (Masscom), time guardians (Architecture),
+// sacred flame (CAMT), ancestral sorcery (Fine Arts).
+const houseDressCodeIconById: Record<string, typeof Link2> = {
+  masscom: Link2,
+  architecture: Hourglass,
+  camt: Flame,
+  "fine-arts": Wand2,
+};
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
@@ -126,6 +137,61 @@ const sectionTitleStyle: CSSProperties = {
   letterSpacing: "-0.02em",
 };
 
+// Shrinks an element's font-size (a direct DOM style override, not a
+// re-render) until its content fits on one line within its parent's content
+// box, falling back to normal wrapping if even minPx can't make it fit —
+// used below for the house faculty name. A static vw-based clamp() kept
+// wrapping some Thai faculty names and not others no matter how it was
+// tuned: Thai line width depends heavily on which specific consonants/vowel
+// marks a string contains, not on character count, so no single clamp
+// generalized across all four houses' names in both languages.
+// Expects the ref'd element's *natural* (un-shrunk) size to come from a CSS
+// class, not an inline style — clearing the inline override to re-measure
+// falls back to that class's resolved value, which is what lets this
+// re-adapt correctly across repeated resizes/breakpoint changes instead of
+// compounding shrinkage on top of a previous shrink.
+function useFitOneLine(
+  ref: { current: HTMLElement | null },
+  deps: unknown[],
+  minPx = 13
+) {
+  useLayoutEffect(() => {
+    const text = ref.current;
+    const container = text?.parentElement;
+    if (!text || !container) return;
+
+    const fit = () => {
+      text.style.whiteSpace = "nowrap";
+      text.style.fontSize = "";
+      const containerStyle = getComputedStyle(container);
+      const available =
+        container.clientWidth -
+        parseFloat(containerStyle.paddingLeft) -
+        parseFloat(containerStyle.paddingRight);
+      const needed = text.scrollWidth;
+      if (available <= 0 || needed <= available) return;
+
+      const naturalPx = parseFloat(getComputedStyle(text).fontSize);
+      const scaled = Math.floor(((naturalPx * available) / needed) * 0.98);
+      if (scaled >= minPx) {
+        text.style.fontSize = `${scaled}px`;
+      } else {
+        // Even the minimum size can't fit this string on one line (e.g. a
+        // long English house name) — wrap instead of clipping against the
+        // section's overflow-hidden.
+        text.style.fontSize = `${minPx}px`;
+        text.style.whiteSpace = "normal";
+      }
+    };
+
+    fit();
+    const resizeObserver = new ResizeObserver(fit);
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
+
 const HOUSE_VIDEO_VOLUME = 0.35;
 const HOUSE_VIDEO_CROSSFADE_SECONDS = 0.8;
 
@@ -210,6 +276,9 @@ function FlagsCarousel({
   // by whichever HouseVideo instance is currently mounted.
   const [soundOn, setSoundOn] = useState(true);
 
+  const facultyNameRef = useRef<HTMLSpanElement>(null);
+  useFitOneLine(facultyNameRef, [activeIndex, storyLang]);
+
   const nextHouse = () => {
     setDirection(1);
     setActiveIndex((prev) => (prev + 1) % houses.length);
@@ -240,8 +309,16 @@ function FlagsCarousel({
 
   const house = houses[activeIndex];
 
+  /* The "!" (Tailwind v4 important) on the spacing classes below is
+     load-bearing, not decorative: globals.css:58 has an unlayered
+     universal selector zeroing padding, and an unlayered rule always beats
+     a layered one (Tailwind's own utilities live in the "utilities" layer)
+     regardless of source order or specificity — so plain px-6/py-* classes
+     here would silently no-op, letting the house caption text run flush to
+     the screen edges on mobile. See the CTA divider further down this file
+     for the same pattern. */
   return (
-    <section className="relative isolate flex flex-col items-center justify-center px-6 pt-10 pb-16 lg:pt-20 lg:pb-24 w-full overflow-hidden min-h-[78svh] lg:min-h-[100svh]">
+    <section className="relative isolate flex flex-col items-center justify-center px-6! pt-10! pb-16! lg:pt-20! lg:pb-24! w-full overflow-hidden min-h-[78svh] lg:min-h-[100svh]">
       {/* Per-house looping background video, crossfaded on house change.
           Skipped entirely under prefers-reduced-motion — autoplaying video
           is exactly the kind of motion that setting asks us not to run. */}
@@ -331,12 +408,29 @@ function FlagsCarousel({
               className="w-full flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 xl:gap-24 h-full"
             >
               {/* Left: House Name, Faculty, Caption */}
-              <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4 px-2 min-w-[280px] max-w-[400px] lg:max-w-[320px] xl:max-w-[400px]">
-                <span style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
+              <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4 px-2! min-w-[280px] max-w-[400px] lg:max-w-[320px] xl:max-w-[400px]">
+                {/* useFitOneLine (above) shrinks this below the .songsue-house-faculty
+                    class's clamp() as needed so it always renders on one line — see
+                    that hook's comment for why a static clamp couldn't do this alone. */}
+                <span ref={facultyNameRef} className="songsue-house-faculty">
                   {house.faculty[storyLang]}
                 </span>
                 {house.houseName && (
-                  <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#9ca3af" }}>
+                  // Each house gets its own dafont.com display face (see
+                  // house-fonts.ts) — fontWeight is left at the browser
+                  // default (not the 800 used elsewhere on this page)
+                  // since these are single-weight display fonts and
+                  // synthetic bolding would distort their letterforms.
+                  <span
+                    className={houseNameFontClassById[house.id]}
+                    style={{
+                      fontSize: "clamp(32px, 6vw, 64px)",
+                      letterSpacing: "0.02em",
+                      textTransform: "uppercase",
+                      color: "rgba(255,255,255,0.92)",
+                      lineHeight: 1.1,
+                    }}
+                  >
                     {house.houseName}
                   </span>
                 )}
@@ -345,6 +439,41 @@ function FlagsCarousel({
                     {house.caption[storyLang]}
                   </p>
                 )}
+                {house.dressCode && (() => {
+                  const DressCodeIcon = houseDressCodeIconById[house.id];
+                  return (
+                    <div className="flex flex-col items-center lg:items-start gap-2">
+                      <div className="flex items-center gap-3">
+                        {DressCodeIcon && (
+                          <DressCodeIcon size={28} strokeWidth={2} color="rgba(255,255,255,0.85)" aria-hidden="true" />
+                        )}
+                        <span style={{ fontSize: "16px", fontWeight: 700, color: "rgba(255,255,255,0.8)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                          {storyLang === "th" ? "ชุดประจำเฮาส์" : "Dress code"}
+                        </span>
+                      </div>
+                      <span
+                        className="flex items-center gap-2.5"
+                        role="img"
+                        aria-label={`${storyLang === "th" ? "สีชุด" : "Dress colors"}: ${house.dressCode.colors.join(", ")}`}
+                      >
+                        {house.dressCode.colors.map((hex) => (
+                          <span
+                            key={hex}
+                            style={{
+                              width: "32px",
+                              height: "32px",
+                              borderRadius: "9999px",
+                              background: hex,
+                              border: "2px solid rgba(255,255,255,0.5)",
+                              display: "inline-block",
+                            }}
+                            aria-hidden="true"
+                          />
+                        ))}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Right: Flag — rightmost, big on desktop; centered and
@@ -441,6 +570,14 @@ function FlagsCarousel({
           <ChevronDown size={24} color="rgba(255,255,255,0.75)" />
         </motion.button>
       </div>
+
+      <style jsx>{`
+        .songsue-house-faculty {
+          font-size: clamp(18px, 4.5vw, 36px);
+          font-weight: 900;
+          color: rgba(255, 255, 255, 0.92);
+        }
+      `}</style>
     </section>
   );
 }

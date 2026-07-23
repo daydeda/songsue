@@ -187,7 +187,7 @@ function HouseVideo({
 
 // The animated 3D flag carousel, one house at a time. Rendered by
 // HousesCarousel only once the door has been entered (phase === "carousel")
-// — pre-entry, section 2 shows the static banner (BannerReveal) instead —
+// — pre-entry, section 2 shows the static wizards illustration instead —
 // so only ever one WebGL canvas is mounted at a time.
 function FlagsCarousel({
   houses,
@@ -389,39 +389,31 @@ function FlagsCarousel({
   );
 }
 
-// Section 2 — pre-entry tease banner, edge-to-edge. Sized purely by its own
-// 3240x1350 aspect ratio (no object-cover crop, so the full banner including
-// its edges is always visible). Swapped out for the flag carousel once the
-// door is entered — see HousesCarousel's phase === "carousel" branch below.
-function BannerReveal({ storyLang }: { storyLang: "th" | "en" }) {
+// Static illustration of the four house wizards on their way to the castle —
+// this is what shows before the door is entered. It's a single flattened
+// WebP (not the 10MB source SVG, which embeds a raster export from Canva AI
+// and would tank load time). Full-bleed edge-to-edge (no max-width cap, no
+// side padding) at the image's own 1:1 aspect ratio — this fills the full
+// viewport width with no black side bars at any breakpoint, and (unlike
+// object-cover with a forced height) never crops any of the four wizards
+// out of frame.
+function WizardsIllustration({ storyLang }: { storyLang: "th" | "en" }) {
   return (
-    <section
-      // lg:min-h only (not a universal min-height): below lg the banner's
-      // own 2.4:1 aspect ratio already fills a healthy share of a narrow
-      // viewport, and forcing extra height there is exactly what used to
-      // letterbox it into a thin strip between two huge empty bars. At
-      // lg+ the banner is comfortably shorter than the viewport, so
-      // without a min-height here to center within, items-center has
-      // nothing to do and the banner ends up glued to the very top with
-      // a dead gap below it instead of sitting centered on screen.
-      className="relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
-    >
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="relative w-full overflow-hidden"
-        style={{ aspectRatio: "3240 / 1350" }}
-      >
+    <section className="relative w-full overflow-hidden">
+      <div className="relative w-full" style={{ aspectRatio: "2430 / 2430" }}>
         <Image
-          src="/songsue-banner.webp"
-          alt={storyLang === "th" ? "แบนเนอร์ สองสื่อ" : "Songsue banner"}
+          src="/songsue-wizards-v2.webp"
+          alt={
+            storyLang === "th"
+              ? "ขบวนพ่อมดสี่บ้านเดินทางสู่ปราสาท"
+              : "The four house wizards on their way to the castle"
+          }
           fill
-          className="object-contain"
+          className="object-cover"
           sizes="100vw"
           priority
         />
-      </motion.div>
+      </div>
     </section>
   );
 }
@@ -681,14 +673,12 @@ export function SongsueLanding({
         </motion.div>
       </div>
 
-      {/* Section 2 - Banner tease, shown before the door is entered. Swaps
-          for the animated 3D flag carousel below once section 03 takes
-          over — it's a pre-castle tease, not something that should stick
-          around once the door has been entered. */}
-      {doorPhase === "door" && <BannerReveal storyLang={storyLang} />}
+      {/* Section 2 - Full-bleed static wizards-on-the-road illustration.
+          Hidden once the door has been entered — it's a pre-castle tease. */}
+      {doorPhase === "door" && <WizardsIllustration storyLang={storyLang} />}
 
-      {/* Section 3 - Door intro, then the animated 3D flag carousel, one
-          house at a time */}
+      {/* Section 3 - Door intro (3D, click to enter), then the interactive
+          per-house flag carousel. */}
       <div ref={houseSectionRef}>
         <HousesCarousel
           storyLang={storyLang}

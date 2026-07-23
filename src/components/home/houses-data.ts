@@ -6,7 +6,8 @@ export type HouseInfo = {
   // No house has character art yet — kept as a field so it's a one-line
   // change to wire up once assets exist, instead of restructuring the type.
   characterSrc: string | null;
-  // Looping muted background video for this house's flag section.
+  // Looping background video (with theme music) for this house's flag
+  // section — starts muted, toggleable via the speaker button.
   bgVideoSrc: string | null;
   faculty: { th: string; en: string };
   houseName: string | null;

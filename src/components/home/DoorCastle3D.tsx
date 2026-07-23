@@ -287,7 +287,17 @@ function CameraController({ isOpen, onEnter }: { isOpen: boolean, onEnter: () =>
   return null;
 }
 
-export function DoorCastle3D({ onEnter }: { onEnter: () => void }) {
+export function DoorCastle3D({
+  onEnter,
+  onOpenChange,
+}: {
+  onEnter: () => void;
+  /** Fires the instant the door is clicked (before the swing/zoom animation
+   *  finishes) so the DOM backdrop behind this transparent canvas can start
+   *  its own zoom-in transition in lockstep instead of staying static while
+   *  the 3D camera flies through the arch. */
+  onOpenChange?: (isOpen: boolean) => void;
+}) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -340,7 +350,13 @@ export function DoorCastle3D({ onEnter }: { onEnter: () => void }) {
       <CameraController isOpen={isOpen} onEnter={onEnter} />
 
       <Suspense fallback={null}>
-        <CastleDoorModel isOpen={isOpen} onClick={() => setIsOpen(true)} />
+        <CastleDoorModel
+          isOpen={isOpen}
+          onClick={() => {
+            setIsOpen(true);
+            onOpenChange?.(true);
+          }}
+        />
         {/* Brand-matched environment: warm orange/gold Lightformers (same
             palette as the page's BackgroundGlow and CTA accent) so the
             gold/stone PBR reflections tie into the site instead of a

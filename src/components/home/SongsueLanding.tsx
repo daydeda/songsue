@@ -443,24 +443,14 @@ function HousesCarousel({
   prefersReducedMotion: boolean;
   copy: SongsueCopy;
 }) {
-  // Once through the door, this slot hands off entirely to the flag
-  // carousel (the pre-entry banner in section 2 is gone by then, and the
-  // door itself is done) — no wrapper/flash overlay needed past this point.
-  if (phase === "carousel") {
-    return (
-      <FlagsCarousel
-        houses={houses}
-        storyLang={storyLang}
-        prefersReducedMotion={prefersReducedMotion}
-        copy={copy}
-      />
-    );
-  }
-
   return (
     <section
-      className="relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
-      style={{ minHeight: "100svh" }}
+      className={
+        phase === "carousel"
+          ? "relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
+          : "relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
+      }
+      style={phase === "door" ? { minHeight: "100svh" } : undefined}
     >
       {/* Flash overlay */}
       <div
@@ -468,20 +458,34 @@ function HousesCarousel({
         style={{ opacity: flash ? 1 : 0, transitionDuration: "1000ms" }}
       />
 
-      {/* No more painted castle-wall backdrop — the 3D door is the whole
-          stage now, so it can claim most of the section instead of being
-          confined to a small painted-archway footprint. Portrait-ish max
-          widths (vs. a wide/short box) keep the canvas aspect close to the
-          door model's own (taller than wide), which is what makes the
-          camera-fit door render large instead of shrinking to fit a wide
-          canvas. */}
-      <div className="relative w-full max-w-md sm:max-w-xl lg:max-w-3xl mx-auto" style={{ height: "min(68svh, 720px)" }}>
-        <DoorCastle3D onEnter={onEnter} />
-      </div>
+      {phase === "door" && (
+        <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: "80svh" }}>
+          <div className="relative w-full flex flex-col items-center justify-center" style={{ height: "80svh" }}>
+            <div className="w-full h-full">
+              <DoorCastle3D onEnter={onEnter} />
+            </div>
+            <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full">
+              {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
+            </p>
+          </div>
+        </div>
+      )}
 
-      <p className="mt-6 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full px-4">
-        {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
-      </p>
+      {phase === "carousel" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
+          className="w-full"
+        >
+          <FlagsCarousel
+            houses={houses}
+            storyLang={storyLang}
+            prefersReducedMotion={prefersReducedMotion}
+            copy={copy}
+          />
+        </motion.div>
+      )}
     </section>
   );
 }

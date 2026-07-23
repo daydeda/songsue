@@ -793,6 +793,8 @@ export function SongsueLanding({
   }, [doorPhase]);
 
   const heroRef = useRef<HTMLDivElement>(null);
+  const heroTitleRef = useRef<HTMLSpanElement>(null);
+  useFitOneLine(heroTitleRef, [storyLang], 24);
   const { scrollYProgress } = useScroll({
     target: heroRef,
     offset: ["start start", "end start"],
@@ -841,21 +843,25 @@ export function SongsueLanding({
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, ease: EASE_OUT }}
-          className="flex flex-col items-center gap-6 max-w-3xl"
+          className="flex flex-col items-center gap-6 w-full max-w-3xl"
         >
           <h1
-            className="landing-title"
+            className="landing-title w-full"
             style={{
-              fontSize: "clamp(32px, 14vw, 140px)",
               fontWeight: 950,
               color: "rgba(255,255,255,0.97)",
               lineHeight: 0.95,
               letterSpacing: "-0.03em",
-              whiteSpace: "nowrap",
             }}
           >
+            {/* useFitOneLine (defined above) shrinks this below the
+                .songsue-hero-title class's clamp() as needed so the title
+                never overflows past the viewport edge on narrow phones —
+                see that hook's comment for why a static clamp() alone
+                (this used whiteSpace:nowrap with no shrink) couldn't do this. */}
             <span
-              className="gradient-text"
+              ref={heroTitleRef}
+              className="gradient-text songsue-hero-title"
               style={{ backgroundImage: "linear-gradient(135deg, #111827 0%, #ffffff 100%)" }}
             >
               {storyLang === "en" ? copy.hero.titleEn : copy.hero.titleTh}
@@ -1034,6 +1040,9 @@ export function SongsueLanding({
           the app stays on the brand orange; this landing page alone uses a
           monochrome black/white/grey palette. */}
       <style jsx>{`
+        .songsue-hero-title {
+          font-size: clamp(32px, 14vw, 140px);
+        }
         .songsue-cta-btn {
           background: #f3f4f6;
           color: #0a0a0a;

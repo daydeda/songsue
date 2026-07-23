@@ -279,6 +279,12 @@ function FlagsCarousel({
   const facultyNameRef = useRef<HTMLSpanElement>(null);
   useFitOneLine(facultyNameRef, [activeIndex, storyLang]);
 
+  // Tracks whether a finger/pointer is currently mid-drag on the flag below.
+  // The auto-advance effect reads this to make sure it never swaps activeIndex
+  // (and therefore unmounts the dragged flag via AnimatePresence) while a drag
+  // is in flight — see that effect's comment for why.
+  const isDraggingRef = useRef(false);
+
   const nextHouse = () => {
     setDirection(1);
     setActiveIndex((prev) => (prev + 1) % houses.length);
@@ -298,12 +304,29 @@ function FlagsCarousel({
   // firing right on top of it. Skipped under prefers-reduced-motion — an
   // auto-rotating carousel is exactly the kind of motion that setting asks
   // us not to run (WCAG 2.2.2).
+  //
+  // Deferred (polled every 500ms, not just fired once at 15000ms) while
+  // isDraggingRef is true: this timer is on its own clock, completely
+  // independent of the user's touch. If it fired mid-drag it would flip
+  // activeIndex and, via AnimatePresence, unmount the flag element the
+  // visitor's finger is still on — on mobile that mid-gesture removal can
+  // leave Framer Motion's drag handling unable to run its pointer-up cleanup
+  // for the removed element, which has been observed to leave the page's
+  // touch/scroll handling stuck until a hard refresh. Waiting for the drag to
+  // end first (onDragEnd flips the ref back before this next checks) avoids
+  // ever unmounting a still-dragged element.
   useEffect(() => {
     if (prefersReducedMotion || houses.length <= 1) return;
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      if (isDraggingRef.current) {
+        timer = setTimeout(tick, 500);
+        return;
+      }
       setDirection(1);
       setActiveIndex((prev) => (prev + 1) % houses.length);
-    }, 15000);
+    };
+    timer = setTimeout(tick, 15000);
     return () => clearTimeout(timer);
   }, [activeIndex, prefersReducedMotion, houses.length]);
 
@@ -497,7 +520,11 @@ function FlagsCarousel({
                 dragConstraints={{ left: 0, right: 0 }}
                 dragElastic={0.15}
                 dragMomentum={false}
+                onDragStart={() => {
+                  isDraggingRef.current = true;
+                }}
                 onDragEnd={(e, { offset, velocity }) => {
+                  isDraggingRef.current = false;
                   if (offset.x < -60 || velocity.x < -400) {
                     nextHouse();
                   } else if (offset.x > 60 || velocity.x > 400) {

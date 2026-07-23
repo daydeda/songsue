@@ -11,12 +11,11 @@ import {
   AnimatePresence,
 } from "framer-motion";
 import { signIn } from "next-auth/react";
-import { AlertTriangle, ChevronDown, ImageOff, Lock } from "lucide-react";
+import { AlertTriangle, ChevronDown, ImageOff, Lock, Volume2, VolumeX } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { REGISTRATION_OPENS_AT } from "@/lib/registration-window";
 import { songsueCopy, type SongsueCopy } from "./songsue-copy";
 import { houses, type HouseInfo } from "./houses-data";
-
 // three.js touches the DOM/WebGL — must never run during SSR.
 const FlagFlutter3D = dynamic(
   () => import("./FlagFlutter3D").then((mod) => mod.FlagFlutter3D),
@@ -133,10 +132,69 @@ const sectionTitleStyle: CSSProperties = {
   letterSpacing: "-0.02em",
 };
 
-// Section 2 — the animated 3D flag, one house at a time. This is the only
-// place the flutter animation appears (moved here from the door-carousel
-// below, which is now gated behind a click and shouldn't be where the
-// headline motion lives) — so only ever one WebGL canvas is mounted.
+const HOUSE_VIDEO_VOLUME = 0.35;
+const HOUSE_VIDEO_CROSSFADE_SECONDS = 0.8;
+
+// One background video per house, mounted as its own component (rather than a
+// single shared <video> + ref in the parent) so the outgoing and incoming
+// videos during a crossfade are genuinely separate DOM node instances — the
+// audio fade below rides each instance's own opacity tween, and that only
+// works if the exiting and entering videos aren't fighting over one ref.
+function HouseVideo({
+  src,
+  soundOn,
+  onAutoplayBlocked,
+}: {
+  src: string;
+  soundOn: boolean;
+  onAutoplayBlocked: () => void;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    video.muted = !soundOn;
+    video.volume = soundOn ? HOUSE_VIDEO_VOLUME : 0;
+    if (soundOn) {
+      // A freshly mounted <video> (new house => new key) re-triggers the
+      // browser's autoplay-with-sound check even after an earlier click
+      // unlocked it once; swallow the rare rejection instead of leaving
+      // the video frozen, and fall back to muted so playback continues.
+      video.play().catch(onAutoplayBlocked);
+    }
+  }, [soundOn, onAutoplayBlocked]);
+
+  return (
+    <motion.video
+      ref={ref}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: HOUSE_VIDEO_CROSSFADE_SECONDS, ease: "easeOut" }}
+      // Rides the same opacity tween driving the visual crossfade, so the
+      // theme song fades in/out in lockstep with its video instead of
+      // cutting abruptly the instant a house changes.
+      onUpdate={(latest) => {
+        const video = ref.current;
+        if (video && soundOn && typeof latest.opacity === "number") {
+          video.volume = HOUSE_VIDEO_VOLUME * latest.opacity;
+        }
+      }}
+      className="absolute inset-0 w-full h-full object-cover"
+      src={src}
+      autoPlay
+      muted={!soundOn}
+      loop
+      playsInline
+    />
+  );
+}
+
+// The animated 3D flag carousel, one house at a time. Rendered by
+// HousesCarousel only once the door has been entered (phase === "carousel")
+// — pre-entry, section 2 shows the static banner (BannerReveal) instead —
+// so only ever one WebGL canvas is mounted at a time.
 function FlagsCarousel({
   houses,
   storyLang,
@@ -150,6 +208,11 @@ function FlagsCarousel({
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
+  // Theme music starts on (at a reduced volume, see HouseVideo) — the button
+  // still lets a visitor opt out. Sound on/off is shared across houses
+  // (rather than reset per crossfade) since it's a single soundOn state read
+  // by whichever HouseVideo instance is currently mounted.
+  const [soundOn, setSoundOn] = useState(true);
 
   const nextHouse = () => {
     setDirection(1);
@@ -165,10 +228,77 @@ function FlagsCarousel({
     setActiveIndex(idx);
   };
 
+  // Auto-advance the carousel. Rescheduled off activeIndex so a manual nav
+  // (dots, drag, or arrows) pushes the next auto-advance out rather than
+  // firing right on top of it. Skipped under prefers-reduced-motion — an
+  // auto-rotating carousel is exactly the kind of motion that setting asks
+  // us not to run (WCAG 2.2.2).
+  useEffect(() => {
+    if (prefersReducedMotion || houses.length <= 1) return;
+    const timer = setTimeout(() => {
+      setDirection(1);
+      setActiveIndex((prev) => (prev + 1) % houses.length);
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [activeIndex, prefersReducedMotion, houses.length]);
+
   const house = houses[activeIndex];
 
   return (
-    <section className="relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+    <section className="relative isolate flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+      {/* Per-house looping background video, crossfaded on house change.
+          Skipped entirely under prefers-reduced-motion — autoplaying video
+          is exactly the kind of motion that setting asks us not to run. */}
+      {!prefersReducedMotion && (
+        <div className="absolute inset-0 -z-10 overflow-hidden">
+          {/* initial={false}: the first house's video must be visible the
+              instant it mounts, not wait on a client-side opacity transition
+              — if that transition ever fails to fire (slow hydration, tab
+              backgrounded, etc.) the section renders as solid black with no
+              recovery. Later house switches still crossfade normally since
+              this only suppresses the very first mount's enter animation. */}
+          <AnimatePresence mode="sync" initial={false}>
+            {house.bgVideoSrc && (
+              <HouseVideo
+                key={house.id}
+                src={house.bgVideoSrc}
+                soundOn={soundOn}
+                onAutoplayBlocked={() => setSoundOn(false)}
+              />
+            )}
+          </AnimatePresence>
+          {/* Light darken/blend so caption text stays readable — the source
+              footage (moonlit clouds, embers, dark stone) is already very
+              dark on its own, so a heavy overlay here was making the video
+              disappear entirely instead of just legible-izing text over it. */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(3,3,3,0.15) 0%, rgba(3,3,3,0.3) 60%, rgba(3,3,3,0.5) 100%)" }} />
+        </div>
+      )}
+
+      {!prefersReducedMotion && house.bgVideoSrc && (
+        <button
+          type="button"
+          onClick={() => setSoundOn((prev) => !prev)}
+          aria-label={
+            soundOn
+              ? `${storyLang === "th" ? "ปิดเสียงเพลงประจำเฮาส์" : "Mute"} ${house.faculty[storyLang]}`
+              : `${storyLang === "th" ? "เปิดเสียงเพลงประจำเฮาส์" : "Unmute"} ${house.faculty[storyLang]}`
+          }
+          className="absolute top-4 right-4 lg:top-6 lg:right-6 z-20 flex items-center justify-center rounded-full transition-colors touch-target"
+          style={{
+            width: 40,
+            height: 40,
+            background: "rgba(0,0,0,0.35)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            border: "1px solid rgba(255,255,255,0.15)",
+            color: "rgba(255,255,255,0.9)",
+          }}
+        >
+          {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
+        </button>
+      )}
+
       <div className="max-w-xl flex flex-col items-center gap-3 text-center mb-6 lg:mb-12 z-10">
         <span style={kickerStyle}>{copy.flags.kicker}</span>
         <h2 className="landing-title" style={sectionTitleStyle}>
@@ -265,33 +395,78 @@ function FlagsCarousel({
   );
 }
 
+// Section 2 — pre-entry tease banner, edge-to-edge. Sized purely by its own
+// 3240x1350 aspect ratio (no object-cover crop, so the full banner including
+// its edges is always visible). Swapped out for the flag carousel once the
+// door is entered — see HousesCarousel's phase === "carousel" branch below.
+function BannerReveal({ storyLang }: { storyLang: "th" | "en" }) {
+  return (
+    <section
+      // lg:min-h only (not a universal min-height): below lg the banner's
+      // own 2.4:1 aspect ratio already fills a healthy share of a narrow
+      // viewport, and forcing extra height there is exactly what used to
+      // letterbox it into a thin strip between two huge empty bars. At
+      // lg+ the banner is comfortably shorter than the viewport, so
+      // without a min-height here to center within, items-center has
+      // nothing to do and the banner ends up glued to the very top with
+      // a dead gap below it instead of sitting centered on screen.
+      className="relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
+    >
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="relative w-full overflow-hidden"
+        style={{ aspectRatio: "3240 / 1350" }}
+      >
+        <Image
+          src="/songsue-banner.webp"
+          alt={storyLang === "th" ? "แบนเนอร์ สองสื่อ" : "Songsue banner"}
+          fill
+          className="object-contain"
+          sizes="100vw"
+          priority
+        />
+      </motion.div>
+    </section>
+  );
+}
+
 function HousesCarousel({
   storyLang,
   phase,
   flash,
-  onEnter
+  onEnter,
+  houses,
+  prefersReducedMotion,
+  copy,
 }: {
   storyLang: "th" | "en";
   phase: "door" | "carousel";
   flash: boolean;
   onEnter: () => void;
+  houses: HouseInfo[];
+  prefersReducedMotion: boolean;
+  copy: SongsueCopy;
 }) {
+  // Once through the door, this slot hands off entirely to the flag
+  // carousel (the pre-entry banner in section 2 is gone by then, and the
+  // door itself is done) — no wrapper/flash overlay needed past this point.
+  if (phase === "carousel") {
+    return (
+      <FlagsCarousel
+        houses={houses}
+        storyLang={storyLang}
+        prefersReducedMotion={prefersReducedMotion}
+        copy={copy}
+      />
+    );
+  }
+
   return (
     <section
-      className={
-        phase === "carousel"
-          ? // lg:min-h only (not a universal min-height): below lg the banner's
-            // own 2.4:1 aspect ratio already fills a healthy share of a narrow
-            // viewport, and forcing extra height there is exactly what used to
-            // letterbox it into a thin strip between two huge empty bars. At
-            // lg+ the banner is comfortably shorter than the viewport, so
-            // without a min-height here to center within, items-center has
-            // nothing to do and the banner ends up glued to the very top with
-            // a dead gap below it instead of sitting centered on screen.
-            "relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
-          : "relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
-      }
-      style={phase === "door" ? { minHeight: "100svh" } : undefined}
+      className="relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
+      style={{ minHeight: "100svh" }}
     >
       {/* Flash overlay */}
       <div
@@ -299,45 +474,20 @@ function HousesCarousel({
         style={{ opacity: flash ? 1 : 0, transitionDuration: "1000ms" }}
       />
 
-      {phase === "door" && (
-        <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: "80svh" }}>
-          <div className="relative w-full flex flex-col items-center justify-center" style={{ height: "80svh" }}>
-            <div className="w-full h-full">
-              <DoorCastle3D onEnter={onEnter} />
-            </div>
-            <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full">
-              {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
-            </p>
-          </div>
-        </div>
-      )}
+      {/* No more painted castle-wall backdrop — the 3D door is the whole
+          stage now, so it can claim most of the section instead of being
+          confined to a small painted-archway footprint. Portrait-ish max
+          widths (vs. a wide/short box) keep the canvas aspect close to the
+          door model's own (taller than wide), which is what makes the
+          camera-fit door render large instead of shrinking to fit a wide
+          canvas. */}
+      <div className="relative w-full max-w-md sm:max-w-xl lg:max-w-3xl mx-auto" style={{ height: "min(68svh, 720px)" }}>
+        <DoorCastle3D onEnter={onEnter} />
+      </div>
 
-      {phase === "carousel" && (
-        // Full-width (edge-to-edge) banner reveal — replaces the old
-        // per-house carousel/grid entirely. The image itself is sized
-        // purely by its own 3240x1350 aspect ratio (no object-cover crop,
-        // so the full banner including its edges is always visible); on
-        // lg+ viewports the parent <section>'s lg:min-h-[90svh] then
-        // centers it vertically via that section's flex items-center /
-        // justify-center (see the section's className comment for why
-        // that min-height is lg-only, not universal).
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
-          className="relative w-full overflow-hidden"
-          style={{ aspectRatio: "3240 / 1350" }}
-        >
-          <Image
-            src="/songsue-banner.webp"
-            alt={storyLang === "th" ? "แบนเนอร์ สองสื่อ" : "Songsue banner"}
-            fill
-            className="object-contain"
-            sizes="100vw"
-            priority
-          />
-        </motion.div>
-      )}
+      <p className="mt-6 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full px-4">
+        {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
+      </p>
     </section>
   );
 }
@@ -371,34 +521,37 @@ export function SongsueLanding({
     }, 1000);
   };
 
-  // FlagsCarousel (section 2) unmounts and the door section collapses from
-  // 100svh down to the banner's natural (much shorter) height the instant
-  // doorPhase flips — with no scroll compensation the browser clamps the
-  // scroll offset to the new, shorter page and the banner ends up scrolled
-  // past. Recenter on the section so the banner actually appears in view.
-  // Scroll to its top, not center: the Hero section above (section 1) is
-  // always mounted at 100svh regardless of doorPhase, so centering the much
-  // shorter banner section pulls half a screen of the Hero's empty tail
-  // into view above it. Scrolling its start to the top of the viewport
-  // instead puts the banner immediately in view with nothing above it.
+  // The pre-entry banner (section 2) unmounts and the door section swaps to
+  // the flag carousel the instant doorPhase flips — even though both the
+  // door and the flag carousel are ~100svh, the banner's removal plus the
+  // WebGL canvas mount/unmount still shifts document height enough that,
+  // with no scroll compensation, the browser's native scroll anchoring can
+  // leave the flag carousel scrolled past. Recenter on the section so it
+  // actually appears in view. Scroll to its top, not center: the Hero
+  // section above (section 1) is always mounted at 100svh regardless of
+  // doorPhase, so centering the flag carousel section pulls half a screen
+  // of the Hero's empty tail into view above it. Scrolling its start to the
+  // top of the viewport instead puts it immediately in view with nothing
+  // above it.
   //
   // A single scrollIntoView call isn't enough here: this page mixes
-  // Next/Image layout (banner), a WebGL canvas remount (the door canvas
-  // unmounting), and a Framer Motion whileInView reveal (the CTA card) —
-  // between them the document height keeps settling for a couple hundred ms
-  // after the phase flip, and the browser's native scroll anchoring nudges
-  // scrollY to compensate as that happens, dragging the banner back down
-  // out from under a one-shot scroll. So instead of scrolling once, we
-  // re-assert the target every time a ResizeObserver sees the page's height
-  // change, for a short window after entering — and bail out immediately if
-  // the user starts scrolling/touching themselves so we never fight them.
-  // Every re-assert (including the first) uses "instant", never "smooth":
-  // a "smooth" scroll animates over ~300-500ms, and if a ResizeObserver
-  // firing mid-animation snapped the page to a new target with "instant" it
-  // would cut that animation off half-finished — visibly yanking the banner
-  // out from under itself right as it first comes into view, since this
-  // settle window is exactly when the layout (and therefore the target) is
-  // still moving. Snapping the whole way through avoids that tug-of-war.
+  // Next/Image layout (banner), a WebGL canvas remount (door unmounting,
+  // flag flutter mounting), and a Framer Motion whileInView reveal (the CTA
+  // card) — between them the document height keeps settling for a couple
+  // hundred ms after the phase flip, and the browser's native scroll
+  // anchoring nudges scrollY to compensate as that happens, dragging the
+  // target back out from under a one-shot scroll. So instead of scrolling
+  // once, we re-assert the target every time a ResizeObserver sees the
+  // page's height change, for a short window after entering — and bail out
+  // immediately if the user starts scrolling/touching themselves so we
+  // never fight them. Every re-assert (including the first) uses "instant",
+  // never "smooth": a "smooth" scroll animates over ~300-500ms, and if a
+  // ResizeObserver firing mid-animation snapped the page to a new target
+  // with "instant" it would cut that animation off half-finished — visibly
+  // yanking the target out from under itself right as it first comes into
+  // view, since this settle window is exactly when the layout (and
+  // therefore the target) is still moving. Snapping the whole way through
+  // avoids that tug-of-war.
   useEffect(() => {
     if (doorPhase !== "carousel") return;
 
@@ -530,25 +683,23 @@ export function SongsueLanding({
         </motion.div>
       </div>
 
-      {/* Section 2 - Animated 3D flag carousel, one house at a time.
-          Hidden once the door has been entered — it's a pre-castle tease,
-          not something that should stick around once section 03 takes over. */}
-      {doorPhase === "door" && (
-        <FlagsCarousel
-          houses={houses}
-          storyLang={storyLang}
-          prefersReducedMotion={!!prefersReducedMotion}
-          copy={copy}
-        />
-      )}
+      {/* Section 2 - Banner tease, shown before the door is entered. Swaps
+          for the animated 3D flag carousel below once section 03 takes
+          over — it's a pre-castle tease, not something that should stick
+          around once the door has been entered. */}
+      {doorPhase === "door" && <BannerReveal storyLang={storyLang} />}
 
-      {/* Section 3 - Door intro, then the full-bleed songsue-banner.png reveal */}
+      {/* Section 3 - Door intro, then the animated 3D flag carousel, one
+          house at a time */}
       <div ref={houseSectionRef}>
         <HousesCarousel
           storyLang={storyLang}
           phase={doorPhase}
           flash={flash}
           onEnter={handleEnter}
+          houses={houses}
+          prefersReducedMotion={!!prefersReducedMotion}
+          copy={copy}
         />
       </div>
 

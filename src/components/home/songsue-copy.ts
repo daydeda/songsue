@@ -39,7 +39,7 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
     cta: {
       kicker: "ลงทะเบียนเข้าร่วมงาน",
       title: "พร้อมเริ่มเรื่องราวของคุณหรือยัง?",
-      body: "การลงทะเบียนจะเปิดในวันที่ 23 กรกฎาคม — กดติดตามนับถอยหลังไว้ แล้วมาเจอกัน",
+      body: "เปิดลงทะเบียนแล้ววันนี้ — เข้าสู่ระบบด้วย Google แล้วมาเจอกัน",
       lockedLabel: "เปิดลงทะเบียนในอีก",
       unlockedLabel: "ลงทะเบียนด้วย Google",
       dateNote: "เปิดลงทะเบียน 23 กรกฎาคม 2569",
@@ -60,7 +60,7 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
     cta: {
       kicker: "Register for the event",
       title: "Ready to start your story?",
-      body: "Registration opens on July 23 — watch the countdown, and we'll see you there.",
+      body: "Registration is open — sign in with Google and we'll see you there.",
       lockedLabel: "Registration opens in",
       unlockedLabel: "Register with Google",
       dateNote: "Registration opens July 23, 2026",

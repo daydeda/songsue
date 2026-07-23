@@ -399,7 +399,12 @@ function FlagsCarousel({
 // out of frame.
 function WizardsIllustration({ storyLang }: { storyLang: "th" | "en" }) {
   return (
-    <section className="relative w-full overflow-hidden">
+    // Background matches the page wrapper's #030303 (not just "transparent")
+    // as a fallback for a sub-pixel rounding gap Chromium leaves between an
+    // aspect-ratio box and the next section — without this, that hairline
+    // gap exposes globals.css's light --bg-base (#fcfcfd) as a visible white
+    // line at the bottom edge instead of blending into the dark page.
+    <section className="relative w-full overflow-hidden" style={{ background: "#030303" }}>
       <div className="relative w-full" style={{ aspectRatio: "2430 / 2430" }}>
         <Image
           src="/songsue-wizards-v2.webp"

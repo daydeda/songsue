@@ -3,13 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import {
-  motion,
-  useReducedMotion,
-  useScroll,
-  useTransform,
-  AnimatePresence,
-} from "framer-motion";
+import { motion, useReducedMotion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import { signIn } from "next-auth/react";
 import { AlertTriangle, ChevronDown, ImageOff, Lock } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -265,30 +259,57 @@ function FlagsCarousel({
   );
 }
 
+// Static illustration of the four house wizards on their way to the castle —
+// this is what shows before the door is entered. It's a single flattened
+// WebP (not the 10MB source SVG, which embeds a raster export from Canva AI
+// and would tank load time). Full-bleed edge-to-edge (no max-width cap, no
+// side padding) at the image's own 1:1 aspect ratio — this fills the full
+// viewport width with no black side bars at any breakpoint, and (unlike
+// object-cover with a forced height) never crops any of the four wizards
+// out of frame.
+function WizardsIllustration({ storyLang }: { storyLang: "th" | "en" }) {
+  return (
+    <section className="relative w-full overflow-hidden">
+      <div className="relative w-full" style={{ aspectRatio: "2430 / 2430" }}>
+        <Image
+          src="/songsue-wizards-v2.webp"
+          alt={
+            storyLang === "th"
+              ? "ขบวนพ่อมดสี่บ้านเดินทางสู่ปราสาท"
+              : "The four house wizards on their way to the castle"
+          }
+          fill
+          className="object-cover"
+          sizes="100vw"
+          priority
+        />
+      </div>
+    </section>
+  );
+}
+
 function HousesCarousel({
   storyLang,
   phase,
   flash,
-  onEnter
+  onEnter,
+  houses,
+  prefersReducedMotion,
+  copy,
 }: {
   storyLang: "th" | "en";
   phase: "door" | "carousel";
   flash: boolean;
   onEnter: () => void;
+  houses: HouseInfo[];
+  prefersReducedMotion: boolean;
+  copy: SongsueCopy;
 }) {
   return (
     <section
       className={
         phase === "carousel"
-          ? // lg:min-h only (not a universal min-height): below lg the banner's
-            // own 2.4:1 aspect ratio already fills a healthy share of a narrow
-            // viewport, and forcing extra height there is exactly what used to
-            // letterbox it into a thin strip between two huge empty bars. At
-            // lg+ the banner is comfortably shorter than the viewport, so
-            // without a min-height here to center within, items-center has
-            // nothing to do and the banner ends up glued to the very top with
-            // a dead gap below it instead of sitting centered on screen.
-            "relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
+          ? "relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
           : "relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
       }
       style={phase === "door" ? { minHeight: "100svh" } : undefined}
@@ -313,28 +334,17 @@ function HousesCarousel({
       )}
 
       {phase === "carousel" && (
-        // Full-width (edge-to-edge) banner reveal — replaces the old
-        // per-house carousel/grid entirely. The image itself is sized
-        // purely by its own 3240x1350 aspect ratio (no object-cover crop,
-        // so the full banner including its edges is always visible); on
-        // lg+ viewports the parent <section>'s lg:min-h-[90svh] then
-        // centers it vertically via that section's flex items-center /
-        // justify-center (see the section's className comment for why
-        // that min-height is lg-only, not universal).
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
-          className="relative w-full overflow-hidden"
-          style={{ aspectRatio: "3240 / 1350" }}
+          className="w-full"
         >
-          <Image
-            src="/songsue-banner.webp"
-            alt={storyLang === "th" ? "แบนเนอร์ สองสื่อ" : "Songsue banner"}
-            fill
-            className="object-contain"
-            sizes="100vw"
-            priority
+          <FlagsCarousel
+            houses={houses}
+            storyLang={storyLang}
+            prefersReducedMotion={prefersReducedMotion}
+            copy={copy}
           />
         </motion.div>
       )}
@@ -357,7 +367,7 @@ export function SongsueLanding({
   const copy = songsueCopy[storyLang];
   const prefersReducedMotion = useReducedMotion();
   const countdown = useCountdown(REGISTRATION_OPENS_AT);
-  
+
   const [doorPhase, setDoorPhase] = useState<"door" | "carousel">("door");
   const [flash, setFlash] = useState(false);
   const houseSectionRef = useRef<HTMLDivElement>(null);
@@ -371,34 +381,26 @@ export function SongsueLanding({
     }, 1000);
   };
 
-  // FlagsCarousel (section 2) unmounts and the door section collapses from
-  // 100svh down to the banner's natural (much shorter) height the instant
-  // doorPhase flips — with no scroll compensation the browser clamps the
-  // scroll offset to the new, shorter page and the banner ends up scrolled
-  // past. Recenter on the section so the banner actually appears in view.
-  // Scroll to its top, not center: the Hero section above (section 1) is
-  // always mounted at 100svh regardless of doorPhase, so centering the much
-  // shorter banner section pulls half a screen of the Hero's empty tail
-  // into view above it. Scrolling its start to the top of the viewport
-  // instead puts the banner immediately in view with nothing above it.
+  // FlagsCarousel unmounts and the door section collapses from 100svh down to
+  // its natural (much shorter) height the instant doorPhase flips — with no
+  // scroll compensation the browser clamps the scroll offset to the new,
+  // shorter page. Recenter on the section so the flag carousel actually
+  // appears in view. Scroll to its top, not center: the Hero section above
+  // is always mounted at 100svh regardless of doorPhase, so centering the
+  // much shorter section pulls half a screen of the Hero's empty tail into
+  // view above it.
   //
   // A single scrollIntoView call isn't enough here: this page mixes
-  // Next/Image layout (banner), a WebGL canvas remount (the door canvas
-  // unmounting), and a Framer Motion whileInView reveal (the CTA card) —
-  // between them the document height keeps settling for a couple hundred ms
-  // after the phase flip, and the browser's native scroll anchoring nudges
-  // scrollY to compensate as that happens, dragging the banner back down
-  // out from under a one-shot scroll. So instead of scrolling once, we
-  // re-assert the target every time a ResizeObserver sees the page's height
-  // change, for a short window after entering — and bail out immediately if
-  // the user starts scrolling/touching themselves so we never fight them.
-  // Every re-assert (including the first) uses "instant", never "smooth":
-  // a "smooth" scroll animates over ~300-500ms, and if a ResizeObserver
-  // firing mid-animation snapped the page to a new target with "instant" it
-  // would cut that animation off half-finished — visibly yanking the banner
-  // out from under itself right as it first comes into view, since this
-  // settle window is exactly when the layout (and therefore the target) is
-  // still moving. Snapping the whole way through avoids that tug-of-war.
+  // Next/Image layout, a WebGL canvas remount (the door canvas unmounting),
+  // and a Framer Motion whileInView reveal (the CTA card) — between them the
+  // document height keeps settling for a couple hundred ms after the phase
+  // flip, and the browser's native scroll anchoring nudges scrollY to
+  // compensate as that happens. So instead of scrolling once, we re-assert
+  // the target every time a ResizeObserver sees the page's height change,
+  // for a short window after entering — and bail out immediately if the user
+  // starts scrolling/touching themselves so we never fight them. Every
+  // re-assert uses "instant", never "smooth", to avoid cutting a smooth
+  // scroll animation off mid-flight when the ResizeObserver retargets.
   useEffect(() => {
     if (doorPhase !== "carousel") return;
 
@@ -530,29 +532,25 @@ export function SongsueLanding({
         </motion.div>
       </div>
 
-      {/* Section 2 - Animated 3D flag carousel, one house at a time.
-          Hidden once the door has been entered — it's a pre-castle tease,
-          not something that should stick around once section 03 takes over. */}
-      {doorPhase === "door" && (
-        <FlagsCarousel
-          houses={houses}
-          storyLang={storyLang}
-          prefersReducedMotion={!!prefersReducedMotion}
-          copy={copy}
-        />
-      )}
+      {/* Section 2 - Full-bleed static wizards-on-the-road illustration.
+          Hidden once the door has been entered — it's a pre-castle tease. */}
+      {doorPhase === "door" && <WizardsIllustration storyLang={storyLang} />}
 
-      {/* Section 3 - Door intro, then the full-bleed songsue-banner.png reveal */}
+      {/* Section 3 - Door intro (3D, click to enter), then the interactive
+          per-house flag carousel. */}
       <div ref={houseSectionRef}>
         <HousesCarousel
           storyLang={storyLang}
           phase={doorPhase}
           flash={flash}
           onEnter={handleEnter}
+          houses={houses}
+          prefersReducedMotion={!!prefersReducedMotion}
+          copy={copy}
         />
       </div>
 
-      {/* Visual separator between the banner and the CTA — plain margin alone
+      {/* Visual separator between the flags and the CTA — plain margin alone
           is invisible here since both sections sit on the same solid black
           page background, so a subtle divider line is what actually reads
           as "a gap" instead of just more black space. py-* here (not on the
@@ -579,13 +577,6 @@ export function SongsueLanding({
       <motion.section
         {...reveal}
         className="relative flex flex-col items-center justify-center text-center px-6! py-12! sm:py-16! lg:py-24!"
-        /* 90svh (not a rounder 70/80svh) is deliberate: the scroll-into-view
-           effect above needs (banner + divider + this section) to add up to
-           at least one full viewport so the browser has room to actually
-           scroll the banner flush to the top — anything shorter gets clamped
-           by the max scroll position, leaving a leftover strip of the Hero
-           section stuck above the banner. Verified against 390x844 and
-           1440x900; don't shrink this without re-checking the flush at both. */
         style={{ minHeight: "90svh" }}
       >
         <div

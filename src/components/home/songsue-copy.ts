@@ -8,6 +8,7 @@ export type SongsueCopy = {
   flags: {
     kicker: string;
     title: string;
+    scrollHint: string;
   };
   cta: {
     kicker: string;
@@ -35,6 +36,7 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
     flags: {
       kicker: "02 — ธงประจำบ้าน",
       title: "สี่บ้าน สี่ธง",
+      scrollHint: "เลื่อนลงเพื่อลงทะเบียน",
     },
     cta: {
       kicker: "ลงทะเบียนเข้าร่วมงาน",
@@ -56,6 +58,7 @@ export const songsueCopy: Record<"th" | "en", SongsueCopy> = {
     flags: {
       kicker: "02 — House Flags",
       title: "Four houses, four flags",
+      scrollHint: "Scroll down to register",
     },
     cta: {
       kicker: "Register for the event",

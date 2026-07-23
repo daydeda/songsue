@@ -38,7 +38,10 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/smocamt-logo-icon.png") ||
     pathname.startsWith("/icon.svg") ||
     pathname.startsWith("/flag_house") ||
-    pathname.startsWith("/songsue-banner.webp");
+    pathname.startsWith("/songsue-banner.webp") ||
+    pathname.startsWith("/songsue-wizards.webp") ||
+    pathname.startsWith("/songsue-wizards-v2.webp") ||
+    pathname.startsWith("/songsue-gate.webp");
 
   if (isAlwaysPublicPath) {
     return NextResponse.next();

@@ -3,13 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import {
-  motion,
-  useReducedMotion,
-  useScroll,
-  useTransform,
-  AnimatePresence,
-} from "framer-motion";
+import { motion, useReducedMotion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import { signIn } from "next-auth/react";
 import { AlertTriangle, ChevronDown, ImageOff, Lock, Volume2, VolumeX } from "lucide-react";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -193,18 +187,20 @@ function HouseVideo({
 
 // The animated 3D flag carousel, one house at a time. Rendered by
 // HousesCarousel only once the door has been entered (phase === "carousel")
-// — pre-entry, section 2 shows the static banner (BannerReveal) instead —
+// — pre-entry, section 2 shows the static wizards illustration instead —
 // so only ever one WebGL canvas is mounted at a time.
 function FlagsCarousel({
   houses,
   storyLang,
   prefersReducedMotion,
   copy,
+  onScrollToRegister,
 }: {
   houses: HouseInfo[];
   storyLang: "th" | "en";
   prefersReducedMotion: boolean;
   copy: SongsueCopy;
+  onScrollToRegister: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -245,7 +241,7 @@ function FlagsCarousel({
   const house = houses[activeIndex];
 
   return (
-    <section className="relative isolate flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+    <section className="relative isolate flex flex-col items-center justify-center px-6 pt-10 pb-16 lg:pt-20 lg:pb-24 w-full overflow-hidden min-h-[78svh] lg:min-h-[100svh]">
       {/* Per-house looping background video, crossfaded on house change.
           Skipped entirely under prefers-reduced-motion — autoplaying video
           is exactly the kind of motion that setting asks us not to run. */}
@@ -299,15 +295,15 @@ function FlagsCarousel({
         </button>
       )}
 
-      <div className="max-w-xl flex flex-col items-center gap-3 text-center mb-6 lg:mb-12 z-10">
+      <div className="max-w-xl flex flex-col items-center gap-3 text-center mb-4 lg:mb-12 z-10">
         <span style={kickerStyle}>{copy.flags.kicker}</span>
         <h2 className="landing-title" style={sectionTitleStyle}>
           {copy.flags.title}
         </h2>
       </div>
 
-      <div className="relative w-full max-w-7xl mx-auto flex flex-col items-center min-h-[70svh] lg:min-h-[80svh]">
-        <div className="w-full relative overflow-hidden flex items-center justify-center min-h-[70svh] lg:min-h-[80svh]">
+      <div className="relative w-full max-w-7xl mx-auto flex flex-col items-center min-h-[56svh] lg:min-h-[80svh]">
+        <div className="w-full relative overflow-hidden flex items-center justify-center min-h-[56svh] lg:min-h-[80svh]">
           <AnimatePresence mode="popLayout" custom={direction}>
             <motion.div
               key={activeIndex}
@@ -316,21 +312,26 @@ function FlagsCarousel({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: direction * -50 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={0.15}
-              dragMomentum={false}
-              onDragEnd={(e, { offset, velocity }) => {
-                if (offset.x < -60 || velocity.x < -400) {
-                  nextHouse();
-                } else if (offset.x > 60 || velocity.x > 400) {
-                  prevHouse();
-                }
-              }}
-              className="w-full flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-24 h-full cursor-grab active:cursor-grabbing"
+              /* Side-by-side (text-left, flag-right) from "lg" (1024px) up,
+                 same as desktop — but at "lg" specifically (tablets like an
+                 11" iPad landscape, 1194px) it's a scaled-down version of
+                 the "xl"+ (1280px, real desktop) numbers, not the full-size
+                 ones: gap and the flag's translate offset step in twice
+                 (lg, then larger again at xl), and both columns are capped
+                 to a max-width instead of one flex-1 side growing to fill
+                 whatever's left. Uncapped, the text side stalls at 400px
+                 while the flag side (also flex-1) absorbed 100% of the
+                 leftover row width and got shoved to the far right via
+                 justify-end/translate-x, leaving a dead gap in the middle
+                 that read as broken rather than spacious at in-between
+                 widths. With both columns capped, the row instead hugs its
+                 own content and re-centers via the row's justify-center as
+                 the viewport narrows — a true scaled-down copy of the
+                 desktop composition instead of a stretched one. */
+              className="w-full flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 xl:gap-24 h-full"
             >
               {/* Left: House Name, Faculty, Caption */}
-              <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4 px-2" style={{ minWidth: 280, maxWidth: 400 }}>
+              <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left gap-4 px-2 min-w-[280px] max-w-[400px] lg:max-w-[320px] xl:max-w-[400px]">
                 <span style={{ fontSize: "clamp(24px, 4vw, 36px)", fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
                   {house.faculty[storyLang]}
                 </span>
@@ -349,10 +350,33 @@ function FlagsCarousel({
               {/* Right: Flag — rightmost, big on desktop; centered and
                   shorter on mobile so the section fits closer to one
                   viewport instead of forcing a long scroll past a
-                  desktop-sized flag box. */}
-              <div
-                className="flex-1 w-full flex items-center justify-center lg:justify-end h-[48svh] min-h-[300px] lg:h-[80svh] lg:min-h-[400px] lg:translate-x-24 lg:translate-y-16"
-                style={{ filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.55))" }}
+                  desktop-sized flag box.
+                  The swipe-to-change-house drag gesture lives on this flag
+                  box only, not the whole card — it used to span the entire
+                  ~80svh section (text, whitespace, everything), so almost
+                  any attempt to scroll the page while a finger landed
+                  anywhere in that section risked being captured as a
+                  horizontal drag instead, occasionally eating the scroll
+                  gesture and leaving the page feeling stuck. Scoping drag to
+                  just the flag art keeps swipe-to-navigate working while
+                  leaving the rest of the section free for normal scrolling.
+                  touchAction is set explicitly (belt-and-suspenders on top
+                  of Framer's own automatic pan-y for drag="x") so vertical
+                  scroll is never blocked here even mid-drag. */}
+              <motion.div
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.15}
+                dragMomentum={false}
+                onDragEnd={(e, { offset, velocity }) => {
+                  if (offset.x < -60 || velocity.x < -400) {
+                    nextHouse();
+                  } else if (offset.x > 60 || velocity.x > 400) {
+                    prevHouse();
+                  }
+                }}
+                className="flex-1 w-full flex items-center justify-center lg:justify-end h-[36svh] min-h-[240px] lg:h-[60svh] lg:min-h-[320px] lg:max-w-[360px] lg:translate-x-12 lg:translate-y-8 xl:h-[80svh] xl:min-h-[400px] xl:max-w-[460px] xl:translate-x-24 xl:translate-y-16 cursor-grab active:cursor-grabbing"
+                style={{ filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.55))", touchAction: "pan-y" }}
               >
                 {house.flagModelSrc ? (
                   <FlagFlutter3D src={house.flagModelSrc} prefersReducedMotion={prefersReducedMotion} />
@@ -368,7 +392,7 @@ function FlagsCarousel({
                     </span>
                   </div>
                 )}
-              </div>
+              </motion.div>
             </motion.div>
           </AnimatePresence>
         </div>
@@ -390,44 +414,67 @@ function FlagsCarousel({
             </button>
           ))}
         </div>
+
+        {/* Scroll-down hint — registration lives in a section below this
+            carousel with nothing on screen suggesting more content follows,
+            so without this, visitors who land here can miss it entirely.
+            It's a real tappable button, not just a decorative hint: tapping
+            it jumps straight to the CTA in one motion, so a visitor never
+            has to manually swipe through the gap between the carousel and
+            the register button. Sized up (larger text/icon, pill
+            background) so it reads as an actionable control on first
+            glance, not a faint caption easy to miss. */}
+        <motion.button
+          type="button"
+          onClick={onScrollToRegister}
+          className="flex flex-row items-center gap-2 mt-8 lg:mt-12 z-20 touch-target"
+          style={{
+            padding: "10px 20px",
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.14)",
+          }}
+          animate={prefersReducedMotion ? undefined : { y: [0, 6, 0] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <span style={{ fontSize: 16, fontWeight: 700, color: "rgba(255,255,255,0.75)" }}>{copy.flags.scrollHint}</span>
+          <ChevronDown size={24} color="rgba(255,255,255,0.75)" />
+        </motion.button>
       </div>
     </section>
   );
 }
 
-// Section 2 — pre-entry tease banner, edge-to-edge. Sized purely by its own
-// 3240x1350 aspect ratio (no object-cover crop, so the full banner including
-// its edges is always visible). Swapped out for the flag carousel once the
-// door is entered — see HousesCarousel's phase === "carousel" branch below.
-function BannerReveal({ storyLang }: { storyLang: "th" | "en" }) {
+// Static illustration of the four house wizards on their way to the castle —
+// this is what shows before the door is entered. It's a single flattened
+// WebP (not the 10MB source SVG, which embeds a raster export from Canva AI
+// and would tank load time). Full-bleed edge-to-edge (no max-width cap, no
+// side padding) at the image's own 1:1 aspect ratio — this fills the full
+// viewport width with no black side bars at any breakpoint, and (unlike
+// object-cover with a forced height) never crops any of the four wizards
+// out of frame.
+function WizardsIllustration({ storyLang }: { storyLang: "th" | "en" }) {
   return (
-    <section
-      // lg:min-h only (not a universal min-height): below lg the banner's
-      // own 2.4:1 aspect ratio already fills a healthy share of a narrow
-      // viewport, and forcing extra height there is exactly what used to
-      // letterbox it into a thin strip between two huge empty bars. At
-      // lg+ the banner is comfortably shorter than the viewport, so
-      // without a min-height here to center within, items-center has
-      // nothing to do and the banner ends up glued to the very top with
-      // a dead gap below it instead of sitting centered on screen.
-      className="relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
-    >
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="relative w-full overflow-hidden"
-        style={{ aspectRatio: "3240 / 1350" }}
-      >
+    // Background matches the page wrapper's #030303 (not just "transparent")
+    // as a fallback for a sub-pixel rounding gap Chromium leaves between an
+    // aspect-ratio box and the next section — without this, that hairline
+    // gap exposes globals.css's light --bg-base (#fcfcfd) as a visible white
+    // line at the bottom edge instead of blending into the dark page.
+    <section className="relative w-full overflow-hidden" style={{ background: "#030303" }}>
+      <div className="relative w-full" style={{ aspectRatio: "2430 / 2430" }}>
         <Image
-          src="/songsue-banner.webp"
-          alt={storyLang === "th" ? "แบนเนอร์ สองสื่อ" : "Songsue banner"}
+          src="/songsue-wizards-v2.webp"
+          alt={
+            storyLang === "th"
+              ? "ขบวนพ่อมดสี่บ้านเดินทางสู่ปราสาท"
+              : "The four house wizards on their way to the castle"
+          }
           fill
-          className="object-contain"
+          className="object-cover"
           sizes="100vw"
           priority
         />
-      </motion.div>
+      </div>
     </section>
   );
 }
@@ -440,6 +487,7 @@ function HousesCarousel({
   houses,
   prefersReducedMotion,
   copy,
+  onScrollToRegister,
 }: {
   storyLang: "th" | "en";
   phase: "door" | "carousel";
@@ -448,25 +496,16 @@ function HousesCarousel({
   houses: HouseInfo[];
   prefersReducedMotion: boolean;
   copy: SongsueCopy;
+  onScrollToRegister: () => void;
 }) {
-  // Once through the door, this slot hands off entirely to the flag
-  // carousel (the pre-entry banner in section 2 is gone by then, and the
-  // door itself is done) — no wrapper/flash overlay needed past this point.
-  if (phase === "carousel") {
-    return (
-      <FlagsCarousel
-        houses={houses}
-        storyLang={storyLang}
-        prefersReducedMotion={prefersReducedMotion}
-        copy={copy}
-      />
-    );
-  }
-
   return (
     <section
-      className="relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
-      style={{ minHeight: "100svh" }}
+      className={
+        phase === "carousel"
+          ? "relative flex items-center justify-center w-full overflow-hidden lg:min-h-[90svh]"
+          : "relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden"
+      }
+      style={phase === "door" ? { minHeight: "100svh" } : undefined}
     >
       {/* Flash overlay */}
       <div
@@ -474,20 +513,35 @@ function HousesCarousel({
         style={{ opacity: flash ? 1 : 0, transitionDuration: "1000ms" }}
       />
 
-      {/* No more painted castle-wall backdrop — the 3D door is the whole
-          stage now, so it can claim most of the section instead of being
-          confined to a small painted-archway footprint. Portrait-ish max
-          widths (vs. a wide/short box) keep the canvas aspect close to the
-          door model's own (taller than wide), which is what makes the
-          camera-fit door render large instead of shrinking to fit a wide
-          canvas. */}
-      <div className="relative w-full max-w-md sm:max-w-xl lg:max-w-3xl mx-auto" style={{ height: "min(68svh, 720px)" }}>
-        <DoorCastle3D onEnter={onEnter} />
-      </div>
+      {phase === "door" && (
+        <div className="relative w-full max-w-7xl mx-auto flex items-center justify-center" style={{ minHeight: "80svh" }}>
+          <div className="relative w-full flex flex-col items-center justify-center" style={{ height: "80svh" }}>
+            <div className="w-full h-full">
+              <DoorCastle3D onEnter={onEnter} />
+            </div>
+            <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full">
+              {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
+            </p>
+          </div>
+        </div>
+      )}
 
-      <p className="mt-6 text-white/50 text-sm tracking-widest uppercase font-bold animate-pulse text-center w-full px-4">
-        {storyLang === "th" ? "คลิกที่ประตูเพื่อเข้าสู่ปราสาท" : "Click the door to enter"}
-      </p>
+      {phase === "carousel" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
+          className="w-full"
+        >
+          <FlagsCarousel
+            houses={houses}
+            storyLang={storyLang}
+            prefersReducedMotion={prefersReducedMotion}
+            copy={copy}
+            onScrollToRegister={onScrollToRegister}
+          />
+        </motion.div>
+      )}
     </section>
   );
 }
@@ -507,11 +561,16 @@ export function SongsueLanding({
   const copy = songsueCopy[storyLang];
   const prefersReducedMotion = useReducedMotion();
   const countdown = useCountdown(REGISTRATION_OPENS_AT);
-  
+
   const [doorPhase, setDoorPhase] = useState<"door" | "carousel">("door");
   const [flash, setFlash] = useState(false);
   const houseSectionRef = useRef<HTMLDivElement>(null);
+  const ctaRef = useRef<HTMLElement>(null);
   const rafRef = useRef<number | null>(null);
+
+  const scrollToRegister = () => {
+    ctaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const handleEnter = () => {
     setFlash(true);
@@ -662,11 +721,11 @@ export function SongsueLanding({
               className="gradient-text"
               style={{ backgroundImage: "linear-gradient(135deg, #111827 0%, #ffffff 100%)" }}
             >
-              {copy.hero.titleTh}
+              {storyLang === "en" ? copy.hero.titleEn : copy.hero.titleTh}
             </span>
           </h1>
           <p style={{ fontSize: "clamp(14px, 2vw, 18px)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
-            {copy.hero.titleEn}
+            {storyLang === "en" ? copy.hero.titleTh : copy.hero.titleEn}
           </p>
           <p style={{ fontSize: "clamp(16px, 2.2vw, 24px)", color: "rgba(255,255,255,0.68)", lineHeight: 1.6, maxWidth: 560 }}>
             {copy.hero.tagline}
@@ -683,14 +742,12 @@ export function SongsueLanding({
         </motion.div>
       </div>
 
-      {/* Section 2 - Banner tease, shown before the door is entered. Swaps
-          for the animated 3D flag carousel below once section 03 takes
-          over — it's a pre-castle tease, not something that should stick
-          around once the door has been entered. */}
-      {doorPhase === "door" && <BannerReveal storyLang={storyLang} />}
+      {/* Section 2 - Full-bleed static wizards-on-the-road illustration.
+          Hidden once the door has been entered — it's a pre-castle tease. */}
+      {doorPhase === "door" && <WizardsIllustration storyLang={storyLang} />}
 
-      {/* Section 3 - Door intro, then the animated 3D flag carousel, one
-          house at a time */}
+      {/* Section 3 - Door intro (3D, click to enter), then the interactive
+          per-house flag carousel. */}
       <div ref={houseSectionRef}>
         <HousesCarousel
           storyLang={storyLang}
@@ -700,6 +757,7 @@ export function SongsueLanding({
           houses={houses}
           prefersReducedMotion={!!prefersReducedMotion}
           copy={copy}
+          onScrollToRegister={scrollToRegister}
         />
       </div>
 
@@ -717,7 +775,7 @@ export function SongsueLanding({
           order or specificity — so plain px-6, py-8 etc classes here
           silently no-op. Don't simplify these back to bare utility classes. */}
       {doorPhase === "carousel" && (
-        <div className="w-full flex justify-center px-6! py-8! sm:py-10! lg:py-14!">
+        <div className="w-full flex justify-center px-6! py-5! sm:py-10! lg:py-14!">
           <div
             className="w-full max-w-xs h-px"
             style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent)" }}
@@ -728,16 +786,24 @@ export function SongsueLanding({
       {/* ── CTA / Register ───────────────────────────────────────────────── */}
       {doorPhase === "carousel" && (
       <motion.section
+        ref={ctaRef}
         {...reveal}
-        className="relative flex flex-col items-center justify-center text-center px-6! py-12! sm:py-16! lg:py-24!"
-        /* 90svh (not a rounder 70/80svh) is deliberate: the scroll-into-view
-           effect above needs (banner + divider + this section) to add up to
-           at least one full viewport so the browser has room to actually
-           scroll the banner flush to the top — anything shorter gets clamped
-           by the max scroll position, leaving a leftover strip of the Hero
-           section stuck above the banner. Verified against 390x844 and
-           1440x900; don't shrink this without re-checking the flush at both. */
-        style={{ minHeight: "90svh" }}
+        className="relative flex flex-col items-center justify-center text-center px-6! py-12! sm:py-16! lg:py-24! min-h-[62svh] lg:min-h-[90svh]"
+        /* Height is intentionally smaller on mobile than the verified 90svh
+           desktop value below it: on a phone this section no longer needs
+           to fill 90svh on its own, since the scroll-into-view effect's
+           invariant is a SUM across (banner + divider + this section) >=
+           one full viewport, not a per-section minimum — the banner and
+           divider below already clear that bar with room to spare, so this
+           section can shrink to cut the extra swipes it took to reach the
+           register button. 90svh (not a rounder 70/80svh) is deliberate on
+           desktop: the scroll-into-view effect above needs (banner +
+           divider + this section) to add up to at least one full viewport
+           so the browser has room to actually scroll the banner flush to
+           the top — anything shorter gets clamped by the max scroll
+           position, leaving a leftover strip of the Hero section stuck
+           above the banner. Verified against 1440x900; re-check the flush
+           at 390x844 (and similar) before shrinking either value further. */
       >
         <div
           className="flex flex-col items-center gap-8 w-full"

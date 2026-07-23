@@ -56,3 +56,6 @@ CLAUDE.md
 
 # House logo source masters (multi-MB originals; app uses optimized versions)
 public/house_logo/original/
+
+# Background video source masters (multi-hundred-MB originals; app uses compressed versions)
+public/bgVideo/original/

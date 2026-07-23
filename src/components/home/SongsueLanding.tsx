@@ -168,7 +168,43 @@ function FlagsCarousel({
   const house = houses[activeIndex];
 
   return (
-    <section className="relative flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+    <section className="relative isolate flex flex-col items-center justify-center px-6 py-14 lg:py-20 w-full overflow-hidden" style={{ minHeight: "100svh" }}>
+      {/* Per-house looping background video, crossfaded on house change.
+          Skipped entirely under prefers-reduced-motion — autoplaying video
+          is exactly the kind of motion that setting asks us not to run. */}
+      {!prefersReducedMotion && (
+        <div className="absolute inset-0 -z-10 overflow-hidden">
+          {/* initial={false}: the first house's video must be visible the
+              instant it mounts, not wait on a client-side opacity transition
+              — if that transition ever fails to fire (slow hydration, tab
+              backgrounded, etc.) the section renders as solid black with no
+              recovery. Later house switches still crossfade normally since
+              this only suppresses the very first mount's enter animation. */}
+          <AnimatePresence mode="sync" initial={false}>
+            {house.bgVideoSrc && (
+              <motion.video
+                key={house.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="absolute inset-0 w-full h-full object-cover"
+                src={house.bgVideoSrc}
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+            )}
+          </AnimatePresence>
+          {/* Light darken/blend so caption text stays readable — the source
+              footage (moonlit clouds, embers, dark stone) is already very
+              dark on its own, so a heavy overlay here was making the video
+              disappear entirely instead of just legible-izing text over it. */}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(3,3,3,0.15) 0%, rgba(3,3,3,0.3) 60%, rgba(3,3,3,0.5) 100%)" }} />
+        </div>
+      )}
+
       <div className="max-w-xl flex flex-col items-center gap-3 text-center mb-6 lg:mb-12 z-10">
         <span style={kickerStyle}>{copy.flags.kicker}</span>
         <h2 className="landing-title" style={sectionTitleStyle}>

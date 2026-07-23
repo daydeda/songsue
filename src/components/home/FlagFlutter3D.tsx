@@ -202,47 +202,6 @@ function FlagModel({
   );
 }
 
-// The page behind the canvas is near-black (#030303), so a dark contact
-// shadow has nothing to darken against on its own — this additive-blended
-// glow plane brightens the "floor" first, in the same world coordinates as
-// the shadow, so the two are guaranteed to line up (a DOM-layer CSS glow
-// can't make that guarantee against a 3D projection).
-function GroundGlow({ y, radius }: { y: number; radius: number }) {
-  const material = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        depthTest: false,
-        blending: THREE.AdditiveBlending,
-        uniforms: { uColor: { value: new THREE.Color("#ffb800") } },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying vec2 vUv;
-          uniform vec3 uColor;
-          void main() {
-            float d = distance(vUv, vec2(0.5));
-            float alpha = smoothstep(0.5, 0.0, d);
-            gl_FragColor = vec4(uColor, alpha * 0.16);
-          }
-        `,
-      }),
-    []
-  );
-
-  return (
-    <mesh position={[0, y + 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={-1} material={material}>
-      <planeGeometry args={[radius, radius]} />
-    </mesh>
-  );
-}
-
 function Scene({
   url,
   prefersReducedMotion,
@@ -290,7 +249,6 @@ function Scene({
           prefersReducedMotion={prefersReducedMotion}
         />
       </Suspense>
-      <GroundGlow y={ground.groundY} radius={glowRadius} />
       <ContactShadows
         position={[0, ground.groundY, 0]}
         opacity={0.4}

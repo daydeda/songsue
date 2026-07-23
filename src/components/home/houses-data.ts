@@ -6,6 +6,8 @@ export type HouseInfo = {
   // No house has character art yet — kept as a field so it's a one-line
   // change to wire up once assets exist, instead of restructuring the type.
   characterSrc: string | null;
+  // Looping muted background video for this house's flag section.
+  bgVideoSrc: string | null;
   faculty: { th: string; en: string };
   houseName: string | null;
   caption: { th: string; en: string } | null;
@@ -17,6 +19,7 @@ export const houses: HouseInfo[] = [
     flagSrc: null,
     flagModelSrc: "/flag_house/Masscom_flag.glb",
     characterSrc: null,
+    bgVideoSrc: "/bgVideo/MassCom.mp4",
     faculty: { th: "คณะการสื่อสารมวลชน", en: "Mass Communication" },
     houseName: "MassFenrir",
     caption: {
@@ -29,6 +32,7 @@ export const houses: HouseInfo[] = [
     flagSrc: null,
     flagModelSrc: "/flag_house/architecture_flag.glb",
     characterSrc: null,
+    bgVideoSrc: "/bgVideo/Architecture_BG.mp4",
     faculty: { th: "คณะสถาปัตยกรรมศาสตร์", en: "Architecture" },
     houseName: "CHRONOKINESIS",
     caption: {
@@ -41,6 +45,7 @@ export const houses: HouseInfo[] = [
     flagSrc: null,
     flagModelSrc: "/flag_house/camt_flag.glb",
     characterSrc: null,
+    bgVideoSrc: "/bgVideo/CAMT_BG.mp4",
     faculty: { th: "วิทยาลัยศิลปะ สื่อ และเทคโนโลยี", en: "College of Arts, Media and Technology" },
     houseName: "Ashkayn",
     caption: {
@@ -53,6 +58,7 @@ export const houses: HouseInfo[] = [
     flagSrc: null,
     flagModelSrc: "/flag_house/Fine_art_flag.glb",
     characterSrc: null,
+    bgVideoSrc: "/bgVideo/FineArt_BG.mp4",
     faculty: { th: "คณะวิจิตรศิลป์", en: "Fine Arts" },
     houseName: "Ancestral Incantation",
     caption: {

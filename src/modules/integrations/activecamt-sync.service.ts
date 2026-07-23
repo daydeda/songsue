@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { attendance, events, eventSessions, users } from "@/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AuditService } from "@/modules/audit/audit.service";
 import { HousesService } from "@/modules/houses/houses.service";
 import { normalizeFaculty } from "@/lib/faculties";
@@ -34,6 +34,21 @@ export interface UpsertExternalEventPayload {
   walkInsEnabled?: boolean | null;
   quota?: number | null;
   quotaWalkIn?: number | null;
+  // Banner — mirrors events.imageUrl/imageUrls (imageUrl always mirrors
+  // imageUrls[0], same convention as this table's own native events). Sent as
+  // the event's CURRENT full value every sync, not a partial patch.
+  imageUrl?: string | null;
+  imageUrls?: string[] | null;
+  // Full CURRENT staff roster (not a delta) — each entry resolved to a Songsue
+  // account by email (see resolveStaffUserIds) and written wholesale onto
+  // events.staffUserIds, so removing someone on ActiveCAMT's side removes them
+  // here too. Absent/empty clears the mirrored roster.
+  staff?: UpsertExternalEventStaffMember[];
+}
+
+export interface UpsertExternalEventStaffMember {
+  email: string;
+  name: string;
 }
 
 export interface SyncEmergencyContact {
@@ -104,6 +119,8 @@ export class ActiveCamtSyncService {
     const endTime = new Date(payload.endTime);
 
     return await db.transaction(async (tx) => {
+      const { staffUserIds, createdStaffCount } = await this.resolveStaffUserIds(tx, payload.staff, ipAddress);
+
       const existing = await tx.query.events.findFirst({
         where: and(eq(events.externalSource, ACTIVECAMT_SOURCE), eq(events.externalId, payload.externalId)),
         columns: { id: true },
@@ -123,6 +140,9 @@ export class ActiveCamtSyncService {
             walkInsEnabled: payload.walkInsEnabled ?? false,
             quota: payload.quota ?? null,
             quotaWalkIn: payload.quotaWalkIn ?? null,
+            imageUrl: payload.imageUrl ?? null,
+            imageUrls: payload.imageUrls ?? null,
+            staffUserIds,
             updatedAt: new Date(),
           })
           .where(eq(events.id, existing.id));
@@ -139,7 +159,10 @@ export class ActiveCamtSyncService {
           actorId: SYNC_ACTOR_ID,
           targetId: existing.id,
           action: `Synced from ActiveCAMT: updated mirrored event ${existing.id} ` +
-            `(pointsAwarded=${payload.pointsAwarded ?? 0}, individualPointsAwarded=${payload.individualPointsAwarded ?? 0})`,
+            `(pointsAwarded=${payload.pointsAwarded ?? 0}, individualPointsAwarded=${payload.individualPointsAwarded ?? 0}` +
+            (staffUserIds ? `, ${staffUserIds.length} staff assigned` : "") +
+            (createdStaffCount > 0 ? `, created ${createdStaffCount} new staff account(s)` : "") +
+            ")",
           ipAddress,
         });
 
@@ -167,6 +190,9 @@ export class ActiveCamtSyncService {
           walkInsEnabled: payload.walkInsEnabled ?? false,
           quota: payload.quota ?? null,
           quotaWalkIn: payload.quotaWalkIn ?? null,
+          imageUrl: payload.imageUrl ?? null,
+          imageUrls: payload.imageUrls ?? null,
+          staffUserIds,
           externalSource: ACTIVECAMT_SOURCE,
           externalId: payload.externalId,
         })
@@ -200,12 +226,81 @@ export class ActiveCamtSyncService {
         actorId: SYNC_ACTOR_ID,
         targetId: inserted[0].id,
         action: `Synced from ActiveCAMT: created mirrored event ${inserted[0].id} ` +
-          `(pointsAwarded=${payload.pointsAwarded ?? 0}, individualPointsAwarded=${payload.individualPointsAwarded ?? 0})`,
+          `(pointsAwarded=${payload.pointsAwarded ?? 0}, individualPointsAwarded=${payload.individualPointsAwarded ?? 0}` +
+          (staffUserIds ? `, ${staffUserIds.length} staff assigned` : "") +
+          (createdStaffCount > 0 ? `, created ${createdStaffCount} new staff account(s)` : "") +
+          ")",
         ipAddress,
       });
 
       return { id: inserted[0].id, created: true };
     });
+  }
+
+  // Resolves ActiveCAMT's staff roster (already reduced to email/name by the
+  // caller — see UpsertExternalEventStaffMember's doc comment) to Songsue user
+  // ids, upserting a minimal account for anyone not already known by email. No
+  // medical/profile fields are written here (unlike upsertSyncedUser) — this
+  // path only ever carries a name and email, nothing PDPA-sensitive. An
+  // existing account (however complete) is never modified, only looked up by
+  // id. Returns null (not []) when no staff were sent, so the caller can tell
+  // "clear the roster" apart from "field omitted" in its audit message; the
+  // events.staffUserIds column itself treats null and [] the same way
+  // (both = no explicit staff), matching ActiveCAMT's own convention.
+  private static async resolveStaffUserIds(
+    tx: DBTransaction,
+    staff: UpsertExternalEventStaffMember[] | undefined,
+    ipAddress: string,
+  ): Promise<{ staffUserIds: string[] | null; createdStaffCount: number }> {
+    if (!staff || staff.length === 0) return { staffUserIds: null, createdStaffCount: 0 };
+
+    const emails = staff.map((s) => s.email);
+    const existingRows = await tx.query.users.findMany({
+      where: inArray(users.email, emails),
+      columns: { id: true, email: true },
+    });
+    const byEmail = new Map(existingRows.map((u) => [u.email, u.id] as const));
+
+    let createdStaffCount = 0;
+    for (const member of staff) {
+      if (byEmail.has(member.email)) continue;
+
+      const newId = crypto.randomUUID();
+      const inserted = await tx
+        .insert(users)
+        .values({
+          id: newId,
+          email: member.email,
+          name: member.name,
+          profileCompleted: false,
+          pdpaConsent: false,
+        })
+        .onConflictDoNothing({ target: users.email })
+        .returning({ id: users.id });
+
+      if (inserted.length > 0) {
+        byEmail.set(member.email, inserted[0].id);
+        createdStaffCount++;
+      } else {
+        // Lost the insert race — re-read the row the other transaction created.
+        const raced = await tx.query.users.findFirst({
+          where: eq(users.email, member.email),
+          columns: { id: true },
+        });
+        if (!raced) throw new Error("STAFF_USER_UPSERT_RACE_UNRESOLVED");
+        byEmail.set(member.email, raced.id);
+      }
+    }
+
+    if (createdStaffCount > 0) {
+      await AuditService.logActionInternal(tx, {
+        actorId: SYNC_ACTOR_ID,
+        action: `Synced from ActiveCAMT: created ${createdStaffCount} Songsue account(s) for staff assigned to a linked event (no PDPA consent yet)`,
+        ipAddress,
+      });
+    }
+
+    return { staffUserIds: staff.map((s) => byEmail.get(s.email)!), createdStaffCount };
   }
 
   /**
